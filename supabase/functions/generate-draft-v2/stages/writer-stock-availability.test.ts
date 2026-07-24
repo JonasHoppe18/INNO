@@ -13,8 +13,9 @@ Deno.test("in_stock fact allows currently available wording without exact quanti
     label: "Live stock availability",
     value: "state=in_stock; product=A-Spire Wireless; variant=all_variants; source=shopify_live; exact_quantity_hidden=true",
   }]).toLowerCase();
-  assertStringIncludes(block, "currently available");
-  assertStringIncludes(block, "do not include exact quantity");
+  assertStringIncludes(block, "is in stock right now");
+  assertStringIncludes(block, "include exact quantity");
+  assert(!block.includes("appears to be"));
 });
 
 Deno.test("out_of_stock fact allows out of stock wording without restock promise", () => {
@@ -23,7 +24,8 @@ Deno.test("out_of_stock fact allows out of stock wording without restock promise
     value: "state=out_of_stock; product=A-Blaze; variant=default; source=shopify_live",
   }]).toLowerCase();
   assertStringIncludes(block, "out of stock");
-  assertStringIncludes(block, "no confirmed restock date");
+  assertStringIncludes(block, "only discuss a restock date if the customer asked");
+  assert(!block.includes("appears to be"));
 });
 
 Deno.test("mixed variants ask for version or color", () => {
@@ -31,16 +33,27 @@ Deno.test("mixed variants ask for version or color", () => {
     label: "Live stock availability",
     value: "state=variant_clarification_required; product=A-Spire Wireless; variants=Black|White; source=shopify_live",
   }]).toLowerCase();
-  assertStringIncludes(block, "ask the customer");
+  assertStringIncludes(block, "ask one concrete question");
   assert(/version|color|variant/.test(block));
 });
 
-Deno.test("unknown stock fact says live availability cannot be confirmed", () => {
+Deno.test("unknown stock fact uses employee wording instead of live-data wording", () => {
   const block = buildStockAvailabilityDirective([{
     label: "Live stock availability",
     value: "state=unknown; product_query=A-Rise; reason=not_found; source=shopify_live",
   }]).toLowerCase();
-  assertStringIncludes(block, "cannot confirm live availability");
+  assertStringIncludes(block, "lagerstatus på a-rise bekræftet");
+  assert(!block.includes("cannot confirm live availability"));
+  assert(!block.includes("cannot see the stock status"));
+});
+
+Deno.test("ambiguous stock lookup asks one concrete product question", () => {
+  const block = buildStockAvailabilityDirective([{
+    label: "Live stock availability",
+    value: "state=unknown; product_query=A-Spire; reason=ambiguous_product; source=shopify_live",
+  }]).toLowerCase();
+  assertStringIncludes(block, "ask one concrete question");
+  assertStringIncludes(block, "exact model");
 });
 
 Deno.test("no live stock fact warns about shopify_product catalog chunks", () => {
@@ -49,4 +62,3 @@ Deno.test("no live stock fact warns about shopify_product catalog chunks", () =>
   assertStringIncludes(block, "not proof");
   assertStringIncludes(block, "shopify_product_not_live");
 });
-

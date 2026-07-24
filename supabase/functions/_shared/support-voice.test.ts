@@ -69,6 +69,58 @@ Deno.test("ordinary requests for customer documentation are not evidence-languag
   );
 });
 
+Deno.test("stock replies flag chatbot-style live-data wording and hedged outcomes", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg kan ikke bekræfte lagerstatus her, så jeg kan ikke sige, om den kan købes lige nu.",
+    ),
+    ["stock_system_wording"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "The A-Rise currently appears to be out of stock.",
+    ),
+    ["stock_system_wording"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Live availability could not be confirmed for this product.",
+    ),
+    ["stock_system_wording"],
+  );
+});
+
+Deno.test("direct employee-style stock outcomes pass the voice guard", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Ja, A-Spire Wireless er på lager lige nu.",
+    ),
+    [],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "A-Rise er desværre udsolgt lige nu. Vi har ikke en bekræftet dato endnu.",
+    ),
+    [],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg skal lige have lagerstatus på A-Rise bekræftet, før jeg kan give dig et sikkert svar.",
+    ),
+    [],
+  );
+});
+
+Deno.test("internal workflow status codes are removed from customer replies", () => {
+  const draft =
+    "Vi afventer sporingsoplysninger fra lageret (awaiting_tracking_from_warehouse). Vi skriver, når vi har dem.";
+  assertEquals(detectSupportVoiceViolations(draft), ["internal_status_code"]);
+  assertEquals(
+    sanitizeSupportVoiceDraft(draft),
+    "Vi afventer sporingsoplysninger fra lageret. Vi skriver, når vi har dem.",
+  );
+});
+
 Deno.test("sanitizeSupportVoiceDraft removes safe filler and system qualifiers only", () => {
   const out = sanitizeSupportVoiceDraft(
     "Jeg kan ikke se refunderingen i vores system endnu.\n\nHvis du har yderligere spørgsmål, er du velkommen til at skrive.",

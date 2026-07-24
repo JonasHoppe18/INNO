@@ -951,7 +951,8 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     return [
       "# Live stock availability guardrails",
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
-      '- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert. Hvis du sender modellen/produktnavnet, kan vi tjekke det."',
+      '- If the customer asks about stock/availability and the exact product is already clear, use natural employee wording such as: "Jeg skal lige have lagerstatus på [produkt] bekræftet, før jeg kan give dig et sikkert svar." Do NOT mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see.',
+      '- If the product or variant is genuinely unclear, ask exactly one concrete question, e.g. "Hvilken model og farve drejer det sig om?" Do not ask for details already present in the conversation.',
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
       "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
       "- If a knowledge chunk has risk_flags=shopify_product_not_live, the product is explicitly marked as not publicly available (waitlist, hidden price, draft, or placeholder price). Do NOT claim it is available, released, or purchasable. Do NOT provide a purchase link for it.",
@@ -971,32 +972,54 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     lines.push(`- Fact: ${fact.value}`);
     if (state === "in_stock") {
       lines.push(
-        `  Writer rule: You may say ${product}${
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
           variant && variant !== "all_variants" && variant !== "default"
             ? ` (${variant})`
             : ""
-        } is currently available in the store. Do not include exact quantity.`,
+        } is in stock right now. Do not hedge with "appears", mention Shopify/live data, or include exact quantity.`,
+      );
+    } else if (state === "low_stock") {
+      lines.push(
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
+          variant && variant !== "all_variants" && variant !== "default"
+            ? ` (${variant})`
+            : ""
+        } is in stock right now. Do not mention that stock is low and do not include exact quantity.`,
       );
     } else if (state === "out_of_stock") {
       lines.push(
-        `  Writer rule: You may say ${product}${
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
           variant && variant !== "all_variants" && variant !== "default"
             ? ` (${variant})`
             : ""
-        } currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`,
+        } is out of stock right now. Do not hedge with "appears" or mention Shopify/live data. Only discuss a restock date if the customer asked when it will return; if no separate verified fact provides a date, say briefly that there is no confirmed date yet.`,
       );
     } else if (state === "variant_clarification_required") {
+      const variants = stockValueField(fact.value, "variants");
       lines.push(
-        "  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.",
+        `  Writer rule: Availability differs by variant/version. Ask one concrete question about which version, color, or variant they mean before answering availability${
+          variants ? `; use the known choices (${variants})` : ""
+        }. Do not explain the stock lookup.`,
+      );
+    } else if (state === "preorder") {
+      lines.push(
+        `  Writer rule: Answer directly that ${product} can be preordered right now. Do not promise a delivery or release date unless a separate verified fact provides one.`,
       );
     } else if (state === "unavailable" || state === "discontinued") {
       lines.push(
-        `  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`,
+        `  Writer rule: Answer directly that ${product} is not currently available in the store. Do not mention Shopify/live data or hedge with "appears".`,
       );
     } else {
-      lines.push(
-        '  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert."',
-      );
+      const reason = stockValueField(fact.value, "reason");
+      if (reason === "ambiguous_product") {
+        lines.push(
+          `  Writer rule: The product match is ambiguous. Ask one concrete question for the exact model or variant. Do not mention live data, Shopify, systems, lookups, or what you can/cannot see.`,
+        );
+      } else {
+        lines.push(
+          `  Writer rule: The exact product query is "${product}", but its stock status still needs checking. Use natural employee wording such as: "Jeg skal lige have lagerstatus på ${product} bekræftet, før jeg kan give dig et sikkert svar." Do not mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see. Do not ask for the product name again.`,
+        );
+      }
     }
   }
   return lines.join("\n");
@@ -1734,7 +1757,7 @@ ABSOLUTTE FORBUD:
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal; sig kun currently available/out of stock/ask variant clarification/unknown according to the fact.
+- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal. Ved in_stock/out_of_stock: giv det direkte kundevendte udfald i første sætning uden "appears", system- eller live-data-sprog. Ved ukendt status for et tydeligt produkt: sig naturligt at lagerstatus lige skal bekræftes før et sikkert svar. Ved uklar model/variant: stil ét konkret spørgsmål.
 - ALDRIG falsk bekræftelse: skriv ALDRIG at en handling er udført medmindre actionResult har outcome "executed". Alle andre outcomes betyder at handlingen IKKE er udført. Planlagte actions er forslag der venter på menneskelig godkendelse.
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.
@@ -1870,7 +1893,7 @@ ABSOLUTTE FORBUD (faktuel sikkerhed):
 - UVERIFICERET ORDRE: Hvis kunden HAR oplyst et ordrenummer der IKKE står i "Verificerede fakta" under "Ordre fundet", må du aldrig skrive "din ordre #X" som om den findes eller love handlinger på den. Forklar venligt at vi ikke kan finde nummeret, og spørg DA hvor produktet er købt.
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn eller email-adresser — tilføjes automatisk.
-- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok; ellers sig at live availability ikke kan bekræftes.
+- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok. Ved in_stock/out_of_stock: sig udfaldet direkte og menneskeligt i første sætning uden "appears", Shopify-, system- eller live-data-sprog. Ved ukendt status for et tydeligt produkt: sig naturligt at lagerstatus lige skal bekræftes før et sikkert svar. Ved uklar model/variant: stil ét konkret spørgsmål.
 - ALDRIG falsk bekræftelse: skriv aldrig at en handling ER udført medmindre actionResult har outcome "executed". Alle andre outcomes betyder at handlingen IKKE er udført. Planlagte actions venter på godkendelse.
 - ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
 - KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.

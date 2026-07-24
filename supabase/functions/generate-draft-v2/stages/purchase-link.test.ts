@@ -432,7 +432,8 @@ Deno.test("stock-unknown fallback: link secondary, never asks for product link",
     groundedProductUrl: "https://acezone.dk/products/a-rise",
     threadMentionsCheckoutLink: false,
   });
-  assert(/ikke se den aktuelle lagerstatus/i.test(d));
+  assert(/lagerstatus på \[produkt\] bekræftet/i.test(d));
+  assert(/Never say.*live availability/i.test(d));
   assert(/Do NOT ask the customer to provide a product link/i.test(d));
   assert(d.includes("https://acezone.dk/products/a-rise"));
   assert(/Do NOT invent.*checkout/i.test(d));
@@ -453,7 +454,8 @@ Deno.test("stock-unknown fallback without a URL stays honest, no link, debug rea
     threadMentionsCheckoutLink: false,
     noPublicStorefrontDomain: true,
   });
-  assert(/ikke se den aktuelle lagerstatus/i.test(d));
+  assert(/lagerstatus på \[produkt\] bekræftet/i.test(d));
+  assert(/Never say.*live availability/i.test(d));
   assert(/Do NOT output any URL/i.test(d));
   assert(/missing_public_storefront_domain/i.test(d));
   assert(/Do NOT ask the customer to provide a product link/i.test(d));
