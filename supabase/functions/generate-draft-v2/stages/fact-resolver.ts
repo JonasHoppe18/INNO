@@ -88,14 +88,23 @@ export function stockProductQueriesForFactResolver(input: {
   latestCustomerMessage?: string | null;
 }): string[] {
   if (input.plan.primary_intent !== "product_question") return [];
+  const latestCustomerMessage = String(input.latestCustomerMessage ?? "");
+  if (
+    !isStockAvailabilityQuestion(latestCustomerMessage) &&
+    !isPurchaseLinkRequest(latestCustomerMessage)
+  ) {
+    return [];
+  }
   if (input.caseState.entities.products_mentioned.length > 0) {
     return [...new Set(input.caseState.entities.products_mentioned.map((p) => p.trim()).filter(Boolean))];
   }
-  const stockFallback = deriveStockProductCandidate(input.latestCustomerMessage);
+  const stockFallback = deriveStockProductCandidate(latestCustomerMessage);
   if (stockFallback) return [stockFallback];
   // Purchase-link / where-to-buy intent still needs a product lookup so we can
   // ground a trusted product-page URL from the matched product's handle.
-  const purchaseFallback = derivePurchaseProductCandidate(input.latestCustomerMessage);
+  const purchaseFallback = derivePurchaseProductCandidate(
+    latestCustomerMessage,
+  );
   return purchaseFallback ? [purchaseFallback] : [];
 }
 

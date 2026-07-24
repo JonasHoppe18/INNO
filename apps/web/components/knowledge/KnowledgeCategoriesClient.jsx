@@ -957,9 +957,10 @@ const GAP_TYPE_LABELS = {
   missing_policy: "Missing policy",
   low_kb_coverage: "No knowledge",
   low_grounding: "Insufficient knowledge",
+  missing_live_data: "Missing live data",
 };
 
-function KnowledgeGapsSection({ onCreateCategory }) {
+function KnowledgeGapsSection() {
   const [gaps, setGaps] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -974,15 +975,15 @@ function KnowledgeGapsSection({ onCreateCategory }) {
   if (loading || gaps.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
         <h2 className="text-[13px] font-semibold text-amber-900">
-          Sona needs more knowledge — {gaps.length} {gaps.length === 1 ? "gap" : "gaps"} detected in the last 30 days
+          Sona found {gaps.length} missing {gaps.length === 1 ? "information item" : "information items"}
         </h2>
       </div>
       <p className="text-[12px] text-amber-700 leading-relaxed">
-        Sona identified tickets it couldn&apos;t answer optimally because knowledge is missing. Add the topics below to improve future replies.
+        These items affected recent drafts. They are shown internally and are never exposed as system explanations to customers.
       </p>
       <div className="space-y-2">
         {gaps.map((gap, i) => (
@@ -1004,15 +1005,31 @@ function KnowledgeGapsSection({ onCreateCategory }) {
               <p className="text-[12px] font-medium text-gray-900 mt-1">{gap.suggested_title}</p>
               <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{gap.suggested_content_hint}</p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0 h-7 px-2.5 text-[11px] border-amber-200 text-amber-800 hover:bg-amber-50"
-              onClick={() => onCreateCategory(gap.suggested_title)}
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {gap.latest_thread_id ? (
+                <Button
+                  asChild
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[11px] text-amber-800 hover:bg-amber-100/60"
+                >
+                  <Link href={`/inbox?thread=${encodeURIComponent(gap.latest_thread_id)}`}>
+                    Open ticket
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="h-7 border-amber-200 px-2.5 text-[11px] text-amber-800 hover:bg-amber-50"
+              >
+                <Link href={gap.gap_type === "missing_live_data" ? "/integrations" : "/knowledge/all"}>
+                  {gap.gap_type === "missing_live_data" ? "Review source" : "Add knowledge"}
+                  <ChevronRight className="ml-1 h-3 w-3" />
+                </Link>
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -1098,11 +1115,6 @@ export function KnowledgeCategoriesClient() {
     }
   };
 
-  const handleCreateFromGap = useCallback((suggestedTitle) => {
-    setNewLabel(suggestedTitle);
-    setCreateOpen(true);
-  }, []);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1131,10 +1143,7 @@ export function KnowledgeCategoriesClient() {
         </div>
       </div>
 
-      {/* KnowledgeGapsSection temporarily hidden — it suggested creating
-          gap-named categories which confused early customers. Re-enable once
-          we have a clearer "fill the gap inline" flow (no new category). */}
-      {/* <KnowledgeGapsSection onCreateCategory={handleCreateFromGap} /> */}
+      <KnowledgeGapsSection />
 
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

@@ -118,6 +118,10 @@ import {
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
+import {
+  detectMissingLiveDataGaps,
+  type KnowledgeGap,
+} from "./stages/knowledge-gaps.ts";
 import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.ts";
 import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
@@ -177,17 +181,7 @@ export interface PipelineInput {
   preview_document_context?: KnowledgeDocPreviewContextInput;
 }
 
-export interface KnowledgeGap {
-  gap_type:
-    | "missing_procedure"
-    | "missing_policy"
-    | "low_kb_coverage"
-    | "low_grounding";
-  intent: string;
-  suggested_title: string;
-  suggested_content_hint: string;
-  tickets_affected?: number;
-}
+export type { KnowledgeGap } from "./stages/knowledge-gaps.ts";
 
 export interface PipelineResult {
   draft_text: string | null;
@@ -778,7 +772,14 @@ function detectKnowledgeGaps(
   groundedClaimsPct: number,
   chunkCount: number,
   policyChunkCount: number,
+  resolvedFacts: Array<{ label: string; value: string }> = [],
 ): KnowledgeGap[] {
+  const liveDataGaps = detectMissingLiveDataGaps({
+    intent,
+    facts: resolvedFacts,
+  });
+  if (liveDataGaps.length > 0) return liveDataGaps;
+
   const gaps: KnowledgeGap[] = [];
   const suggestion = INTENT_GAP_SUGGESTIONS[intent];
 
@@ -3846,6 +3847,7 @@ export async function runDraftV2Pipeline(
       finalVerification.grounded_claims_pct,
       retrieved.chunks.length,
       policyChunkCount,
+      facts.facts,
     );
     if (knowledgeGaps.length > 0) {
       console.log(

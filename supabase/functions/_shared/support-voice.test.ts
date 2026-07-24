@@ -45,12 +45,98 @@ Deno.test("detectSupportVoiceViolations passes a concise employee-style reply", 
   assertEquals(detectSupportVoiceViolations(draft), []);
 });
 
+Deno.test("detectSupportVoiceViolations flags customer-facing evidence language", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Vi har ikke nogen dokumenteret version af stofpuder til A-Spire Wireless.",
+    ),
+    ["evidence_language"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "That option is not documented in our knowledge base.",
+    ),
+    ["evidence_language"],
+  );
+});
+
+Deno.test("ordinary requests for customer documentation are not evidence-language violations", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Send gerne et billede som dokumentation for skaden.",
+    ),
+    [],
+  );
+});
+
+Deno.test("stock replies flag chatbot-style live-data wording and hedged outcomes", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg kan ikke bekræfte lagerstatus her, så jeg kan ikke sige, om den kan købes lige nu.",
+    ),
+    ["stock_system_wording"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "The A-Rise currently appears to be out of stock.",
+    ),
+    ["stock_system_wording"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Live availability could not be confirmed for this product.",
+    ),
+    ["stock_system_wording"],
+  );
+});
+
+Deno.test("direct employee-style stock outcomes pass the voice guard", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Ja, A-Spire Wireless er på lager lige nu.",
+    ),
+    [],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "A-Rise er desværre udsolgt lige nu. Vi har ikke en bekræftet dato endnu.",
+    ),
+    [],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg skal lige have lagerstatus på A-Rise bekræftet, før jeg kan give dig et sikkert svar.",
+    ),
+    [],
+  );
+});
+
+Deno.test("internal workflow status codes are removed from customer replies", () => {
+  const draft =
+    "Vi afventer sporingsoplysninger fra lageret (awaiting_tracking_from_warehouse). Vi skriver, når vi har dem.";
+  assertEquals(detectSupportVoiceViolations(draft), ["internal_status_code"]);
+  assertEquals(
+    sanitizeSupportVoiceDraft(draft),
+    "Vi afventer sporingsoplysninger fra lageret. Vi skriver, når vi har dem.",
+  );
+});
+
 Deno.test("sanitizeSupportVoiceDraft removes safe filler and system qualifiers only", () => {
   const out = sanitizeSupportVoiceDraft(
     "Jeg kan ikke se refunderingen i vores system endnu.\n\nHvis du har yderligere spørgsmål, er du velkommen til at skrive.",
   );
 
   assertEquals(out, "Jeg kan ikke se refunderingen endnu.");
+});
+
+Deno.test("support voice removes compound Danish invitation filler", () => {
+  const filler =
+    "Hvis du har brug for yderligere hjælp eller har andre spørgsmål, er du velkommen til at skrive igen.";
+  assertEquals(detectSupportVoiceViolations(filler), ["generic_filler"]);
+  assertEquals(
+    sanitizeSupportVoiceDraft(`Svaret er nej. ${filler}`),
+    "Svaret er nej.",
+  );
 });
 
 Deno.test("buildSupportVoiceRewriteInstruction preserves factual safety contract", () => {
@@ -62,6 +148,11 @@ Deno.test("buildSupportVoiceRewriteInstruction preserves factual safety contract
   assertStringIncludes(instruction, "Preserve the same facts");
   assertStringIncludes(instruction, "Do not add promises");
   assertStringIncludes(instruction, "team_handoff");
+  assertStringIncludes(
+    instruction,
+    "Never turn missing evidence into an absolute no",
+  );
+  assertStringIncludes(instruction, "one direct answer sentence");
   assert(!/change facts/i.test(instruction));
 });
 

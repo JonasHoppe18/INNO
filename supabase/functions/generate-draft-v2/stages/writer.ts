@@ -67,6 +67,7 @@ import {
   isExecutedActionResult,
   normalizeActionOutcome,
 } from "../../_shared/action-outcomes.ts";
+import { sanitizeSupportVoiceDraft } from "../../_shared/support-voice.ts";
 
 export interface WriterResult {
   draft_text: string;
@@ -350,7 +351,7 @@ async function hashPromptForTrace(
 }
 
 const SIGNOFF_LINE_RE =
-  /^(?:best regards|kind regards|warm regards|all the best|regards|with warm regards|sincerely|yours sincerely|cheers|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|de bedste hilsner|mange hilsner|hilsen|god dag|have a great day|ha en god dag|auf wiedersehen|bonne journée|fijne dag)[,.!]?$/i;
+  /^(?:best regards|kind regards|warm regards|all the best|regards|with warm regards|sincerely|yours sincerely|cheers|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|bedste hilsner|de bedste hilsner|mange hilsner|hilsen|god dag|have a great day|ha en god dag|auf wiedersehen|bonne journée|fijne dag)[,.!]?$/i;
 
 // Matches shop/team name signature lines like "AceZone Support", "The AceZone Team", "Support-teamet"
 const SHOP_SIGNATURE_LINE_RE =
@@ -464,6 +465,7 @@ export function stripDuplicateGreeting(text: string): string {
 const CLOSER_PREFIXES = [
   "i hope (?:this|that) (?:helps|clarifies)[^.!?\\n]*?,?\\s*(?:and\\s+)?",
   "if you have any (?:other |further )?questions(?: or (?:need|require)[^.!?\\n]*?)?,?\\s*",
+  "hvis du har brug for (?:yderligere |mere )?hjælp eller har (?:andre |flere |yderligere )?spørgsmål,?\\s*",
 ];
 
 const CLOSER_CORES = [
@@ -476,7 +478,7 @@ const CLOSER_CORES = [
   "we(?:'re| are)? (?:always )?here (?:to help|if you need anything)",
   // Danish
   "jeg ser frem til at høre fra dig",
-  "du er (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)",
+  "(?:du er|er du) (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)",
   "(?:er du velkommen til at (?:skrive|kontakte os)|tøv ikke med at (?:skrive|kontakte os)|så skriv (?:gerne )?til os)",
   "tak for din (?:forståelse|tålmodighed)",
   "sig (?:gerne )?til,? hvis (?:du har (?:flere |yderligere )?spørgsmål|der er (?:noget )?andet|jeg kan hjælpe (?:dig )?med (?:noget )?andet)",
@@ -508,7 +510,13 @@ export function stripGenericClosers(text: string): string {
 }
 
 export function applySendReadyStyleCleanup(text: string): string {
-  return stripGenericClosers(stripDuplicateGreeting(String(text ?? "").trim()));
+  return stripGenericClosers(
+    stripGeneratedSignature(
+      stripDuplicateGreeting(
+        sanitizeSupportVoiceDraft(String(text ?? "").trim()),
+      ),
+    ),
+  );
 }
 
 function greetingPrefix(language: string): string {
@@ -943,7 +951,8 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     return [
       "# Live stock availability guardrails",
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
-      '- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert. Hvis du sender modellen/produktnavnet, kan vi tjekke det."',
+      '- If the customer asks about stock/availability and the exact product is already clear, take ownership in ONE short sentence: "Jeg undersøger lagerstatus på [produkt] og vender tilbage." / "I’ll check the stock status for [product] and get back to you." Do NOT preface this with "availability is unclear/unknown", explain that you need confirmation before answering, ask whether the customer wants you to check, or mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see.',
+      '- If the product or variant is genuinely unclear, ask exactly one concrete question, e.g. "Hvilken model og farve drejer det sig om?" Do not ask for details already present in the conversation.',
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
       "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
       "- If a knowledge chunk has risk_flags=shopify_product_not_live, the product is explicitly marked as not publicly available (waitlist, hidden price, draft, or placeholder price). Do NOT claim it is available, released, or purchasable. Do NOT provide a purchase link for it.",
@@ -963,35 +972,120 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     lines.push(`- Fact: ${fact.value}`);
     if (state === "in_stock") {
       lines.push(
-        `  Writer rule: You may say ${product}${
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
           variant && variant !== "all_variants" && variant !== "default"
             ? ` (${variant})`
             : ""
-        } is currently available in the store. Do not include exact quantity.`,
+        } is in stock right now. Do not hedge with "appears", mention Shopify/live data, or include exact quantity.`,
+      );
+    } else if (state === "low_stock") {
+      lines.push(
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
+          variant && variant !== "all_variants" && variant !== "default"
+            ? ` (${variant})`
+            : ""
+        } is in stock right now. Do not mention that stock is low and do not include exact quantity.`,
       );
     } else if (state === "out_of_stock") {
       lines.push(
-        `  Writer rule: You may say ${product}${
+        `  Writer rule: Answer the stock question in the first sentence. Say directly that ${product}${
           variant && variant !== "all_variants" && variant !== "default"
             ? ` (${variant})`
             : ""
-        } currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`,
+        } is out of stock right now. Do not hedge with "appears" or mention Shopify/live data. Only discuss a restock date if the customer asked when it will return; if no separate verified fact provides a date, say briefly that there is no confirmed date yet. Do not offer to note the customer's interest, add them to a waitlist, or contact/notify them when it returns unless a real supported action is present.`,
       );
     } else if (state === "variant_clarification_required") {
+      const variants = stockValueField(fact.value, "variants");
       lines.push(
-        "  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.",
+        `  Writer rule: Availability differs by variant/version. Ask one concrete question about which version, color, or variant they mean before answering availability${
+          variants ? `; use the known choices (${variants})` : ""
+        }. Do not explain the stock lookup.`,
+      );
+    } else if (state === "preorder") {
+      lines.push(
+        `  Writer rule: Answer directly that ${product} can be preordered right now. Do not promise a delivery or release date unless a separate verified fact provides one.`,
       );
     } else if (state === "unavailable" || state === "discontinued") {
       lines.push(
-        `  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`,
+        `  Writer rule: Answer directly that ${product} is not currently available in the store. Do not mention Shopify/live data or hedge with "appears".`,
       );
     } else {
       lines.push(
-        '  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert."',
+        `  Writer rule: The customer already identified "${product}", but its stock status still needs an internal check. Take ownership in ONE short sentence: "Jeg undersøger lagerstatus på ${product} og vender tilbage." / "I’ll check the stock status for ${product} and get back to you." Do not preface this with "availability is unclear/unknown", explain that you need confirmation before answering, ask whether the customer wants you to check, or mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see. Do not ask for the product name again.`,
       );
     }
   }
   return lines.join("\n");
+}
+
+function isRestockTimingQuestion(
+  message: string | null | undefined,
+): boolean {
+  const text = String(message ?? "");
+  return /\b(?:when|what\s+date|how\s+soon)[^.?!\n]{0,80}\b(?:back\s+in\s+stock|restock|available\s+again)|\b(?:hvornår|hvilken\s+dato)[^.?!\n]{0,80}\b(?:på\s+lager\s+igen|tilgængelig\s+igen|genopfyld|kommer\s+igen)|\b(?:wann|welches\s+datum)[^.?!\n]{0,80}\b(?:wieder\s+(?:auf\s+lager|verfügbar)|nachschub)|\b(?:när|vilket\s+datum)[^.?!\n]{0,80}\b(?:i\s+lager\s+igen|tillgänglig\s+igen)\b/i
+    .test(text);
+}
+
+const UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS = [
+  /(?:Unfortunately,\s*)?(?:there\s+is|there's|we\s+have)\s+(?:currently\s+)?no\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
+  /We\s+(?:do\s+not|don't)\s+have\s+a\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
+  /(?:Vi\s+har|Der\s+er)(?:\s+desværre)?\s+(?:ikke\s+en|ingen)\s+bekræftet\s+(?:lager)?dato(?:\s+for,?\s+hvornår\s+[^.!?\n]+)?[.!]?/gi,
+  /Leider\s+gibt\s+es\s+(?:derzeit\s+)?keinen\s+bestätigten\s+Termin(?:\s+für\s+[^.!?\n]+)?[.!]?/gi,
+  /Vi\s+har\s+tyvärr\s+inget\s+bekräftat\s+datum(?:\s+för\s+[^.!?\n]+)?[.!]?/gi,
+  /Vi\s+kan\s+(?:gerne\s+)?notere\s+din\s+interesse\s+og\s+kontakte\s+dig,\s+når\s+[^.!?\n]+(?:tilgængelig(?:e)?|på\s+lager)\s+igen[.!]?/gi,
+  /Lad\s+mig\s+vide,\s+hvis\s+du\s+ønsker\s+det[.!]?/gi,
+  /We\s+can\s+(?:note|register)\s+your\s+interest\s+and\s+(?:contact|notify|let)\s+you(?:\s+know)?\s+when\s+[^.!?\n]+(?:available|back\s+in\s+stock)(?:\s+again)?[.!]?/gi,
+  /Would\s+you\s+like\s+(?:me|us)\s+to\s+(?:note|register)\s+your\s+interest[^?]*\?/gi,
+  /Let\s+me\s+know\s+if\s+you(?:'d|\s+would)\s+like\s+that[.!]?/gi,
+];
+
+export function stripUnaskedRestockTiming(
+  draft: string,
+  latestCustomerMessage: string | null | undefined,
+): string {
+  if (
+    !isStockAvailabilityQuestion(latestCustomerMessage) ||
+    isRestockTimingQuestion(latestCustomerMessage)
+  ) {
+    return String(draft ?? "").trim();
+  }
+  let out = String(draft ?? "");
+  for (const pattern of UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS) {
+    out = out.replace(pattern, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.!?,])/g, "$1")
+    .trim();
+}
+
+const UNASKED_STOCK_SHOPPING_FILLER_PATTERNS = [
+  /Du\s+kan\s+finde\s+(?:det|den|produktet)\s+i\s+vores\s+(?:webshop|onlinebutik)[.!]?/gi,
+  /You\s+can\s+find\s+(?:it|the\s+product)\s+in\s+our\s+(?:webshop|online\s+store)[.!]?/gi,
+];
+
+export function stripUnaskedStockShoppingFiller(
+  draft: string,
+  latestCustomerMessage: string | null | undefined,
+): string {
+  if (
+    !isStockAvailabilityQuestion(latestCustomerMessage) ||
+    isPurchaseLinkRequest(latestCustomerMessage)
+  ) {
+    return String(draft ?? "").trim();
+  }
+  let out = String(draft ?? "");
+  for (const pattern of UNASKED_STOCK_SHOPPING_FILLER_PATTERNS) {
+    out = out.replace(pattern, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.!?,])/g, "$1")
+    .trim();
 }
 
 // Delivered + customer states not-received → deterministic safe workflow.
@@ -1726,7 +1820,7 @@ ABSOLUTTE FORBUD:
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal; sig kun currently available/out of stock/ask variant clarification/unknown according to the fact.
+- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal. Ved in_stock/out_of_stock: giv det direkte kundevendte udfald i første sætning uden "appears", system- eller live-data-sprog. Ved ukendt status for et tydeligt produkt: sig naturligt at lagerstatus lige skal bekræftes før et sikkert svar. Ved uklar model/variant: stil ét konkret spørgsmål.
 - ALDRIG falsk bekræftelse: skriv ALDRIG at en handling er udført medmindre actionResult har outcome "executed". Alle andre outcomes betyder at handlingen IKKE er udført. Planlagte actions er forslag der venter på menneskelig godkendelse.
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.
@@ -1808,7 +1902,7 @@ function buildCompactCoreRules(
 1. SANDHED: Brug KUN fakta fra "Verificerede fakta" og den valgte knowledge. Står et faktum dér, så sig det direkte og selvsikkert — hedge aldrig et dækket faktum. Står det der IKKE, så opfind det aldrig (ingen priser, datoer, lagerstatus, policies, personer eller processer) — spørg i stedet præcist om det ene der mangler.
 2. LØS SAGEN: Du er en erfaren kundeservice-kollega med mandat. Led med beslutningen/svaret i FØRSTE sætning. Sig aldrig "vi vender tilbage"/"sender videre" medmindre du reelt afventer noget eksternt. Skriv aldrig at en handling ER udført medmindre actionResult har outcome "executed".
 3. FØLG #-BLOKKENE: Blokke markeret med # (Ordre-match, FEJLFINDINGS-GUIDE, AKTIVT FLOW, refunderingsstatus, KØBT HOS TREDJEPART m.fl.) er bindende instruktioner for netop denne sag — følg dem præcist, de overtrumfer generelle regler.
-4. TONE: Menneskelig kollega — aldrig "vores system" eller proces-sprog, ingen fyld-indledninger ("Tak for din besked..."), sig hver pointe én gang, ingen opsummerende recap. Korte afsnit (1-2 sætninger) med luft imellem. MENNESKELIG TONE (kritisk): Åbn ALDRIG med robot-floskler som "I can help you with…", "I'd be happy to assist…", "I can assist you with…", "I'm here to help…", "Jeg kan hjælpe dig med…", "Jeg vil med glæde assistere…". Gå direkte til sagen og ejerskab: fx "Selvfølgelig — jeg retter adressen på #4845 for dig." / "Of course — I'll get that address on #4845 sorted for you." Kunden må ikke kunne mærke at det er en AI. SERVICE-RECOVERY: Påpeger kunden en fejl/forsinkelse/et brudt løfte fra vores side (og fakta bekræfter eller ikke modsiger det), så anerkend det eksplicit som det FØRSTE, beklag én gang, og giv konkret status + konkret næste skridt — aldrig "Jeg forstår, at det kan være frustrerende, men ..." og aldrig "hurtigst muligt" som eneste handling. MOMENTUM: Har kunden allerede bedt om handlingen og leveret det vi bad om, så spørg aldrig om de "ønsker at gå videre" — bekræft næste skridt og hvad kunden kan forvente.
+4. TONE: Menneskelig kollega — aldrig "vores system" eller proces-sprog, ingen fyld-indledninger ("Tak for din besked..."), sig hver pointe én gang, ingen opsummerende recap. Forklar ALDRIG hvordan svaret blev fundet: ingen kundevendte formuleringer som "ikke dokumenteret", "ifølge vores dokumentation", "vidensbasen" eller "verificerede oplysninger". Er et ja/nej-faktum dækket, så sig udfaldet direkte. Er det ikke dækket, så bevar usikkerheden i naturligt kundesprog (fx "Jeg kan desværre ikke finde den variant i vores sortiment") — gør aldrig manglende evidens til et kategorisk nej. Et simpelt produktspørgsmål får én direkte svar-sætning og højst én relevant forklaring; ingen uopfordrede specs, salgstekst eller lagerbemærkninger. Brug "i sortimentet" om katalogfakta — aldrig "tilgængelig/available" uden verificeret live-lagerstatus. Korte afsnit (1-2 sætninger) med luft imellem. MENNESKELIG TONE (kritisk): Åbn ALDRIG med robot-floskler som "I can help you with…", "I'd be happy to assist…", "I can assist you with…", "I'm here to help…", "Jeg kan hjælpe dig med…", "Jeg vil med glæde assistere…". Gå direkte til sagen og ejerskab: fx "Selvfølgelig — jeg retter adressen på #4845 for dig." / "Of course — I'll get that address on #4845 sorted for you." Kunden må ikke kunne mærke at det er en AI. SERVICE-RECOVERY: Påpeger kunden en fejl/forsinkelse/et brudt løfte fra vores side (og fakta bekræfter eller ikke modsiger det), så anerkend det eksplicit som det FØRSTE, beklag én gang, og giv konkret status + konkret næste skridt — aldrig "Jeg forstår, at det kan være frustrerende, men ..." og aldrig "hurtigst muligt" som eneste handling. MOMENTUM: Har kunden allerede bedt om handlingen og leveret det vi bad om, så spørg aldrig om de "ønsker at gå videre" — bekræft næste skridt og hvad kunden kan forvente.
 5. LÆNGDE: Transaktionelle svar korte (2-5 sætninger). Guides/procedurer komplette — ALLE trin fra den valgte knowledge, hvert trin på egen linje, udelad aldrig dækkede trin.
 
 OPSLAGSREGLER (brug når situationen opstår):
@@ -1847,6 +1941,7 @@ SÅDAN SVARER DU (vigtigst):
 - Svar som en travl, erfaren senior-medarbejder der allerede har besluttet sig. Led med beslutningen / svaret / næste konkrete handling i den FØRSTE sætning. Højst 1-2 sætninger mere — UNDTAGELSE: følg "FEJLFINDINGS-GUIDE"-blokken hvis den findes nedenfor.
 - Reciter ALDRIG policy, betingelser, frister, specs eller edge-cases kunden ikke spurgte om. Giv kun den ene del der er relevant lige nu (fx kun returadressen — ikke hele return-policyen).
 - Udtræk højst ÉT relevant faktum fra knowledge. Gengiv aldrig knowledge ordret, og lim aldrig flere kilder sammen — UNDTAGELSE: en valgt fejlfindings-guides TRIN skal gengives komplet (se "FEJLFINDINGS-GUIDE"-blokken).
+- Oversæt altid knowledge til almindeligt kundesprog. Skriv aldrig "ikke dokumenteret", "ifølge vores dokumentation", "vidensbasen" eller "verificerede oplysninger" til kunden. Er et ja/nej-faktum dækket, så sig det direkte. Er det ikke dækket, så bevar usikkerheden naturligt (fx "Jeg kan desværre ikke finde den variant i vores sortiment") uden at gøre den til et kategorisk nej. Ved simple produktspørgsmål: én direkte svar-sætning + højst én relevant forklaring; ingen uopfordrede specs, salgstekst eller lagerbemærkninger. Brug "i sortimentet" om katalogfakta — aldrig "tilgængelig/available" uden verificeret live-lagerstatus.
 - Hvis vi har nok info til at handle, så gør det — bed ikke om mere. Spørg KUN om felter i missing_required_fields, og kun hvis de faktisk mangler.
 - Undgå defensivt proces-sprog: "vi vurderer", "når vi har bekræftet", "hvis du er berettiget", "send flere billeder", "vi vender tilbage", "sagen sendes videre". Tag beslutningen nu, eller bed præcist om det ene der mangler.
 - Korte afsnit på 1-2 sætninger med tom linje imellem. Ingen indledende fyld ("Tak for din besked..."), gentag ikke kundens spørgsmål.
@@ -1861,7 +1956,7 @@ ABSOLUTTE FORBUD (faktuel sikkerhed):
 - UVERIFICERET ORDRE: Hvis kunden HAR oplyst et ordrenummer der IKKE står i "Verificerede fakta" under "Ordre fundet", må du aldrig skrive "din ordre #X" som om den findes eller love handlinger på den. Forklar venligt at vi ikke kan finde nummeret, og spørg DA hvor produktet er købt.
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn eller email-adresser — tilføjes automatisk.
-- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok; ellers sig at live availability ikke kan bekræftes.
+- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok. Ved in_stock/out_of_stock: sig udfaldet direkte og menneskeligt i første sætning uden "appears", Shopify-, system- eller live-data-sprog. Ved ukendt status for et tydeligt produkt: sig naturligt at lagerstatus lige skal bekræftes før et sikkert svar. Ved uklar model/variant: stil ét konkret spørgsmål.
 - ALDRIG falsk bekræftelse: skriv aldrig at en handling ER udført medmindre actionResult har outcome "executed". Alle andre outcomes betyder at handlingen IKKE er udført. Planlagte actions venter på godkendelse.
 - ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
 - KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.
@@ -2732,10 +2827,17 @@ Returner JSON:
       ),
       { latestCustomerMessage, language: replyLanguage },
     );
+    const stockFocusedDraft = stripUnaskedStockShoppingFiller(
+      stripUnaskedRestockTiming(
+        cleanedDraft,
+        latestCustomerMessage,
+      ),
+      latestCustomerMessage,
+    );
     return {
       draft_text: applySendReadyStyleCleanup(
         normalizeOpeningGreeting(
-          cleanedDraft,
+          stockFocusedDraft,
           salutationName.name,
           replyLanguage,
           resolvedCustomerName?.first_name === null,

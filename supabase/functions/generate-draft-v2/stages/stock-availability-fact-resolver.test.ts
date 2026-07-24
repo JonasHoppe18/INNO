@@ -102,6 +102,29 @@ Deno.test("existing products_mentioned take precedence over fallback candidate",
   );
 });
 
+Deno.test("ordinary product questions do not trigger an irrelevant stock lookup", () => {
+  assertEquals(
+    stockProductQueriesForFactResolver({
+      plan: plan(),
+      caseState: caseState(["A-Rise"]),
+      latestCustomerMessage:
+        "We would like to discuss a partnership around A-Rise headsets.",
+    }),
+    [],
+  );
+});
+
+Deno.test("purchase-link requests still resolve the product for a grounded link", () => {
+  assertEquals(
+    stockProductQueriesForFactResolver({
+      plan: plan(),
+      caseState: caseState(["A-Rise"]),
+      latestCustomerMessage: "Where can I buy the A-Rise?",
+    }),
+    ["A-Rise"],
+  );
+});
+
 Deno.test("stock fact emitted for confident single product match", () => {
   const [resolved] = summarizeStockAvailability("A-Spire Wireless", [fact()]);
   assertEquals(resolved.label, "Live stock availability");
