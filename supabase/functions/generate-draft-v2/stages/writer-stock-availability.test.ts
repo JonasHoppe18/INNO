@@ -85,6 +85,22 @@ Deno.test("simple stock question removes unasked restock timing", () => {
   );
 });
 
+Deno.test("simple stock question removes unsupported interest and restock notification offers", () => {
+  assert(
+    stripUnaskedRestockTiming(
+      "Hej,\n\nA-Rise stoførepuder er desværre ikke på lager lige nu. Vi kan notere din interesse og kontakte dig, når de er tilgængelige igen. Lad mig vide, hvis du ønsker det.",
+      "Har I A-Rise stoførepuder på lager?",
+    ) ===
+      "Hej,\n\nA-Rise stoførepuder er desværre ikke på lager lige nu.",
+  );
+  assert(
+    stripUnaskedRestockTiming(
+      "Hi,\n\nA-Rise ear pads are out of stock. Would you like me to note your interest so we can contact you if they restock?",
+      "Are A-Rise ear pads in stock?",
+    ) === "Hi,\n\nA-Rise ear pads are out of stock.",
+  );
+});
+
 Deno.test("restock timing is kept when the customer asks when it returns", () => {
   const draft =
     "The A-Rise is out of stock. Unfortunately, there is no confirmed restock date yet.";

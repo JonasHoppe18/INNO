@@ -992,7 +992,7 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
           variant && variant !== "all_variants" && variant !== "default"
             ? ` (${variant})`
             : ""
-        } is out of stock right now. Do not hedge with "appears" or mention Shopify/live data. Only discuss a restock date if the customer asked when it will return; if no separate verified fact provides a date, say briefly that there is no confirmed date yet.`,
+        } is out of stock right now. Do not hedge with "appears" or mention Shopify/live data. Only discuss a restock date if the customer asked when it will return; if no separate verified fact provides a date, say briefly that there is no confirmed date yet. Do not offer to note the customer's interest, add them to a waitlist, or contact/notify them when it returns unless a real supported action is present.`,
       );
     } else if (state === "variant_clarification_required") {
       const variants = stockValueField(fact.value, "variants");
@@ -1032,6 +1032,11 @@ const UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS = [
   /(?:Vi\s+har|Der\s+er)\s+desværre\s+(?:ikke\s+en|ingen)\s+bekræftet\s+(?:lager)?dato(?:\s+for,?\s+hvornår\s+[^.!?\n]+)?[.!]?/gi,
   /Leider\s+gibt\s+es\s+(?:derzeit\s+)?keinen\s+bestätigten\s+Termin(?:\s+für\s+[^.!?\n]+)?[.!]?/gi,
   /Vi\s+har\s+tyvärr\s+inget\s+bekräftat\s+datum(?:\s+för\s+[^.!?\n]+)?[.!]?/gi,
+  /Vi\s+kan\s+(?:gerne\s+)?notere\s+din\s+interesse\s+og\s+kontakte\s+dig,\s+når\s+[^.!?\n]+(?:tilgængelig(?:e)?|på\s+lager)\s+igen[.!]?/gi,
+  /Lad\s+mig\s+vide,\s+hvis\s+du\s+ønsker\s+det[.!]?/gi,
+  /We\s+can\s+(?:note|register)\s+your\s+interest\s+and\s+(?:contact|notify|let)\s+you(?:\s+know)?\s+when\s+[^.!?\n]+(?:available|back\s+in\s+stock)(?:\s+again)?[.!]?/gi,
+  /Would\s+you\s+like\s+(?:me|us)\s+to\s+(?:note|register)\s+your\s+interest[^?]*\?/gi,
+  /Let\s+me\s+know\s+if\s+you(?:'d|\s+would)\s+like\s+that[.!]?/gi,
 ];
 
 export function stripUnaskedRestockTiming(
