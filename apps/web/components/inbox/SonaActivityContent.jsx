@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   BookOpen,
   Brain,
@@ -507,11 +508,21 @@ export function SonaActivityContent({ diagnostic, shopId }) {
               const gapId = `${gap.gap_type}-${index}`;
               const isSaved = savedGapIds.has(gapId);
               const isAdding = addingGapId === gapId;
+              const isLiveDataGap = gap.gap_type === "missing_live_data";
               return (
                 <div key={gapId} className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
                   <p className="text-sm font-medium text-amber-950">{gap.suggested_title || humanize(gap.gap_type)}</p>
                   <p className="mt-1 text-xs leading-relaxed text-amber-900/70">{gap.suggested_content_hint}</p>
-                  {isSaved ? (
+                  {isLiveDataGap ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {gap.product ? <StatusBadge tone="warning">{gap.product}</StatusBadge> : null}
+                      {gap.source ? <StatusBadge>{humanize(gap.source)}</StatusBadge> : null}
+                      {gap.reason ? <StatusBadge>{humanize(gap.reason)}</StatusBadge> : null}
+                      <Button asChild type="button" size="sm" variant="outline" className="ml-auto">
+                        <Link href="/integrations">Review inventory source</Link>
+                      </Button>
+                    </div>
+                  ) : isSaved ? (
                     <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                       <Check className="size-3.5" /> Saved to knowledge base
                     </p>
