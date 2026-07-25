@@ -342,8 +342,12 @@ const FAMILIES: CommitmentFamily[] = [
     violationType: "unsupported_process_promise",
     authorizingActionType: /return|exchange|replac|refund|warrant|repair/i,
     commitmentPatterns: [
-      // EN: "we/I will set up / open / create / initiate / start a <sagsgang>"
-      /\b(?:we|i)(?:['’]ll| will)\s+(?:set\s+up|open|create|initiate|start|arrange|process)\s+(?:a|an|the)\s+(?:rma|return\s+merchandise\s+authorization|warranty\s+(?:case|claim|process)|repair\s+(?:case|process)|case|claim|ticket|process)\b/i,
+      // EN: "we/I will set up / open / create / initiate / start a <sagsgang>".
+      // Op til to kvalificerende ord maa staa mellem artiklen og hovedordet:
+      // "a warranty repair process", "a new support ticket". Uden det slap
+      // "We will initiate a warranty repair process" igennem, fordi moenstret
+      // krævede at hovedordet fulgte umiddelbart efter artiklen.
+      /\b(?:we|i)(?:['’]ll| will)\s+(?:set\s+up|open|create|initiate|start|arrange)\s+(?:a|an|the)\s+(?:\w+\s+){0,2}(?:rma|return\s+merchandise\s+authorization|warranty|repair|case|claim|ticket|process)\b/i,
       // EN: "keep an eye on / watch your email (for instructions)" — en
       // henvisning til en mail vi ikke har lovet nogen at sende.
       /\b(?:keep\s+an\s+eye\s+on|watch|look\s+out\s+for)\s+(?:your\s+)?(?:e-?mail|inbox)\b/i,
