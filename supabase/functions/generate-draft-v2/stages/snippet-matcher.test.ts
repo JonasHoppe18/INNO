@@ -1,5 +1,7 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  buildUserPrompt,
+  detectTroubleshootingExhausted,
   matchSnippets,
   selectFromRanked,
   type MatchCandidate,
@@ -278,4 +280,66 @@ Deno.test("no-op when nothing selected or chunks lack document identity", () => 
     }).map((c) => c.id),
     ["1"],
   );
+});
+
+// ── T-50988: matcheren skal kende pipelinens egen beslutning ──────────────
+//
+// Målt paa den rigtige produktions-kandidatpulje afstod matcheren 4 ud af 6
+// gange og fandt "Warranty claims" 2/6. Med resolution-stage i prompten: 0/6
+// afstaaelser, 6/6. Aarsagen er at den bedoemte kandidaterne mod kundens RAA
+// besked (kun symptomer), mens pipelinen for laengst havde besluttet at svaret
+// skal igangsaette en garantireparation.
+
+Deno.test("buildUserPrompt medtager resolution-stage naar den er kendt", () => {
+  const p = buildUserPrompt("Batteriet driller.", [
+    { id: "1", title: "Warranty claims", excerpt: "Ask for the order number." },
+  ], { stage: "initiate_warranty_repair" });
+  assertStringIncludes(p, "initiate_warranty_repair");
+  assertStringIncludes(p, "Batteriet driller.");
+});
+
+Deno.test("buildUserPrompt siger til naar fejlfindingen er udtoemt", () => {
+  const p = buildUserPrompt("Intet virker.", [
+    { id: "1", title: "Warranty claims", excerpt: "Ask for the order number." },
+  ], { stage: "initiate_warranty_repair", troubleshootingExhausted: true });
+  assertStringIncludes(p.toLowerCase(), "already exhausted troubleshooting");
+});
+
+Deno.test("buildUserPrompt er uaendret naar der ingen resolution-kontekst er", () => {
+  const cands = [{ id: "1", title: "T", excerpt: "E" }];
+  assertEquals(
+    buildUserPrompt("Hej", cands),
+    buildUserPrompt("Hej", cands, undefined),
+  );
+});
+
+// ── detektor for udtoemt fejlfinding ──────────────────────────────────────
+
+Deno.test("detectTroubleshootingExhausted fanger de reelle formuleringer", () => {
+  for (
+    const msg of [
+      "I have tried each of these troubleshooting tips to no avail.",
+      "It seems none of the troubleshooting tips had any effect.",
+      "I already tried that and it still doesn't work.",
+      "Jeg har prøvet alle trin uden held.",
+      "Det virker stadig ikke efter jeg har prøvet det hele.",
+      "Intet af det hjalp desværre.",
+    ]
+  ) {
+    assertEquals(detectTroubleshootingExhausted(msg), true, `burde fange: ${msg}`);
+  }
+});
+
+Deno.test("detectTroubleshootingExhausted fyrer ikke paa almindelige beskeder", () => {
+  for (
+    const msg of [
+      "I tried to contact you last week about my order.",
+      "Can you tell me how to pair the headset?",
+      "Hvornaar sender I min ordre afsted?",
+      "I would like to try the A-Spire before I buy it.",
+      "",
+    ]
+  ) {
+    assertEquals(detectTroubleshootingExhausted(msg), false, `burde IKKE fange: ${msg}`);
+  }
 });
