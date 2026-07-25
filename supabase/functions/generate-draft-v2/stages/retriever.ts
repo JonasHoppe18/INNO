@@ -10,6 +10,7 @@ import {
 } from "./retriever-coherence.ts";
 import {
   augmentWithSameDocumentSiblings,
+  detectTroubleshootingExhausted,
   type MatchCandidate,
   matchSnippets,
 } from "./snippet-matcher.ts";
@@ -2701,11 +2702,20 @@ export async function runRetriever(
       excerpt: c.content,
     }));
     try {
+      // T-50988: matcheren bedoemte tidligere kandidaterne mod kundens RAA
+      // besked alene. Paa en garantisag hvor kunden kun beskriver symptomer
+      // scorede den derfor "Warranty claims" til 0 og afstod (maalt 4/6 paa
+      // den rigtige kandidatpulje), hvorefter policy-fallbacken hentede en
+      // batteri-forklaring. Pipelinen har for laengst besluttet hvad svaret
+      // skal udrette — den beslutning skal matcheren kende.
       const matched = await matchSnippets(customerMessage, candidates, {
         model: SNIPPET_MATCHER_MODEL,
         threshold: SNIPPET_MATCHER_THRESHOLD,
         maxSelected: knowledgeBudget,
         marginMin: SNIPPET_MATCHER_MARGIN,
+      }, {}, {
+        stage: plan.resolution_stage ?? null,
+        troubleshootingExhausted: detectTroubleshootingExhausted(customerMessage),
       });
       finalChunks = matched.selected
         .map((s) => byId.get(s.id))

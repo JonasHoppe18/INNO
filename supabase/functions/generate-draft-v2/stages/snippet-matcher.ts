@@ -52,7 +52,16 @@ const SYSTEM_PROMPT =
   "underlying problem answers their real need at least as well as a " +
   "return/refund-process snippet — score the fix as high as (or higher than) " +
   "the return snippet, and keep both relevant, so the fix can be offered first " +
-  "with return as the fallback.";
+  "with return as the fallback. " +
+  // T-50988: uden denne undtagelse vandt fejlfindings-indhold ogsaa naar
+  // kunden udtrykkeligt havde proevet det hele forgaeves. Matcheren afstod
+  // derfor 4/6 gange paa en aegte garantisag, og fallbacken hentede en
+  // batteri-forklaring til en kunde der skulle have returtrin.
+  "EXCEPTION: if the customer says the fix has already been attempted without " +
+  "success, or the upstream resolution below says the case has moved past " +
+  "diagnosis, then a snippet that merely re-explains or re-diagnoses the " +
+  "symptom does NOT answer their need — score the return/warranty-process " +
+  "snippet highest instead.";
 
 // Advisory only for gpt-4o-mini: callOpenAIJson enforces json_schema structured
 // output for gpt-5 models but falls back to json_object mode otherwise, so this
@@ -79,9 +88,40 @@ const RANKING_SCHEMA: JsonSchema = {
   },
 };
 
+// Formuleringer hvor kunden siger at fejlfindingen ER proevet og fejlede.
+// Bevidst snaevre: et bart "tried" maa ikke taelle ("I tried to contact you").
+// Hvert moenster kraever baade et forsoeg OG et udtrykt fravaer af virkning.
+const EXHAUSTED_PATTERNS: RegExp[] = [
+  /\b(?:tried|attempted)\b[^.?!\n]{0,60}\b(?:to no avail|without (?:any )?(?:luck|success)|and it (?:still )?(?:doesn['’]t|does not|didn['’]t|did not) work)\b/i,
+  /\b(?:none|neither)\b[^.?!\n]{0,60}\b(?:worked|helped|had any effect|made any difference|resolved)\b/i,
+  /\b(?:still|nothing)\b[^.?!\n]{0,40}\b(?:doesn['’]t work|does not work|isn['’]t working|not working|helped)\b/i,
+  /\balready tried\b/i,
+  /\bhar\b[^.?!\n]{0,40}\bprøvet\b[^.?!\n]{0,60}\buden held\b/i,
+  /\bvirker stadig ikke\b/i,
+  /\b(?:intet|ingenting|ingen af (?:dem|delene))\b[^.?!\n]{0,40}\b(?:hjalp|virkede|havde nogen effekt)\b/i,
+  /\bhar allerede prøvet\b/i,
+];
+
+export function detectTroubleshootingExhausted(
+  customerMessage: string | null | undefined,
+): boolean {
+  const text = String(customerMessage ?? "");
+  if (!text.trim()) return false;
+  return EXHAUSTED_PATTERNS.some((re) => re.test(text));
+}
+
+export type ResolutionContext = {
+  // Plannerens besluttede resolution_stage. Matcheren saa den aldrig foer, og
+  // bedoemte derfor kandidater mod kundens symptom-tekst i stedet for mod hvad
+  // svaret faktisk skal udrette.
+  stage?: string | null;
+  troubleshootingExhausted?: boolean;
+};
+
 export function buildUserPrompt(
   customerMessage: string,
   candidates: MatchCandidate[],
+  resolution?: ResolutionContext,
 ): string {
   const blocks = candidates.map((c, i) => {
     const lines = [`#${i + 1} [id: ${c.id}]`];
@@ -90,8 +130,26 @@ export function buildUserPrompt(
     lines.push(`Excerpt: ${c.excerpt.slice(0, 500)}`);
     return lines.join("\n");
   });
+  const resolutionLines: string[] = [];
+  const stage = String(resolution?.stage ?? "").trim();
+  if (stage) {
+    resolutionLines.push(
+      `What this reply must accomplish (already decided upstream): ${stage}.`,
+    );
+  }
+  if (resolution?.troubleshootingExhausted) {
+    resolutionLines.push(
+      "The customer has ALREADY exhausted troubleshooting, so snippets that " +
+        "re-explain or re-diagnose the symptom do NOT answer the real need.",
+    );
+  }
+  const resolutionBlock = resolutionLines.length
+    ? `${resolutionLines.join(" ")}\n\n`
+    : "";
+
   return (
     `Customer message:\n${customerMessage}\n\n` +
+    resolutionBlock +
     `Candidates (Question is the strongest signal, then Title, then Excerpt):\n` +
     `${blocks.join("\n\n")}\n\n` +
     `Return JSON {"rankings":[{"id","relevance","reason"}]} with one entry per ` +
@@ -157,6 +215,7 @@ export async function matchSnippets(
   candidates: MatchCandidate[],
   opts: MatchOptions,
   deps: { callJson?: CallJson } = {},
+  resolution?: ResolutionContext,
 ): Promise<MatchResponse> {
   if (candidates.length === 0) {
     return { selected: [], ranked: [], abstained: true };
@@ -165,7 +224,7 @@ export async function matchSnippets(
   const raw = await callJson<{ rankings: MatchResult[] }>({
     model: opts.model,
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: buildUserPrompt(customerMessage, candidates),
+    userPrompt: buildUserPrompt(customerMessage, candidates, resolution),
     // One entry per candidate (pool can be 15) with a reason each — 800 was
     // within truncation range of a verbose response.
     maxTokens: 2000,
