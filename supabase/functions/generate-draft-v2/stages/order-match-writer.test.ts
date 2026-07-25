@@ -59,9 +59,30 @@ Deno.test("multiple_email_matches directive asks for order number, exposes only 
   assertStringIncludes(d, "2"); // safe summary count only
 });
 
+// T-50988: single_email_match var den ENESTE ordre-match-tilstand hvis direktiv
+// kun indeholdt et forbud ("lov ikke ombytning...") og ingen fremadrettet
+// instruktion. Alle andre tilstande siger enten "handl" eller "bed om X".
+// Resultatet observeret live: writeren opfandt en proces den ikke kan starte
+// ("I'll set up an RMA... keep an eye on your email") for at undgaa de
+// forbudte verber, og bad ikke om den ordrebekraeftelse der ville laase op.
 Deno.test("single_email_match directive flags email-fallback origin", () => {
   const d = buildOrderMatchDirective(match("single_email_match")).toLowerCase();
   assertStringIncludes(d, "email");
+});
+
+Deno.test("single_email_match directive tells the writer what to DO, not only what to avoid", () => {
+  const d = buildOrderMatchDirective(match("single_email_match")).toLowerCase();
+  // "bekraeftet" og "ordrenummer" optraeder allerede INDE i forbuddet, saa de
+  // alene beviser intet. Kravet er en imperativ opfordring til at spoerge —
+  // samme form som soesterstilstandene bruger ("Bed kunden oplyse/bekraefte").
+  assertStringIncludes(d, "bed kunden");
+  // Og den fundne ordre skal navngives konkret, ikke omtales abstrakt.
+  assertStringIncludes(d, "#1001");
+});
+
+Deno.test("single_email_match directive forbids promising a process it cannot start", () => {
+  const d = buildOrderMatchDirective(match("single_email_match")).toLowerCase();
+  assertStringIncludes(d, "lov aldrig");
 });
 
 Deno.test("missing_identifiers directive asks for order number first then email", () => {

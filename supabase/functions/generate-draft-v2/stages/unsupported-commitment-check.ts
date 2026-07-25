@@ -20,7 +20,8 @@ export type UnsupportedCommitmentViolationType =
   | "unsupported_replacement_promise"
   | "unsupported_exchange_promise"
   | "unsupported_document_promise"
-  | "unsupported_discount_promise";
+  | "unsupported_discount_promise"
+  | "unsupported_process_promise";
 
 export type UnsupportedCommitmentCheckInput = {
   draft_text: string;
@@ -323,6 +324,38 @@ const FAMILIES: CommitmentFamily[] = [
       /\bwe\s+don['’]t\s+offer\s+(?:team\s+)?(?:discounts?|special\s+pric(?:e|ing))\b/i,
       /\bwe\s+(?:do\s+not|don['’]t)\s+have\s+(?:team\s+)?(?:prices?|pricing|discounts?)\b/i,
       /\bour\s+prices?\s+are\s+the\s+same\s+for\s+all\b/i,
+    ],
+  },
+  // T-50988: PROCES-løfter. Observeret live da writeren var blokeret fra at
+  // love ombytning (email-fallback ordre-match) og i stedet opfandt en
+  // sagsgang den ikke kan starte: "I'll set up a return merchandise
+  // authorization (RMA) for you... Please keep an eye on your email for
+  // further instructions."
+  //
+  // Ingen anden familie dækker dette. Det er hverken refundering, label,
+  // ombytning, erstatning eller dokument — det er et løfte om at IGANGSÆTTE
+  // noget. Skadesmønstret er værre end de øvrige: kunden får ingen fejl at
+  // reagere på, han venter bare på en mail der aldrig kommer.
+  //
+  // Autoriseres af enhver action der faktisk starter en sagsgang.
+  {
+    violationType: "unsupported_process_promise",
+    authorizingActionType: /return|exchange|replac|refund|warrant|repair/i,
+    commitmentPatterns: [
+      // EN: "we/I will set up / open / create / initiate / start a <sagsgang>"
+      /\b(?:we|i)(?:['’]ll| will)\s+(?:set\s+up|open|create|initiate|start|arrange|process)\s+(?:a|an|the)\s+(?:rma|return\s+merchandise\s+authorization|warranty\s+(?:case|claim|process)|repair\s+(?:case|process)|case|claim|ticket|process)\b/i,
+      // EN: "keep an eye on / watch your email (for instructions)" — en
+      // henvisning til en mail vi ikke har lovet nogen at sende.
+      /\b(?:keep\s+an\s+eye\s+on|watch|look\s+out\s+for)\s+(?:your\s+)?(?:e-?mail|inbox)\b/i,
+      // EN: "you will receive / we will send ... further instructions"
+      /\b(?:you(?:['’]ll| will)\s+receive|we(?:['’]ll| will)\s+send)\b[^.?!\n]{0,40}\b(?:further|more|additional)\s+instructions\b/i,
+      // DA: "vi/jeg opretter/starter/igangsætter en sag"
+      /\b(?:vi|jeg)\s+(?:vil\s+)?(?:opretter?|starter?|igangsætter?|åbner?)\s+(?:en|et)\s+(?:garantisag|reklamationssag|reklamation|sag|sagsnummer|ticket)\b/i,
+      // DA: "du hører fra os" / "vi vender tilbage" — en fremtid uden afsender.
+      /\bdu\s+hører\s+fra\s+os\b/i,
+      /\b(?:vi|jeg)\s+vender\s+tilbage\b/i,
+      // DA: "hold øje med din mail"
+      /\bhold\s+øje\s+med\s+din\s+(?:mail|e-?mail|indbakke)\b/i,
     ],
   },
 ];
