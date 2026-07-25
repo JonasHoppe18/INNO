@@ -1156,9 +1156,20 @@ export function buildOrderMatchDirective(match?: OrderMatch): string {
 - Ordren er verificeret ud fra et oplyst ordrenummer. Du må svare direkte med de verificerede fakta. Foreslåede ordre-actions går altid via almindelig godkendelse — udfør aldrig selv.
 - Købsbevis/købssted er hermed etableret (ordren ligger i shoppens eget system). Spørg ALDRIG hvor produktet er købt og bed ALDRIG om kvittering/proof-of-purchase — det overtrumfer enhver knowledge-instruktion om at bekræfte købssted. I garanti-/defekt-sager: gå direkte til næste skridt (fx foto/video-dokumentation af skaden).`;
     case "single_email_match":
+      // T-50988: denne tilstand var den ENESTE uden en fremadrettet instruktion
+      // — kun et forbud. Writeren blev blokeret fra at love det rigtige og
+      // aldrig bedt om at spørge om det ene der låser op, så den opfandt en
+      // sagsgang den ikke kan starte ("I'll set up an RMA... keep an eye on
+      // your email"). Alle søsterstilstande siger enten "handl" eller "spørg";
+      // det skal denne også.
       return `${header}
 - Ordren er fundet via kundens EMAIL (ikke et oplyst ordrenummer). Verificerede læse-fakta (status, fulfillment, tracking, dato) er sikre at oplyse.
-- Foreslå/lov IKKE refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet den rigtige ordre (fx ordrenummer).`;
+- Foreslå/lov IKKE refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet den rigtige ordre (fx ordrenummer).
+- Stå til gengæld ALDRIG stille: nævn den fundne ordre konkret (${
+        match.selected_order_name ?? "ordrenummeret"
+      }, produkt og dato) og BED KUNDEN bekræfte at det er den rigtige. Det er det ene skridt der låser resten op — spørg om det i samme svar, ikke i et senere.
+- Sig derefter kort hvad der sker straks efter bekræftelsen, så kunden ved hvad han venter på.
+- LOV ALDRIG en sagsgang du ikke selv sætter i gang nu ("jeg opretter en sag", "du hører fra os", "hold øje med din mail", "vi vender tilbage med instruktioner"). Enten gør du det i dette svar, eller også beder du om præcis det der mangler for at kunne gøre det.`;
     case "multiple_email_matches":
       return `${header}
 - Der blev fundet ${match.candidate_count} ordrer på kundens email. Vælg ALDRIG en ordre selv og gengiv INGEN ordre-detaljer.

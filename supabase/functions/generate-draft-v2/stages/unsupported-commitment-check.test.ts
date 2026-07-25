@@ -832,3 +832,85 @@ Deno.test("READINESS-9: customer-ready fallback for team/B2B requests stays comp
   assertEquals(r.compliant, true);
   assertEquals(r.violations.length, 0);
 });
+
+// ── T-50988: proces-løfter ────────────────────────────────────────────────
+//
+// Observeret live på T-50988: writeren blev blokeret fra at love ombytning
+// (email-fallback ordre-match) og opfandt i stedet en proces den ikke kan
+// starte: "I'll set up a return merchandise authorization (RMA) for you...
+// Please keep an eye on your email for further instructions."
+//
+// Ingen eksisterende familie dækker dette: det er hverken refundering,
+// label, ombytning, erstatning eller dokument — det er et løfte om at
+// IGANGSÆTTE en sagsgang. Kunden venter så på en mail der aldrig kommer.
+
+Deno.test("T-50988: RMA-oprettelse uden bagvedliggende action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "I'll set up a return merchandise authorization (RMA) for you so we can get your headset repaired.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.requires_review, true);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("T-50988: 'we'll initiate a warranty process' uden action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "We'll initiate a warranty process to address these issues.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("T-50988: 'further instructions by email' uden action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Please keep an eye on your email for further instructions on how to proceed.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("T-50988: dansk 'jeg opretter en sag' uden action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg opretter en garantisag for dig med det samme.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("T-50988: dansk 'du hører fra os' uden action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Du hører fra os hurtigst muligt med nærmere instruktioner.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+// ── proces-løfter: MÅ IKKE fyre ───────────────────────────────────────────
+
+Deno.test("T-50988: proces-løfte MED godkendt action → tilladt", () => {
+  const result = checkUnsupportedCommitments({
+    // Skal ramme SAMME moenster som den flaggede variant — ellers beviser
+    // testen kun at moenstret ikke matcher, ikke at action'en autoriserer.
+    draft_text: "I'll open a warranty case for you right away.",
+    approved_actions: [{ type: "initiate_return" }],
+  });
+  assertEquals(result.compliant, true);
+});
+
+Deno.test("T-50988: at BEDE om bekræftelse er ikke et proces-løfte", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Can you confirm that order #2070 is the right one? Then I can get the warranty case moving.",
+  });
+  assertEquals(result.compliant, true);
+});
+
+Deno.test("T-50988: at beskrive kundens eget næste skridt er ikke et løfte", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "You can start the warranty claim yourself using the form on our website.",
+  });
+  assertEquals(result.compliant, true);
+});
