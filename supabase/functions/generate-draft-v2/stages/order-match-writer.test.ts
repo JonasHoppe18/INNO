@@ -70,14 +70,26 @@ Deno.test("single_email_match directive flags email-fallback origin", () => {
   assertStringIncludes(d, "email");
 });
 
-Deno.test("single_email_match directive tells the writer what to DO, not only what to avoid", () => {
+// Foerste fix bad writeren om at BEDE kunden bekraefte ordren. Det var en
+// overkorrektion: single_email_match betyder pr. definition PRAECIS EN kandidat,
+// saa kunden bliver bedt om at bekraefte sin egen eneste ordre. Ren friktion —
+// en medarbejder konstaterer hvad hun kan se og gaar videre. Bekraeftelse skal
+// kun kraeves foer en MUTATION af ordren.
+Deno.test("single_email_match directive states the order instead of asking about it", () => {
   const d = buildOrderMatchDirective(match("single_email_match")).toLowerCase();
-  // "bekraeftet" og "ordrenummer" optraeder allerede INDE i forbuddet, saa de
-  // alene beviser intet. Kravet er en imperativ opfordring til at spoerge —
-  // samme form som soesterstilstandene bruger ("Bed kunden oplyse/bekraefte").
-  assertStringIncludes(d, "bed kunden");
-  // Og den fundne ordre skal navngives konkret, ikke omtales abstrakt.
+  // Skal konstatere ordren...
+  assertStringIncludes(d, "konstat");
   assertStringIncludes(d, "#1001");
+  // ...og eksplicit forbyde det overfloedige bekraeftelses-spoergsmaal.
+  assertStringIncludes(d, "bed aldrig");
+});
+
+Deno.test("single_email_match directive still gates mutations behind confirmation", () => {
+  const d = buildOrderMatchDirective(match("single_email_match")).toLowerCase();
+  // Guarden mod at mutere den forkerte ordre skal BLIVE — den er grunden til
+  // at tilstanden findes. Den maa bare ikke koste et spoergsmaal i alle svar.
+  assertStringIncludes(d, "refundering");
+  assertStringIncludes(d, "annullering");
 });
 
 Deno.test("single_email_match directive forbids promising a process it cannot start", () => {

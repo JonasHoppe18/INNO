@@ -914,3 +914,34 @@ Deno.test("T-50988: at beskrive kundens eget næste skridt er ikke et løfte", (
   });
   assertEquals(result.compliant, true);
 });
+
+// Observeret paa skaermen efter foerste fix: guarden slap denne igennem, fordi
+// substantiv-moenstret krævede "warranty case/claim/process" og her staar der
+// et ord imellem ("warranty REPAIR process").
+Deno.test("T-50988: 'a warranty repair process' slipper ikke igennem", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "We will initiate a warranty repair process for your headset.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("T-50988: kvalificeret substantiv i flere varianter fanges", () => {
+  for (
+    const text of [
+      "I'll open a warranty repair case for you.",
+      "We will start the return merchandise authorization process.",
+      "I will create a new support ticket for this.",
+    ]
+  ) {
+    const r = checkUnsupportedCommitments({ draft_text: text });
+    assertEquals(r.compliant, false, `burde flagge: ${text}`);
+  }
+});
+
+Deno.test("T-50988: 'process' som udsagnsord er ikke et proces-loefte", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "We will process the tracking information you sent.",
+  });
+  assertEquals(result.compliant, true);
+});

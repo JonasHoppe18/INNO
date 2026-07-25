@@ -1163,12 +1163,12 @@ export function buildOrderMatchDirective(match?: OrderMatch): string {
       // your email"). Alle søsterstilstande siger enten "handl" eller "spørg";
       // det skal denne også.
       return `${header}
-- Ordren er fundet via kundens EMAIL (ikke et oplyst ordrenummer). Verificerede læse-fakta (status, fulfillment, tracking, dato) er sikre at oplyse.
-- Foreslå/lov IKKE refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet den rigtige ordre (fx ordrenummer).
-- Stå til gengæld ALDRIG stille: nævn den fundne ordre konkret (${
+- Ordren er fundet via kundens EMAIL og der er PRÆCIS ÉN kandidat. Verificerede læse-fakta (status, fulfillment, tracking, dato, produkter) er sikre at oplyse.
+- KONSTATÉR ordren i stedet for at spørge til den: nævn den konkret (${
         match.selected_order_name ?? "ordrenummeret"
-      }, produkt og dato) og BED KUNDEN bekræfte at det er den rigtige. Det er det ene skridt der låser resten op — spørg om det i samme svar, ikke i et senere.
-- Sig derefter kort hvad der sker straks efter bekræftelsen, så kunden ved hvad han venter på.
+      }, produkt og dato) som noget du kan se i systemet, og gå direkte videre til næste skridt i sagen.
+- BED ALDRIG kunden bekræfte sin egen eneste ordre. Han har kun én, og han skrev selv om produktet — et bekræftelses-spørgsmål er ren friktion og udskyder svaret en runde. Er ordren mod forventning forkert, retter han dig selv.
+- Kræv FØRST en eksplicit bekræftelse hvis du er ved at foreslå en MUTATION af ordren: refundering, annullering, adresseændring, ombytning eller genfremsendelse. Foreslå/lov aldrig en af dem før den bekræftelse foreligger.
 - LOV ALDRIG en sagsgang du ikke selv sætter i gang nu ("jeg opretter en sag", "du hører fra os", "hold øje med din mail", "vi vender tilbage med instruktioner"). Enten gør du det i dette svar, eller også beder du om præcis det der mangler for at kunne gøre det.`;
     case "multiple_email_matches":
       return `${header}
