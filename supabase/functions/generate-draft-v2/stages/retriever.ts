@@ -22,6 +22,15 @@ import { assessHistoricalExampleQuality } from "../../_shared/historical-example
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
 const SNIPPET_MATCHER_MODEL = "gpt-4o-mini";
 const SNIPPET_MATCHER_THRESHOLD = 0.6;
+
+// Stadier hvor svaret er en PROCEDURE og derfor ikke kan samles af ét snippet.
+// Guld-svaret paa T-50988 kraevede garantidaekning + egen-webshop-afgraensning
+// + de fire felter til en Return for Swap — tre chunks, ét svar.
+const PROCEDURE_STAGES = new Set([
+  "initiate_warranty_repair",
+  "refund_or_exchange",
+  "cancel_order",
+]);
 const SNIPPET_MATCHER_MARGIN = 0.15;
 // Candidate-pool size handed to the matcher (recall layer). Above this we trust
 // hybrid ranking; the matcher (precision layer) picks the final chunks from here.
@@ -2713,6 +2722,7 @@ export async function runRetriever(
         threshold: SNIPPET_MATCHER_THRESHOLD,
         maxSelected: knowledgeBudget,
         marginMin: SNIPPET_MATCHER_MARGIN,
+        procedureMode: PROCEDURE_STAGES.has(plan.resolution_stage),
       }, {}, {
         stage: plan.resolution_stage ?? null,
         troubleshootingExhausted: detectTroubleshootingExhausted(customerMessage),

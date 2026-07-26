@@ -945,3 +945,50 @@ Deno.test("T-50988: 'process' som udsagnsord er ikke et proces-loefte", () => {
   });
   assertEquals(result.compliant, true);
 });
+
+// ── Guld-svaret maa ikke flages ───────────────────────────────────────────
+//
+// Jonas' menneskevaliderede 10/10 paa T-50988 lover en proces — "saa opretter
+// jeg en Return for Swap" — men gør det EFTER at have bedt om praecis det der
+// skal til. Det er hele forskellen fra "hold øje med din mail". Uden denne
+// skelnen straffer guarden den adfaerd vi stræber efter.
+
+Deno.test("guld: proces-loefte MED konkret anmodning er ikke ugrundet", () => {
+  for (
+    const text of [
+      "I'll open a warranty case for you — just send me your full name, address, phone number and email.",
+      "Jeg opretter en garantisag, så snart du sender mig fulde navn, adresse, telefonnummer og email.",
+      "Ærgerligt at det ikke hjalp. Din A-Spire Wireless fra ordre #2070 er stadig dækket af 2-års garantien, og da den er købt hos os, klarer vi det direkte. Send mig fulde navn, adresse, telefonnummer og email, så opretter jeg en Return for Swap.",
+    ]
+  ) {
+    const r = checkUnsupportedCommitments({ draft_text: text });
+    assertEquals(r.compliant, true, `burde IKKE flages: ${text.slice(0, 60)}`);
+  }
+});
+
+Deno.test("uden konkret anmodning er proces-loeftet stadig ugrundet", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "I'll open a warranty case for you. Please keep an eye on your email for further instructions.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_process_promise");
+});
+
+Deno.test("en vag anmodning neutraliserer ikke proces-loeftet", () => {
+  // "let me know" beder ikke om noget konkret — kunden ved stadig ikke hvad
+  // han skal gøre, og processen starter aldrig.
+  const r = checkUnsupportedCommitments({
+    draft_text: "I'll start the warranty process. Let me know if you have any questions.",
+  });
+  assertEquals(r.compliant, false);
+});
+
+Deno.test("konkret anmodning neutraliserer KUN proces-familien", () => {
+  // At bede om en adresse undskylder ikke et refusions-loefte.
+  const r = checkUnsupportedCommitments({
+    draft_text: "We will issue a refund. Please send me your full name and address.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_refund_promise");
+});
