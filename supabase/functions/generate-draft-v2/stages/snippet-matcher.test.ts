@@ -343,3 +343,44 @@ Deno.test("detectTroubleshootingExhausted fyrer ikke paa almindelige beskeder", 
     assertEquals(detectTroubleshootingExhausted(msg), false, `burde IKKE fange: ${msg}`);
   }
 });
+
+// ── procedure-tilstand: flere chunks, ikke én vinder ──────────────────────
+//
+// T-50988: guld-svaret kræver FIRE fakta fra TRE chunks (garantidækning,
+// egen-webshop-afgrænsning, de fire felter til Return for Swap). Margin-reglen
+// skærer normalt til én vinder, saa en procedure kan aldrig samles.
+
+const PROC = { ...OPTS, procedureMode: true };
+
+Deno.test("procedureMode leverer alle over taersklen, ikke kun vinderen", () => {
+  const ranked = [
+    { id: "warranty", relevance: 0.95, reason: "" },
+    { id: "third_party", relevance: 0.75, reason: "" },
+    { id: "swap_fields", relevance: 0.7, reason: "" },
+    { id: "irrelevant", relevance: 0.2, reason: "" },
+  ];
+  const normal = selectFromRanked(ranked, { ...OPTS, maxSelected: 3 });
+  // Uden procedureMode vinder #1 paa margin (0.95 - 0.75 >= 0.15).
+  assertEquals(normal.selected.length, 1);
+
+  const proc = selectFromRanked(ranked, { ...PROC, maxSelected: 3 });
+  assertEquals(proc.selected.map((s) => s.id), ["warranty", "third_party", "swap_fields"]);
+  assertEquals(proc.abstained, false);
+});
+
+Deno.test("procedureMode respekterer stadig taerskel og budget", () => {
+  const ranked = [
+    { id: "a", relevance: 0.9, reason: "" },
+    { id: "b", relevance: 0.8, reason: "" },
+    { id: "c", relevance: 0.7, reason: "" },
+    { id: "d", relevance: 0.59, reason: "" },
+  ];
+  const proc = selectFromRanked(ranked, { ...PROC, maxSelected: 2 });
+  assertEquals(proc.selected.map((s) => s.id), ["a", "b"]);
+});
+
+Deno.test("procedureMode afstaar stadig naar intet er over taersklen", () => {
+  const proc = selectFromRanked([{ id: "a", relevance: 0.3, reason: "" }], PROC);
+  assertEquals(proc.selected.length, 0);
+  assertEquals(proc.abstained, true);
+});

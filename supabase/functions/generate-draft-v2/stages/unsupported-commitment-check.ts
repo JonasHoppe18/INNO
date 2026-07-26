@@ -62,7 +62,31 @@ type CommitmentFamily = {
   // patterns can't resolve the pronoun's antecedent, the draft-level gate can.
   draftContextRequirement?: RegExp;
   requiresCommercialGrounding?: boolean;
+  // Naar sat: loeftet er IKKE ugrundet hvis svaret ogsaa beder kunden om
+  // konkrete oplysninger. Kun proces-familien bruger dette — at love en
+  // sagsgang OG sige praecis hvad du skal bruge er den adfaerd vi vil have.
+  // (Et refusions-loefte undskyldes derimod ikke af at man beder om en adresse.)
+  neutralizedByConcreteAsk?: boolean;
 };
+
+// En KONKRET anmodning: et bede-verbum plus mindst ét konkret substantiv.
+// Vage hoefligheder ("let me know if you have questions") taeller ikke — de
+// efterlader kunden lige saa uvidende om naeste skridt som et bart loefte.
+const CONCRETE_ASK_PATTERNS: RegExp[] = [
+  /\b(?:send|provide|share|reply with|let me have|forward)\b[^.?!\n]{0,80}\b(?:full name|name|address|postal code|zip|phone|telephone|e-?mail|order number|proof of purchase|receipt|photos?|pictures?|video|serial number)\b/i,
+  // Dansk boejning: send/sende/sender, oplys/oplyse/oplyser osv. Uden dem
+  // matcher "saa snart du SENDER mig fulde navn" ikke, fordi ordgraensen
+  // efter "send" blokerer.
+  /\b(?:send(?:er|e)?|oplys(?:er|e)?|del(?:er|e)?|vedhæft(?:er|e)?|skriv(?:er|e)?|fremsend(?:er|e)?)\b[^.?!\n]{0,80}\b(?:fulde navn|navn|adresse|postnummer|telefonnummer|telefon|e-?mail|ordrenummer|kvittering|købsbevis|billeder?|video|serienummer)\b/i,
+];
+
+export function hasConcreteInformationAsk(
+  draftText: string | null | undefined,
+): boolean {
+  const text = String(draftText ?? "");
+  if (!text.trim()) return false;
+  return CONCRETE_ASK_PATTERNS.some((re) => re.test(text));
+}
 
 // Hedge / conditional markers. If present in the same sentence as an otherwise
 // matching commitment phrase, the sentence is treated as a conditional policy
@@ -341,6 +365,7 @@ const FAMILIES: CommitmentFamily[] = [
   {
     violationType: "unsupported_process_promise",
     authorizingActionType: /return|exchange|replac|refund|warrant|repair/i,
+    neutralizedByConcreteAsk: true,
     commitmentPatterns: [
       // EN: "we/I will set up / open / create / initiate / start a <sagsgang>".
       // Op til to kvalificerende ord maa staa mellem artiklen og hovedordet:
@@ -390,6 +415,8 @@ export function checkUnsupportedCommitments(
   const sentences = splitSentences(draftText);
   const violations: UnsupportedCommitmentCheckResult["violations"] = [];
 
+  const concreteAsk = hasConcreteInformationAsk(draftText);
+
   for (const sentence of sentences) {
     if (HEDGE_RE.test(sentence)) continue;
 
@@ -413,6 +440,9 @@ export function checkUnsupportedCommitments(
       ) {
         continue;
       }
+      // Loeftet er dækket ind naar svaret ogsaa beder om det der skal til:
+      // kunden ved hvad han skal gøre, og processen starter faktisk.
+      if (family.neutralizedByConcreteAsk && concreteAsk) continue;
 
       violations.push({
         type: family.violationType,

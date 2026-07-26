@@ -30,6 +30,11 @@ export type MatchOptions = {
   threshold: number;
   maxSelected: number;
   marginMin: number;
+  // T-50988: naar svaret er en PROCEDURE (garantireparation, retur, ombytning)
+  // findes der ikke ét bedste snippet — svaret kraever flere dele paa én gang
+  // (daekning + afgraensning + hvilke oplysninger kunden skal sende). Margin-
+  // reglen skaerer normalt til én vinder og goer et fuldt svar umuligt.
+  procedureMode?: boolean;
 };
 
 export type MatchResponse = {
@@ -168,6 +173,11 @@ export function selectFromRanked(
     .filter((r) => r.relevance >= opts.threshold)
     .sort((a, b) => b.relevance - a.relevance);
   if (eligible.length === 0) return { selected: [], abstained: true };
+  // Procedure-stadier: tag alt over taersklen op til budgettet. Taersklen og
+  // budgettet gaelder stadig — kun margin-afkortningen springes over.
+  if (opts.procedureMode) {
+    return { selected: eligible.slice(0, opts.maxSelected), abstained: false };
+  }
   if (
     eligible.length === 1 ||
     eligible[0].relevance - eligible[1].relevance >= opts.marginMin
