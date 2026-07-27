@@ -122,7 +122,10 @@ export function ShopifyConnectCard() {
     loadConnection();
   }, [loadConnection]);
 
-  const isConnected = Boolean(connection) && !connection?.uninstalled_at;
+  // En seedet shop-række kan godt have domæne og indhold uden at OAuth er
+  // gennemført. Først callbackens installed_at markerer en reel forbindelse.
+  const isConnected =
+    Boolean(connection?.installed_at) && !connection?.uninstalled_at;
   const connectedDomain = connection?.shop_domain || connection?.store_domain;
   const connectedShopId = connection?.id || null;
 

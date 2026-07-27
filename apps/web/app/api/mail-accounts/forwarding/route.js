@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
+import { buildInboundAddress } from "@/lib/inbound-domain";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -129,7 +130,11 @@ export async function POST(request) {
           id: data.id,
           provider_email: data.provider_email,
           inbound_slug: data.inbound_slug,
-          forwarding_address: `${data.inbound_slug}@inbound.sona-ai.dk`,
+          forwarding_address: buildInboundAddress(
+            data.inbound_slug,
+            process.env.INBOUND_DOMAIN ||
+              process.env.NEXT_PUBLIC_INBOUND_DOMAIN,
+          ),
           shared_from_email: buildEffectiveSharedFromEmail({ mailbox: data, shop }),
         },
         { status: 200 }

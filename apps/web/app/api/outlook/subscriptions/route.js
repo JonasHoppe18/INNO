@@ -17,34 +17,12 @@ const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   "";
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  process.env.EXPO_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  "supabase";
 
 const WEBHOOK_HOST =
   process.env.OUTLOOK_WEBHOOK_HOST ||
   process.env.MICROSOFT_WEBHOOK_HOST ||
   process.env.NEXT_PUBLIC_OUTLOOK_WEBHOOK_HOST ||
   "";
-
-function decodeSupabaseUserId(token) {
-  if (!token || !token.includes(".")) return null;
-  const [, payload] = token.split(".");
-  if (!payload) return null;
-  try {
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(
-      normalized.length + ((4 - (normalized.length % 4)) % 4),
-      "="
-    );
-    const decoded = Buffer.from(padded, "base64").toString("utf8");
-    const json = JSON.parse(decoded);
-    return json?.sub || null;
-  } catch (_err) {
-    return null;
-  }
-}
 
 async function persistIntegration({ token, payload }) {
   if (!token || !SUPABASE_BASE_URL || !SUPABASE_ANON_KEY) {
@@ -62,6 +40,30 @@ async function persistIntegration({ token, payload }) {
   });
   const data = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, data };
+}
+
+async function resolveSupabaseUserId(token, clerkUserId) {
+  if (!token || !clerkUserId || !SUPABASE_BASE_URL || !SUPABASE_ANON_KEY) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    select: "user_id",
+    clerk_user_id: `eq.${clerkUserId}`,
+    limit: "1",
+  });
+  const response = await fetch(
+    `${SUPABASE_BASE_URL}/rest/v1/profiles?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+    }
+  );
+  if (!response.ok) return null;
+  const rows = await response.json().catch(() => []);
+  return Array.isArray(rows) ? rows[0]?.user_id ?? null : null;
 }
 
 export async function POST(request) {
@@ -115,8 +117,8 @@ export async function POST(request) {
   let saved = false;
   let supabaseError = null;
   try {
-    const supabaseToken = await getToken({ template: SUPABASE_TEMPLATE });
-    const supabaseUserId = decodeSupabaseUserId(supabaseToken);
+    const supabaseToken = await getToken();
+    const supabaseUserId = await resolveSupabaseUserId(supabaseToken, userId);
     if (supabaseToken && supabaseUserId) {
       const payload = {
         user_id: supabaseUserId,

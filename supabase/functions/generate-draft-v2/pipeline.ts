@@ -2519,7 +2519,7 @@ export async function runDraftV2Pipeline(
             historic_inbox_access: false,
           },
           tokenSecret: Deno.env.get("ENCRYPTION_KEY") ?? null,
-          apiVersion: Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07",
+          apiVersion: Deno.env.get("SHOPIFY_API_VERSION") ?? "2026-07",
         });
 
         if (

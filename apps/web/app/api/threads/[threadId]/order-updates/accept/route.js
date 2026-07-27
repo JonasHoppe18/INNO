@@ -25,7 +25,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
 function createServiceClient() {

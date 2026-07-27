@@ -19,9 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
+import { buildInboundAddress } from "@/lib/inbound-domain";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
-
-const INBOUND_DOMAIN = "inbound.sona-ai.dk";
 
 export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect mail", onCreated }) {
   const router = useRouter();
@@ -37,8 +36,7 @@ export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect 
   const [copied, setCopied] = useState(false);
 
   const forwardingAddress = useMemo(() => {
-    if (!result?.inbound_slug) return "";
-    return `${result.inbound_slug}@${INBOUND_DOMAIN}`;
+    return buildInboundAddress(result?.inbound_slug);
   }, [result?.inbound_slug]);
 
   const resetForm = () => {

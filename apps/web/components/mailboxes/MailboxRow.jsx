@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ChevronDown, Copy, Globe2, Mail, RotateCw, ShieldCheck, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { buildInboundAddress } from "@/lib/inbound-domain";
 import { cn } from "@/lib/utils";
 import { SendingIdentityPanel } from "@/components/mailboxes/SendingIdentityPanel";
 import gmailLogo from "../../../../assets/Gmail-logo.webp";
@@ -96,7 +97,7 @@ export function MailboxRow({
 
   const isForwarding = provider === "smtp";
   const isDisconnected = status === "disconnected";
-  const forwardingAddress = inboundSlug ? `${inboundSlug}@inbound.sona-ai.dk` : "";
+  const forwardingAddress = buildInboundAddress(inboundSlug);
 
   const forwardingLabel = isDisconnected ? "Disconnected" : "Active";
   const forwardingStyles = isDisconnected

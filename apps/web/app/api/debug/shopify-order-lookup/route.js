@@ -13,7 +13,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;

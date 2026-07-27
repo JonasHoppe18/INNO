@@ -8,9 +8,12 @@ import {
   verifyShopifyHmac,
 } from "@/lib/server/shopify-oauth";
 
-const APP_URL = process.env.APP_URL || "https://sona-ai.dk";
+const APP_URL = String(process.env.APP_URL || "").trim();
 
 function buildRedirectUrl(shop, status) {
+  if (!APP_URL) {
+    throw new Error("APP_URL is missing on the server.");
+  }
   const url = new URL("/integrations", APP_URL);
   url.searchParams.set("shop", shop);
   url.searchParams.set("shopify", status);
