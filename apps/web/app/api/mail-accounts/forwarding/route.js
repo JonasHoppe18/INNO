@@ -5,6 +5,7 @@ import crypto from "crypto";
 import {
   listScopedShops,
   resolveAuthScope,
+  resolveClerkOrgId,
   resolveScopedShop,
 } from "@/lib/server/workspace-auth";
 import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
@@ -32,7 +33,9 @@ function generateSlug() {
 }
 
 export async function POST(request) {
-  const { userId: clerkUserId, orgId } = await auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }

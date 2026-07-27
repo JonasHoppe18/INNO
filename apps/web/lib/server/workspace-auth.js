@@ -1,3 +1,16 @@
+function normalizedId(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function resolveClerkOrgId({ orgId, sessionClaims } = {}) {
+  return (
+    normalizedId(orgId) ||
+    normalizedId(sessionClaims?.org_id) ||
+    normalizedId(sessionClaims?.orgId) ||
+    normalizedId(sessionClaims?.o?.id)
+  );
+}
+
 export async function resolveAuthScope(
   serviceClient,
   { clerkUserId, orgId },
