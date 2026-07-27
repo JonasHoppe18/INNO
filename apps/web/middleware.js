@@ -22,31 +22,39 @@ const isPublicRoute = createRouteMatcher(publicRoutes);
 const isMarketingRoute = createRouteMatcher(["/", "/en(/.*)?", "/da(/.*)?"]);
 const isAuthRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
 
-function getDashboardOrigin() {
+function getDashboardUrl() {
   const value = String(process.env.NEXT_PUBLIC_DASHBOARD_URL || "").trim();
   if (!value) return null;
 
   try {
-    return new URL(value).origin;
+    return new URL(value);
   } catch {
     return null;
   }
 }
 
 export default clerkMiddleware((auth, request) => {
-  const dashboardOrigin = getDashboardOrigin();
+  const dashboardUrl = getDashboardUrl();
+  const requestHost = String(
+    request.headers.get("x-forwarded-host") ||
+      request.headers.get("host") ||
+      request.nextUrl.host
+  )
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
   const isApiRoute = request.nextUrl.pathname.startsWith("/api/");
   const shouldUseDashboardDomain =
     isAuthRoute(request) || (!isPublicRoute(request) && !isApiRoute);
 
   if (
-    dashboardOrigin &&
-    request.nextUrl.origin !== dashboardOrigin &&
+    dashboardUrl &&
+    requestHost !== dashboardUrl.host.toLowerCase() &&
     shouldUseDashboardDomain
   ) {
     const destination = new URL(
       `${request.nextUrl.pathname}${request.nextUrl.search}`,
-      dashboardOrigin
+      dashboardUrl.origin
     );
     return NextResponse.redirect(destination);
   }
