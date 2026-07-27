@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import {
+  listScopedShops,
+  resolveAuthScope,
+  resolveScopedShop,
+} from "@/lib/server/workspace-auth";
 import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
 import { buildInboundAddress } from "@/lib/inbound-domain";
+import { chooseAutomaticMailboxShop } from "@/lib/mailboxes/connection";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -77,11 +82,16 @@ export async function POST(request) {
   }
   let shop = null;
   try {
-    shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
-      fields: "id, shop_name, shop_domain",
-      allowSingleScopedFallback: true,
-      missingShopMessage: "shop_id is required to bind a forwarding mailbox in a multi-shop workspace.",
-    });
+    if (requestedShopId) {
+      shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+        fields: "id, shop_name, shop_domain",
+      });
+    } else {
+      const scopedShops = await listScopedShops(serviceClient, scope, {
+        fields: "id, shop_name, shop_domain",
+      });
+      shop = chooseAutomaticMailboxShop(scopedShops);
+    }
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
@@ -95,7 +105,7 @@ export async function POST(request) {
       .insert({
         user_id: scope.supabaseUserId,
         workspace_id: scope.workspaceId ?? null,
-        shop_id: shop.id,
+        shop_id: shop?.id ?? null,
         provider: "smtp",
         provider_email: providerEmail,
         inbound_slug: inboundSlug,

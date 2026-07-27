@@ -1,14 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -20,17 +24,13 @@ import {
 } from "@/components/ui/dialog";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 import { buildInboundAddress } from "@/lib/inbound-domain";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect mail", onCreated }) {
   const router = useRouter();
-  const { supabase } = useClerkSupabase();
   const { settings: automationSettings, loading: automationLoading, refresh, save } =
     useAgentAutomation();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
-  const [shops, setShops] = useState([]);
-  const [shopId, setShopId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -46,32 +46,6 @@ export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect 
     setCopied(false);
   };
 
-  const loadShops = useCallback(async () => {
-    if (!supabase) return [];
-    const { data, error } = await supabase
-      .from("shops")
-      .select("id, shop_domain, created_at")
-      .is("uninstalled_at", null)
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
-    setShops(rows);
-    setShopId((current) => {
-      if (current && rows.some((shop) => shop.id === current)) return current;
-      if (rows.length === 1) return rows[0].id;
-      return null;
-    });
-    return rows;
-  }, [supabase]);
-
-  useEffect(() => {
-    if (!open) return;
-    loadShops().catch((error) => {
-      console.warn("MailboxesAddMenu load shops failed", error);
-      toast.error("Could not load shops.");
-    });
-  }, [loadShops, open]);
-
   const handleClose = (nextOpen) => {
     setOpen(nextOpen);
     if (!nextOpen) resetForm();
@@ -83,16 +57,12 @@ export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect 
       toast.error("Email address is required.");
       return;
     }
-    if (!shopId) {
-      toast.error("Select the shop this mailbox should belong to.");
-      return;
-    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/mail-accounts/forwarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider_email: email.trim(), shop_id: shopId }),
+        body: JSON.stringify({ provider_email: email.trim() }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -189,36 +159,27 @@ export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect 
               </DialogFooter>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="mailbox-shop-selector">Shop</Label>
-                <Select value={shopId || ""} onValueChange={(value) => setShopId(value || null)}>
-                  <SelectTrigger id="mailbox-shop-selector">
-                    <SelectValue placeholder={shops.length > 1 ? "Select shop" : "No shop connected"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {shops.map((shop) => (
-                      <SelectItem key={shop.id} value={shop.id}>
-                        {String(shop.shop_domain || "Unnamed shop")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Support email address
-                </label>
-                <Input
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="support@company.com"
-                  type="email"
-                  required
-                />
-              </div>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="mailbox-support-email">
+                    Support email address
+                  </FieldLabel>
+                  <Input
+                    id="mailbox-support-email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="support@company.com"
+                    type="email"
+                    required
+                  />
+                  <FieldDescription>
+                    Shopify is optional. If this workspace has one shop, Sona links it automatically.
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
               <DialogFooter>
-                <Button type="submit" disabled={submitting || !shopId}>
+                <Button type="submit" disabled={submitting}>
                   {submitting ? "Connecting..." : "Connect email"}
                 </Button>
               </DialogFooter>
