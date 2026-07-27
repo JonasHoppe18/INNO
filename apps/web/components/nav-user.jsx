@@ -98,9 +98,9 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <LogOutIcon />
-                <SignOutButton redirectUrl="/">
-                    Log out
-                </SignOutButton>
+              <SignOutButton redirectUrl={process.env.NEXT_PUBLIC_MARKETING_URL || "/"}>
+                Log out
+              </SignOutButton>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

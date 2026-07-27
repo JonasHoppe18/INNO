@@ -9,12 +9,14 @@ import {
 } from "@/lib/server/shopify-oauth";
 
 const APP_URL = String(process.env.APP_URL || "").trim();
+const DASHBOARD_URL = String(process.env.NEXT_PUBLIC_DASHBOARD_URL || "").trim();
 
 function buildRedirectUrl(shop, status) {
-  if (!APP_URL) {
-    throw new Error("APP_URL is missing on the server.");
+  const destinationOrigin = DASHBOARD_URL || APP_URL;
+  if (!destinationOrigin) {
+    throw new Error("NEXT_PUBLIC_DASHBOARD_URL or APP_URL is missing on the server.");
   }
-  const url = new URL("/integrations", APP_URL);
+  const url = new URL("/integrations", destinationOrigin);
   url.searchParams.set("shop", shop);
   url.searchParams.set("shopify", status);
   return url;

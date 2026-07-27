@@ -7,6 +7,10 @@ import MobileNavMenu from "./MobileNavMenu";
 
 export default async function LandingNav({ locale }) {
   const t = await getTranslations("landing.nav");
+  const dashboardUrl = String(
+    process.env.NEXT_PUBLIC_DASHBOARD_URL || ""
+  ).replace(/\/$/, "");
+  const loginHref = dashboardUrl ? `${dashboardUrl}/sign-in` : "/sign-in";
   const links = [
     { href: `/${locale}/product`, label: t("product") },
     { href: `/${locale}/integrations`, label: t("integrations") },
@@ -36,11 +40,12 @@ export default async function LandingNav({ locale }) {
           <MobileNavMenu
             links={links}
             loginLabel={t("login")}
+            loginHref={loginHref}
             menuLabel={t("menu")}
             closeMenuLabel={t("closeMenu")}
           />
           <LocaleSwitcher locale={locale} />
-          <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
+          <Link href={loginHref} className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
           <BookDemoButton
             label={t("bookDemo")}
             fallbackHref={`/${locale}#book-demo`}
