@@ -21,6 +21,15 @@ import { assessHistoricalExampleQuality } from "../../_shared/historical-example
 // Snippet-matcher config. Thresholds are starting values calibrated against the
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
 const SNIPPET_MATCHER_MODEL = "gpt-4o-mini";
+// Procedure-stadier faar den staerke model. Maalt paa den rigtige
+// kandidatpulje (3 koersler pr. arm, T-50988):
+//   gpt-4o-mini : 1,0 chunk over taersklen — kun ét dokument, uanset prompt
+//   gpt-4o      : 2,0 — baade garantidaekningen OG felterne kunden skal sende
+// Mini scorer binaert (1.0 til én, 0 til resten), saa et procedure-svar kunne
+// aldrig samles. Kun procedure-stadier betaler den hoejere pris; alt andet
+// bliver paa mini.
+const SNIPPET_MATCHER_PROCEDURE_MODEL =
+  Deno.env.get("SNIPPET_MATCHER_PROCEDURE_MODEL") ?? "gpt-4o";
 const SNIPPET_MATCHER_THRESHOLD = 0.6;
 
 // Stadier hvor svaret er en PROCEDURE og derfor ikke kan samles af ét snippet.
@@ -2718,7 +2727,9 @@ export async function runRetriever(
       // batteri-forklaring. Pipelinen har for laengst besluttet hvad svaret
       // skal udrette — den beslutning skal matcheren kende.
       const matched = await matchSnippets(customerMessage, candidates, {
-        model: SNIPPET_MATCHER_MODEL,
+        model: PROCEDURE_STAGES.has(plan.resolution_stage)
+          ? SNIPPET_MATCHER_PROCEDURE_MODEL
+          : SNIPPET_MATCHER_MODEL,
         threshold: SNIPPET_MATCHER_THRESHOLD,
         maxSelected: knowledgeBudget,
         marginMin: SNIPPET_MATCHER_MARGIN,

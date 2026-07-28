@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  SYSTEM_PROMPT,
   buildUserPrompt,
   detectTroubleshootingExhausted,
   matchSnippets,
@@ -383,4 +384,18 @@ Deno.test("procedureMode afstaar stadig naar intet er over taersklen", () => {
   const proc = selectFromRanked([{ id: "a", relevance: 0.3, reason: "" }], PROC);
   assertEquals(proc.selected.length, 0);
   assertEquals(proc.abstained, true);
+});
+
+// ── procedure-reglen i systemprompten ─────────────────────────────────────
+//
+// Maalt paa den rigtige kandidatpulje (3 koersler pr. arm):
+//   gpt-4o-mini, uden reglen : 1,0 chunk over 0,6  (kun "Warranty claims")
+//   gpt-4o,      uden reglen : 1,7
+//   gpt-4o,      MED reglen  : 2,0 ("Warranty claims" 3/3 + "Return for Swap" 3/3)
+// Mini scorer binaert uanset prompt; 4o scorer graderet. Reglen skal derfor
+// vaere i prompten, og procedure-stadier skal koere paa den staerke model.
+
+Deno.test("systemprompten siger at en procedure spænder over flere snippets", () => {
+  assertStringIncludes(SYSTEM_PROMPT, "PROCEDURES SPAN SEVERAL SNIPPETS");
+  assertStringIncludes(SYSTEM_PROMPT, "do NOT pick a single winner");
 });
