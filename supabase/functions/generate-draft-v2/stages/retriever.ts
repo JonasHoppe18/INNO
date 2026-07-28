@@ -31,6 +31,13 @@ const SNIPPET_MATCHER_MODEL = "gpt-4o-mini";
 const SNIPPET_MATCHER_PROCEDURE_MODEL =
   Deno.env.get("SNIPPET_MATCHER_PROCEDURE_MODEL") ?? "gpt-4o";
 const SNIPPET_MATCHER_THRESHOLD = 0.6;
+// Procedure-taerskel. Maalt paa T-50988 med gpt-4o: hoveddokumentet
+// ("Warranty claims") faar 1,0, mens de stoettende dele af proceduren —
+// daekning, hvem der haandterer den, returadresse — konsekvent faar 0,5.
+// Med standardtaersklen paa 0,6 skaeres hele proceduren fra med et haar, og
+// writeren staar tilbage med ét dokument igen. Nul-scorede produkt-support-
+// dokumenter ligger langt under og kommer stadig ikke med.
+const SNIPPET_MATCHER_PROCEDURE_THRESHOLD = 0.45;
 
 // Stadier hvor svaret er en PROCEDURE og derfor ikke kan samles af ét snippet.
 // Guld-svaret paa T-50988 kraevede garantidaekning + egen-webshop-afgraensning
@@ -2730,7 +2737,9 @@ export async function runRetriever(
         model: PROCEDURE_STAGES.has(plan.resolution_stage)
           ? SNIPPET_MATCHER_PROCEDURE_MODEL
           : SNIPPET_MATCHER_MODEL,
-        threshold: SNIPPET_MATCHER_THRESHOLD,
+        threshold: PROCEDURE_STAGES.has(plan.resolution_stage)
+          ? SNIPPET_MATCHER_PROCEDURE_THRESHOLD
+          : SNIPPET_MATCHER_THRESHOLD,
         maxSelected: knowledgeBudget,
         marginMin: SNIPPET_MATCHER_MARGIN,
         procedureMode: PROCEDURE_STAGES.has(plan.resolution_stage),

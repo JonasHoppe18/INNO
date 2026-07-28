@@ -399,3 +399,20 @@ Deno.test("systemprompten siger at en procedure spænder over flere snippets", (
   assertStringIncludes(SYSTEM_PROMPT, "PROCEDURES SPAN SEVERAL SNIPPETS");
   assertStringIncludes(SYSTEM_PROMPT, "do NOT pick a single winner");
 });
+
+Deno.test("procedureMode: stoettedokumenter paa 0,5 kommer med ved lavere taerskel", () => {
+  // Maalt paa den rigtige pulje med gpt-4o: hoveddokumentet faar 1,0 og de
+  // stoettende faar 0,5 — praecis under standardtaersklen paa 0,6. Uden en
+  // lavere procedure-taerskel skaeres hele proceduren fra med et haar.
+  const ranked = [
+    { id: "warranty_claims", relevance: 1.0, reason: "" },
+    { id: "third_party", relevance: 0.5, reason: "" },
+    { id: "return_address", relevance: 0.5, reason: "" },
+    { id: "battery", relevance: 0, reason: "" },
+  ];
+  const cut = selectFromRanked(ranked, { ...OPTS, threshold: 0.6, procedureMode: true, maxSelected: 3 });
+  assertEquals(cut.selected.length, 1);
+
+  const kept = selectFromRanked(ranked, { ...OPTS, threshold: 0.45, procedureMode: true, maxSelected: 3 });
+  assertEquals(kept.selected.map((s) => s.id), ["warranty_claims", "third_party", "return_address"]);
+});
