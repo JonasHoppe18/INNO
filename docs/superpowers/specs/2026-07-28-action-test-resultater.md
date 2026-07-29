@@ -147,6 +147,21 @@ Før flere guards bygges på den mekanisme bør ét af følgende på plads:
 håndhæv `block_send_recommended` i send-stien, gør `routing_hint`
 diskriminerende, eller lad guarden ændre selve draften (som C5-fixet endte med).
 
+## Refundering blev tavs ved betalt annullering — FIXET 2026-07-29
+
+> **Status:** Rettet i commit `2a61c660` (dev), verificeret end-to-end på tre
+> friske ordrer. En kunde der fik en BETALT ordre annulleret fik intet at
+> vide om pengene — samme svar som ved en ubetalt annullering. Tre lag
+> skjulte hinanden: (1) refundStatusBlock nåede aldrig writer for cancel-
+> intentet, (2) to hardkodede sætninger i systemprompten forbød eksplicit at
+> nævne refund ved cancel_order, (3) resolution_stage blev tvangs-sat til
+> "info_only" for enhver post-action-bekræftelse og silencede den forbedrede
+> cancel_order-tone. Endeligt svar: "Din ordre #1060 er annulleret. Den var
+> betalt og var ikke afsendt; der er endnu ikke registreret nogen
+> refundering, så jeg sørger for, at en kollega sætter refunderingen i gang."
+> Fandt og rettede desuden en falsk positiv i dagens egen
+> unsupported_cancellation_promise-guard undervejs.
+
 ## Mindre fund
 
 - **Kun to action-typer er wired op.** `update_shipping_address` og `cancel_order` fyrer — præcis
