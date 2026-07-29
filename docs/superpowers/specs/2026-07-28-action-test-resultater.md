@@ -64,7 +64,13 @@ Sona hentede returadressen korrekt, men tjekkede aldrig ordredatoen mod vinduet.
 Konsekvensen er direkte økonomisk: kunden sender pakken, og butikken sidder med en retur de ikke
 er forpligtet til at tage imod — efter at Sona har lovet det skriftligt.
 
-## Alvorlig: Sona lover handlinger den ikke udfører (B4)
+## Alvorlig: Sona lover handlinger den ikke udfører (B4) — FIXET 2026-07-29
+
+> **Status:** Rettet i `17c6fa0` (dev). Årsag: writerens action-blok var den
+> TOMME STRENG når ingen action var besluttet, og tavshed læses som tilladelse.
+> To runder med nye regex-mønstre i `unsupported-commitment-check` blev slået af
+> omskrivning først. Blokken siger nu eksplicit hvad der ikke er besluttet.
+> Verificeret: A5, B4 og C1 videresender nu ærligt til en kollega.
 
 På en delvist afsendt ordre skrev Sona:
 
@@ -174,7 +180,7 @@ diskriminerende, eller lad guarden ændre selve draften (som C5-fixet endte med)
 | ~~1~~ | ~~C4 — ordredata udleveres til forkert afsender~~ | **FIXET** `283064a` (dev) |
 | ~~2~~ | ~~C5 — returvindue håndhæves ikke~~ | **FIXET** `70c9c36` (dev) |
 | ~~1~~ | ~~Review-flag mættet~~ | **DELVIST LØST** `8184e9f` — signal findes nu; UI + håndhævelse udestår |
-| 2 | B4/A4/A6 — lover handlinger uden at udføre dem | Kunden venter på noget der aldrig sker |
+| ~~2~~ | ~~B4/A4/A6 — lover handlinger uden at udføre dem~~ | **FIXET** `17c6fa0` (dev) |
 | 4 | Kun 2 af 7 action-typer wired op | Produktet lover mere end det leverer |
 | 5 | A5 — lover varer uden lagertjek | Samme klasse som capability-refusal-fejlene |
 | 6 | A7 — eskalering findes ikke som action | Klager falder på gulvet |
