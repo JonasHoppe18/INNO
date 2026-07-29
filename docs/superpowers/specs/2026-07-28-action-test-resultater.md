@@ -16,7 +16,17 @@ selve Shopify-mutationen er endnu ikke bekræftet. Se "Udestående".
 Det der virker, virker godt: ordre-matching, sprogvalg, guards mod at annullere afsendte ordrer,
 og modstand mod prompt-injection. Det der fejler, fejler på måder der koster penge eller tillid.
 
-## Kritisk: Sona udleverer en fremmed kundes data (C4)
+## Kritisk: Sona udleverer en fremmed kundes data (C4) — FIXET 2026-07-29
+
+> **Status:** Rettet i commit `283064a`, deployet til dev og verificeret end-to-end.
+> Root cause: ordrenummer-grenen i `resolveOrderMatch` returnerede alt
+> `getOrderByName` fandt, uden ejerskabskontrol. Samme mail får nu svaret
+> *"jeg kan ikke give oplysninger om ordre #1058 til denne emailadresse"*, og
+> loggen viser `order_found: false` — ordren når aldrig konteksten.
+> Opslag på egne ordrer (#1054, #1051) er uændrede. **Udestår: deploy til prod.**
+
+Beskrivelsen nedenfor er bevaret som dokumentation af fundet.
+
 
 Mailen kom fra `jonashoppe8@hotmail.com` og spurgte til ordre **#1058**, som tilhører
 `anden.kunde@example.com`. Sona svarede:
