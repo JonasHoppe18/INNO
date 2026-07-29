@@ -992,3 +992,78 @@ Deno.test("konkret anmodning neutraliserer KUN proces-familien", () => {
   assertEquals(r.compliant, false);
   assertEquals(r.violations[0].type, "unsupported_refund_promise");
 });
+
+// ── Danish verb+noun promise forms (observed live 2026-07-29) ─────────────
+//
+// Testrunden viste tre drafts der lovede en sagsgang uden at nogen action blev
+// oprettet, og som ALLE slap gennem denne check. Mønstrene krævede enten
+// udsagnsordsformen ("vi ombytter") eller et navneord fra en kort liste efter
+// "en/et" ("opretter en sag"). Formuleringen modellen faktisk bruger er
+// "jeg igangsætter en ombytning" / "igangsætter annullering" — verbum plus
+// handlingsnavneord. Teksterne herunder er ordrette fra kørslen.
+
+Deno.test("igangsætter en ombytning uden exchange-action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg igangsætter en ombytning af dit Chaos Headset på ordre #1054 til den " +
+      "sorte variant og opretter det som en return-for-swap.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_exchange_promise");
+});
+
+Deno.test("en godkendt exchange-action gør den samme sætning lovlig", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg igangsætter en ombytning af dit Chaos Headset på ordre #1054.",
+    approved_actions: [{ type: "create_exchange_request" }],
+  });
+  assertEquals(result.compliant, true);
+});
+
+Deno.test("igangsætter annullering uden cancel-action → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg har modtaget din anmodning og igangsætter annullering af de " +
+      "ikke-afsendte varer på ordre #1055.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_cancellation_promise");
+});
+
+Deno.test("en godkendt cancel-action gør annulleringsløftet lovligt", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg igangsætter annullering af de ikke-afsendte varer på ordre #1055.",
+    approved_actions: [{ type: "cancel_order" }],
+  });
+  assertEquals(result.compliant, true);
+});
+
+Deno.test("et foreslået-men-ikke-godkendt cancel dækker ikke løftet", () => {
+  // Draften siger "jeg igangsætter" i nutid. Ligger actionen og venter på en
+  // medarbejder, er den sætning stadig usand over for kunden.
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg igangsætter annullering af ordre #1055.",
+    suggested_actions: [{ type: "cancel_order" }],
+  });
+  assertEquals(result.compliant, false);
+});
+
+Deno.test("at BESKRIVE en annullering uden at love den er ikke en overtrædelse", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Ordren er allerede afsendt, så en annullering er desværre ikke mulig. " +
+      "Vil du i stedet returnere den?",
+  });
+  assertEquals(result.compliant, true);
+});
+
+Deno.test("en NÆGTELSE af at annullere er ikke et løfte", () => {
+  // Mellemrummet i mønstret må ikke indeholde "ikke" — ellers ville C1's
+  // korrekte afvisning blive flaget som en uunderstøttet forpligtelse.
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Din ordre #1054 er allerede afsendt, så jeg kan ikke igangsætte en " +
+      "annullering nu. Vil du i stedet returnere den?",
+  });
+  assertEquals(result.compliant, true);
+});

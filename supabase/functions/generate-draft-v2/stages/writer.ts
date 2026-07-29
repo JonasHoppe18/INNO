@@ -1147,6 +1147,40 @@ export function buildRefundStatusDirective(
 // Structured, clearly-labeled order-match state directive for the writer.
 // Mirrors the OrderMatch state machine in fact-resolver so the writer can act
 // safely without re-parsing prose. Returns "" when no match is present.
+// What the writer may claim to be DOING, derived from what the action layer
+// actually decided. Previously an empty proposal list produced an empty string,
+// and the writer read that silence as permission: observed across two runs it
+// invented "jeg igangsætter en ombytning", "jeg starter en ombytningsanmodning"
+// and "jeg går i gang med at annullere", each time with nothing behind it.
+// Chasing those phrasings in the post-writer check lost twice to paraphrase, so
+// the constraint is stated up front instead.
+export function buildActionCapabilityBlock(
+  actionProposals?: ActionProposal[],
+): string {
+  const proposals = Array.isArray(actionProposals) ? actionProposals : [];
+
+  if (proposals.length === 0) {
+    return `# Handlinger du kan udføre: INGEN
+- Der er IKKE besluttet nogen handling på denne sag. Du kan hverken annullere, ombytte, returnere, refundere, ændre adresse, holde en forsendelse tilbage eller oprette en sag.
+- Skriv derfor ALDRIG at du igangsætter, starter, opretter, går i gang med, sætter i gang eller behandler noget. Det ville være usandt — der sker intet når du skriver det.
+- Skriv i stedet hvad der reelt gælder: svar på det kunden spurgte om ud fra de verificerede fakta, og hvis noget kræver en handling, så sig at du får en kollega til at tage sig af det, eller spørg om præcis det ene du mangler for at komme videre.`;
+  }
+
+  const lines = proposals
+    .map((a) =>
+      `- ${a.type}: ${a.reason}${
+        a.requires_approval
+          ? " (kræver intern godkendelse — lov ikke kunden at handlingen allerede er udført)"
+          : ""
+      }`
+    )
+    .join("\n");
+
+  return `# Planlagte actions (deterministisk besluttet — nævn dem naturligt i svaret)
+${lines}
+- Det er UDTØMMENDE. Du må kun omtale de handlinger der står her; ingen andre er besluttet, og du må ikke love en handling af en anden type.`;
+}
+
 export function buildOrderMatchDirective(match?: OrderMatch): string {
   if (!match) return "";
   const header = `# Ordre-match (struktureret) — state: ${match.state}`;
@@ -2315,19 +2349,7 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     : "";
 
   // --- Foreslåede actions fra deterministisk action-decision ---
-  const actionsBlock = actionProposals && actionProposals.length > 0
-    ? `# Planlagte actions (deterministisk besluttet — nævn dem naturligt i svaret)
-` +
-      actionProposals
-        .map((a) =>
-          `- ${a.type}: ${a.reason}${
-            a.requires_approval
-              ? " (kræver intern godkendelse — lov ikke kunden at handlingen allerede er udført)"
-              : ""
-          }`
-        )
-        .join("\n")
-    : "";
+  const actionsBlock = buildActionCapabilityBlock(actionProposals);
   const actionAmountDisplay = formatActionAmountDisplay(
     actionResult,
     replyLanguage,

@@ -43,6 +43,7 @@ const DANGER_CODES = new Set<string>([
   "unsupported_exchange_promise",
   "unsupported_document_promise",
   "unsupported_discount_promise",
+  "unsupported_cancellation_promise",
   "unsupported_process_promise",
   "unsupported_assumption",
   "image_evidence_claim",
