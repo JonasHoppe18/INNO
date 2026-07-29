@@ -122,6 +122,7 @@ import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.
 import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
+import { checkReturnWindow } from "./stages/return-window-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import {
   checkLiveFactAndActionClaims,
@@ -3720,6 +3721,34 @@ export async function runDraftV2Pipeline(
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported commitment check flagged ${unsupportedCommitmentCheck.violations.length} violation(s) — routing to review`,
+      );
+    }
+
+    // 12a2. Deterministic guard against granting a return the shop's own
+    // documented window does not cover. Observed live (C5): a return was
+    // granted on a five-month-old order because retrieval surfaced the policy
+    // chunk holding the return address rather than the one holding the window.
+    // Flags for review rather than refusing — honouring a late return is a
+    // business judgement, but it is not Sona's to make unilaterally.
+    const returnWindowCheck = checkReturnWindow({
+      draft_text: finalDraft ?? "",
+      order_age_days: facts.order?.created_at
+        ? Math.floor(
+          (Date.now() - new Date(facts.order.created_at).getTime()) /
+            (1000 * 60 * 60 * 24),
+        )
+        : null,
+      retrieved_chunks: retrieved.chunks,
+    });
+    if (returnWindowCheck.requires_review) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] return-window check flagged ${
+          returnWindowCheck.violations
+            .map((v) => v.type)
+            .join(", ")
+        } — routing to review`,
       );
     }
 
