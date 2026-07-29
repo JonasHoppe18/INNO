@@ -123,6 +123,12 @@ import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentati
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { buildReturnWindowFact, checkReturnWindow } from "./stages/return-window-check.ts";
+import {
+  addReviewReason,
+  type ReviewReason,
+  type ReviewSeverity,
+  summarizeReviewReasons,
+} from "./stages/review-reasons.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import {
   checkLiveFactAndActionClaims,
@@ -196,6 +202,11 @@ export interface PipelineResult {
   generation_id?: string;
   proposed_actions: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
+  // Why this draft is in review, independent of routing_hint — which in manual
+  // mode is always "review" and therefore cannot carry the guards' signal.
+  review_reasons?: ReviewReason[];
+  review_severity?: ReviewSeverity;
+  guard_violation?: boolean;
   block_send_recommended?: boolean;
   unsupported_commitment_check?: {
     checked: boolean;
@@ -3546,11 +3557,16 @@ export async function runDraftV2Pipeline(
     let finalDraft = languageCheckedWritten.draft_text;
     let finalConfidence = verified.confidence;
     let finalRoutingHint = effectiveRoutingHint;
+    // Guards' own signal channel. routing_hint cannot carry it: with
+    // auto_send_intents empty every draft is already "review", so escalating
+    // to it is a no-op. Measured 14/14 on 2026-07-29.
+    let reviewReasons: ReviewReason[] = [];
     let finalVerification = verified;
 
     if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
       finalConfidence = Math.min(finalConfidence, 0.62);
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "mixed_language_draft");
     }
 
     // 11. Eskalér til stærkere model — kun for høj-risiko intents hvor fejl er dyre.
@@ -3684,6 +3700,10 @@ export async function runDraftV2Pipeline(
     if (actionOutcomeRequiresReview(postActionResult)) {
       finalRoutingHint = "review";
       blockSendRecommended = true;
+      reviewReasons = addReviewReason(reviewReasons, "action_outcome_requires_review");
+    }
+    for (const reason of verifierRoutingGuard.reasons) {
+      reviewReasons = addReviewReason(reviewReasons, reason);
     }
     if (verifierRoutingGuard.reasons.length > 0) {
       console.warn(
@@ -3713,6 +3733,7 @@ export async function runDraftV2Pipeline(
     );
     if (finalSupportVoiceViolations.length > 0) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "support_voice_violation");
       blockSendRecommended = true;
       finalConfidence = Math.min(finalConfidence, 0.72);
       console.warn(
@@ -3739,6 +3760,9 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedCommitmentCheck.requires_review) {
       finalRoutingHint = "review";
+      for (const v of unsupportedCommitmentCheck.violations) {
+        reviewReasons = addReviewReason(reviewReasons, v.type, v.excerpt);
+      }
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported commitment check flagged ${unsupportedCommitmentCheck.violations.length} violation(s) — routing to review`,
@@ -3763,6 +3787,15 @@ export async function runDraftV2Pipeline(
     });
     if (returnWindowCheck.requires_review) {
       finalRoutingHint = "review";
+      for (const v of returnWindowCheck.violations) {
+        reviewReasons = addReviewReason(
+          reviewReasons,
+          v.type,
+          `${v.order_age_days} dage${
+            v.documented_window_days ? ` vs ${v.documented_window_days} dage` : ""
+          }`,
+        );
+      }
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] return-window check flagged ${
@@ -3790,6 +3823,7 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedAssumptionCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "unsupported_assumption");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] ungrounded gift/original-purchaser assumption flagged ${unsupportedAssumptionCheck.violations.length} violation(s) — routing to review`,
@@ -3811,6 +3845,7 @@ export async function runDraftV2Pipeline(
     });
     if (liveFactActionClaimCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "live_fact_action_claim");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported live-fact/action claim flagged ${
@@ -3836,6 +3871,9 @@ export async function runDraftV2Pipeline(
     );
     finalRoutingHint = imageEvidenceGuard.routingHint;
     blockSendRecommended = imageEvidenceGuard.blockSendRecommended;
+    for (const v of imageEvidenceGuard.violations) {
+      reviewReasons = addReviewReason(reviewReasons, "image_evidence_claim", v.type);
+    }
     if (imageEvidenceGuard.violations.length > 0) {
       console.warn(
         `[generate-draft-v2] unsupported image-evidence claim flagged ${
@@ -3858,6 +3896,7 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedNegativeClaimCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "unsupported_negative_claim");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported negative compatibility/availability claim flagged ${
@@ -3882,8 +3921,24 @@ export async function runDraftV2Pipeline(
       finalDraft = capabilityRewrite.draft;
       finalRoutingHint = "review";
       blockSendRecommended = true;
+      reviewReasons = addReviewReason(reviewReasons, "capability_refusal");
       console.warn(
         "[generate-draft-v2] ungrounded capability refusal rewritten to owns-the-case hedge",
+      );
+    }
+
+    // All guards have had their say. `highest` is what distinguishes a draft
+    // that is merely awaiting manual approval from one a guard objected to —
+    // a distinction routing_hint cannot express while it is saturated.
+    const reviewReasonSummary = summarizeReviewReasons(reviewReasons);
+    if (reviewReasonSummary.has_guard_violation) {
+      console.warn(
+        `[generate-draft-v2] guard violation(s): ${
+          reviewReasons
+            .filter((r) => r.severity === "danger")
+            .map((r) => r.code)
+            .join(", ")
+        }`,
       );
     }
 
@@ -4046,6 +4101,9 @@ export async function runDraftV2Pipeline(
           intent: plan.primary_intent,
           confidence: finalConfidence,
           routing_hint: finalRoutingHint,
+          review_reasons: reviewReasonSummary.codes,
+          review_severity: reviewReasonSummary.highest,
+          guard_violation: reviewReasonSummary.has_guard_violation,
           sources: finalSourcesForLog,
         }),
         status: "success",
@@ -4112,6 +4170,9 @@ export async function runDraftV2Pipeline(
       generation_id: generationId,
       proposed_actions: finalProposals,
       routing_hint: finalRoutingHint,
+      review_reasons: reviewReasons,
+      review_severity: reviewReasonSummary.highest,
+      guard_violation: reviewReasonSummary.has_guard_violation,
       block_send_recommended: blockSendRecommended,
       unsupported_commitment_check: {
         checked: true,
