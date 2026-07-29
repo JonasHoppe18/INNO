@@ -1178,6 +1178,12 @@ export function buildOrderMatchDirective(match?: OrderMatch): string {
       return `${header}
 - Opslaget lykkedes, men ingen ordre matchede. Sig IKKE at kunden ingen ordre har.
 - Bed kunden bekræfte ordrenummeret eller oplyse manglende detaljer. Ingen handlinger.`;
+    case "order_not_owned":
+      return `${header}
+- Ordrenummeret hører til en ANDEN kundes ordre end den afsender der skriver. Du har INGEN ordredata til rådighed.
+- Gengiv ALDRIG noget om ordren: hverken status, leveringsadresse, beløb, produkter, dato eller om den overhovedet findes. Bekræft ikke og afkræft ikke dens eksistens.
+- Sig at du ikke kan give oplysninger om ordren til denne mailadresse, og bed kunden skrive fra den email der blev brugt ved købet. Antag IKKE at afsenderen har ondt i sinde — en kunde kan sagtens skrive fra en anden adresse end købsmailen.
+- Ingen handlinger. Foreslå aldrig en mutation på ordren.`;
     case "integration_error":
       return `${header}
 - Vi kunne ikke verificere ordren pga. en teknisk fejl/timeout — dette er IKKE bevis for at ordren ikke findes.
