@@ -3,6 +3,7 @@ import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
+import type { ResolutionStage } from "./stages/planner.ts";
 import { assessConversationClosing } from "./stages/conversation-closing.ts";
 import {
   statusOnAutoResolvedAcknowledgment,
@@ -1095,6 +1096,22 @@ export function applyVerifierRoutingGuard(
   return { routingHint, blockSendRecommended, reasons };
 }
 
+// Which RESOLUTION_STAGE_DIRECTIVES entry a post-action confirmation should
+// use. Every executed-action confirmation used to force resolution_stage to
+// "info_only" regardless of action type, which silenced any action-specific
+// tone directive (e.g. RESOLUTION_STAGE_DIRECTIVES.cancel_order) for exactly
+// the drafts that need it most. Only action types with a dedicated, tested
+// directive get mapped here — everything else keeps the safe "info_only"
+// default rather than guessing at an untested stage.
+export function resolveActionConfirmationStage(
+  actionType: string,
+): ResolutionStage {
+  const map: Partial<Record<string, ResolutionStage>> = {
+    cancel_order: "cancel_order",
+  };
+  return map[actionType] ?? "info_only";
+}
+
 export function shouldDeferDraftUntilActionDecision(
   proposals: ActionProposal[],
   routingHint: "auto" | "review" | "block",
@@ -1623,7 +1640,7 @@ export async function runDraftV2Pipeline(
       plan = {
         ...plan,
         primary_intent: actionIntentMap[actionType] ?? plan.primary_intent,
-        resolution_stage: "info_only",
+        resolution_stage: resolveActionConfirmationStage(actionType),
         skills_to_consider: [],
         confidence: 1,
       };
@@ -3747,11 +3764,25 @@ export async function runDraftV2Pipeline(
     // refund/prepaid-label/replacement/exchange promises that prompt-only
     // guardrails do not reliably prevent. Additive only: never rewrites the
     // draft, never executes actions; only escalates routing_hint to "review".
+    // A just-executed action (postActionResult) authorizes its own past-tense
+    // confirmation. finalProposals is deliberately emptied once an action has
+    // run (it is no longer a pending proposal), which left the check unable to
+    // authorize the very claim it was confirming — "jeg har annulleret ordre
+    // #1053" was flagged as an unsupported promise on an already-applied,
+    // approved cancellation. Feed the executed type in explicitly.
+    const executedActionTypeForCommitmentCheck =
+      isExecutedActionResult(postActionResult) &&
+        typeof postActionResult?.action_type === "string"
+        ? [{ type: String(postActionResult.action_type) }]
+        : [];
     const unsupportedCommitmentCheck = checkUnsupportedCommitments({
       draft_text: finalDraft ?? "",
-      approved_actions: finalProposals
-        .filter((p) => !p.requires_approval)
-        .map((p) => ({ type: p.type })),
+      approved_actions: [
+        ...finalProposals
+          .filter((p) => !p.requires_approval)
+          .map((p) => ({ type: p.type })),
+        ...executedActionTypeForCommitmentCheck,
+      ],
       suggested_actions: finalProposals
         .filter((p) => p.requires_approval)
         .map((p) => ({ type: p.type })),

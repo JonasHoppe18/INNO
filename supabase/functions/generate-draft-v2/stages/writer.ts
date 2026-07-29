@@ -16,6 +16,7 @@ import {
   type ResolvedFact,
 } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
+import type { Order } from "../../_shared/integrations/commerce/types.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import {
@@ -1096,9 +1097,29 @@ export function customerClaimsReturned(message?: string | null): boolean {
       .test(m);
 }
 
+// Gate for showing the refund-status directive at all. Originally scoped to
+// "refund"/"return" intents plus any order that already carries refund rows —
+// which meant a paid order cancelled via a "cancel" intent never surfaced its
+// money status to the writer. Observed live: a paid cancellation (#1057) and
+// an unpaid one (#1056) got near-identical replies, neither mentioning money,
+// because the writer was never told there was a difference to speak to.
+export function isRefundStatusRelevantForWriter(
+  intent: string | null | undefined,
+  order: Order | null | undefined,
+): boolean {
+  if (!order) return false;
+  if (intent === "refund" || intent === "return") return true;
+  if (Array.isArray(order.refunds) && order.refunds.length > 0) return true;
+  if (intent === "cancel") {
+    const status = String(order.financial_status ?? "").toLowerCase();
+    return status === "paid" || status === "partially_paid";
+  }
+  return false;
+}
+
 export function buildRefundStatusDirective(
   refund?: RefundStatus | null,
-  opts?: { customerClaimsReturned?: boolean },
+  opts?: { customerClaimsReturned?: boolean; context?: "cancel_order" },
 ): string {
   if (!refund) return "";
   const header = `# Refunderingsstatus (struktureret) — state: ${refund.state}`;
@@ -1115,6 +1136,18 @@ export function buildRefundStatusDirective(
 - FORBUDTE formuleringer (brug ingen af disse eller lignende — beskriv IKKE en automatisk refunderings-workflow): "manuel gennemgang", "teamet kan", "vores system", "undersøge status yderligere", "når vi modtager og behandler din returnering", "så snart vi har modtaget returneringen", "vi igangsætter/starter refunderingen", "refunderingen igangsættes/starter automatisk", "du vil blive underrettet/får besked", "vi holder øje med forsendelsen/pakken".
 - Lov IKKE hvornår pengene ankommer og lov ikke nogen notifikation.
 - Nævn IKKE ansvar eller omkostninger for returforsendelse, medmindre kunden selv spørger om forsendelse eller omkostninger.`;
+      }
+      // Sub-case: order just cancelled, was paid, nothing refunded yet. The
+      // return-request phrasing above (asking for missing proof) makes no
+      // sense here — there is no return to prove. State the money situation
+      // plainly and commit to getting it handled, without claiming Sona
+      // itself is issuing the refund (no refund_order action exists here —
+      // that would trip unsupported_refund_promise, correctly).
+      if (opts?.context === "cancel_order") {
+        return `${header}
+- Ordren var betalt, og der er IKKE registreret nogen refundering endnu. Nævn det ærligt — lad det ikke stå unævnt, som om annulleringen var det eneste kunden havde brug for at vide.
+- Sig at du sørger for at en kollega får sat refunderingen i gang. Skriv IKKE i første person at DU refunderer eller tilbagebetaler beløbet — det er ikke besluttet endnu.
+- Lov IKKE et konkret antal dage eller en notifikationskanal, medmindre verificeret politik angiver det.`;
       }
       return `${header}
 - Ingen refundering er registreret på ordren. Sig IKKE at en refundering er udstedt og opfind ikke en returstatus.
@@ -1751,7 +1784,7 @@ Output: the 2 sentences only.`;
 // Static core rules for the PROCEDURAL writer prompt (variant B: HOLDNING →
 // INTENT). Extracted verbatim like buildCoreRulesA — byte-identical output;
 // the compact small-model variant plugs in here.
-function buildCoreRulesB(
+export function buildCoreRulesB(
   actionResult: Record<string, unknown> | null,
 ): string {
   return `HOLDNING (vigtigst af alt):
@@ -1795,7 +1828,7 @@ ${
 POST-ACTION (primær opgave — al anden kontekst er sekundær):
 Handlingen er allerede udført i Shopify. Skriv KUN 2-3 sætninger.
 - Brug PRÆTERITUM — aldrig "vil blive", "kan", "behandles", "igangsat".
-- For refund_order: (1) beløbet ER refunderet med amount_display + ordrenavn, (2) 3-5 hverdage på kontoen. Ved cancel_order må refund kun nævnes, hvis actionResult indeholder et faktisk refunderet beløb.
+- For refund_order: beløbet ER refunderet med amount_display + ordrenavn, og at det tager 3-5 hverdage på kontoen. For cancel_order: følg # Refunderingsstatus-blokken herunder for om og hvordan penge skal nævnes — den blok afgør det, ikke en generel regel her.
 - Ingen "tak for din besked", ingen "kontakt os hvis...", ingen genforklaring.
 - FORBUDT: "vi har tilbudt", "vil blive refunderet", "hurtigst muligt", "sagen sendes videre".`
       : ""
@@ -1852,7 +1885,7 @@ INTENT:
 // section replace the classic lists. The gpt-4o prompt is untouched
 // (buildCoreRulesA/B). Safety net: every deterministic guard/backstop still
 // runs on the output regardless of prompt variant.
-function buildCompactCoreRules(
+export function buildCompactCoreRules(
   actionResult: Record<string, unknown> | null,
 ): string {
   return `DE 5 VIGTIGSTE REGLER (prioriteret — ved konflikt vinder lavere nummer):
@@ -1876,7 +1909,7 @@ OPSLAGSREGLER (brug når situationen opstår):
 - Afslutning: afventer svar → "Jeg ser frem til at høre fra dig." / løst → "God dag!" — aldrig "du er velkommen til at kontakte os igen".${
     isExecutedActionResult(actionResult)
       ? `
-- POST-ACTION (primær opgave): Handlingen er allerede udført i Shopify. KUN 2-3 sætninger i datid. Nævn kun refund-beløb og 3-5 hverdage ved refund_order eller når actionResult indeholder et faktisk refunderet beløb. Aldrig "vil blive", ingen genforklaring.`
+- POST-ACTION (primær opgave): Handlingen er allerede udført i Shopify. KUN 2-3 sætninger i datid. Refund_order: nævn beløb + 3-5 hverdage. Cancel_order: følg # Refunderingsstatus-blokken for om og hvordan penge skal nævnes — ikke en generel regel her. Aldrig "vil blive", ingen genforklaring.`
       : ""
   }`;
 }
@@ -2016,6 +2049,36 @@ Regler:
 - Ingen signatur eller support-email.`;
 }
 
+// Per-resolution-stage steering for the writer. Extracted to module level (was
+// a local const inside runWriter) so its content is independently testable —
+// per the lesson from mønster 1 today: pin the AUTHORED instruction, not a
+// regex over what the model generates from it.
+//
+// cancel_order was strengthened 2026-07-29: live output was grammatically
+// correct but read like a log line — "Jeg har annulleret din ordre #1057; den
+// var endnu ikke afsendt. God dag!" — because the directive only policed tense
+// safety and said nothing about how a person would actually write it. Payment
+// status is handled separately by refundStatusBlock/buildRefundStatusDirective
+// with context "cancel_order"; this entry tells the writer to actually use it.
+export const RESOLUTION_STAGE_DIRECTIVES: Record<string, string> = {
+  clarify_symptom:
+    'KRITISK — kunden har IKKE beskrevet et konkret produkt, symptom eller problem endnu (kun noget i retning af "det virker ikke"/"problem med min ordre"). Stil PRÆCIS ét kort, venligt spørgsmål der beder om (a) hvilket produkt eller hvilken ordre det drejer sig om, og (b) hvad der konkret ikke virker/er galt. Giv INGEN troubleshooting-trin, årsagsforslag eller løsningsforslag — problemet er endnu ukendt, så gæt ALDRIG på produkt, symptom eller årsag. Nævn IKKE garanti, retur eller refund medmindre kunden allerede selv har bedt om det. Dette er IKKE en anbefaling der kan fraviges — svar KUN med spørgsmålet, i en naturlig og hjælpsom tone som en rigtig supportmedarbejder, ikke robotagtigt eller proceduremæssigt.',
+  troubleshoot_first:
+    "Foretrukken sti: giv produkt-specifikke troubleshooting-trin fra hentede sources før garanti/retur/ombytning nævnes. UNDTAGELSE: hvis kunden eksplicit skriver de allerede har prøvet trin, eller eksplicit beder om replacement/refund og kontekst gør det rimeligt, så følg kundens behov i stedet.",
+  request_evidence:
+    "Foretrukken sti: anerkend problemet kort og bed om manglende evidens (billeder/video af skade, ordrenummer hvis ukendt) før et resolution-tilbud. UNDTAGELSE: hvis evidens allerede er givet i tråden, eller kundens problem er klart uden billeder, så gå videre uden at bede om det igen.",
+  initiate_warranty_repair:
+    "Foretrukken sti: forklar garanti-/reparations-proceduren fra knowledge. Undgå at foreslå mere troubleshooting hvis kunden allerede har prøvet trin eller skaden er fysisk og dokumenteret.",
+  cancel_order:
+    'Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid ("er annulleret", "er refunderet") hvis \'POST-ACTION\'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid ("vi annullerer", "din ordre annulleres") eller som bekræftelse på at anmodningen er modtaget og venter. Skriv som en erfaren kollega der ejer sagen, ikke som en bekræftelses-log — bind de faktuelle detaljer (ordrenummer, afsendelsesstatus, betalingsstatus) sammen i naturlige sætninger i stedet for at remse dem op adskilt af semikolon. Var ordren betalt, skal du forholde dig til pengene (se Refunderingsstatus-blokken herunder) — lad det aldrig stå unævnt, som om annulleringen alene var svaret kunden havde brug for.',
+  refund_or_exchange:
+    "Foretrukken sti: bekræft eller initier retur/refund/ombytning per knowledge. Samme datid-regel som cancel_order: kun datid hvis action er bekræftet udført.",
+  info_only:
+    "Besvar kundens konkrete spørgsmål med verificerede fakta. Ingen handlingssti udover at give informationen.",
+  escalate_human:
+    "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
+};
+
 export async function runWriter(
   {
     plan,
@@ -2139,12 +2202,14 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
   // --- Kilde-autoritet + ordre-match (live-fakta vinder, ingen gætteri) ---
   const authorityBlock = buildLiveFactAuthorityBlock();
   const orderMatchBlock = buildOrderMatchDirective(facts.match);
-  const refundRelevantForWriter = facts.order != null &&
-    (plan.primary_intent === "refund" || plan.primary_intent === "return" ||
-      (Array.isArray(facts.order.refunds) && facts.order.refunds.length > 0));
+  const refundRelevantForWriter = isRefundStatusRelevantForWriter(
+    plan.primary_intent,
+    facts.order,
+  );
   const refundStatusBlock = refundRelevantForWriter && facts.order
     ? buildRefundStatusDirective(deriveRefundStatus(facts.order), {
       customerClaimsReturned: customerClaimsReturned(latestCustomerMessage),
+      context: plan.primary_intent === "cancel" ? "cancel_order" : undefined,
     })
     : "";
   const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? [], {
@@ -2536,24 +2601,7 @@ ${
 ${customerHistory}`
     : "";
 
-  const stageDirectives: Record<string, string> = {
-    clarify_symptom:
-      'KRITISK — kunden har IKKE beskrevet et konkret produkt, symptom eller problem endnu (kun noget i retning af "det virker ikke"/"problem med min ordre"). Stil PRÆCIS ét kort, venligt spørgsmål der beder om (a) hvilket produkt eller hvilken ordre det drejer sig om, og (b) hvad der konkret ikke virker/er galt. Giv INGEN troubleshooting-trin, årsagsforslag eller løsningsforslag — problemet er endnu ukendt, så gæt ALDRIG på produkt, symptom eller årsag. Nævn IKKE garanti, retur eller refund medmindre kunden allerede selv har bedt om det. Dette er IKKE en anbefaling der kan fraviges — svar KUN med spørgsmålet, i en naturlig og hjælpsom tone som en rigtig supportmedarbejder, ikke robotagtigt eller proceduremæssigt.',
-    troubleshoot_first:
-      "Foretrukken sti: giv produkt-specifikke troubleshooting-trin fra hentede sources før garanti/retur/ombytning nævnes. UNDTAGELSE: hvis kunden eksplicit skriver de allerede har prøvet trin, eller eksplicit beder om replacement/refund og kontekst gør det rimeligt, så følg kundens behov i stedet.",
-    request_evidence:
-      "Foretrukken sti: anerkend problemet kort og bed om manglende evidens (billeder/video af skade, ordrenummer hvis ukendt) før et resolution-tilbud. UNDTAGELSE: hvis evidens allerede er givet i tråden, eller kundens problem er klart uden billeder, så gå videre uden at bede om det igen.",
-    initiate_warranty_repair:
-      "Foretrukken sti: forklar garanti-/reparations-proceduren fra knowledge. Undgå at foreslå mere troubleshooting hvis kunden allerede har prøvet trin eller skaden er fysisk og dokumenteret.",
-    cancel_order:
-      'Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid ("er annulleret", "er refunderet") hvis \'POST-ACTION\'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid ("vi annullerer", "din ordre annulleres") eller som bekræftelse på at anmodningen er modtaget og venter.',
-    refund_or_exchange:
-      "Foretrukken sti: bekræft eller initier retur/refund/ombytning per knowledge. Samme datid-regel som cancel_order: kun datid hvis action er bekræftet udført.",
-    info_only:
-      "Besvar kundens konkrete spørgsmål med verificerede fakta. Ingen handlingssti udover at give informationen.",
-    escalate_human:
-      "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
-  };
+  const stageDirectives = RESOLUTION_STAGE_DIRECTIVES;
   const stageBlock =
     `# RESOLUTION STAGE (stærk anbefaling — ikke absolut, men afvig kun hvis kundens behov tydeligt kræver det)
 Stage: ${resolutionStage}
