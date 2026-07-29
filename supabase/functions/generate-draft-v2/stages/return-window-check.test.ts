@@ -1,5 +1,5 @@
-import { assert, assertEquals } from "jsr:@std/assert@1";
-import { checkReturnWindow } from "./return-window-check.ts";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { buildReturnWindowFact, checkReturnWindow } from "./return-window-check.ts";
 import type { RetrievedChunk } from "./retriever.ts";
 
 // Regression tests for the C5 finding (2026-07-28): a return on order #1051 —
@@ -153,4 +153,59 @@ Deno.test("a hedged mention of returns is not a grant", () => {
   });
 
   assertEquals(result.compliant, true);
+});
+
+// The check above is a backstop. The real cause of C5 was that the writer had
+// to find the window in retrieved prose AND do date arithmetic — two things
+// models are unreliable at. These tests cover computing the verdict
+// deterministically and handing it to the writer as a stated fact.
+
+Deno.test("fact states the verdict when the order is outside the window", () => {
+  const fact = buildReturnWindowFact({
+    order_age_days: 146,
+    retrieved_chunks: [POLICY_30_DAYS],
+  });
+
+  assert(fact, "expected a fact");
+  assertEquals(fact.label, "Returvindue");
+  assertStringIncludes(fact.value, "146");
+  assertStringIncludes(fact.value, "30");
+  assertStringIncludes(fact.value, "UDEN FOR");
+});
+
+Deno.test("fact states the verdict when the order is inside the window", () => {
+  const fact = buildReturnWindowFact({
+    order_age_days: 12,
+    retrieved_chunks: [POLICY_30_DAYS],
+  });
+
+  assert(fact);
+  assertStringIncludes(fact.value, "INDEN FOR");
+  assert(
+    !/UDEN FOR/.test(fact.value),
+    "an in-window order must not also be described as outside",
+  );
+});
+
+Deno.test("fact withholds a verdict when no window is documented", () => {
+  const fact = buildReturnWindowFact({
+    order_age_days: 146,
+    retrieved_chunks: [POLICY_ADDRESS_ONLY],
+  });
+
+  assert(fact);
+  // Must not invent a window, but must still stop the writer granting one.
+  assert(!/UDEN FOR|INDEN FOR/.test(fact.value));
+  assertStringIncludes(fact.value, "146");
+  assert(
+    /lov (?:aldrig|ikke)/i.test(fact.value),
+    `fact must forbid promising a return, got: ${fact.value}`,
+  );
+});
+
+Deno.test("no fact without an order age", () => {
+  assertEquals(
+    buildReturnWindowFact({ order_age_days: null, retrieved_chunks: [POLICY_30_DAYS] }),
+    null,
+  );
 });

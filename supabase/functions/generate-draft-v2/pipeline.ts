@@ -122,7 +122,7 @@ import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.
 import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
-import { checkReturnWindow } from "./stages/return-window-check.ts";
+import { buildReturnWindowFact, checkReturnWindow } from "./stages/return-window-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import {
   checkLiveFactAndActionClaims,
@@ -1844,6 +1844,27 @@ export async function runDraftV2Pipeline(
       messages,
       latestMessage,
     );
+    // Return-window verdict, computed here rather than left to the writer.
+    // C5 showed the writer granting a return on a five-month-old order: it had
+    // the order age and a directive to defer to policy, but finding the window
+    // in retrieved prose and comparing dates are both things it gets wrong.
+    // Only added for return intents, so ordinary enquiries carry no extra noise.
+    if (
+      (plan.required_facts || []).includes("return_eligibility") ||
+      plan.primary_intent === "return"
+    ) {
+      const returnWindowFact = buildReturnWindowFact({
+        order_age_days: facts.order?.created_at
+          ? Math.floor(
+            (Date.now() - new Date(facts.order.created_at).getTime()) /
+              (1000 * 60 * 60 * 24),
+          )
+          : null,
+        retrieved_chunks: retrieved.chunks,
+      });
+      if (returnWindowFact) facts.facts.push(returnWindowFact);
+    }
+
     const returnTrackingAttribution = detectCustomerProvidedReturnTracking({
       latestCustomerMessage: latestBody,
       conversationHistory: quotedAwareConversationHistory,

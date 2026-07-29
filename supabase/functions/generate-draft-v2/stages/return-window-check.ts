@@ -109,6 +109,51 @@ function documentedWindowDays(chunks: RetrievedChunk[]): number | null {
   return longest;
 }
 
+// Pre-writer counterpart to the check below. The writer is unreliable at two
+// things this needs: locating a window inside retrieved prose, and doing date
+// arithmetic. So we do both here and hand it the finished verdict.
+//
+// Shape matches ResolvedFact from fact-resolver; kept structural to avoid a
+// circular import between the two modules.
+export function buildReturnWindowFact(input: {
+  order_age_days: number | null;
+  retrieved_chunks?: RetrievedChunk[];
+}): { label: string; value: string } | null {
+  const age = input.order_age_days;
+  if (age === null || age === undefined || !Number.isFinite(age)) return null;
+
+  const windowDays = documentedWindowDays(input.retrieved_chunks ?? []);
+  const label = "Returvindue";
+
+  if (windowDays === null) {
+    return {
+      label,
+      value:
+        `Ordren er ${age} dage gammel. Den hentede viden dokumenterer INTET returvindue. ` +
+        `Opfind aldrig en frist, og lov ikke returret. Sig at du skal have det bekræftet ` +
+        `af en kollega før du kan love en retur.`,
+    };
+  }
+
+  if (age > windowDays) {
+    return {
+      label,
+      value:
+        `Ordren er ${age} dage gammel, og butikkens dokumenterede returvindue er ${windowDays} dage. ` +
+        `Ordren er dermed UDEN FOR returvinduet. Igangsæt ikke en retur og send ikke returinstruktioner ` +
+        `eller returadresse. Forklar at ordren ligger uden for fristen, og tilbyd at få en kollega til ` +
+        `at vurdere om der kan gøres en undtagelse.`,
+    };
+  }
+
+  return {
+    label,
+    value:
+      `Ordren er ${age} dage gammel, og butikkens dokumenterede returvindue er ${windowDays} dage. ` +
+      `Ordren er INDEN FOR returvinduet.`,
+  };
+}
+
 export function checkReturnWindow(
   input: ReturnWindowCheckInput,
 ): ReturnWindowCheckResult {
