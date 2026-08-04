@@ -10,6 +10,7 @@ export const PRODUCT_WEBHOOK_TOPICS = [
 
 export const ANALYTICS_WEBHOOK_TOPICS = [
   "orders/create", "orders/updated", "refunds/create",
+  "returns/request", "returns/update", "returns/approve", "returns/decline", "returns/cancel", "returns/close", "returns/process", "returns/reopen",
 ];
 
 export const COMMERCE_WEBHOOK_TOPICS = [

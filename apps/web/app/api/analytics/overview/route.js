@@ -338,6 +338,28 @@ async function fetchProductMap(serviceClient, productIds) {
   return Object.fromEntries((data ?? []).map((row) => [String(row.id), row.title || `Product #${row.id}`]));
 }
 
+async function fetchExternalProductMap(serviceClient, productIds, shopIds) {
+  const ids = Array.from(new Set(productIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  const scopedShopIds = Array.from(new Set(shopIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (!ids.length) return {};
+  let query = serviceClient
+    .from("shop_products")
+    .select("external_id, title, shop_ref_id")
+    .in("external_id", ids);
+  if (scopedShopIds.length) query = query.in("shop_ref_id", scopedShopIds);
+  const { data, error } = await query;
+  if (error) return {};
+  const productMap = {};
+  for (const row of data ?? []) {
+    const externalId = String(row.external_id || "");
+    const title = row.title || `Product #${externalId}`;
+    if (!externalId) continue;
+    productMap[externalId] = productMap[externalId] || title;
+    productMap[`${String(row.shop_ref_id || "")}:${externalId}`] = title;
+  }
+  return productMap;
+}
+
 async function fetchTagRows(serviceClient, threadIds) {
   if (!threadIds.length) return [];
   const { data, error } = await serviceClient
@@ -451,6 +473,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     actionsResult,
     orders,
     refunds,
+    shopifyReturns,
     returnCases,
     feedbackRows,
     lifecycleEvents,
@@ -467,8 +490,15 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     }),
     fetchWorkspacePeriodFacts(serviceClient, scope, {
       table: "commerce_refunds",
-      fields: "id, external_refund_id, external_order_id, refunded_at, amount, currency",
+      fields: "id, shop_id, external_refund_id, external_order_id, refunded_at, amount, currency",
       dateColumn: "refunded_at",
+      since,
+      until,
+    }),
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "commerce_returns",
+      fields: "id, shop_id, external_return_id, external_order_id, returned_at, status",
+      dateColumn: "returned_at",
       since,
       until,
     }),
@@ -578,6 +608,23 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     refundItems = data ?? [];
   }
 
+  let shopifyReturnItems = [];
+  const shopifyReturnIds = (shopifyReturns || []).map((row) => row.id).filter(Boolean);
+  if (shopifyReturnIds.length) {
+    const { data, error } = await serviceClient
+      .from("commerce_return_items")
+      .select("return_id, external_line_item_id, quantity, reason_handle, reason")
+      .in("return_id", shopifyReturnIds);
+    if (error && !["42P01", "PGRST205"].includes(error.code)) throw new Error(error.message);
+    shopifyReturnItems = data ?? [];
+  }
+
+  const refundProductMap = await fetchExternalProductMap(
+    serviceClient,
+    refundItems.map((item) => item.external_product_id),
+    refunds.map((row) => row.shop_id),
+  );
+
   const grouping = groupKeyForRange(since, until);
   const volumeMap = {};
   const resolvedAtByThreadId = {};
@@ -671,10 +718,35 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   }
 
   const returnReasonCounts = {};
-  for (const returnCase of returnCases) {
-    inc(returnReasonCounts, String(returnCase.reason || "Unspecified").trim() || "Unspecified");
+  let returnReasonTotal = 0;
+  let returnReasonsSource = null;
+  if (shopifyReturns.length) {
+    returnReasonsSource = "shopify";
+    const itemsByReturnId = {};
+    for (const item of shopifyReturnItems) {
+      if (!itemsByReturnId[item.return_id]) itemsByReturnId[item.return_id] = [];
+      itemsByReturnId[item.return_id].push(item);
+    }
+    for (const returnRow of shopifyReturns) {
+      const items = itemsByReturnId[returnRow.id] || [];
+      if (!items.length) {
+        inc(returnReasonCounts, "Unspecified");
+        returnReasonTotal++;
+        continue;
+      }
+      for (const item of items) {
+        inc(returnReasonCounts, String(item.reason || item.reason_handle || "Unspecified").trim() || "Unspecified");
+        returnReasonTotal++;
+      }
+    }
+  } else if (returnCases.length) {
+    returnReasonsSource = "sona";
+    for (const returnCase of returnCases) {
+      inc(returnReasonCounts, String(returnCase.reason || "Unspecified").trim() || "Unspecified");
+    }
+    returnReasonTotal = returnCases.length;
   }
-  const returnReasons = listFromCountMap(returnReasonCounts, returnCases.length, {
+  const returnReasons = listFromCountMap(returnReasonCounts, returnReasonTotal, {
     keyPrefix: "return-reason",
   }).slice(0, 8);
 
@@ -688,7 +760,11 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     const currency = refundCurrencyById[String(item.refund_id)] || null;
     const key = `${productId}:${currency || "unknown"}`;
     if (!refundProductStats[key]) {
-      refundProductStats[key] = { productId, currency, quantity: 0, amount: 0 };
+      const refund = refunds.find((row) => String(row.id) === String(item.refund_id));
+      const productName = refundProductMap[`${String(refund?.shop_id || "")}:${productId}`]
+        || refundProductMap[productId]
+        || `Product #${productId}`;
+      refundProductStats[key] = { productId, productName, currency, quantity: 0, amount: 0 };
     }
     refundProductStats[key].quantity += Number(item.quantity) || 0;
     refundProductStats[key].amount += Number(item.amount) || 0;
@@ -709,18 +785,21 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   const escalatedTickets = lifecycleEvents.filter((row) => row.event_type === "escalated").length;
 
   const orderCount = orders.length;
+  const returnRows = shopifyReturns.length ? shopifyReturns : returnCases;
   const refundedOrderCount = new Set(refunds.map((row) => row.external_order_id).filter(Boolean)).size;
   const commerce = {
     orderCount,
     linkedSupportTickets: linkedTicketIds.size,
     ticketsPer100Orders: orderCount > 0 ? Number(((linkedTicketIds.size / orderCount) * 100).toFixed(1)) : null,
-    returnCases: returnCases.length,
-    returnRate: orderCount > 0 ? Number(((returnCases.length / orderCount) * 100).toFixed(1)) : null,
+    returnCases: returnRows.length,
+    returnRate: orderCount > 0 ? Number(((returnRows.length / orderCount) * 100).toFixed(1)) : null,
     refundedOrders: refundedOrderCount,
     refundRate: orderCount > 0 ? Number(((refundedOrderCount / orderCount) * 100).toFixed(1)) : null,
     refundTotals: moneyByCurrency(refunds),
     returnReasons,
     refundProducts,
+    returnReasonsSource,
+    shopifyReturnDataAvailable: shopifyReturns.length > 0,
     orderDataAvailable: orderCount > 0,
     refundDataAvailable: refunds.length > 0,
   };
