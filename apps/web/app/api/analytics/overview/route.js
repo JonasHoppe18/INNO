@@ -349,10 +349,15 @@ async function fetchExternalProductMap(serviceClient, productIds, shopIds) {
   if (scopedShopIds.length) query = query.in("shop_ref_id", scopedShopIds);
   const { data, error } = await query;
   if (error) return {};
-  return Object.fromEntries((data ?? []).map((row) => [
-    `${String(row.shop_ref_id || "")}:${String(row.external_id || "")}`,
-    row.title || `Product #${row.external_id}`,
-  ]));
+  const productMap = {};
+  for (const row of data ?? []) {
+    const externalId = String(row.external_id || "");
+    const title = row.title || `Product #${externalId}`;
+    if (!externalId) continue;
+    productMap[externalId] = productMap[externalId] || title;
+    productMap[`${String(row.shop_ref_id || "")}:${externalId}`] = title;
+  }
+  return productMap;
 }
 
 async function fetchTagRows(serviceClient, threadIds) {
@@ -756,7 +761,9 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     const key = `${productId}:${currency || "unknown"}`;
     if (!refundProductStats[key]) {
       const refund = refunds.find((row) => String(row.id) === String(item.refund_id));
-      const productName = refundProductMap[`${String(refund?.shop_id || "")}:${productId}`] || `Product #${productId}`;
+      const productName = refundProductMap[`${String(refund?.shop_id || "")}:${productId}`]
+        || refundProductMap[productId]
+        || `Product #${productId}`;
       refundProductStats[key] = { productId, productName, currency, quantity: 0, amount: 0 };
     }
     refundProductStats[key].quantity += Number(item.quantity) || 0;
