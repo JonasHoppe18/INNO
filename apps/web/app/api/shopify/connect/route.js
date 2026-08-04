@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/shopify-oauth";
 
 const SHOPIFY_REDIRECT_URI = process.env.SHOPIFY_REDIRECT_URI || "";
-const DEFAULT_SCOPES = "read_orders,read_all_orders,read_customers,read_products";
+const DEFAULT_SCOPES = "read_orders,read_all_orders,read_customers,read_products,read_returns";
 
 function resolveScopes(rawScopes) {
   const normalized = String(rawScopes || "")
