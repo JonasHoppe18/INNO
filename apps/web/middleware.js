@@ -14,6 +14,8 @@ const publicRoutes = [
   "/api/outlook/webhook(.*)",
   "/api/webhooks/(.*)",
   "/api/admin/register-webhooks",
+  "/csat/(.*)",
+  "/api/csat/(.*)",
 ];
 const isPublicRoute = createRouteMatcher(publicRoutes);
 // Kun marketing-stier skal gennem next-intl (redirect / → /en, locale-detektion).

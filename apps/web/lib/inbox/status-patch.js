@@ -32,5 +32,6 @@ export function buildManualStatusPatch(body, nowIso) {
     payload.close_pending = false;
     payload.attention_reason = null;
   }
+  payload.resolution_source = status === "resolved" ? "manual" : null;
   return { payload };
 }
