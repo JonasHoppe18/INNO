@@ -7,7 +7,7 @@ import { resolveAuthScope } from "./workspace-auth.js";
 export const CUSTOMER_SATISFACTION_STORAGE_BUCKET = "workspace-assets";
 
 export const CUSTOMER_SATISFACTION_DEFAULTS = {
-  enabled: true,
+  enabled: false,
   delay: "1h",
   excludeAutoResolved: true,
   customerOnly: true,

@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 const DEFAULTS = {
-  enabled: true,
+  enabled: false,
   delay: "1h",
   subject: "How did we do?",
   headline: "How was your support experience?",
