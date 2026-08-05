@@ -17,6 +17,7 @@ import {
   PenLine,
   Settings,
   SlidersHorizontal,
+  Star,
   Tag,
   Trash2,
   User,
@@ -29,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { EditSignatureModal } from "@/components/settings/EditSignatureModal";
 import { MailboxesSettingsTab } from "@/components/settings/MailboxesSettingsTab";
 import { TagsSettings } from "@/components/settings/TagsSettings";
+import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
 import { PlaygroundPanel } from "@/components/agent/PlaygroundPanel";
@@ -90,7 +92,10 @@ const MENU_SECTIONS = [
   },
   {
     label: "COMMUNICATION",
-    items: [{ key: "email", label: "Email", icon: Mail }],
+    items: [
+      { key: "email", label: "Email", icon: Mail },
+      { key: "customer-satisfaction", label: "Customer satisfaction", icon: Star },
+    ],
   },
   {
     label: "ACCOUNT",
@@ -4527,6 +4532,8 @@ export function SettingsPanel() {
             saving={savingAutoReply || savingEmailRouting}
           />
         );
+      case "customer-satisfaction":
+        return <CustomerSatisfactionSettings workspaceName={teamName} />;
       case "general":
       default:
         return (

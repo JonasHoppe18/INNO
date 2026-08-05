@@ -1,0 +1,41 @@
+import { afterAll, describe, expect, it } from "vitest";
+
+import {
+  buildCustomerSatisfactionUrl,
+  deriveCustomerSatisfactionToken,
+  hashCustomerSatisfactionToken,
+  scheduledCustomerSatisfactionAt,
+} from "../customer-satisfaction-surveys.js";
+
+const previousSecret = process.env.CSAT_TOKEN_SECRET;
+process.env.CSAT_TOKEN_SECRET = "test-csat-secret";
+
+afterAll(() => {
+  if (previousSecret === undefined) delete process.env.CSAT_TOKEN_SECRET;
+  else process.env.CSAT_TOKEN_SECRET = previousSecret;
+});
+
+describe("customer satisfaction survey links", () => {
+  it("derives a stable opaque token without storing customer data", () => {
+    const first = deriveCustomerSatisfactionToken("workspace-1", "thread-1");
+    const second = deriveCustomerSatisfactionToken("workspace-1", "thread-1");
+    expect(first).toHaveLength(64);
+    expect(first).toBe(second);
+    expect(hashCustomerSatisfactionToken(first)).toHaveLength(64);
+    expect(first).not.toBe(deriveCustomerSatisfactionToken("workspace-1", "thread-2"));
+  });
+
+  it("keeps delivery delay semantics explicit", () => {
+    const resolvedAt = "2026-08-05T10:00:00.000Z";
+    expect(scheduledCustomerSatisfactionAt(resolvedAt, "immediately")).toBe(resolvedAt);
+    expect(scheduledCustomerSatisfactionAt(resolvedAt, "1h")).toBe("2026-08-05T11:00:00.000Z");
+    expect(scheduledCustomerSatisfactionAt(resolvedAt, "24h")).toBe("2026-08-06T10:00:00.000Z");
+  });
+
+  it("builds a shareable public URL from the request origin", () => {
+    expect(buildCustomerSatisfactionUrl("abc123", "https://app.example.com/")).toBe(
+      "https://app.example.com/csat/abc123",
+    );
+  });
+});
+

@@ -3,6 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { buildManualStatusPatch } from "@/lib/inbox/status-patch";
+import {
+  dispatchDueCustomerSatisfactionSurveys,
+  scheduleCustomerSatisfactionSurvey,
+} from "@/lib/server/customer-satisfaction-surveys";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -165,6 +169,26 @@ export async function PATCH(request) {
   }
   if (!data?.id) {
     return NextResponse.json({ error: "Thread not found in your scope." }, { status: 404 });
+  }
+
+  if (data.status === "resolved") {
+    try {
+      const scheduled = await scheduleCustomerSatisfactionSurvey(serviceClient, {
+        workspaceId: data.workspace_id || scope.workspaceId,
+        threadId: data.id,
+        resolvedAt: payload.status_changed_at,
+      });
+      if (scheduled.status === "pending" && scheduled.scheduledFor && Date.parse(scheduled.scheduledFor) <= Date.now()) {
+        await dispatchDueCustomerSatisfactionSurveys(serviceClient, {
+          workspaceId: data.workspace_id || scope.workspaceId,
+          origin: new URL(request.url).origin,
+          limit: 1,
+        });
+      }
+    } catch (error) {
+      // CSAT delivery is best effort and must never make resolving a ticket fail.
+      console.warn("[thread-status] CSAT survey scheduling failed", error?.message || error);
+    }
   }
 
   return NextResponse.json({ success: true, thread: data }, { status: 200 });
