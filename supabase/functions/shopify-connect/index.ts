@@ -6,6 +6,7 @@ const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2026-07";
 const WEBHOOK_TOPICS = [
   "shop/update", "products/create", "products/update", "products/delete",
   "orders/create", "orders/updated", "refunds/create",
+  "returns/request", "returns/update", "returns/approve", "returns/decline", "returns/cancel", "returns/close", "returns/process", "returns/reopen",
 ];
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");

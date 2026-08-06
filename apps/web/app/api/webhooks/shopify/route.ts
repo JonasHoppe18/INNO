@@ -24,12 +24,17 @@ import { credsFromShopRow, runPolicySyncForCreds } from "@/lib/server/shopify-po
 import { upsertProductKnowledge, embedText } from "@/lib/server/commerce/sync-one-product";
 import { fetchPresentmentPrices, fetchShopCurrency } from "@/lib/server/commerce/shopify-presentment";
 import { mapShopifyProductToNormalizedProduct, toShopProductRow } from "@/lib/server/commerce/normalize-product";
-import { mapShopifyOrderFact, mapShopifyRefundFact } from "@/lib/server/commerce/shopify-analytics";
+import { mapShopifyOrderFact, mapShopifyRefundFact, mapShopifyReturnFact } from "@/lib/server/commerce/shopify-analytics";
+import { fetchShopifyReturnById } from "@/lib/server/commerce/shopify-analytics-sync";
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 const PRODUCT_TOPICS = new Set(["products/create", "products/update", "products/delete"]);
 const ORDER_TOPICS = new Set(["orders/create", "orders/updated"]);
+const RETURN_TOPICS = new Set([
+  "returns/request", "returns/update", "returns/approve", "returns/decline",
+  "returns/cancel", "returns/close", "returns/process", "returns/reopen",
+]);
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
@@ -158,6 +163,52 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(JSON.stringify({ event: "shopify.webhook.refund_fact_error", topic, shop_domain: shopDomain, error: message }));
+      return NextResponse.json({ ok: false, error: message });
+    }
+  }
+
+  if (RETURN_TOPICS.has(topic)) {
+    try {
+      const payload = JSON.parse(rawBody);
+      const returnId = payload?.id || payload?.return_id;
+      if (!returnId) return NextResponse.json({ ok: true, topic, note: "incomplete return fact" });
+      const creds = credsFromShopRow(shopRow);
+      const returnPayload = await fetchShopifyReturnById({
+        domain: shopDomain,
+        accessToken: creds.access_token,
+        apiVersion: SHOPIFY_API_VERSION,
+        returnId,
+      });
+      const returnFact = mapShopifyReturnFact(returnPayload, {
+        workspaceId: shopRow.workspace_id,
+        shopId: shopRow.id,
+        externalOrderId: returnPayload?.orderId,
+      });
+      if (!returnFact) return NextResponse.json({ ok: true, topic, note: "incomplete return fact" });
+
+      const { data: returnRow, error: returnError } = await serviceClient
+        .from("commerce_returns")
+        .upsert(returnFact.return, { onConflict: "shop_id,external_return_id" })
+        .select("id")
+        .single();
+      if (returnError) throw returnError;
+
+      const { error: deleteItemsError } = await serviceClient
+        .from("commerce_return_items")
+        .delete()
+        .eq("return_id", returnRow.id);
+      if (deleteItemsError) throw deleteItemsError;
+
+      if (returnFact.items.length) {
+        const { error: itemError } = await serviceClient
+          .from("commerce_return_items")
+          .insert(returnFact.items.map((item) => ({ ...item, return_id: returnRow.id })));
+        if (itemError) throw itemError;
+      }
+      return NextResponse.json({ ok: true, topic, return_id: returnFact.return.external_return_id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({ event: "shopify.webhook.return_fact_error", topic, shop_domain: shopDomain, error: message }));
       return NextResponse.json({ ok: false, error: message });
     }
   }
