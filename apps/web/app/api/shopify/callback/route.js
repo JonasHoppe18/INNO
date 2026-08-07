@@ -8,10 +8,15 @@ import {
   verifyShopifyHmac,
 } from "@/lib/server/shopify-oauth";
 
-const APP_URL = process.env.APP_URL || "https://sona-ai.dk";
+const APP_URL = String(process.env.APP_URL || "").trim();
+const DASHBOARD_URL = String(process.env.NEXT_PUBLIC_DASHBOARD_URL || "").trim();
 
 function buildRedirectUrl(shop, status) {
-  const url = new URL("/integrations", APP_URL);
+  const destinationOrigin = DASHBOARD_URL || APP_URL;
+  if (!destinationOrigin) {
+    throw new Error("NEXT_PUBLIC_DASHBOARD_URL or APP_URL is missing on the server.");
+  }
+  const url = new URL("/integrations", destinationOrigin);
   url.searchParams.set("shop", shop);
   url.searchParams.set("shopify", status);
   return url;

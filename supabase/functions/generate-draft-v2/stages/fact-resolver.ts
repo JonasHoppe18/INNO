@@ -974,8 +974,8 @@ async function runInventoryLookupForShop(
       shop_domain: shopDomain,
       access_token: shopifyToken,
       // Match the Knowledge product-sync path (SHOPIFY_API_VERSION default
-      // 2024-07) for the product/inventory listing. Order flows are untouched.
-      api_version: "2024-07",
+      // current stable API version for product/inventory listing. Order flows are untouched.
+      api_version: Deno.env.get("SHOPIFY_API_VERSION") ?? "2026-07",
     });
     if (typeof provider.searchProductInventory !== "function") return null;
     const lookupWithDiagnostics = hasStockInventoryLookupDiagnostics(provider)

@@ -1,6 +1,8 @@
 import crypto from "crypto";
 
 import { getReplyTargetEmail, normalizeEmailAddress } from "../inbox/sender.js";
+import { normalizeSupportLanguage } from "../translation/languages.js";
+import { getCustomerSatisfactionLanguageCopy, localizeCustomerSatisfactionValue } from "../csat/language-copy.js";
 import { loadCustomerSatisfactionSettings } from "./customer-satisfaction.js";
 import { sendPostmarkEmail } from "./postmark.js";
 import { buildEffectiveSharedFromEmail } from "./sending-identity.js";
@@ -11,6 +13,25 @@ const RETRY_DELAY_MINUTES = 15;
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+const INTERNAL_HOSTS = new Set(["0.0.0.0", "localhost", "127.0.0.1", "::1"]);
+
+export function resolveCustomerSatisfactionOrigin(request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = asString(request.headers.get("x-forwarded-host") || request.headers.get("host"))
+    .split(",")[0]
+    .trim();
+  const forwardedProtocol = asString(request.headers.get("x-forwarded-proto")).split(",")[0].trim().toLowerCase();
+  if (forwardedHost) {
+    try {
+      const candidate = new URL(`${forwardedProtocol === "http" ? "http" : "https"}://${forwardedHost}`);
+      if (!INTERNAL_HOSTS.has(candidate.hostname.toLowerCase())) return candidate.origin;
+    } catch {
+      // Fall back to the request URL and configured public URL below.
+    }
+  }
+  return requestUrl.origin;
 }
 
 function getTokenSecret() {
@@ -36,16 +57,30 @@ export function hashCustomerSatisfactionToken(token) {
 }
 
 export function buildCustomerSatisfactionUrl(token, origin = "") {
-  const base =
-    asString(origin).replace(/\/$/, "") ||
-    asString(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.WEB_APP_URL).replace(/\/$/, "");
+  const requestedOrigin = asString(origin).replace(/\/$/, "");
+  const configuredOrigin = asString(
+    process.env.CSAT_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.WEB_APP_URL,
+  ).replace(/\/$/, "");
+  let requestedHost = "";
+  try {
+    requestedHost = new URL(requestedOrigin).hostname.toLowerCase();
+  } catch {
+    // Fall back to the configured public URL below.
+  }
+  const base = requestedOrigin && !INTERNAL_HOSTS.has(requestedHost) ? requestedOrigin : configuredOrigin || requestedOrigin;
   if (!base) throw new Error("Public app URL is missing for CSAT links.");
   return `${base}/csat/${encodeURIComponent(String(token))}`;
 }
 
-export function scheduledCustomerSatisfactionAt(resolvedAt, delay) {
+export function scheduledCustomerSatisfactionAt(resolvedAt, delay, customDelayMinutes = null) {
   const base = Date.parse(resolvedAt || "") || Date.now();
-  const delayMs = delay === "immediately" ? 0 : delay === "24h" ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+  const delayMs = delay === "immediately"
+    ? 0
+    : delay === "custom"
+      ? Math.max(5, Math.min(7 * 24 * 60, Number(customDelayMinutes) || 60)) * 60 * 1000
+      : delay === "24h"
+        ? 24 * 60 * 60 * 1000
+        : 60 * 60 * 1000;
   return new Date(base + delayMs).toISOString();
 }
 
@@ -91,41 +126,92 @@ function buildFromDisplay(name, email) {
   return safeName ? `${safeName} <${email}>` : email;
 }
 
-function buildSurveyEmail({ settings, surveyUrl, customerName, subject }) {
+export function buildSurveyEmail({ settings, surveyUrl, customerName, subject, language = "en" }) {
+  const normalizedLanguage = normalizeSupportLanguage(language);
+  const languageCopy = getCustomerSatisfactionLanguageCopy(normalizedLanguage);
   const tokens = {
     customer_first_name: customerName || "there",
     ticket_subject: subject || "your support request",
     team_name: settings.company || "your support team",
   };
-  const renderedSubject = (replaceTemplate(settings.subject, tokens) || "How did we do?")
+  const renderedSubject = (replaceTemplate(localizeCustomerSatisfactionValue(settings.subject, "subject", normalizedLanguage), tokens) || languageCopy.subject)
     .replace(/[\r\n]+/g, " ")
     .slice(0, 200);
-  const headline = replaceTemplate(settings.headline, tokens) || "How was your support experience?";
-  const intro = replaceTemplate(settings.intro, tokens) || "We'd love to hear how we did.";
-  const footer = replaceTemplate(settings.footer, tokens);
-  const thankYou = replaceTemplate(settings.thankYou, tokens) || "Thanks for helping us improve.";
+  const optionalCopy = (value, key) => {
+    const raw = String(value || "").trim();
+    return raw ? replaceTemplate(localizeCustomerSatisfactionValue(raw, key, normalizedLanguage), tokens) : "";
+  };
+  const headline = optionalCopy(settings.headline, "headline");
+  const intro = optionalCopy(settings.intro, "intro");
+  const footer = optionalCopy(settings.footer, "footer");
   const accent = /^#[0-9a-f]{6}$/i.test(settings.accent || "") ? settings.accent : "#635bff";
-  const safeUrl = escapeHtml(surveyUrl);
+  const logoPosition = ["top-center", "top-left", "footer"].includes(settings.logoPosition) ? settings.logoPosition : "top-center";
+  const logoSize = {
+    small: { maxWidth: 120, maxHeight: 36 },
+    medium: { maxWidth: 160, maxHeight: 48 },
+    large: { maxWidth: 220, maxHeight: 72 },
+  }[settings.logoSize] || { maxWidth: 160, maxHeight: 48 };
+  const companyName = String(settings.company || "").trim();
+  const senderName = String(settings.senderName || "").trim();
   const logo = settings.logoUrl
-    ? `<img src="${escapeHtml(settings.logoUrl)}" alt="${escapeHtml(settings.company || "Company")} logo" style="display:block;max-width:160px;max-height:48px;margin:0 auto 24px;object-fit:contain;">`
+    ? `<img src="${escapeHtml(settings.logoUrl)}" alt="${escapeHtml(companyName || "Company")} logo" style="display:block;max-width:${logoSize.maxWidth}px;max-height:${logoSize.maxHeight}px;margin:${logoPosition === "top-left" ? "0 0 24px" : "0 auto 24px"};object-fit:contain;">`
     : "";
-  const ratingLinks = [1, 2, 3, 4, 5]
-    .map((score) => `<a href="${safeUrl}" aria-label="${score} out of 5" style="display:inline-block;width:40px;height:40px;line-height:40px;margin:0 3px;border:1px solid #d8d8e0;border-radius:999px;color:#4b4b58;text-decoration:none;font-weight:600;text-align:center;">${score}</a>`)
+  const topLogo = logoPosition === "footer" ? "" : logo;
+  const footerLogo = logoPosition === "footer" && logo
+    ? `<div style="margin-top:auto;padding-top:20px;">${logo.replace("margin:0 auto 24px", "margin:0 auto")}</div>`
+    : "";
+  const companyLine = companyName ? `<p style="margin:0 0 8px;color:#6b6b78;font-size:13px;font-weight:600;">${escapeHtml(companyName)}</p>` : "";
+  const senderLine = senderName ? `<p style="margin:0 0 8px;color:#8b8b96;font-size:12px;">${escapeHtml(senderName)}</p>` : "";
+  const headlineLine = headline ? `<h1 style="margin:0;font-size:28px;line-height:1.2;letter-spacing:-.03em;">${escapeHtml(headline)}</h1>` : "";
+  const introLine = intro ? `<p style="margin:16px auto 28px;max-width:420px;color:#6b6b78;font-size:16px;line-height:1.6;">${escapeHtml(intro)}</p>` : "";
+  const footerLine = footer ? `<p style="margin:14px 0 0;color:#8b8b96;font-size:11px;line-height:1.5;">${escapeHtml(footer)}</p>` : "";
+  let ratingBaseUrl = surveyUrl;
+  try {
+    const parsedSurveyUrl = new URL(surveyUrl);
+    parsedSurveyUrl.pathname = parsedSurveyUrl.pathname.replace(/^\/csat\//, "/api/csat/survey/");
+    ratingBaseUrl = parsedSurveyUrl.toString();
+  } catch {
+    // Keep the original URL if a custom test URL is relative or otherwise not parseable.
+  }
+  const ratingUrls = [1, 2, 3, 4, 5].map((score) => `${ratingBaseUrl}${ratingBaseUrl.includes("?") ? "&" : "?"}score=${score}&language=${normalizedLanguage}`);
+  const ratingLinks = ratingUrls
+    .map((ratingUrl, index) => {
+      const score = index + 1;
+      return `<a href="${escapeHtml(ratingUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${score} out of 5" style="display:inline-block;width:40px;height:40px;line-height:40px;margin:0 3px;border:1px solid #d8d8e0;border-radius:999px;color:#4b4b58;text-decoration:none;font-weight:600;text-align:center;">${score}</a>`;
+    })
     .join("");
-  const html = `<!doctype html><html><body style="margin:0;background:#f7f7fa;color:#111118;font-family:Arial,Helvetica,sans-serif;"><div style="max-width:560px;margin:32px auto;padding:0 16px;"><div style="background:#ffffff;border:1px solid #e6e6ec;border-radius:18px;padding:40px 28px;text-align:center;box-shadow:0 8px 24px rgba(20,20,30,.06);">${logo}<p style="margin:0 0 8px;color:#6b6b78;font-size:13px;font-weight:600;">${escapeHtml(settings.company || "Customer feedback")}</p><h1 style="margin:0;font-size:28px;line-height:1.2;letter-spacing:-.03em;">${escapeHtml(headline)}</h1><p style="margin:16px auto 28px;max-width:420px;color:#6b6b78;font-size:16px;line-height:1.6;">${escapeHtml(intro)}</p><div style="margin:0 auto 10px;">${ratingLinks}</div><div style="display:flex;justify-content:space-between;max-width:240px;margin:8px auto 0;color:#8b8b96;font-size:12px;"><span>Very poor</span><span>Excellent</span></div><p style="margin:28px 0 0;color:#8b8b96;font-size:12px;line-height:1.5;">Click a number to share your feedback. No sign-in required.</p></div><p style="margin:18px auto 0;max-width:500px;text-align:center;color:#8b8b96;font-size:11px;line-height:1.5;">${escapeHtml(footer || thankYou)}</p></div></body></html>`;
-  const text = `${headline}\n\n${intro}\n\nRate your experience (1–5): ${surveyUrl}\n\n${footer || thankYou}`;
+  const ratingLabels = `<table role="presentation" width="240" cellpadding="0" cellspacing="0" border="0" style="width:240px;max-width:100%;margin:8px auto 0;color:#8b8b96;font-size:12px;"><tr><td align="left" style="padding:0;text-align:left;">${escapeHtml(languageCopy.lowLabel)}</td><td align="right" style="padding:0;text-align:right;">${escapeHtml(languageCopy.highLabel)}</td></tr></table>`;
+  const html = `<!doctype html><html><body style="margin:0;background:#f7f7fa;color:#111118;font-family:Arial,Helvetica,sans-serif;"><div style="max-width:560px;margin:32px auto;padding:0 16px;"><div style="background:#ffffff;border:1px solid #e6e6ec;border-radius:18px;padding:40px 28px;text-align:center;box-shadow:0 8px 24px rgba(20,20,30,.06);min-height:440px;display:flex;flex-direction:column;">${topLogo}${companyLine}${senderLine}${headlineLine}${introLine}<div style="margin:0 auto 10px;">${ratingLinks}</div>${ratingLabels}<p style="margin:28px 0 0;color:#8b8b96;font-size:12px;line-height:1.5;">${escapeHtml(languageCopy.instruction)}</p>${footerLogo}${footerLine}</div></div></body></html>`;
+  const textRatings = ratingUrls.map((ratingUrl, index) => `${index + 1}: ${ratingUrl}`).join("\n");
+  const text = [headline, intro, `Rate your experience (1–5):\n${textRatings}`, footer].filter(Boolean).join("\n\n");
   return { subject: renderedSubject, html, text };
 }
 
 async function loadThread(serviceClient, threadId, workspaceId) {
   const { data, error } = await serviceClient
     .from("mail_threads")
-    .select("id, workspace_id, mailbox_id, subject, status, resolution_source, customer_email")
+    .select("id, workspace_id, mailbox_id, subject, status, resolution_source, customer_email, customer_language")
     .eq("id", threadId)
     .eq("workspace_id", workspaceId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data || null;
+}
+
+async function loadWorkspaceSupportLanguage(serviceClient, workspaceId) {
+  const { data, error } = await serviceClient
+    .from("workspaces")
+    .select("support_language")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return normalizeSupportLanguage(data?.support_language || "en");
+}
+
+function resolveSurveyLanguage(settings, thread, workspaceLanguage) {
+  if (settings.languageMode === "en") return "en";
+  if (settings.languageMode === "workspace") return workspaceLanguage;
+  return normalizeSupportLanguage(thread?.customer_language || workspaceLanguage);
 }
 
 export async function scheduleCustomerSatisfactionSurvey(
@@ -143,7 +229,7 @@ export async function scheduleCustomerSatisfactionSurvey(
 
   const token = deriveCustomerSatisfactionToken(workspaceId, threadId);
   const tokenHash = hashCustomerSatisfactionToken(token);
-  const scheduledFor = scheduledCustomerSatisfactionAt(resolvedAt, settings.delay);
+  const scheduledFor = scheduledCustomerSatisfactionAt(resolvedAt, settings.delay, settings.delayMinutes);
   const { data: existing, error: existingError } = await serviceClient
     .from("csat_survey_requests")
     .select("id, status, scheduled_for, attempt_count")
@@ -200,12 +286,9 @@ export async function sendCustomerSatisfactionSurvey(
   if (!SOLVED_STATUSES.has(String(thread.status || "").toLowerCase())) {
     return { status: "deferred", reason: "ticket_not_resolved" };
   }
-  if (settings.excludeAutoResolved && thread.resolution_source === "auto") {
-    return { status: "skipped", reason: "auto_resolved" };
-  }
   const recipient = await loadRecipient(serviceClient, thread);
   if (!recipient) return { status: "skipped", reason: "no_customer_email" };
-  if (settings.customerOnly && !isCustomerEmail(recipient)) {
+  if (!isCustomerEmail(recipient)) {
     return { status: "skipped", reason: "not_customer_email" };
   }
 
@@ -214,7 +297,9 @@ export async function sendCustomerSatisfactionSurvey(
   const fromName = settings.senderName || settings.company || "Support";
   const token = deriveCustomerSatisfactionToken(requestRow.workspace_id, requestRow.thread_id);
   const surveyUrl = buildCustomerSatisfactionUrl(token, origin);
-  const rendered = buildSurveyEmail({ settings, surveyUrl, subject: thread.subject });
+  const workspaceLanguage = await loadWorkspaceSupportLanguage(serviceClient, requestRow.workspace_id);
+  const language = resolveSurveyLanguage(settings, thread, workspaceLanguage);
+  const rendered = buildSurveyEmail({ settings, surveyUrl, subject: thread.subject, language });
   const response = await sendPostmarkEmail({
     From: buildFromDisplay(fromName, fromEmail),
     To: recipient,

@@ -28,7 +28,7 @@ import { mapShopifyOrderFact, mapShopifyRefundFact, mapShopifyReturnFact } from 
 import { fetchShopifyReturnById } from "@/lib/server/commerce/shopify-analytics-sync";
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 const PRODUCT_TOPICS = new Set(["products/create", "products/update", "products/delete"]);
 const ORDER_TOPICS = new Set(["orders/create", "orders/updated"]);
 const RETURN_TOPICS = new Set([
