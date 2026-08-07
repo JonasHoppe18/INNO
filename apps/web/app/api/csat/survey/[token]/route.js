@@ -3,7 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 
 import { getCustomerSatisfactionLanguageCopy, localizeCustomerSatisfactionValue } from "@/lib/csat/language-copy";
 import { normalizeSupportLanguage } from "@/lib/translation/languages";
-import { hashCustomerSatisfactionToken } from "@/lib/server/customer-satisfaction-surveys";
+import {
+  hashCustomerSatisfactionToken,
+  resolveCustomerSatisfactionOrigin,
+} from "@/lib/server/customer-satisfaction-surveys";
 import { loadCustomerSatisfactionSettings } from "@/lib/server/customer-satisfaction";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
 
@@ -70,7 +73,7 @@ export async function GET(request, { params }) {
         return response({ error: "Score must be an integer from 1 to 5." }, 400);
       }
       await recordSurveyResponse(client, surveyRequest, linkedScore);
-      const redirectUrl = new URL(`/csat/${encodeURIComponent(String(params?.token || ""))}`, requestUrl.origin);
+      const redirectUrl = new URL(`/csat/${encodeURIComponent(String(params?.token || ""))}`, resolveCustomerSatisfactionOrigin(request));
       redirectUrl.searchParams.set("submitted", "1");
       const language = requestUrl.searchParams.get("language");
       if (language) redirectUrl.searchParams.set("language", language);
