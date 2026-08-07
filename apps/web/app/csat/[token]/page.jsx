@@ -8,6 +8,12 @@ function safeAccent(value) {
   return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : "#635bff";
 }
 
+function logoSizeClass(value) {
+  if (value === "small") return "max-h-[2.25rem] max-w-[7.5rem]";
+  if (value === "large") return "max-h-[4.5rem] max-w-[13rem]";
+  return "max-h-12 max-w-40";
+}
+
 export default function CustomerSatisfactionSurveyPage({ params }) {
   const [settings, setSettings] = useState(null);
   const [state, setState] = useState("loading");
@@ -71,7 +77,7 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
             <div><div className="mx-auto flex size-12 items-center justify-center rounded-full text-xl font-semibold text-white" style={{ backgroundColor: accent }}>✓</div><p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-[#6b6b78]">{settings?.company || "Customer feedback"}</p><h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{settings?.thankYouTitle || "Thank you"}</h1><p className="mx-auto mt-4 max-w-sm text-base leading-7 text-[#6b6b78]">{settings?.thankYou || "Thanks for helping us improve."}</p></div>
           ) : (
             <div>
-              {settings?.logoUrl ? <img src={settings.logoUrl} alt={`${settings.company || "Company"} logo`} className="mx-auto mb-6 max-h-12 max-w-40 object-contain" /> : null}
+              {settings?.logoUrl ? <img src={settings.logoUrl} alt={`${settings.company || "Company"} logo`} className={`mx-auto mb-6 object-contain ${logoSizeClass(settings.logoSize)}`} /> : null}
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6b6b78]">{settings?.company || "Customer feedback"}</p>
               <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">{settings?.headline || "How was your support experience?"}</h1>
               <p className="mx-auto mt-4 max-w-md text-base leading-7 text-[#6b6b78]">{settings?.intro || "We'd love to hear how we did."}</p>

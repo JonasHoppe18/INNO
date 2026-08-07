@@ -55,6 +55,7 @@ export async function GET(request, { params }) {
         footer: localizeCustomerSatisfactionValue(settings.footer, "footer", language),
         accent: settings.accent,
         logoUrl: settings.logoUrl,
+        logoSize: settings.logoSize,
         language,
         lowLabel: languageCopy.lowLabel,
         highLabel: languageCopy.highLabel,

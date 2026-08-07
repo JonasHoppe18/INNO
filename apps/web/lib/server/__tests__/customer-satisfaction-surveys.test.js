@@ -31,6 +31,7 @@ describe("customer satisfaction survey links", () => {
     expect(scheduledCustomerSatisfactionAt(resolvedAt, "immediately")).toBe(resolvedAt);
     expect(scheduledCustomerSatisfactionAt(resolvedAt, "1h")).toBe("2026-08-05T11:00:00.000Z");
     expect(scheduledCustomerSatisfactionAt(resolvedAt, "24h")).toBe("2026-08-06T10:00:00.000Z");
+    expect(scheduledCustomerSatisfactionAt(resolvedAt, "custom", 90)).toBe("2026-08-05T11:30:00.000Z");
   });
 
   it("builds a shareable public URL from the request origin", () => {
@@ -82,5 +83,27 @@ describe("customer satisfaction survey links", () => {
     expect(rendered.html).toContain("Hvordan var din supportoplevelse?");
     expect(rendered.html).toContain("Meget dårlig");
     expect(rendered.html).toContain("language=da");
+  });
+
+  it("omits optional email fields when they are left empty", () => {
+    const rendered = buildSurveyEmail({
+      settings: {
+        subject: "Feedback",
+        headline: "",
+        intro: "",
+        thankYou: "",
+        footer: "",
+        company: "",
+        senderName: "",
+        accent: "#635bff",
+        logoUrl: "",
+      },
+      surveyUrl: "https://app.example.com/csat/token",
+    });
+
+    expect(rendered.html).not.toContain("Customer feedback");
+    expect(rendered.html).not.toContain("Your support team");
+    expect(rendered.html).not.toContain("You're receiving this");
+    expect(rendered.text).not.toContain("Your feedback");
   });
 });
