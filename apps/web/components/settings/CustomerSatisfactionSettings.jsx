@@ -2,13 +2,12 @@
 
 /* eslint-disable @next/next/no-img-element -- uploaded logo previews use local blob URLs. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +29,8 @@ const DEFAULTS = {
   senderName: "",
   footer: "You're receiving this because your support conversation was resolved.",
   accent: "#635bff",
+  logoPosition: "top-center",
+  languageMode: "conversation",
   logoUrl: "",
   logoName: "",
 };
@@ -46,7 +47,8 @@ function SectionHeading({ eyebrow, title, description }) {
 
 function RatingPreview({ settings, selected, onSelect }) {
   const [previewState, setPreviewState] = useState("rating");
-  const { accent, company, senderName, headline, intro, thankYou, footer, logoUrl } = settings;
+  const { accent, company, senderName, headline, intro, thankYou, footer, logoUrl, logoPosition } = settings;
+  const logo = logoUrl ? <img src={logoUrl} alt={`${company || "Company"} logo`} className={cn("h-10 max-w-32 object-contain", logoPosition === "top-left" ? "mr-auto" : "mx-auto")} /> : null;
 
   const chooseRating = (score) => {
     onSelect(score);
@@ -63,7 +65,7 @@ function RatingPreview({ settings, selected, onSelect }) {
       </div>
       <div className="px-5 py-8 sm:px-7 sm:py-10">
         <div className="mx-auto max-w-[300px] text-center">
-          {logoUrl ? <img src={logoUrl} alt={`${company || "Company"} logo`} className="mx-auto h-10 max-w-32 object-contain" /> : <span className="inline-flex rounded-full border border-border bg-muted/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">CSAT survey</span>}
+          {logoPosition !== "footer" ? logo : null}
           <p className="mt-5 text-xs font-medium text-muted-foreground">{company || "Your company"}</p>
           <p className="mt-1 text-[11px] text-muted-foreground/70">{senderName || company || "Your support team"}</p>
           {previewState === "thanks" ? (
@@ -86,6 +88,7 @@ function RatingPreview({ settings, selected, onSelect }) {
               {selected ? <button type="button" onClick={() => setPreviewState("thanks")} className="mt-6 inline-flex h-9 items-center justify-center rounded-lg px-4 text-xs font-semibold text-white transition-transform duration-150 active:scale-[0.98]" style={{ backgroundColor: accent }}>Submit feedback</button> : null}
             </>
           )}
+          {logoPosition === "footer" ? <div className="mt-7">{logo}</div> : null}
           <p className="mt-8 text-[10px] leading-4 text-muted-foreground/70">{footer || DEFAULTS.footer}</p>
         </div>
       </div>
@@ -102,8 +105,6 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
   const [settings, setSettings] = useState(workspaceDefaults);
   const [initialSettings, setInitialSettings] = useState(workspaceDefaults);
   const [selectedRating, setSelectedRating] = useState(null);
-  const [excludeAutoResolved, setExcludeAutoResolved] = useState(true);
-  const [customerOnly, setCustomerOnly] = useState(true);
   const [saved, setSaved] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -111,6 +112,7 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
   const [logoToRemove, setLogoToRemove] = useState(false);
   const [error, setError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const logoInputRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -125,8 +127,6 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
         if (!active) return;
         setSettings(loaded);
         setInitialSettings(loaded);
-        setExcludeAutoResolved(Boolean(loaded.excludeAutoResolved));
-        setCustomerOnly(Boolean(loaded.customerOnly));
         setPendingLogoFile(null);
         setLogoToRemove(false);
         setSaved(true);
@@ -163,7 +163,7 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ ...nextSettings, excludeAutoResolved, customerOnly, removeLogo: logoToRemove && !pendingLogoFile }),
+        body: JSON.stringify({ ...nextSettings, removeLogo: logoToRemove && !pendingLogoFile }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not save CSAT settings.");
@@ -183,8 +183,6 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
 
   const reset = () => {
     setSettings(workspaceDefaults);
-    setExcludeAutoResolved(true);
-    setCustomerOnly(true);
     setSelectedRating(null);
     setPendingLogoFile(null);
     setLogoToRemove(Boolean(initialSettings.logoName || initialSettings.logoUrl));
@@ -193,8 +191,6 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
 
   const discard = () => {
     setSettings(initialSettings);
-    setExcludeAutoResolved(Boolean(initialSettings.excludeAutoResolved));
-    setCustomerOnly(Boolean(initialSettings.customerOnly));
     setSelectedRating(null);
     setPendingLogoFile(null);
     setLogoToRemove(false);
@@ -237,22 +233,22 @@ export function CustomerSatisfactionSettings({ workspaceName = "" }) {
       <main className="flex min-w-0 flex-col gap-4">
           <Card className="rounded-xl border-border/70 bg-background shadow-sm">
             <CardHeader className="gap-1 border-b border-border/60 pb-4"><CardTitle className="text-base tracking-tight">Survey status</CardTitle><CardDescription className="text-sm">Control whether newly resolved conversations receive a CSAT request.</CardDescription></CardHeader>
-            <CardContent className="p-5"><div className={cn("flex flex-col gap-4 rounded-lg border p-4 transition-colors duration-150 sm:flex-row sm:items-center sm:justify-between", settings.enabled ? "border-primary/25 bg-primary/[0.025]" : "border-border/70 bg-muted/20")}><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Send CSAT surveys</h3><Badge variant={settings.enabled ? "secondary" : "outline"} className="rounded-full px-2 py-0 text-[10px]">{settings.enabled ? "Active" : "Paused"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">One survey per ticket, sent after the final resolution.</p></div><Switch checked={settings.enabled} onCheckedChange={(value) => update("enabled", value)} aria-label="Send CSAT surveys" /></div></CardContent>
+            <CardContent className="p-5"><div className={cn("flex flex-col gap-4 rounded-lg border p-4 transition-colors duration-150 sm:flex-row sm:items-center sm:justify-between", settings.enabled ? "border-primary/25 bg-primary/[0.025]" : "border-border/70 bg-muted/20")}><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Send CSAT surveys</h3><Badge variant={settings.enabled ? "secondary" : "outline"} className="rounded-full px-2 py-0 text-[10px]">{settings.enabled ? "Active" : "Paused"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{settings.enabled ? "One survey per ticket, sent after the final resolution." : "Surveys are paused. Your setup remains editable and ready to resume."}</p></div><Switch checked={settings.enabled} onCheckedChange={(value) => update("enabled", value)} aria-label="Send CSAT surveys" /></div></CardContent>
           </Card>
 
           <Card className="rounded-xl border-border/70 bg-background shadow-sm">
             <CardHeader className="gap-1 border-b border-border/60 pb-4"><SectionHeading eyebrow="Delivery" title="When should we ask?" description="Keep the request close to resolution while giving the customer a little breathing room." /></CardHeader>
-            <CardContent className="flex flex-col gap-5 p-5"><div className="grid gap-2"><Label htmlFor="csat-delay">Send survey</Label><Select value={settings.delay} onValueChange={(value) => update("delay", value)} disabled={!settings.enabled}><SelectTrigger id="csat-delay" className="h-10 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="immediately">Immediately after resolution</SelectItem><SelectItem value="1h">1 hour after resolution</SelectItem><SelectItem value="24h">24 hours after resolution</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">Reopened conversations wait for their final resolution.</p></div><Separator /><div className="grid gap-2 sm:grid-cols-2"><label className="flex items-start gap-3 rounded-lg bg-muted/35 p-3"><Checkbox checked={excludeAutoResolved} disabled={!settings.enabled} onCheckedChange={(value) => { setSaved(false); setExcludeAutoResolved(Boolean(value)); }} aria-label="Exclude automatically resolved tickets" /><span><span className="block text-sm font-medium">Exclude auto-resolved</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">Ask only when a teammate handled the conversation.</span></span></label><label className="flex items-start gap-3 rounded-lg bg-muted/35 p-3"><Checkbox checked={customerOnly} disabled={!settings.enabled} onCheckedChange={(value) => { setSaved(false); setCustomerOnly(Boolean(value)); }} aria-label="Send only to customer emails" /><span><span className="block text-sm font-medium">Customer email only</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">Skip internal, no-reply and automated senders.</span></span></label></div></CardContent>
+            <CardContent className="flex flex-col gap-5 p-5"><div className="grid gap-2"><Label htmlFor="csat-delay">Send survey</Label><Select value={settings.delay} onValueChange={(value) => update("delay", value)}><SelectTrigger id="csat-delay" className="h-10 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="immediately">Immediately after resolution</SelectItem><SelectItem value="1h">1 hour after resolution</SelectItem><SelectItem value="24h">24 hours after resolution</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">Reopened conversations wait for their final resolution.</p></div><div className="grid gap-2"><Label htmlFor="csat-language">Email language</Label><Select value={settings.languageMode} onValueChange={(value) => update("languageMode", value)}><SelectTrigger id="csat-language" className="h-10 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="conversation">Conversation language</SelectItem><SelectItem value="workspace">Workspace default</SelectItem><SelectItem value="en">Always English</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">System copy follows the selected language. Custom text stays as written.</p></div><Separator /><div className="grid gap-2"><p className="rounded-lg bg-muted/35 px-3 py-3 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">All resolved conversations.</span> Surveys are sent after automatic and teammate resolutions, when the recipient is a customer email.</p><p className="rounded-lg bg-muted/35 px-3 py-3 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">Customer emails only.</span> Surveys never go to internal, no-reply or automated addresses.</p></div></CardContent>
           </Card>
 
           <Card className="rounded-xl border-border/70 bg-background shadow-sm">
             <CardHeader className="gap-1 border-b border-border/60 pb-4"><SectionHeading eyebrow="Message" title="Write the request" description="Keep the message short, human and recognizable as a normal support email." /></CardHeader>
-            <CardContent className="flex flex-col gap-4 p-5"><div className="grid gap-2"><Label htmlFor="csat-subject">Subject</Label><Input id="csat-subject" value={settings.subject} onChange={(event) => update("subject", event.target.value)} disabled={!settings.enabled} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-headline">Headline</Label><Input id="csat-headline" value={settings.headline} onChange={(event) => update("headline", event.target.value)} disabled={!settings.enabled} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-intro">Intro</Label><Textarea id="csat-intro" value={settings.intro} onChange={(event) => update("intro", event.target.value)} disabled={!settings.enabled} className="min-h-24 resize-y rounded-lg leading-6" /></div><div className="grid gap-2"><Label htmlFor="csat-thank-you">Thank-you message</Label><Textarea id="csat-thank-you" value={settings.thankYou} onChange={(event) => update("thankYou", event.target.value)} disabled={!settings.enabled} className="min-h-20 resize-y rounded-lg leading-6" /></div><div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/35 px-3 py-2.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Available variables</span><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;customer_first_name&#125;&#125;</code><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;ticket_subject&#125;&#125;</code><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;team_name&#125;&#125;</code></div></CardContent>
+            <CardContent className="flex flex-col gap-4 p-5"><div className="grid gap-2"><Label htmlFor="csat-subject">Subject</Label><Input id="csat-subject" value={settings.subject} onChange={(event) => update("subject", event.target.value)} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-headline">Headline</Label><Input id="csat-headline" value={settings.headline} onChange={(event) => update("headline", event.target.value)} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-intro">Intro</Label><Textarea id="csat-intro" value={settings.intro} onChange={(event) => update("intro", event.target.value)} className="min-h-24 resize-y rounded-lg leading-6" /></div><div className="grid gap-2"><Label htmlFor="csat-thank-you">Thank-you message</Label><Textarea id="csat-thank-you" value={settings.thankYou} onChange={(event) => update("thankYou", event.target.value)} className="min-h-20 resize-y rounded-lg leading-6" /></div><div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/35 px-3 py-2.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Available variables</span><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;customer_first_name&#125;&#125;</code><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;ticket_subject&#125;&#125;</code><code className="rounded bg-background px-1.5 py-0.5">&#123;&#123;team_name&#125;&#125;</code></div></CardContent>
           </Card>
 
           <Card className="rounded-xl border-border/70 bg-background shadow-sm">
             <CardHeader className="gap-1 border-b border-border/60 pb-4"><SectionHeading eyebrow="Branding" title="Make it feel like your brand" description="Add the identity customers recognize from your support emails." /></CardHeader>
-            <CardContent className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_180px]"><div className="flex flex-col gap-4"><div className="grid gap-2"><Label htmlFor="csat-company">Company name</Label><Input id="csat-company" value={settings.company} onChange={(event) => update("company", event.target.value)} disabled={!settings.enabled} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-sender">Sender name</Label><Input id="csat-sender" value={settings.senderName} onChange={(event) => update("senderName", event.target.value)} disabled={!settings.enabled} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-footer">Email footer</Label><Textarea id="csat-footer" value={settings.footer} onChange={(event) => update("footer", event.target.value)} disabled={!settings.enabled} className="min-h-20 resize-y rounded-lg leading-6" /></div></div><div className="flex flex-col gap-4"><div className="grid gap-2"><Label htmlFor="csat-logo">Logo</Label><label htmlFor="csat-logo" className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/25 px-3 text-center transition-colors hover:border-primary/40 hover:bg-primary/[0.025]"><span className="max-w-full truncate text-xs font-medium">{settings.logoName || "Add a logo"}</span><span className="mt-1 text-[11px] text-muted-foreground">PNG, JPG or SVG</span></label><Input id="csat-logo" type="file" accept="image/png,image/jpeg,image/svg+xml" onChange={handleLogoChange} disabled={!settings.enabled} className="sr-only" />{settings.logoName ? <Button type="button" variant="ghost" size="sm" onClick={removeLogo} disabled={!settings.enabled} className="h-8 justify-start rounded-lg px-2 text-xs">Remove logo</Button> : null}</div><div className="grid gap-2"><Label htmlFor="csat-accent">Accent color</Label><div className="flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-2"><input id="csat-accent" type="color" value={settings.accent} onChange={(event) => update("accent", event.target.value)} disabled={!settings.enabled} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" /><code className="text-xs text-muted-foreground">{settings.accent.toUpperCase()}</code></div></div></div></CardContent>
+            <CardContent className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_180px]"><div className="flex flex-col gap-4"><div className="grid gap-2"><Label htmlFor="csat-company">Company name</Label><Input id="csat-company" value={settings.company} onChange={(event) => update("company", event.target.value)} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-sender">Sender name</Label><Input id="csat-sender" value={settings.senderName} onChange={(event) => update("senderName", event.target.value)} className="h-10 rounded-lg" /></div><div className="grid gap-2"><Label htmlFor="csat-footer">Email footer</Label><Textarea id="csat-footer" value={settings.footer} onChange={(event) => update("footer", event.target.value)} className="min-h-20 resize-y rounded-lg leading-6" /></div></div><div className="flex flex-col gap-4"><div className="grid gap-2"><Label htmlFor="csat-logo">Logo</Label><button type="button" onClick={() => logoInputRef.current?.click()} className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/25 px-3 text-center transition-colors hover:border-primary/40 hover:bg-primary/[0.025]" aria-label={settings.logoName ? "Change logo" : "Add a logo"}><span className="max-w-full truncate text-xs font-medium">{settings.logoName || "Add a logo"}</span><span className="mt-1 text-[11px] text-muted-foreground">PNG, JPG or SVG</span></button><Input ref={logoInputRef} id="csat-logo" type="file" accept="image/png,image/jpeg,image/svg+xml" onChange={handleLogoChange} className="sr-only" />{settings.logoName ? <Button type="button" variant="ghost" size="sm" onClick={removeLogo} className="h-8 justify-start rounded-lg px-2 text-xs">Remove logo</Button> : null}</div><div className="grid gap-2"><Label htmlFor="csat-logo-position">Logo position</Label><Select value={settings.logoPosition} onValueChange={(value) => update("logoPosition", value)}><SelectTrigger id="csat-logo-position" className="h-10 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="top-center">Top centered</SelectItem><SelectItem value="top-left">Top left</SelectItem><SelectItem value="footer">Footer</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">Choose where the logo appears in the email.</p></div><div className="grid gap-2"><Label htmlFor="csat-accent">Accent color</Label><div className="flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-2"><input id="csat-accent" type="color" value={settings.accent} onChange={(event) => update("accent", event.target.value)} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" /><code className="text-xs text-muted-foreground">{settings.accent.toUpperCase()}</code></div></div></div></CardContent>
           </Card>
         </main>
 
