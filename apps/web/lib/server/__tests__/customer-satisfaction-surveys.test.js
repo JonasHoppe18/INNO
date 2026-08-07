@@ -58,8 +58,8 @@ describe("customer satisfaction survey links", () => {
     });
 
     for (const score of [1, 2, 3, 4, 5]) {
-      expect(rendered.html).toContain(`https://app.example.com/csat/token?score=${score}`);
-      expect(rendered.text).toContain(`https://app.example.com/csat/token?score=${score}`);
+      expect(rendered.html).toContain(`https://app.example.com/api/csat/survey/token?score=${score}`);
+      expect(rendered.text).toContain(`https://app.example.com/api/csat/survey/token?score=${score}`);
     }
   });
 
