@@ -4553,7 +4553,7 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="settings-theme flex h-[calc(100svh_-_2.5rem_-_var(--app-top-offset,0px))] min-h-0 flex-col overflow-hidden bg-background md:flex-row">
+    <main className="settings-theme flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:flex-row">
       <div className="flex items-center gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
         <span className="text-sm font-semibold text-foreground">Settings</span>
         <select
