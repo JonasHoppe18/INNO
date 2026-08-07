@@ -5,6 +5,7 @@ import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { buildManualStatusPatch } from "@/lib/inbox/status-patch";
 import {
   dispatchDueCustomerSatisfactionSurveys,
+  resolveCustomerSatisfactionOrigin,
   scheduleCustomerSatisfactionSurvey,
 } from "@/lib/server/customer-satisfaction-surveys";
 
@@ -181,7 +182,7 @@ export async function PATCH(request) {
       if (scheduled.status === "pending" && scheduled.scheduledFor && Date.parse(scheduled.scheduledFor) <= Date.now()) {
         await dispatchDueCustomerSatisfactionSurveys(serviceClient, {
           workspaceId: data.workspace_id || scope.workspaceId,
-          origin: new URL(request.url).origin,
+          origin: resolveCustomerSatisfactionOrigin(request),
           limit: 1,
         });
       }

@@ -15,6 +15,25 @@ function asString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const INTERNAL_HOSTS = new Set(["0.0.0.0", "localhost", "127.0.0.1", "::1"]);
+
+export function resolveCustomerSatisfactionOrigin(request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = asString(request.headers.get("x-forwarded-host") || request.headers.get("host"))
+    .split(",")[0]
+    .trim();
+  const forwardedProtocol = asString(request.headers.get("x-forwarded-proto")).split(",")[0].trim().toLowerCase();
+  if (forwardedHost) {
+    try {
+      const candidate = new URL(`${forwardedProtocol === "http" ? "http" : "https"}://${forwardedHost}`);
+      if (!INTERNAL_HOSTS.has(candidate.hostname.toLowerCase())) return candidate.origin;
+    } catch {
+      // Fall back to the request URL and configured public URL below.
+    }
+  }
+  return requestUrl.origin;
+}
+
 function getTokenSecret() {
   const secret =
     process.env.CSAT_TOKEN_SECRET ||
@@ -48,8 +67,7 @@ export function buildCustomerSatisfactionUrl(token, origin = "") {
   } catch {
     // Fall back to the configured public URL below.
   }
-  const internalHosts = new Set(["0.0.0.0", "localhost", "127.0.0.1", "::1"]);
-  const base = requestedOrigin && !internalHosts.has(requestedHost) ? requestedOrigin : configuredOrigin || requestedOrigin;
+  const base = requestedOrigin && !INTERNAL_HOSTS.has(requestedHost) ? requestedOrigin : configuredOrigin || requestedOrigin;
   if (!base) throw new Error("Public app URL is missing for CSAT links.");
   return `${base}/csat/${encodeURIComponent(String(token))}`;
 }

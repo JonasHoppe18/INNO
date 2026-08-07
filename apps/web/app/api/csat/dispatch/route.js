@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import {
   dispatchDueCustomerSatisfactionSurveys,
+  resolveCustomerSatisfactionOrigin,
   scheduleRecentResolvedCustomerSatisfactionSurveys,
 } from "@/lib/server/customer-satisfaction-surveys";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
@@ -45,7 +46,7 @@ export async function POST(request) {
   }
 
   try {
-    const origin = new URL(request.url).origin;
+    const origin = resolveCustomerSatisfactionOrigin(request);
     const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const scheduled = await scheduleRecentResolvedCustomerSatisfactionSurveys(client, { workspaceId, since });
     const dispatched = await dispatchDueCustomerSatisfactionSurveys(client, { workspaceId, origin });
@@ -54,4 +55,3 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message || "Could not dispatch CSAT surveys." }, { status: 500 });
   }
 }
-
