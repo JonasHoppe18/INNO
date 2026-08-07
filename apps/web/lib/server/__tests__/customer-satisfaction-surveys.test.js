@@ -83,6 +83,8 @@ describe("customer satisfaction survey links", () => {
     expect(rendered.html).toContain("Hvordan var din supportoplevelse?");
     expect(rendered.html).toContain("Meget dårlig");
     expect(rendered.html).toContain("language=da");
+    expect(rendered.html).toContain("role=\"presentation\"");
+    expect(rendered.html).toContain('align="right" style="padding:0;text-align:right;">Fremragende</td>');
   });
 
   it("omits optional email fields when they are left empty", () => {

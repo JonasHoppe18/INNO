@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- customer logos are workspace-managed URLs. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function safeAccent(value) {
   return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : "#635bff";
@@ -18,6 +18,7 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
   const [settings, setSettings] = useState(null);
   const [state, setState] = useState("loading");
   const [selected, setSelected] = useState(null);
+  const [linkedScoreToSubmit, setLinkedScoreToSubmit] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const accent = useMemo(() => safeAccent(settings?.accent), [settings?.accent]);
@@ -26,15 +27,18 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
     let active = true;
     const query = new URLSearchParams(window.location.search);
     const linkedScore = Number(query.get("score"));
+    const validLinkedScore = Number.isInteger(linkedScore) && linkedScore >= 1 && linkedScore <= 5 ? linkedScore : null;
     const language = query.get("language");
     const languageQuery = language ? `?language=${encodeURIComponent(language)}` : "";
+    setLinkedScoreToSubmit(null);
     fetch(`/api/csat/survey/${encodeURIComponent(params?.token || "")}${languageQuery}`, { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "This survey link is unavailable.");
         if (!active) return;
         setSettings(payload.settings || {});
-        if (Number.isInteger(linkedScore) && linkedScore >= 1 && linkedScore <= 5) setSelected(linkedScore);
+        if (validLinkedScore) setSelected(validLinkedScore);
+        if (validLinkedScore && payload.status !== "responded") setLinkedScoreToSubmit(validLinkedScore);
         setState(payload.status === "responded" ? "thanks" : "ready");
       })
       .catch((loadError) => {
@@ -45,15 +49,15 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
     return () => { active = false; };
   }, [params?.token]);
 
-  const submit = async () => {
-    if (state !== "ready" || !selected || submitting) return;
+  const submitScore = useCallback(async (score) => {
+    if (!score || submitting) return;
     setSubmitting(true);
     setError("");
     try {
       const response = await fetch(`/api/csat/survey/${encodeURIComponent(params?.token || "")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score: selected }),
+        body: JSON.stringify({ score }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not save your feedback.");
@@ -63,6 +67,18 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
     } finally {
       setSubmitting(false);
     }
+  }, [params?.token, submitting]);
+
+  useEffect(() => {
+    if (state !== "ready" || !linkedScoreToSubmit || submitting) return;
+    const score = linkedScoreToSubmit;
+    setLinkedScoreToSubmit(null);
+    void submitScore(score);
+  }, [linkedScoreToSubmit, state, submitting, submitScore]);
+
+  const submit = () => {
+    if (state !== "ready" || !selected) return;
+    void submitScore(selected);
   };
 
   return (
