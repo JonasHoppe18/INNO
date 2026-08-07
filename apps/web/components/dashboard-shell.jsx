@@ -10,22 +10,24 @@ import { cn } from "@/lib/utils";
 export function DashboardShell({ children }) {
   const pathname = usePathname();
   const isInboxWorkspace = pathname === "/inbox";
+  const isSettingsWorkspace = pathname === "/settings";
+  const isFixedWorkspace = isInboxWorkspace || isSettingsWorkspace;
 
   return (
-    <SidebarInset className={cn(isInboxWorkspace ? "h-svh overflow-hidden" : "min-h-svh")}>
+    <SidebarInset className={cn(isFixedWorkspace ? "h-[calc(100svh_-_var(--app-top-offset,0px))] overflow-hidden" : "min-h-svh")}>
       <SiteHeaderActionsProvider>
         <SiteHeader />
         <SetupBanner />
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            isInboxWorkspace ? "overflow-hidden" : "overflow-auto"
+            isFixedWorkspace ? "overflow-hidden" : "overflow-auto"
           )}
         >
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col gap-2",
-              isInboxWorkspace ? "overflow-hidden" : "overflow-visible"
+              isFixedWorkspace ? "overflow-hidden" : "overflow-visible"
             )}
           >
             {children}
