@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+import { getCustomerSatisfactionLanguageCopy, localizeCustomerSatisfactionValue } from "@/lib/csat/language-copy";
+import { normalizeSupportLanguage } from "@/lib/translation/languages";
 import { hashCustomerSatisfactionToken } from "@/lib/server/customer-satisfaction-surveys";
 import { loadCustomerSatisfactionSettings } from "@/lib/server/customer-satisfaction";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
@@ -33,24 +35,33 @@ async function loadRequest(token, client) {
   return data || null;
 }
 
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const client = serviceClient();
     if (!client) return response({ error: "Survey service is unavailable." }, 503);
     const surveyRequest = await loadRequest(params?.token, client);
     if (!surveyRequest) return response({ error: "This survey link is invalid or expired." }, 404);
     const settings = await loadCustomerSatisfactionSettings(client, surveyRequest.workspace_id, { logoExpiresIn: 7 * 24 * 60 * 60 });
+    const language = normalizeSupportLanguage(new URL(request.url).searchParams.get("language") || "en");
+    const languageCopy = getCustomerSatisfactionLanguageCopy(language);
     return response({
       status: surveyRequest.status === "responded" ? "responded" : "open",
       settings: {
         company: settings.company,
         senderName: settings.senderName,
-        headline: settings.headline,
-        intro: settings.intro,
-        thankYou: settings.thankYou,
-        footer: settings.footer,
+        headline: localizeCustomerSatisfactionValue(settings.headline, "headline", language),
+        intro: localizeCustomerSatisfactionValue(settings.intro, "intro", language),
+        thankYou: localizeCustomerSatisfactionValue(settings.thankYou, "thankYou", language),
+        footer: localizeCustomerSatisfactionValue(settings.footer, "footer", language),
         accent: settings.accent,
         logoUrl: settings.logoUrl,
+        language,
+        lowLabel: languageCopy.lowLabel,
+        highLabel: languageCopy.highLabel,
+        instruction: languageCopy.instruction,
+        submitLabel: languageCopy.submit,
+        sendingLabel: languageCopy.sending,
+        thankYouTitle: languageCopy.thankYouTitle,
       },
     });
   } catch (error) {
