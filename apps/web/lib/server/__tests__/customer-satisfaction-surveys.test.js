@@ -40,6 +40,16 @@ describe("customer satisfaction survey links", () => {
     );
   });
 
+  it("does not put an internal bind address in customer links", () => {
+    const previousPublicUrl = process.env.CSAT_PUBLIC_URL;
+    process.env.CSAT_PUBLIC_URL = "https://dev.sona-ai.dk";
+    expect(buildCustomerSatisfactionUrl("abc123", "https://0.0.0.0:8080")).toBe(
+      "https://dev.sona-ai.dk/csat/abc123",
+    );
+    if (previousPublicUrl === undefined) delete process.env.CSAT_PUBLIC_URL;
+    else process.env.CSAT_PUBLIC_URL = previousPublicUrl;
+  });
+
   it("includes the selected score in each email rating link", () => {
     const rendered = buildSurveyEmail({
       settings: {

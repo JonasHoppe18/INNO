@@ -38,9 +38,18 @@ export function hashCustomerSatisfactionToken(token) {
 }
 
 export function buildCustomerSatisfactionUrl(token, origin = "") {
-  const base =
-    asString(origin).replace(/\/$/, "") ||
-    asString(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.WEB_APP_URL).replace(/\/$/, "");
+  const requestedOrigin = asString(origin).replace(/\/$/, "");
+  const configuredOrigin = asString(
+    process.env.CSAT_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.WEB_APP_URL,
+  ).replace(/\/$/, "");
+  let requestedHost = "";
+  try {
+    requestedHost = new URL(requestedOrigin).hostname.toLowerCase();
+  } catch {
+    // Fall back to the configured public URL below.
+  }
+  const internalHosts = new Set(["0.0.0.0", "localhost", "127.0.0.1", "::1"]);
+  const base = requestedOrigin && !internalHosts.has(requestedHost) ? requestedOrigin : configuredOrigin || requestedOrigin;
   if (!base) throw new Error("Public app URL is missing for CSAT links.");
   return `${base}/csat/${encodeURIComponent(String(token))}`;
 }
