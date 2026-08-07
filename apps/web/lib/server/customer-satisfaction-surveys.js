@@ -138,7 +138,15 @@ export function buildSurveyEmail({ settings, surveyUrl, customerName, subject, l
   const headlineLine = headline ? `<h1 style="margin:0;font-size:28px;line-height:1.2;letter-spacing:-.03em;">${escapeHtml(headline)}</h1>` : "";
   const introLine = intro ? `<p style="margin:16px auto 28px;max-width:420px;color:#6b6b78;font-size:16px;line-height:1.6;">${escapeHtml(intro)}</p>` : "";
   const footerLine = footer ? `<p style="margin:14px 0 0;color:#8b8b96;font-size:11px;line-height:1.5;">${escapeHtml(footer)}</p>` : "";
-  const ratingUrls = [1, 2, 3, 4, 5].map((score) => `${surveyUrl}${surveyUrl.includes("?") ? "&" : "?"}score=${score}&language=${normalizedLanguage}`);
+  let ratingBaseUrl = surveyUrl;
+  try {
+    const parsedSurveyUrl = new URL(surveyUrl);
+    parsedSurveyUrl.pathname = parsedSurveyUrl.pathname.replace(/^\/csat\//, "/api/csat/survey/");
+    ratingBaseUrl = parsedSurveyUrl.toString();
+  } catch {
+    // Keep the original URL if a custom test URL is relative or otherwise not parseable.
+  }
+  const ratingUrls = [1, 2, 3, 4, 5].map((score) => `${ratingBaseUrl}${ratingBaseUrl.includes("?") ? "&" : "?"}score=${score}&language=${normalizedLanguage}`);
   const ratingLinks = ratingUrls
     .map((ratingUrl, index) => {
       const score = index + 1;

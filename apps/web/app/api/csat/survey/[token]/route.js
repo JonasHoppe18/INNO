@@ -23,6 +23,28 @@ function response(payload, status = 200) {
   });
 }
 
+async function recordSurveyResponse(client, surveyRequest, score) {
+  if (surveyRequest.status === "responded") return;
+
+  const submittedAt = new Date().toISOString();
+  const { error: feedbackError } = await client.from("support_feedback").insert({
+    workspace_id: surveyRequest.workspace_id,
+    thread_id: surveyRequest.thread_id,
+    survey_request_id: surveyRequest.id,
+    score,
+    submitted_at: submittedAt,
+  });
+  if (feedbackError && !/duplicate key|23505/i.test(String(feedbackError.message || ""))) {
+    throw new Error(feedbackError.message);
+  }
+
+  const { error: requestError } = await client
+    .from("csat_survey_requests")
+    .update({ status: "responded", responded_at: submittedAt, updated_at: submittedAt })
+    .eq("id", surveyRequest.id);
+  if (requestError) throw new Error(requestError.message);
+}
+
 async function loadRequest(token, client) {
   const safeToken = String(token || "").trim();
   if (!/^[a-f0-9]{32,128}$/i.test(safeToken)) return null;
@@ -41,8 +63,21 @@ export async function GET(request, { params }) {
     if (!client) return response({ error: "Survey service is unavailable." }, 503);
     const surveyRequest = await loadRequest(params?.token, client);
     if (!surveyRequest) return response({ error: "This survey link is invalid or expired." }, 404);
+    const requestUrl = new URL(request.url);
+    const linkedScore = Number(requestUrl.searchParams.get("score"));
+    if (requestUrl.searchParams.has("score")) {
+      if (!Number.isInteger(linkedScore) || linkedScore < 1 || linkedScore > 5) {
+        return response({ error: "Score must be an integer from 1 to 5." }, 400);
+      }
+      await recordSurveyResponse(client, surveyRequest, linkedScore);
+      const redirectUrl = new URL(`/csat/${encodeURIComponent(String(params?.token || ""))}`, requestUrl.origin);
+      redirectUrl.searchParams.set("submitted", "1");
+      const language = requestUrl.searchParams.get("language");
+      if (language) redirectUrl.searchParams.set("language", language);
+      return NextResponse.redirect(redirectUrl, 303);
+    }
     const settings = await loadCustomerSatisfactionSettings(client, surveyRequest.workspace_id, { logoExpiresIn: 7 * 24 * 60 * 60 });
-    const language = normalizeSupportLanguage(new URL(request.url).searchParams.get("language") || "en");
+    const language = normalizeSupportLanguage(requestUrl.searchParams.get("language") || "en");
     const languageCopy = getCustomerSatisfactionLanguageCopy(language);
     return response({
       status: surveyRequest.status === "responded" ? "responded" : "open",
@@ -89,23 +124,7 @@ export async function POST(request, { params }) {
     if (!surveyRequest) return response({ error: "This survey link is invalid or expired." }, 404);
     if (surveyRequest.status === "responded") return response({ status: "responded" });
 
-    const submittedAt = new Date().toISOString();
-    const { error: feedbackError } = await client.from("support_feedback").insert({
-      workspace_id: surveyRequest.workspace_id,
-      thread_id: surveyRequest.thread_id,
-      survey_request_id: surveyRequest.id,
-      score,
-      submitted_at: submittedAt,
-    });
-    if (feedbackError && !/duplicate key|23505/i.test(String(feedbackError.message || ""))) {
-      throw new Error(feedbackError.message);
-    }
-
-    const { error: requestError } = await client
-      .from("csat_survey_requests")
-      .update({ status: "responded", responded_at: submittedAt, updated_at: submittedAt })
-      .eq("id", surveyRequest.id);
-    if (requestError) throw new Error(requestError.message);
+    await recordSurveyResponse(client, surveyRequest, score);
     return response({ status: "responded" });
   } catch (error) {
     return response({ error: error.message || "Could not save your feedback." }, 500);
