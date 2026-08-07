@@ -66,7 +66,7 @@ function RatingPreview({ settings, selected, onSelect }) {
         <span className="size-2 rounded-full bg-emerald-400/80" />
         <span className="ml-2 truncate text-[11px] text-muted-foreground">Customer feedback · preview</span>
       </div>
-      <div className="flex min-h-[560px] flex-col px-5 py-8 sm:px-7 sm:py-10">
+      <div className="flex min-h-[440px] flex-col px-5 py-8 sm:px-7 sm:py-10">
         <div className="mx-auto flex w-full max-w-[300px] flex-1 flex-col justify-center text-center">
           {logoPosition !== "footer" ? logo : null}
           {company ? <p className="mt-5 text-xs font-medium text-muted-foreground">{company}</p> : null}
@@ -91,9 +91,9 @@ function RatingPreview({ settings, selected, onSelect }) {
               {selected ? <button type="button" onClick={() => setPreviewState("thanks")} className="mt-6 inline-flex h-9 items-center justify-center rounded-lg px-4 text-xs font-semibold text-white transition-transform duration-150 active:scale-[0.98]" style={{ backgroundColor: accent }}>Submit feedback</button> : null}
             </>
           )}
-          {logoPosition === "footer" && logo ? <div className="mt-auto pt-7">{logo}</div> : null}
+          {logoPosition === "footer" && logo ? <div className="mt-auto pt-5">{logo}</div> : null}
         </div>
-        {footer ? <p className="mx-auto mt-6 w-full max-w-[300px] text-center text-[10px] leading-4 text-muted-foreground/70">{footer}</p> : null}
+        {footer ? <p className="mx-auto mt-4 w-full max-w-[300px] text-center text-[10px] leading-4 text-muted-foreground/70">{footer}</p> : null}
       </div>
     </div>
   );
