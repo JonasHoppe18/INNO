@@ -5,6 +5,7 @@ import {
   buildSurveyEmail,
   deriveCustomerSatisfactionToken,
   hashCustomerSatisfactionToken,
+  resolveCustomerSatisfactionOrigin,
   scheduledCustomerSatisfactionAt,
 } from "../customer-satisfaction-surveys.js";
 
@@ -48,6 +49,13 @@ describe("customer satisfaction survey links", () => {
     );
     if (previousPublicUrl === undefined) delete process.env.CSAT_PUBLIC_URL;
     else process.env.CSAT_PUBLIC_URL = previousPublicUrl;
+  });
+
+  it("prefers the forwarded public host behind a proxy", () => {
+    const request = new Request("https://0.0.0.0:8080/api/csat/dispatch", {
+      headers: { host: "0.0.0.0:8080", "x-forwarded-host": "dev.sona-ai.dk", "x-forwarded-proto": "https" },
+    });
+    expect(resolveCustomerSatisfactionOrigin(request)).toBe("https://dev.sona-ai.dk");
   });
 
   it("includes the selected score in each email rating link", () => {
