@@ -19,6 +19,7 @@ const publicRoutes = [
   "/api/csat/(.*)",
 ];
 const isPublicRoute = createRouteMatcher(publicRoutes);
+const isCustomerSatisfactionPath = (pathname) => /^\/(?:api\/)?csat(?:\/|$)/.test(pathname);
 // Kun marketing-stier skal gennem next-intl (redirect / → /en, locale-detektion).
 // NB: "(/.*)?" (ikke "(.*)") så "/en"/"/da" ikke matcher som prefix mod fx "/dashboard".
 const isMarketingRoute = createRouteMatcher(["/", "/en(/.*)?", "/da(/.*)?"]);
@@ -61,7 +62,7 @@ export default clerkMiddleware((auth, request) => {
     return NextResponse.redirect(destination);
   }
 
-  if (!isPublicRoute(request)) {
+  if (!isPublicRoute(request) && !isCustomerSatisfactionPath(request.nextUrl.pathname)) {
     auth().protect();
   }
   if (isMarketingRoute(request)) {
