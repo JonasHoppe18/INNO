@@ -5,10 +5,13 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "./workspace-auth.js";
 
 export const CUSTOMER_SATISFACTION_STORAGE_BUCKET = "workspace-assets";
+export const CUSTOMER_SATISFACTION_MIN_DELAY_MINUTES = 5;
+export const CUSTOMER_SATISFACTION_MAX_DELAY_MINUTES = 7 * 24 * 60;
 
 export const CUSTOMER_SATISFACTION_DEFAULTS = {
   enabled: false,
   delay: "1h",
+  delayMinutes: null,
   excludeAutoResolved: false,
   customerOnly: true,
   subject: "How did we do?",
@@ -20,6 +23,7 @@ export const CUSTOMER_SATISFACTION_DEFAULTS = {
   footer: "You're receiving this because your support conversation was resolved.",
   accent: "#635bff",
   logoPosition: "top-center",
+  logoSize: "medium",
   languageMode: "conversation",
   logoUrl: "",
   logoName: "",
@@ -55,7 +59,16 @@ function boolean(value, fallback) {
 }
 
 function delay(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.delay) {
-  return ["immediately", "1h", "24h"].includes(value) ? value : fallback;
+  return ["immediately", "1h", "24h", "custom"].includes(value) ? value : fallback;
+}
+
+function delayMinutes(value, fallback = null) {
+  const candidate = Number(value);
+  if (!Number.isInteger(candidate)) return fallback;
+  if (candidate < CUSTOMER_SATISFACTION_MIN_DELAY_MINUTES || candidate > CUSTOMER_SATISFACTION_MAX_DELAY_MINUTES) {
+    return fallback;
+  }
+  return candidate;
 }
 
 function accent(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.accent) {
@@ -65,6 +78,10 @@ function accent(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.accent) {
 
 function logoPosition(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.logoPosition) {
   return ["top-center", "top-left", "footer"].includes(value) ? value : fallback;
+}
+
+function logoSize(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.logoSize) {
+  return ["small", "medium", "large"].includes(value) ? value : fallback;
 }
 
 function languageMode(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.languageMode) {
@@ -77,9 +94,11 @@ export function normalizeCustomerSatisfactionPayload(row, workspaceName = "", lo
     company: text(workspaceName),
     senderName: workspaceName ? `${text(workspaceName)} Support` : "",
   };
+  const normalizedDelay = delay(row?.send_delay, workspaceDefaults.delay);
   return {
     enabled: boolean(row?.enabled, workspaceDefaults.enabled),
-    delay: delay(row?.send_delay, workspaceDefaults.delay),
+    delay: normalizedDelay,
+    delayMinutes: normalizedDelay === "custom" ? delayMinutes(row?.send_delay_minutes, 60) : null,
     // CSAT covers every resolved conversation, including auto-resolved ones.
     excludeAutoResolved: false,
     // CSAT is always restricted to real customer email addresses. Keep the
@@ -95,6 +114,7 @@ export function normalizeCustomerSatisfactionPayload(row, workspaceName = "", lo
     footer: text(row?.footer, workspaceDefaults.footer),
     accent: accent(row?.accent_color, workspaceDefaults.accent),
     logoPosition: logoPosition(row?.logo_position),
+    logoSize: logoSize(row?.logo_size),
     languageMode: languageMode(row?.language_mode),
     logoUrl: logoUrl || "",
     logoName: text(row?.logo_name),
@@ -106,7 +126,7 @@ export async function loadCustomerSatisfactionSettings(serviceClient, workspaceI
   const [{ data: row, error: rowError }, { data: workspace, error: workspaceError }] = await Promise.all([
     serviceClient
       .from("workspace_customer_satisfaction_settings")
-      .select("id, workspace_id, enabled, send_delay, exclude_auto_resolved, customer_only, subject, headline, intro, thank_you, company_name, sender_name, footer, accent_color, logo_position, language_mode, logo_path, logo_name, updated_at")
+      .select("id, workspace_id, enabled, send_delay, send_delay_minutes, exclude_auto_resolved, customer_only, subject, headline, intro, thank_you, company_name, sender_name, footer, accent_color, logo_position, logo_size, language_mode, logo_path, logo_name, updated_at")
       .eq("workspace_id", workspaceId)
       .maybeSingle(),
     serviceClient.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
@@ -124,10 +144,12 @@ export async function loadCustomerSatisfactionSettings(serviceClient, workspaceI
 }
 
 export function customerSatisfactionDatabaseValues(body, workspaceId, existing = {}) {
+  const normalizedDelay = delay(body?.delay);
   return {
     workspace_id: workspaceId,
     enabled: boolean(body?.enabled, CUSTOMER_SATISFACTION_DEFAULTS.enabled),
-    send_delay: delay(body?.delay),
+    send_delay: normalizedDelay,
+    send_delay_minutes: normalizedDelay === "custom" ? delayMinutes(body?.delayMinutes, 60) : null,
     exclude_auto_resolved: false,
     customer_only: true,
     subject: text(body?.subject, CUSTOMER_SATISFACTION_DEFAULTS.subject),
@@ -139,6 +161,7 @@ export function customerSatisfactionDatabaseValues(body, workspaceId, existing =
     footer: text(body?.footer, CUSTOMER_SATISFACTION_DEFAULTS.footer),
     accent_color: accent(body?.accent),
     logo_position: logoPosition(body?.logoPosition),
+    logo_size: logoSize(body?.logoSize),
     language_mode: languageMode(body?.languageMode),
     logo_path: existing.logo_path || null,
     logo_name: existing.logo_name || null,
