@@ -9,7 +9,7 @@ export const CUSTOMER_SATISFACTION_STORAGE_BUCKET = "workspace-assets";
 export const CUSTOMER_SATISFACTION_DEFAULTS = {
   enabled: false,
   delay: "1h",
-  excludeAutoResolved: true,
+  excludeAutoResolved: false,
   customerOnly: true,
   subject: "How did we do?",
   headline: "How was your support experience?",
@@ -19,6 +19,8 @@ export const CUSTOMER_SATISFACTION_DEFAULTS = {
   senderName: "",
   footer: "You're receiving this because your support conversation was resolved.",
   accent: "#635bff",
+  logoPosition: "top-center",
+  languageMode: "conversation",
   logoUrl: "",
   logoName: "",
 };
@@ -61,6 +63,14 @@ function accent(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.accent) {
   return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate.toLowerCase() : fallback;
 }
 
+function logoPosition(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.logoPosition) {
+  return ["top-center", "top-left", "footer"].includes(value) ? value : fallback;
+}
+
+function languageMode(value, fallback = CUSTOMER_SATISFACTION_DEFAULTS.languageMode) {
+  return ["conversation", "workspace", "en"].includes(value) ? value : fallback;
+}
+
 export function normalizeCustomerSatisfactionPayload(row, workspaceName = "", logoUrl = "") {
   const workspaceDefaults = {
     ...CUSTOMER_SATISFACTION_DEFAULTS,
@@ -70,8 +80,12 @@ export function normalizeCustomerSatisfactionPayload(row, workspaceName = "", lo
   return {
     enabled: boolean(row?.enabled, workspaceDefaults.enabled),
     delay: delay(row?.send_delay, workspaceDefaults.delay),
-    excludeAutoResolved: boolean(row?.exclude_auto_resolved, workspaceDefaults.excludeAutoResolved),
-    customerOnly: boolean(row?.customer_only, workspaceDefaults.customerOnly),
+    // CSAT covers every resolved conversation, including auto-resolved ones.
+    excludeAutoResolved: false,
+    // CSAT is always restricted to real customer email addresses. Keep the
+    // field in the response for backwards compatibility with older clients,
+    // but never allow a stored value to disable this safety rule.
+    customerOnly: true,
     subject: text(row?.subject, workspaceDefaults.subject),
     headline: text(row?.headline, workspaceDefaults.headline),
     intro: text(row?.intro, workspaceDefaults.intro),
@@ -80,6 +94,8 @@ export function normalizeCustomerSatisfactionPayload(row, workspaceName = "", lo
     senderName: text(row?.sender_name, workspaceDefaults.senderName),
     footer: text(row?.footer, workspaceDefaults.footer),
     accent: accent(row?.accent_color, workspaceDefaults.accent),
+    logoPosition: logoPosition(row?.logo_position),
+    languageMode: languageMode(row?.language_mode),
     logoUrl: logoUrl || "",
     logoName: text(row?.logo_name),
     updatedAt: row?.updated_at || null,
@@ -90,7 +106,7 @@ export async function loadCustomerSatisfactionSettings(serviceClient, workspaceI
   const [{ data: row, error: rowError }, { data: workspace, error: workspaceError }] = await Promise.all([
     serviceClient
       .from("workspace_customer_satisfaction_settings")
-      .select("id, workspace_id, enabled, send_delay, exclude_auto_resolved, customer_only, subject, headline, intro, thank_you, company_name, sender_name, footer, accent_color, logo_path, logo_name, updated_at")
+      .select("id, workspace_id, enabled, send_delay, exclude_auto_resolved, customer_only, subject, headline, intro, thank_you, company_name, sender_name, footer, accent_color, logo_position, language_mode, logo_path, logo_name, updated_at")
       .eq("workspace_id", workspaceId)
       .maybeSingle(),
     serviceClient.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
@@ -112,8 +128,8 @@ export function customerSatisfactionDatabaseValues(body, workspaceId, existing =
     workspace_id: workspaceId,
     enabled: boolean(body?.enabled, CUSTOMER_SATISFACTION_DEFAULTS.enabled),
     send_delay: delay(body?.delay),
-    exclude_auto_resolved: boolean(body?.excludeAutoResolved, CUSTOMER_SATISFACTION_DEFAULTS.excludeAutoResolved),
-    customer_only: boolean(body?.customerOnly, CUSTOMER_SATISFACTION_DEFAULTS.customerOnly),
+    exclude_auto_resolved: false,
+    customer_only: true,
     subject: text(body?.subject, CUSTOMER_SATISFACTION_DEFAULTS.subject),
     headline: text(body?.headline, CUSTOMER_SATISFACTION_DEFAULTS.headline),
     intro: text(body?.intro, CUSTOMER_SATISFACTION_DEFAULTS.intro),
@@ -122,6 +138,8 @@ export function customerSatisfactionDatabaseValues(body, workspaceId, existing =
     sender_name: text(body?.senderName, existing.sender_name || ""),
     footer: text(body?.footer, CUSTOMER_SATISFACTION_DEFAULTS.footer),
     accent_color: accent(body?.accent),
+    logo_position: logoPosition(body?.logoPosition),
+    language_mode: languageMode(body?.languageMode),
     logo_path: existing.logo_path || null,
     logo_name: existing.logo_name || null,
     updated_at: new Date().toISOString(),

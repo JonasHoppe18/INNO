@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import {
   buildCustomerSatisfactionUrl,
+  buildSurveyEmail,
   deriveCustomerSatisfactionToken,
   hashCustomerSatisfactionToken,
   scheduledCustomerSatisfactionAt,
@@ -37,5 +38,49 @@ describe("customer satisfaction survey links", () => {
       "https://app.example.com/csat/abc123",
     );
   });
-});
 
+  it("includes the selected score in each email rating link", () => {
+    const rendered = buildSurveyEmail({
+      settings: {
+        subject: "How did we do?",
+        headline: "How was your support experience?",
+        intro: "Tell us how we did.",
+        thankYou: "Thanks.",
+        footer: "Your feedback matters.",
+        company: "Acme",
+        accent: "#635bff",
+        logoUrl: "",
+      },
+      surveyUrl: "https://app.example.com/csat/token",
+      customerName: "Sam",
+      subject: "Order question",
+    });
+
+    for (const score of [1, 2, 3, 4, 5]) {
+      expect(rendered.html).toContain(`https://app.example.com/csat/token?score=${score}`);
+      expect(rendered.text).toContain(`https://app.example.com/csat/token?score=${score}`);
+    }
+  });
+
+  it("localizes default copy to the conversation language", () => {
+    const rendered = buildSurveyEmail({
+      settings: {
+        subject: "How did we do?",
+        headline: "How was your support experience?",
+        intro: "We'd love to hear how we did. Your feedback helps us make every reply better.",
+        thankYou: "Thanks for helping us improve.",
+        footer: "You're receiving this because your support conversation was resolved.",
+        company: "Acme",
+        accent: "#635bff",
+        logoUrl: "",
+      },
+      surveyUrl: "https://app.example.com/csat/token",
+      language: "da",
+    });
+
+    expect(rendered.subject).toBe("Hvordan klarede vi os?");
+    expect(rendered.html).toContain("Hvordan var din supportoplevelse?");
+    expect(rendered.html).toContain("Meget dårlig");
+    expect(rendered.html).toContain("language=da");
+  });
+});
