@@ -508,7 +508,14 @@ export function stripGenericClosers(text: string): string {
 }
 
 export function applySendReadyStyleCleanup(text: string): string {
-  return stripGenericClosers(stripDuplicateGreeting(String(text ?? "").trim()));
+  const cleaned = stripGenericClosers(
+    stripDuplicateGreeting(String(text ?? "").trim()),
+  );
+  return cleaned.replace(
+    /^((?:hi|hello|hej|hallo|bonjour|hola|ciao)[^\n]*,\s*\n\n)([\p{Ll}])/u,
+    (_match, greeting, firstLetter) =>
+      `${greeting}${String(firstLetter).toLocaleUpperCase()}`,
+  );
 }
 
 function greetingPrefix(language: string): string {
@@ -2406,7 +2413,7 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
   const unavailableCancelActionBlock = plan.primary_intent === "cancel" &&
       !actionResult && !hasCancelProposal
     ? `# ANNULLERING UDEN PLANLAGT ACTION
-Der er ingen verificeret cancel_order-action i denne kørsel. Skriv derfor ikke at ordren annulleres, at annulleringen startes, at du vender tilbage med en bekræftelse, eller at en refundering sker. Brug kun den verificerede ordrestatus; hvis status ikke dokumenterer at annullering er mulig eller udført, sig det klart og kort uden at foreslå en retur som standardløsning.`
+Der er ingen verificeret cancel_order-action i denne kørsel. Skriv derfor ikke at ordren annulleres, at annulleringen startes, at du vender tilbage med en bekræftelse, eller at en refundering sker. Spørg ikke kunden om at bekræfte annulleringen igen, når kunden allerede har bedt om den. Brug kun den verificerede ordrestatus; hvis status ikke dokumenterer at annullering er mulig eller udført, sig det klart og kort uden at foreslå en retur som standardløsning.`
     : "";
   const actionAmountDisplay = formatActionAmountDisplay(
     actionResult,
