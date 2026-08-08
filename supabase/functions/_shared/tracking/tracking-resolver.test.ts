@@ -1,10 +1,30 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   fetchTrackingDetailsForOrders,
+  parseBringPublicTrackingHtml,
   resolveOutboundTrackingFacts,
   resolveReturnTrackingFact,
   type TrackingDetail,
 } from "../tracking.ts";
+
+Deno.test("Bring public tracking page exposes delivered status, timestamp and pickup point", () => {
+  const detail = parseBringPublicTrackingHtml(
+    `<h2 data-testid="parcel-status-heading">The parcel is delivered</h2>
+      <p data-testid="parcel-details-delivery-address">1620 København V, Denmark</p>
+      <script>\\"currentStatus\\",\\"DELIVERED\\",\\"expectedPickupUnitName\\",\\"Føtex Vesterbrogade\\",\\"dateIso\\",\\"2026-07-21T17:51:47+02:00\\"</script>`,
+    {
+      trackingNumber: "370438109758114878",
+      trackingUrl: "https://tracking.bring.com/tracking/370438109758114878",
+    },
+  );
+
+  assert(detail);
+  assertEquals(detail.lookupSource, "bring_public_page");
+  assertEquals(detail.snapshot?.statusCode, "delivered");
+  assertEquals(detail.snapshot?.deliveredAt, "2026-07-21T15:51:47.000Z");
+  assertEquals(detail.snapshot?.pickupPoint?.name, "Føtex Vesterbrogade");
+  assertEquals(detail.snapshot?.pickupPoint?.city, "1620 København V");
+});
 
 function liveDetail(num: string, statusCode: string): TrackingDetail {
   return {
