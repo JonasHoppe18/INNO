@@ -835,6 +835,10 @@ export function buildTrackingDirective(
       "Tilbyd IKKE proaktiv opfølgning på forsendelsen, lov ingen besked/notifikation, og beskriv ingen automatisk refunderings-proces. " +
       "Bland ALDRIG outbound- og retur-tracking sammen.",
   );
+  lines.push(
+    "- Kundevendt struktur: start med en personlig hilsen hvis kunden kan navngives, giv den aktuelle status i første sætning, og skriv derefter kun den vigtigste konkrete detalje (fx leveringssted eller tracking-link). " +
+      "Skriv som en hjælpsom medarbejder — ikke som en rå statusrapport med carrier/state/verification-labels.",
+  );
   return lines.join("\n");
 }
 
@@ -1927,6 +1931,8 @@ ${commonFacts}
 Regler:
 - Bekræft kun det udførte og de kundesikre fakta ovenfor. Brug datid/perfektum.
 - Hold svaret kort og naturligt. Ingen intern proces, signatur, support-email eller generisk fyld.
+- Ved update_shipping_address: bekræft ændringen og gengiv den nye adresse fra execution_detail eller customer_safe_facts — brug ikke den gamle adresse fra ordre-fakta.
+- Ved cancel_order: start med at bekræfte, at den konkrete ordre er annulleret. Nævn ikke refundering, medmindre den er dokumenteret i amount_display eller verificerede fakta.
 - Ved refund/cancel: nævn kun et refunderet beløb, hvis amount_display eller verificerede fakta faktisk indeholder beløbet. Angiv 3-5 hverdages normal banktid efter en verificeret refundering.`;
   }
 
@@ -1976,6 +1982,74 @@ Regler:
 - Forklar kun en årsag eller et næste skridt, som står i de kundesikre eller verificerede fakta.
 - Nævn ikke systemfejl, test mode, intern godkendelse, workflow eller medarbejderbeslutninger.
 - Ingen signatur eller support-email.`;
+}
+
+function actionOrderName(action: ActionProposal): string {
+  return String(
+    action.params?.order_name ?? action.params?.order_number ?? "",
+  ).trim();
+}
+
+function actionAddress(action: ActionProposal): string {
+  const raw = action.params?.shipping_address ??
+    action.params?.shippingAddress;
+  if (!raw || typeof raw !== "object") return "";
+  const address = raw as Record<string, unknown>;
+  return [
+    address.address1,
+    address.address2,
+    address.zip ?? address.postal_code,
+    address.city,
+    address.country,
+  ]
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * Customer-facing guardrails for the draft that accompanies a proposed
+ * mutation. The action-decision stage has already verified the order and the
+ * target data, but its `reason` is intentionally internal and too vague to
+ * be a good email brief on its own.
+ */
+export function buildActionProposalDirective(
+  actionProposals: ActionProposal[] | null | undefined,
+): string {
+  if (!Array.isArray(actionProposals) || actionProposals.length === 0) {
+    return "";
+  }
+
+  const lines = [
+    "# KUNDEVENDT SVAR VED PLANLAGT HANDLING",
+    "Skriv selve kundesvaret — ikke en beskrivelse af action-systemet.",
+    "Handlingen er planlagt, men er ikke verificeret udført i dette trin: skriv derfor ikke at den allerede er ændret eller annulleret.",
+    "Led med den konkrete løsning, brug kundens navn hvis det er kendt, og hold svaret på 2-3 korte sætninger.",
+  ];
+
+  for (const action of actionProposals) {
+    const orderName = actionOrderName(action);
+    if (action.type === "update_shipping_address") {
+      const address = actionAddress(action);
+      lines.push(
+        "## Adresseændring",
+        `- Ordre: ${orderName || "(se verificerede fakta)"}`,
+        `- Ny leveringsadresse: ${address || "(se verificerede fakta)"}`,
+        "- Svar naturligt, at du sørger for at ændre leveringsadressen til den nye adresse. Gentag ikke den gamle adresse, og skriv ikke intern godkendelse, workflow eller systemstatus.",
+        "- Hvis det står i de verificerede fakta, må du tilføje, at ordren endnu ikke er afsendt.",
+      );
+    } else if (action.type === "cancel_order") {
+      lines.push(
+        "## Annullering",
+        `- Ordre: ${orderName || "(se verificerede fakta)"}`,
+        "- Svar naturligt, at du sørger for at annullere ordren. Nævn kun at ordren endnu ikke er afsendt, hvis det står i de verificerede fakta.",
+        "- Lov ikke refundering, beløb eller behandlingstid, medmindre det er verificeret i fakta eller action-resultatet.",
+        "- Skriv ikke intern godkendelse, workflow, action-type eller systemstatus.",
+      );
+    }
+  }
+
+  return lines.length > 4 ? lines.join("\n") : "";
 }
 
 export async function runWriter(
@@ -2348,6 +2422,9 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     actionResult,
     resolvedAmountDisplay,
   );
+  const actionProposalBlock = actionResult
+    ? ""
+    : buildActionProposalDirective(actionProposals);
 
   // --- Viden fra vidensbase ---
   // Concise mode caps each chunk hard — the writer should extract one fact, not
@@ -2596,6 +2673,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     suppress(decisionsMade),
     suppress(pendingAsks),
     suppress(actionResultBlock),
+    suppress(actionProposalBlock),
     suppress(actionsBlock),
     suppress(openQBlock),
     suppress(knowledgeBlock),
