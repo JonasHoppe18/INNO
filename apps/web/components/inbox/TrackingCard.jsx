@@ -33,7 +33,14 @@ function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
     );
   }
   if (lower.includes("bring")) {
-    return <Image src={bringLogo} alt="Bring" className={`${className} rounded-xl object-contain`} />;
+    return (
+      <Image
+        src={bringLogo}
+        alt="Bring"
+        className={`${className} flex-none rounded-xl object-contain`}
+        style={{ width: "3.5rem" }}
+      />
+    );
   }
   if (lower === "dhl") {
     return (
