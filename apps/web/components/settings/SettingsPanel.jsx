@@ -65,6 +65,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DEFAULT_THEME,
   THEME_OPTIONS,
@@ -255,14 +256,40 @@ const blocklistSnapshot = (rows = []) =>
 
 function TabSkeleton() {
   return (
-    <section className="max-w-2xl rounded-lg bg-white p-6">
-      <div className="h-8 w-40 animate-pulse rounded bg-slate-200" />
-      <div className="mt-3 h-4 w-64 animate-pulse rounded bg-slate-100" />
-      <div className="mt-8 space-y-3">
-        <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
-        <div className="h-10 w-full animate-pulse rounded bg-slate-100" />
-        <div className="h-10 w-32 animate-pulse rounded bg-slate-200" />
+    <section
+      className="w-full space-y-5"
+      aria-busy="true"
+      aria-label="Loading settings"
+    >
+      <div className="mb-6 space-y-2">
+        <Skeleton className="h-8 w-32 bg-muted" />
+        <Skeleton className="h-4 w-80 max-w-full bg-muted/70" />
       </div>
+
+      {["details", "lifecycle", "test-mode"].map((section) => (
+        <div key={section} className="rounded-xl border border-border/90 bg-card">
+          <div className="space-y-2 px-6 pb-2 pt-5">
+            <Skeleton className="h-5 w-40 bg-muted" />
+            <Skeleton className="h-4 w-72 max-w-full bg-muted/70" />
+          </div>
+          <div className="space-y-0 px-6 pb-2">
+            {["primary", "secondary"].map((row) => (
+              <div
+                key={row}
+                className="flex items-center gap-4 border-b border-border/80 py-5 last:border-b-0"
+              >
+                <Skeleton className="h-10 w-10 shrink-0 rounded-full bg-muted" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32 bg-muted" />
+                  <Skeleton className="h-3 w-56 max-w-full bg-muted/70" />
+                </div>
+                <Skeleton className="h-9 w-40 max-w-[35%] bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Loading settings</span>
     </section>
   );
 }
