@@ -1,5 +1,6 @@
 import { assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  buildUnavailableCancelDraft,
   buildActionProposalDirective,
 } from "./writer.ts";
 
@@ -50,4 +51,20 @@ Deno.test("non-customer-facing proposals do not add action copy guidance", () =>
   }]);
 
   if (directive !== "") throw new Error("unexpected action copy guidance");
+});
+
+Deno.test("unavailable cancellation has a deterministic, non-committal reply", () => {
+  const draft = buildUnavailableCancelDraft({
+    orderName: "#1062",
+    customerName: "Jonas",
+    orderNotShipped: true,
+    language: "da",
+  });
+
+  if (
+    draft !==
+      "Hej Jonas,\n\nOrdre #1062 er endnu ikke afsendt, men leveringsstatus er ukendt, så jeg kan ikke bekræfte annulleringen endnu."
+  ) {
+    throw new Error(`Unexpected unavailable cancellation draft: ${draft}`);
+  }
 });

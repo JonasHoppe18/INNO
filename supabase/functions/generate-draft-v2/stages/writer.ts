@@ -2061,6 +2061,30 @@ export function buildActionProposalDirective(
   return lines.length > 4 ? lines.join("\n") : "";
 }
 
+export function buildUnavailableCancelDraft(input: {
+  orderName?: string | null;
+  customerName?: string | null;
+  orderAlreadyCancelled?: boolean;
+  orderNotShipped?: boolean;
+  language?: string | null;
+}): string {
+  const language = String(input.language || "da").trim().toLowerCase();
+  const greeting = input.customerName?.trim()
+    ? `${greetingPrefix(language)} ${input.customerName.trim()},`
+    : `${greetingPrefix(language)},`;
+  const order = input.orderName?.trim()
+    ? `ordre ${input.orderName.trim()}`
+    : "ordren";
+
+  if (input.orderAlreadyCancelled) {
+    return `${greeting}\n\n${order[0].toLocaleUpperCase()}${order.slice(1)} er allerede annulleret.`;
+  }
+  if (input.orderNotShipped) {
+    return `${greeting}\n\n${order[0].toLocaleUpperCase()}${order.slice(1)} er endnu ikke afsendt, men leveringsstatus er ukendt, så jeg kan ikke bekræfte annulleringen endnu.`;
+  }
+  return `${greeting}\n\nJeg kan ikke bekræfte, at ${order} kan annulleres endnu, fordi ordrestatus ikke er tilgængelig.`;
+}
+
 export async function runWriter(
   {
     plan,
@@ -2841,8 +2865,26 @@ Returner JSON:
       ),
       { latestCustomerMessage, language: replyLanguage },
     );
+    const orderRecord = facts.order && typeof facts.order === "object"
+      ? facts.order as unknown as Record<string, unknown>
+      : null;
+    const orderTrackingFact = facts.facts.find((fact) =>
+      /tracking|afsendt|leveringsstatus/i.test(fact.label)
+    )?.value ?? "";
+    const unavailableCancelDraft = plan.primary_intent === "cancel" &&
+        !actionResult && !hasCancelProposal
+      ? buildUnavailableCancelDraft({
+        orderName: typeof orderRecord?.name === "string"
+          ? orderRecord.name
+          : null,
+        customerName: salutationName.name,
+        orderAlreadyCancelled: Boolean(orderRecord?.cancelled_at),
+        orderNotShipped: /ikke afsendt|unfulfilled/i.test(orderTrackingFact),
+        language: replyLanguage,
+      })
+      : "";
     return {
-      draft_text: applySendReadyStyleCleanup(
+      draft_text: unavailableCancelDraft || applySendReadyStyleCleanup(
         normalizeOpeningGreeting(
           cleanedDraft,
           salutationName.name,
