@@ -591,7 +591,9 @@ export function normalizeOpeningGreeting(
       `${expected}\n\n`,
     );
   }
-  return draft;
+  // The model may omit the greeting, but a verified customer name should
+  // still produce a send-ready, personalized opening.
+  return `${expected}\n\n${draft}`;
 }
 
 function factValue(facts: FactResolverResult, label: string): string {

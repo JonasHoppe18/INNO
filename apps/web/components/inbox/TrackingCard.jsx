@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { buildTrackingTimeline, normalizeTrackingStatusLabel } from "@/components/inbox/tracking-utils";
+import bringLogo from "../../../../assets/Bring logo.png";
 import glsLogo from "../../../../assets/GLS logo.png";
 import postNordLogo from "../../../../assets/PostNord_logo.png";
 
@@ -31,13 +32,8 @@ function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
       </svg>
     );
   }
-  if (lower === "bring") {
-    return (
-      <svg viewBox="0 0 48 48" className={`${className} flex-none`} aria-label="Bring">
-        <rect width="48" height="48" rx="10" fill="#E8001B" />
-        <text x="50%" y="56%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="10" fontWeight="700" fontFamily="system-ui,sans-serif">BRING</text>
-      </svg>
-    );
+  if (lower.includes("bring")) {
+    return <Image src={bringLogo} alt="Bring" className={`${className} rounded-xl object-contain`} />;
   }
   if (lower === "dhl") {
     return (

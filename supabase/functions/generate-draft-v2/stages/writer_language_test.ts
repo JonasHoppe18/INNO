@@ -63,3 +63,15 @@ Deno.test("resolved salutation preserves safe customer name", () => {
     throw new Error(`Expected resolved greeting, got ${draft}`);
   }
 });
+
+Deno.test("resolved salutation is added when the model omits the greeting", () => {
+  const draft = normalizeOpeningGreeting(
+    "Your package was delivered to the pickup point.",
+    "Sofie",
+    "da",
+  );
+
+  if (!draft.startsWith("Hej Sofie,\n\n")) {
+    throw new Error(`Expected Danish greeting, got ${draft}`);
+  }
+});
