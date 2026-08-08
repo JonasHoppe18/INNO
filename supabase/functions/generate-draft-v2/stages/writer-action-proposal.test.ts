@@ -37,6 +37,7 @@ Deno.test("planned cancellation gets concise, safe copy guidance", () => {
   assertStringIncludes(directive, "Ordre: #1054");
   assertStringIncludes(directive, "sørger for at annullere ordren");
   assertStringIncludes(directive, "Lov ikke refundering");
+  assertStringIncludes(directive, "Lov ikke at give en senere besked");
 });
 
 Deno.test("non-customer-facing proposals do not add action copy guidance", () => {

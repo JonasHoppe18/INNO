@@ -2024,7 +2024,7 @@ export function buildActionProposalDirective(
     "# KUNDEVENDT SVAR VED PLANLAGT HANDLING",
     "Skriv selve kundesvaret — ikke en beskrivelse af action-systemet.",
     "Handlingen er planlagt, men er ikke verificeret udført i dette trin: skriv derfor ikke at den allerede er ændret eller annulleret.",
-    "Led med den konkrete løsning, brug kundens navn hvis det er kendt, og hold svaret på 2-3 korte sætninger.",
+    "Led med den konkrete løsning, brug kundens navn hvis det er kendt, skriv \"Jeg\" med stort efter hilsenen, og hold svaret på 2-3 korte sætninger.",
   ];
 
   for (const action of actionProposals) {
@@ -2037,6 +2037,7 @@ export function buildActionProposalDirective(
         `- Ny leveringsadresse: ${address || "(se verificerede fakta)"}`,
         "- Svar naturligt, at du sørger for at ændre leveringsadressen til den nye adresse. Gentag ikke den gamle adresse, og skriv ikke intern godkendelse, workflow eller systemstatus.",
         "- Hvis det står i de verificerede fakta, må du tilføje, at ordren endnu ikke er afsendt.",
+        "- Afslut efter løsningen og den eventuelle afsendelsesstatus. Lov ikke at give en senere besked eller vende tilbage.",
       );
     } else if (action.type === "cancel_order") {
       lines.push(
@@ -2044,6 +2045,7 @@ export function buildActionProposalDirective(
         `- Ordre: ${orderName || "(se verificerede fakta)"}`,
         "- Svar naturligt, at du sørger for at annullere ordren. Nævn kun at ordren endnu ikke er afsendt, hvis det står i de verificerede fakta.",
         "- Lov ikke refundering, beløb eller behandlingstid, medmindre det er verificeret i fakta eller action-resultatet.",
+        "- Afslut efter løsningen og den eventuelle afsendelsesstatus. Lov ikke at give en senere besked, vende tilbage eller beskrive en annulleringsproces.",
         "- Skriv ikke intern godkendelse, workflow, action-type eller systemstatus.",
       );
     }
@@ -2398,6 +2400,14 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
         )
         .join("\n")
     : "";
+  const hasCancelProposal = Boolean(
+    actionProposals?.some((action) => action.type === "cancel_order"),
+  );
+  const unavailableCancelActionBlock = plan.primary_intent === "cancel" &&
+      !actionResult && !hasCancelProposal
+    ? `# ANNULLERING UDEN PLANLAGT ACTION
+Der er ingen verificeret cancel_order-action i denne kørsel. Skriv derfor ikke at ordren annulleres, at annulleringen startes, at du vender tilbage med en bekræftelse, eller at en refundering sker. Brug kun den verificerede ordrestatus; hvis status ikke dokumenterer at annullering er mulig eller udført, sig det klart og kort uden at foreslå en retur som standardløsning.`
+    : "";
   const actionAmountDisplay = formatActionAmountDisplay(
     actionResult,
     replyLanguage,
@@ -2597,7 +2607,7 @@ ${customerHistory}`
     initiate_warranty_repair:
       "Foretrukken sti: forklar garanti-/reparations-proceduren fra knowledge. Undgå at foreslå mere troubleshooting hvis kunden allerede har prøvet trin eller skaden er fysisk og dokumenteret.",
     cancel_order:
-      'Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid ("er annulleret", "er refunderet") hvis \'POST-ACTION\'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid ("vi annullerer", "din ordre annulleres") eller som bekræftelse på at anmodningen er modtaget og venter.',
+      'Foretrukken sti: håndter annulleringsforespørgslen konkret. KRITISK: skriv KUN i datid ("er annulleret", "er refunderet") hvis \'POST-ACTION\'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Skriv kun "vi annullerer" eller "jeg går i gang" når en cancel_order-action faktisk står i de planlagte actions. Hvis der ikke står en cancel_order-action, må du ikke love, starte eller antyde annulleringen — brug kun den verificerede ordrestatus og forklar kort hvad der kan bekræftes.',
     refund_or_exchange:
       "Foretrukken sti: bekræft eller initier retur/refund/ombytning per knowledge. Samme datid-regel som cancel_order: kun datid hvis action er bekræftet udført.",
     info_only:
@@ -2674,6 +2684,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     suppress(pendingAsks),
     suppress(actionResultBlock),
     suppress(actionProposalBlock),
+    suppress(unavailableCancelActionBlock),
     suppress(actionsBlock),
     suppress(openQBlock),
     suppress(knowledgeBlock),
