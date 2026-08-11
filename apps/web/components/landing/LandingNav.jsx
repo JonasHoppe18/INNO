@@ -49,7 +49,7 @@ export default async function LandingNav({ locale }) {
           <BookDemoButton
             label={t("bookDemo")}
             fallbackHref={`/${locale}#book-demo`}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
+            className="shrink-0 whitespace-nowrap rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97] sm:px-4"
           />
         </div>
       </div>
