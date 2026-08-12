@@ -89,6 +89,7 @@
       "tierStarter": "Starter",
       "tierGrowth": "Growth",
       "tierScale": "Scale",
+      "maxUsersLabel": "{count} aktiv bruger",
       "feature1": "Ubegrænsede brugere",
       "feature2": "Alle features inkluderet",
       "feature3": "Ingen binding — opsig månedligt"

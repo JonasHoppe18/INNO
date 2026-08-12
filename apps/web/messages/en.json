@@ -89,6 +89,7 @@
       "tierStarter": "Starter",
       "tierGrowth": "Growth",
       "tierScale": "Scale",
+      "maxUsersLabel": "{count} active user",
       "feature1": "Unlimited users",
       "feature2": "All features included",
       "feature3": "No binding — cancel monthly"
