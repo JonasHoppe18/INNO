@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import LocaleSwitcher from "./LocaleSwitcher";
-import BookDemoButton from "./BookDemoButton";
 import MobileNavMenu from "./MobileNavMenu";
 
 export default async function LandingNav({ locale }) {
@@ -46,11 +45,6 @@ export default async function LandingNav({ locale }) {
           />
           <LocaleSwitcher locale={locale} />
           <Link href={loginHref} className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
-          <BookDemoButton
-            label={t("bookDemo")}
-            fallbackHref={`/${locale}#book-demo`}
-            className="shrink-0 whitespace-nowrap rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97] sm:px-4"
-          />
         </div>
       </div>
     </header>

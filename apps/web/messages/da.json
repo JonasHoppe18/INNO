@@ -7,7 +7,7 @@
       "security": "Sikkerhed",
       "demo": "Demo",
       "login": "Log ind",
-      "bookDemo": "Book en demo",
+      "bookDemo": "Book demo",
       "switchLanguage": "Skift sprog",
       "menu": "Menu",
       "closeMenu": "Luk menu"
@@ -17,7 +17,7 @@
       "titleLine1": "Support der besvarer sig selv.",
       "titleLine2": "Du beholder kontrollen.",
       "subtitle": "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar i din tone — klar til godkendelse med ét klik.",
-      "ctaDemo": "Book en demo",
+      "ctaDemo": "Book demo",
       "trust1": "Virker med enhver webshop",
       "trust2": "Behold din nuværende indbakke",
       "trust3": "Opsat på få minutter"
@@ -82,7 +82,7 @@
       "perMonth": "/md",
       "ticketsLabel": "op til {count} tickets/md",
       "mostPopular": "Mest populær",
-      "cta": "Book en demo",
+      "cta": "Book demo",
       "pilotNote": "Alle planer starter med en guidet pilot.",
       "enterprise": "Enterprise — mere end 3.000 tickets om måneden? Kontakt os.",
       "tierSolo": "Solo",
@@ -111,7 +111,7 @@
     "finalCta": {
       "title": "Klar til at få support af bordet?",
       "subtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som dine.",
-      "ctaDemo": "Book en demo"
+      "ctaDemo": "Book demo"
     },
     "demo": {
       "watchLink": "Se 2-minutters demoen",
@@ -159,7 +159,7 @@
       "roleAuth": "Team-login",
       "aiNote": "For at skrive udkast sendes ticket-indhold til OpenAIs API (USA). OpenAI bruger ikke data sendt via deres API til at træne deres modeller.",
       "note": "Vi arbejder hen imod formelle certificeringer. Har I specifikke compliance-krav? Tal med os.",
-      "cta": "Book en demo"
+      "cta": "Book demo"
     },
     "integrationsPage": {
       "title": "Integrationer",
@@ -180,7 +180,7 @@
       "requestTitle": "Kan du ikke se din platform?",
       "requestBody": "Fortæl os hvad I kører på. Vi bygger de integrationer, vores kunder rent faktisk beder om — og dit svar rykker den op på listen.",
       "requestCta": "Anmod om en integration",
-      "cta": "Book en demo"
+      "cta": "Book demo"
     },
     "legal": {
       "privacyTitle": "Privatlivspolitik",
@@ -325,13 +325,13 @@
       "badge": "Produkt-tur",
       "title": "Hver ticket, løst fra start til slut",
       "subtitle": "Følg én support-ticket hele vejen — fra den lander til handlingen der løser den — og se præcis hvordan Sona virker.",
-      "cta": "Book en demo",
+      "cta": "Book demo",
       "closingTitle": "Klar til at se det på jeres egne tickets?",
       "closingSubtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som jeres.",
-      "closingKicker": "Book en demo",
+      "closingKicker": "Book demo",
       "closingBullet1": "20-minutters gennemgang på tickets som jeres",
       "closingBullet2": "Uden binding — starter med en guidet pilot",
-      "calendarFallback": "Book en demo"
+      "calendarFallback": "Book demo"
     },
     "anatomy": {
       "kicker": "SÅDAN BLIVER EN TICKET LØST",
