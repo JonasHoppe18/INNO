@@ -38,6 +38,21 @@ export async function resolveAuthScope(
     supabaseUserId = profileResult.data?.user_id ?? null;
     workspaceId = workspaceResult.data?.id ?? null;
 
+    // A stale or mismatched Clerk org must not select a workspace the user
+    // does not belong to. Fall back to the user's real membership below.
+    if (workspaceId) {
+      const { data: orgMembership, error: orgMembershipError } = await serviceClient
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", workspaceId)
+        .eq("clerk_user_id", clerkUserId)
+        .maybeSingle();
+      if (orgMembershipError) throw new Error(orgMembershipError.message);
+      if (!orgMembership?.workspace_id) {
+        workspaceId = null;
+      }
+    }
+
     // Fallback: if org exists but workspace row not yet provisioned, try membership
     if (!workspaceId) {
       const { data: membership, error: membershipError } = await serviceClient

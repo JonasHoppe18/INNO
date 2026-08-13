@@ -3169,6 +3169,17 @@ export function SettingsPanel() {
 
     setLoading(true);
     try {
+      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
+      let serverMembersResponse = null;
+      let serverMembersPayload = {};
+      if (user?.id) {
+        const response = await fetch("/api/settings/members", fetchOptions).catch(() => null);
+        if (response?.ok) {
+          serverMembersResponse = response;
+          serverMembersPayload = await response.json().catch(() => ({}));
+        }
+      }
+
       let supabaseUserId = null;
       const metadataUuid = user?.publicMetadata?.supabase_uuid;
       if (typeof metadataUuid === "string" && UUID_REGEX.test(metadataUuid)) {
@@ -3242,10 +3253,23 @@ export function SettingsPanel() {
         }
       }
 
-      let shopRow = null;
+      // The server resolves the scope with Clerk's session directly. This is
+      // the authoritative fallback when the browser-side Supabase token has
+      // not refreshed its workspace claims yet.
+      if (!supabaseUserId && serverMembersPayload?.supabase_user_id) {
+        supabaseUserId = serverMembersPayload.supabase_user_id;
+      }
+      if (!workspaceId && serverMembersPayload?.workspace_id) {
+        workspaceId = serverMembersPayload.workspace_id;
+        workspaceName = serverMembersPayload.workspace_name || null;
+        setSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+        setInitialSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+      }
+
+      let shopRow = serverMembersPayload?.shop || null;
       let shopError = null;
       let latestShop = null;
-      if (workspaceId) {
+      if (!shopRow && workspaceId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3329,7 +3353,6 @@ export function SettingsPanel() {
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
 
       // Fire all independent fetches in parallel
-      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
       const [
         membersResponse,
         testModeResponse,
@@ -3342,7 +3365,7 @@ export function SettingsPanel() {
         inboxesResponse,
         profileRowsResult,
       ] = await Promise.all([
-        workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null),
+        serverMembersResponse || (workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null)),
         workspaceId ? fetch("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
         workspaceId ? fetch("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
         fetch("/api/settings/auto-reply", fetchOptions).catch(() => null),
@@ -3372,7 +3395,11 @@ export function SettingsPanel() {
         emailBlocklistPayload,
         inboxesPayload,
       ] = await Promise.all([
-        membersResponse?.ok ? membersResponse.json().catch(() => ({})) : Promise.resolve({}),
+        serverMembersResponse
+          ? Promise.resolve(serverMembersPayload)
+          : membersResponse?.ok
+            ? membersResponse.json().catch(() => ({}))
+            : Promise.resolve({}),
         testModeResponse?.ok ? testModeResponse.json().catch(() => ({})) : Promise.resolve({}),
         personaResponse?.ok ? personaResponse.json().catch(() => ({})) : Promise.resolve({}),
         autoReplyResponse?.ok ? autoReplyResponse.json().catch(() => ({})) : Promise.resolve({}),
