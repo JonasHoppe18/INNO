@@ -36,6 +36,23 @@ export function ShopifyConnectCard() {
       return;
     }
     setLoading(true);
+
+    // Resolve the shop through the server-side Clerk scope first. The browser
+    // Supabase token can have stale workspace claims after an org switch.
+    const scopedResponse = await fetch("/api/settings/members", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    }).catch(() => null);
+    if (scopedResponse?.ok) {
+      const scopedPayload = await scopedResponse.json().catch(() => ({}));
+      if (scopedPayload?.workspace_id) {
+        setConnection(scopedPayload?.shop || null);
+        setLoading(false);
+        return;
+      }
+    }
+
     let workspaceId = null;
     if (orgId) {
       const { data: workspace, error: workspaceError } = await supabase
