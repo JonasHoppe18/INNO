@@ -40,6 +40,24 @@ export async function GET() {
       return NextResponse.json({ error: "Workspace scope not found." }, { status: 404 });
     }
 
+    const [workspaceResult, shopResult] = await Promise.all([
+      serviceClient
+        .from("workspaces")
+        .select("id, name, support_language")
+        .eq("id", scope.workspaceId)
+        .maybeSingle(),
+      serviceClient
+        .from("shops")
+        .select("id, owner_user_id, shop_domain")
+        .eq("workspace_id", scope.workspaceId)
+        .is("uninstalled_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (workspaceResult.error) throw workspaceResult.error;
+    if (shopResult.error) throw shopResult.error;
+
     const { data: workspaceMembers, error: workspaceMembersError } = await serviceClient
       .from("workspace_members")
       .select("clerk_user_id, role, created_at")
@@ -82,6 +100,11 @@ export async function GET() {
     );
     return NextResponse.json(
       {
+        supabase_user_id: scope.supabaseUserId,
+        workspace_id: scope.workspaceId,
+        workspace_name: workspaceResult.data?.name || "",
+        support_language: workspaceResult.data?.support_language || "en",
+        shop: shopResult.data || null,
         members,
         current_role: currentMember?.role || null,
         can_manage_members: isAdminLikeRole(currentMember?.role),
