@@ -938,11 +938,9 @@ export function useThreadActions({
               [selectedThreadId]: false,
             }));
           }
-          if (
-            shouldResolveAfterApproval &&
-            !payload?.testMode &&
-            !payload?.simulated
-          ) {
+          // Test Mode only simulates the external forwarding action. An explicit
+          // "Forward & Resolve" choice should still resolve the internal ticket.
+          if (shouldResolveAfterApproval) {
             await handleTicketStateChange({ status: "resolved" });
           }
         } else {

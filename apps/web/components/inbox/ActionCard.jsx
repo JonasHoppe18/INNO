@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   LoaderCircle,
+  MailCheck,
   Plus,
   X,
   XCircle,
@@ -53,17 +54,13 @@ import {
   ACTION_DECLINE_REASONS,
   actionDeclineReasonNeedsNote,
 } from "@/lib/action-decline";
+import {
+  getForwardActionResult,
+  getForwardTargetEmail,
+} from "@/lib/inbox/action-result";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function getForwardTargetEmail(payload = {}, detail = "") {
-  const payloadEmail = String(payload?.target_email || payload?.forward_to_email || "")
-    .trim()
-    .toLowerCase();
-  if (payloadEmail) return payloadEmail;
-  return String(detail || "").match(/[^\s@]+@[^\s@]+\.[^\s@.,;:!?]+/i)?.[0]?.toLowerCase() || "";
-}
 
 function getForwardSentenceParts(detail = "", targetEmail = "") {
   const fallback = { lead: "Forward this email to", tail: "." };
@@ -285,7 +282,7 @@ function getAppliedChangeLabel(actionType = "") {
 
 function shouldShowAppliedChange(actionType = "") {
   const normalizedAction = String(actionType || "").trim().toLowerCase();
-  return normalizedAction !== "cancel_order";
+  return normalizedAction !== "cancel_order" && normalizedAction !== "forward_email";
 }
 
 function getActionStatusLabel(actionType = "") {
@@ -500,6 +497,7 @@ export function ActionCard({
   const [nowMs, setNowMs] = useState(null);
   const normalizedAction = String(actionType || "").trim().toLowerCase();
   const initialForwardEmail = getForwardTargetEmail(payload, detail);
+  const forwardActionResult = getForwardActionResult({ actionType, payload, detail });
   const [forwardTargetEmail, setForwardTargetEmail] = useState(initialForwardEmail);
   const [customForwardEmail, setCustomForwardEmail] = useState("");
   const [isCustomForwardTarget, setIsCustomForwardTarget] = useState(false);
@@ -674,11 +672,19 @@ export function ActionCard({
           <div className="inline-flex w-full items-center rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="flex h-12 w-12 flex-none items-center justify-center">
-                <Image src={shopifyLogo} alt="" className="h-24 w-24 object-contain" />
+                {forwardActionResult ? (
+                  <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <MailCheck className="size-5" aria-hidden="true" />
+                  </div>
+                ) : (
+                  <Image src={shopifyLogo} alt="" className="h-24 w-24 object-contain" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold text-foreground">
-                  {hasResolvedOrderNumber ? (
+                  {forwardActionResult ? (
+                    forwardActionResult.title
+                  ) : hasResolvedOrderNumber ? (
                     orderTitle
                   ) : (
                     <span className="inline-flex items-center gap-2 text-muted-foreground">
@@ -689,7 +695,7 @@ export function ActionCard({
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span>{resultStatusText}</span>
-                  {orderTotal ? <span>&bull; {orderTotal}</span> : null}
+                  {!forwardActionResult && orderTotal ? <span>&bull; {orderTotal}</span> : null}
                 </div>
               </div>
             </div>
@@ -709,7 +715,11 @@ export function ActionCard({
               <div className="flex items-start justify-between gap-3">
                 <DialogTitle className="flex items-center gap-1.5 text-xl font-medium text-foreground">
                   <span className="inline-flex h-8 w-8 items-center justify-center">
-                    <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+                    {forwardActionResult ? (
+                      <MailCheck className="size-5 text-muted-foreground" aria-hidden="true" />
+                    ) : (
+                      <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+                    )}
                   </span>
                   <span>{resultModalTitle}</span>
                 </DialogTitle>
@@ -727,21 +737,36 @@ export function ActionCard({
               </div>
             </DialogHeader>
             <div className="space-y-5">
-              <div className="rounded-md border border-border bg-muted/50 p-3.5">
-                <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
-                  <div className="text-muted-foreground">Order</div>
-                  <div className="text-right font-semibold text-foreground">
-                    {orderDisplayNumber ||
-                      (hasResolvedOrderNumber ? `#${resolvedOrderNumber}` : "—")}
+              {forwardActionResult ? (
+                <div className="rounded-md border border-border bg-muted/50 p-3.5">
+                  <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
+                    <div className="text-muted-foreground">Recipient</div>
+                    <div className="truncate text-right font-semibold text-foreground">
+                      {forwardActionResult.recipient || "—"}
+                    </div>
+                    <div className="text-muted-foreground">Status</div>
+                    <div className="text-right font-medium text-foreground">
+                      {resultStatusText}
+                    </div>
                   </div>
-                  <div className="text-muted-foreground">Customer</div>
-                  <div className="truncate text-right font-medium text-foreground">{orderCustomer || "—"}</div>
-                  <div className="text-muted-foreground">Date</div>
-                  <div className="text-right font-medium text-foreground">{orderDate || "—"}</div>
-                  <div className="text-muted-foreground">Total</div>
-                  <div className="text-right font-semibold text-foreground">{orderTotal || "—"}</div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-md border border-border bg-muted/50 p-3.5">
+                  <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
+                    <div className="text-muted-foreground">Order</div>
+                    <div className="text-right font-semibold text-foreground">
+                      {orderDisplayNumber ||
+                        (hasResolvedOrderNumber ? `#${resolvedOrderNumber}` : "—")}
+                    </div>
+                    <div className="text-muted-foreground">Customer</div>
+                    <div className="truncate text-right font-medium text-foreground">{orderCustomer || "—"}</div>
+                    <div className="text-muted-foreground">Date</div>
+                    <div className="text-right font-medium text-foreground">{orderDate || "—"}</div>
+                    <div className="text-muted-foreground">Total</div>
+                    <div className="text-right font-semibold text-foreground">{orderTotal || "—"}</div>
+                  </div>
+                </div>
+              )}
 
               {showAppliedChange ? (
                 <div className="space-y-2">
@@ -754,7 +779,7 @@ export function ActionCard({
                 </div>
               ) : null}
 
-              {orderItems.length ? (
+              {!forwardActionResult && orderItems.length ? (
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-muted-foreground">Items</div>
                   <div className="space-y-1.5">
