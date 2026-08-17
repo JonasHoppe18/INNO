@@ -496,8 +496,19 @@ export function ActionCard({
     useState(false);
   const [nowMs, setNowMs] = useState(null);
   const normalizedAction = String(actionType || "").trim().toLowerCase();
+  // Keep the result presentation tied to the action's intent. Older action
+  // records/API responses may use a forwarding alias, but should never fall
+  // through to the Shopify order card (and its endless loading state).
+  const isForwardAction =
+    normalizedAction === "forward_email" ||
+    normalizedAction === "forward-email" ||
+    normalizedAction === "forward" ||
+    normalizedAction.endsWith("_forward") ||
+    normalizedAction.includes("forward_email");
   const initialForwardEmail = getForwardTargetEmail(payload, detail);
-  const forwardActionResult = getForwardActionResult({ actionType, payload, detail });
+  const forwardActionResult = isForwardAction
+    ? getForwardActionResult({ actionType: "forward_email", payload, detail })
+    : null;
   const [forwardTargetEmail, setForwardTargetEmail] = useState(initialForwardEmail);
   const [customForwardEmail, setCustomForwardEmail] = useState("");
   const [isCustomForwardTarget, setIsCustomForwardTarget] = useState(false);
