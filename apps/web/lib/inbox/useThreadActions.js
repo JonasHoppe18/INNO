@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import { isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { normalizeActionDeclineInput } from "@/lib/action-decline";
+import { splitActionApprovalOptions } from "@/lib/inbox/action-approval";
 
 // Matches InboxSplitView.jsx's local `normalizeStatus` wrapper exactly.
 const normalizeStatus = (value) => toLegacyUiStatus(value);
@@ -43,6 +44,7 @@ export function useThreadActions({
   // keeps it up to date (below) and the handler that mutates it
   // (handleTicketStateChange), just not the useState/useRef declarations.
   derivedThreads,
+  setLiveThreads,
   ticketStateByThread,
   setTicketStateByThread,
   pendingUpdateThreadIds,
@@ -528,43 +530,6 @@ export function useThreadActions({
   const handleTicketStateChange = useCallback(
     (updates) => {
       if (!selectedThreadId) return;
-      setTicketStateByThread((prev) => ({
-        ...prev,
-        [selectedThreadId]: {
-          ...prev[selectedThreadId],
-          ...updates,
-        },
-      }));
-
-      // When a ticket is resolved/closed it disappears from the current view —
-      // automatically advance to the next visible ticket instead of leaving an
-      // orphaned selection with nothing highlighted in the list.
-      if (updates.status === "resolved" || updates.status === "Solved") {
-        // Trigger AI solution summary generation (fire-and-forget)
-        fetch(
-          `/api/threads/${encodeURIComponent(selectedThreadId)}/solution-summary`,
-          {
-            method: "POST",
-          },
-        ).catch(() => null);
-
-        const currentIdx = filteredThreads.findIndex(
-          (t) => t.id === selectedThreadId,
-        );
-        const nextThread =
-          filteredThreads[currentIdx + 1] ||
-          filteredThreads[currentIdx - 1] ||
-          null;
-        setOpenThreadIds((prev) => {
-          const without = prev.filter((id) => id !== selectedThreadId);
-          if (!nextThread) return without;
-          return without.includes(nextThread.id)
-            ? without
-            : [nextThread.id, ...without];
-        });
-        setSelectedThreadId(nextThread?.id || null);
-      }
-
       const payload = {};
       if (typeof updates.status === "string") {
         payload.status = updates.status;
@@ -578,8 +543,21 @@ export function useThreadActions({
       if (!Object.keys(payload).length) return;
 
       const pendingThreadId = selectedThreadId;
+      if (pendingUpdateThreadIds.current.has(pendingThreadId)) return;
+
+      const isResolving =
+        updates.status === "resolved" || updates.status === "Solved";
+      const currentIdx = isResolving
+        ? filteredThreads.findIndex((thread) => thread.id === pendingThreadId)
+        : -1;
+      const nextThread = isResolving
+        ? filteredThreads[currentIdx + 1] ||
+          filteredThreads[currentIdx - 1] ||
+          null
+        : null;
+
       pendingUpdateThreadIds.current.add(pendingThreadId);
-      fetch("/api/inbox/thread-status", {
+      return fetch("/api/inbox/thread-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -588,19 +566,57 @@ export function useThreadActions({
         }),
       })
         .then(async (response) => {
-          if (response.ok) return;
           const data = await response.json().catch(() => null);
-          throw new Error(data?.error || "Could not update ticket status.");
+          if (!response.ok || !data?.thread?.id) {
+            throw new Error(data?.error || "Could not update ticket status.");
+          }
+          return data.thread;
+        })
+        .then((thread) => {
+          setLiveThreads((prev) =>
+            (prev || []).map((row) =>
+              row.id === pendingThreadId ? { ...row, ...thread } : row,
+            ),
+          );
+          setTicketStateByThread((prev) => ({
+            ...prev,
+            [pendingThreadId]: {
+              ...(prev[pendingThreadId] || DEFAULT_TICKET_STATE),
+              status: normalizeStatus(thread.status),
+              priority: thread.priority ?? DEFAULT_TICKET_STATE.priority,
+              assignee:
+                thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee,
+            },
+          }));
+
+          if (!isResolving) return true;
+
+          setOpenThreadIds((prev) => {
+            const without = prev.filter((id) => id !== pendingThreadId);
+            if (!nextThread) return without;
+            return without.includes(nextThread.id)
+              ? without
+              : [nextThread.id, ...without];
+          });
+          setSelectedThreadId(nextThread?.id || null);
+
+          // A solution summary only belongs to a successfully resolved ticket.
+          fetch(
+            `/api/threads/${encodeURIComponent(pendingThreadId)}/solution-summary`,
+            { method: "POST" },
+          ).catch(() => null);
+          return true;
         })
         .catch((error) => {
           toast.error(error.message || "Could not update ticket status.");
+          return false;
         })
         .finally(() => {
           pendingUpdateThreadIds.current.delete(pendingThreadId);
         });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
-    [filteredThreads, selectedThreadId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable React state setters supplied by the parent.
+    [filteredThreads, selectedThreadId, DEFAULT_TICKET_STATE],
   );
 
   // Task 9, Plan 2: shared PATCH-based body for the "Approve close" group's
@@ -731,6 +747,12 @@ export function useThreadActions({
       };
       try {
         const nowIso = new Date().toISOString();
+        const { payloadOverride, shouldResolveAfterApproval } =
+          splitActionApprovalOptions({
+            decision: normalized,
+            actionType: pending.actionType,
+            options,
+          });
         const declineContext = normalized === "denied"
           ? normalizeActionDeclineInput(options)
           : null;
@@ -750,13 +772,7 @@ export function useThreadActions({
               proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
               proposalText: pending.detail || "",
               ...(declineContext || {}),
-              payloadOverride:
-                normalized === "accepted" &&
-                options &&
-                typeof options === "object" &&
-                Object.keys(options).length
-                  ? options
-                  : null,
+              payloadOverride,
             }),
           },
         );
@@ -922,6 +938,13 @@ export function useThreadActions({
               [selectedThreadId]: false,
             }));
           }
+          if (
+            shouldResolveAfterApproval &&
+            !payload?.testMode &&
+            !payload?.simulated
+          ) {
+            await handleTicketStateChange({ status: "resolved" });
+          }
         } else {
           if (payload?.draftGenerated) {
             setPostApprovalDraftLoadingByThread((prev) => ({
@@ -969,6 +992,7 @@ export function useThreadActions({
       orderUpdateSubmittingByThread,
       pendingOrderUpdateByThread,
       selectedThreadId,
+      handleTicketStateChange,
     ],
   );
 

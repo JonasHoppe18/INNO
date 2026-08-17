@@ -2588,6 +2588,7 @@ export function InboxSplitView({
     keepWaiting,
   } = useThreadActions({
     derivedThreads,
+    setLiveThreads,
     ticketStateByThread,
     setTicketStateByThread,
     pendingUpdateThreadIds,
