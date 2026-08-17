@@ -11,6 +11,16 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -485,6 +495,8 @@ export function ActionCard({
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
+  const [showForwardApprovalDialog, setShowForwardApprovalDialog] =
+    useState(false);
   const [nowMs, setNowMs] = useState(null);
   const normalizedAction = String(actionType || "").trim().toLowerCase();
   const initialForwardEmail = getForwardTargetEmail(payload, detail);
@@ -957,13 +969,13 @@ export function ActionCard({
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={() =>
-            onApprove?.(
-              normalizedAction === "forward_email"
-                ? { target_email: selectedForwardEmail }
-                : undefined
-            )
-          }
+          onClick={() => {
+            if (normalizedAction === "forward_email") {
+              setShowForwardApprovalDialog(true);
+              return;
+            }
+            onApprove?.();
+          }}
           disabled={loading || Boolean(displayedValidationError)}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -979,6 +991,51 @@ export function ActionCard({
         loading={loading}
         onConfirm={onDecline}
       />
+
+      <AlertDialog
+        open={showForwardApprovalDialog}
+        onOpenChange={(open) => {
+          if (!loading) setShowForwardApprovalDialog(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve forwarding</AlertDialogTitle>
+            <AlertDialogDescription>
+              The email will be forwarded to {selectedForwardEmail}. Should Sona
+              also mark this ticket as resolved after forwarding?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading}
+              onClick={() => {
+                setShowForwardApprovalDialog(false);
+                onApprove?.({
+                  target_email: selectedForwardEmail,
+                  closeTicket: false,
+                });
+              }}
+            >
+              Approve only
+            </Button>
+            <AlertDialogAction
+              disabled={loading}
+              onClick={() =>
+                onApprove?.({
+                  target_email: selectedForwardEmail,
+                  closeTicket: true,
+                })
+              }
+            >
+              Approve &amp; resolve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

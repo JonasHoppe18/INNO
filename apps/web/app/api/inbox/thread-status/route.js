@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  applyScope,
+  resolveAuthScope,
+  resolveClerkOrgId,
+} from "@/lib/server/workspace-auth";
 import { buildManualStatusPatch } from "@/lib/inbox/status-patch";
 import {
   dispatchDueCustomerSatisfactionSurveys,
@@ -57,7 +61,9 @@ function normalizeClassificationKey(value) {
 }
 
 export async function PATCH(request) {
-  const { userId: clerkUserId, orgId } = await auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
@@ -159,7 +165,9 @@ export async function PATCH(request) {
       .from("mail_threads")
       .update(payload)
       .eq("id", threadId)
-      .select("id, status, priority, assignee_id, tags, classification_key, classification_confidence, classification_reason")
+      .select(
+        "id, status, priority, assignee_id, tags, classification_key, classification_confidence, classification_reason, waiting_reason, wake_at, close_pending, attention_reason, status_changed_at"
+      )
       .maybeSingle(),
     scope
   );

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  applyScope,
+  resolveAuthScope,
+  resolveClerkOrgId,
+} from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -26,7 +30,9 @@ function asString(value) {
 }
 
 export async function POST(_request, { params }) {
-  const { userId: clerkUserId, orgId } = await auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
 
   const threadId = asString(params?.threadId);
