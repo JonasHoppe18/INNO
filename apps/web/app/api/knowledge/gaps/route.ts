@@ -38,20 +38,30 @@ export async function GET() {
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: logs, error } = await serviceClient
+    let logsQuery = serviceClient
       .from("agent_logs")
-      .select("step_detail, created_at")
+      .select("step_detail, created_at, workspace_id")
       .eq("step_name", "knowledge_gap_detected")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(500);
+    if (scope.workspaceId) {
+      logsQuery = logsQuery.eq("workspace_id", scope.workspaceId);
+    }
+    const { data: logs, error } = await logsQuery;
 
     if (error) throw error;
 
     // Aggregate gaps: count how many tickets were affected per unique gap
     const gapMap = new Map<
       string,
-      { gap: Record<string, unknown>; count: number; latest: string }
+      {
+        gap: Record<string, unknown>;
+        occurrences: number;
+        threadIds: Set<string>;
+        latest: string;
+        latestThreadId: string | null;
+      }
     >();
 
     for (const log of logs ?? []) {
@@ -64,25 +74,53 @@ export async function GET() {
         continue;
       }
 
-      // Filter to this shop
-      if (detail.shop_id && detail.shop_id !== shop.id) continue;
+      // Service-role reads are always narrowed again to the resolved shop.
+      if (detail.shop_id !== shop.id) continue;
 
       const gaps = Array.isArray(detail.gaps) ? detail.gaps : [];
       for (const gap of gaps) {
-        const key = `${gap.gap_type}__${gap.intent}`;
+        const threadId = typeof detail.thread_id === "string"
+          ? detail.thread_id
+          : "";
+        const key = [
+          gap.gap_type,
+          gap.intent,
+          gap.fact_type,
+          gap.product,
+          gap.variant,
+          gap.reason,
+        ].map((value) => String(value ?? "").trim().toLowerCase()).join("__");
         const existing = gapMap.get(key);
         if (existing) {
-          existing.count++;
-          if (log.created_at > existing.latest) existing.latest = log.created_at;
+          existing.occurrences++;
+          if (threadId) existing.threadIds.add(threadId);
+          if (log.created_at > existing.latest) {
+            existing.latest = log.created_at;
+            existing.latestThreadId = threadId || null;
+          }
         } else {
-          gapMap.set(key, { gap, count: 1, latest: log.created_at ?? "" });
+          gapMap.set(key, {
+            gap,
+            occurrences: 1,
+            threadIds: new Set(threadId ? [threadId] : []),
+            latest: log.created_at ?? "",
+            latestThreadId: threadId || null,
+          });
         }
       }
     }
 
     const aggregated = Array.from(gapMap.values())
-      .sort((a, b) => b.count - a.count)
-      .map(({ gap, count, latest }) => ({ ...gap, tickets_affected: count, latest_seen: latest }));
+      .sort((a, b) =>
+        (b.threadIds.size || b.occurrences) -
+        (a.threadIds.size || a.occurrences)
+      )
+      .map(({ gap, occurrences, threadIds, latest, latestThreadId }) => ({
+        ...gap,
+        tickets_affected: threadIds.size || occurrences,
+        latest_seen: latest,
+        latest_thread_id: latestThreadId,
+      }));
 
     return NextResponse.json({ gaps: aggregated });
   } catch (err) {

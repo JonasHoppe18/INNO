@@ -77,6 +77,23 @@ Deno.test("writer prompt includes image-honesty guidance", () => {
   );
 });
 
+Deno.test("writer prompt turns source coverage into natural customer language", () => {
+  const low = src.toLowerCase();
+
+  assert(
+    low.includes('skriv aldrig "ikke dokumenteret"'),
+    "missing rule: do not expose evidence/source coverage to the customer",
+  );
+  assert(
+    low.includes("gør aldrig manglende evidens til et kategorisk nej"),
+    "missing rule: preserve uncertainty instead of inventing a definite answer",
+  );
+  assert(
+    low.includes("ingen uopfordrede specs, salgstekst eller lagerbemærkninger"),
+    "missing rule: simple product replies must not become catalogue dumps",
+  );
+});
+
 import { computeWriterCostUsd } from "./writer.ts";
 
 Deno.test("computeWriterCostUsd: known models, snapshot ids, unknowns", () => {

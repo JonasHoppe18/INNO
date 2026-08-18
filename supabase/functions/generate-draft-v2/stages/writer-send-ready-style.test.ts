@@ -189,3 +189,21 @@ Deno.test("applySendReadyStyleCleanup is a no-op on an already send-ready draft"
     "Hi there,\n\nThe A-Spire headset works with PlayStation via USB-C or 3.5mm AUX.\n\nWireless dongle compatibility isn't confirmed for A-Spire, so I recommend using one of those wired connection options instead.";
   assertEquals(applySendReadyStyleCleanup(input), input);
 });
+
+Deno.test("writer cleanup removes a standalone Danish sign-off added by the model", () => {
+  const input =
+    "Hej,\n\nVi har desværre ikke stofpuder til dette headset.\n\nBedste hilsner";
+  assertEquals(
+    applySendReadyStyleCleanup(input),
+    "Hej,\n\nVi har desværre ikke stofpuder til dette headset.",
+  );
+});
+
+Deno.test("writer cleanup removes a compound Danish invitation closer", () => {
+  const input =
+    "Vi har desværre ikke stofpuder til dette headset.\n\nHvis du har brug for yderligere hjælp eller har andre spørgsmål, er du velkommen til at skrive igen.";
+  assertEquals(
+    applySendReadyStyleCleanup(input),
+    "Vi har desværre ikke stofpuder til dette headset.",
+  );
+});
