@@ -213,7 +213,7 @@ function FirstTagPill({ threadId, refreshTrigger }) {
   if (!tag) return null;
 
   return (
-    <span className="inline-flex items-center rounded-md border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-600">
+    <span className="inline-flex items-center rounded-lg border border-orange-200/80 bg-orange-50/90 px-3 py-1 text-xs font-medium text-orange-600 shadow-sm">
       {tag.name}
     </span>
   );
@@ -327,10 +327,10 @@ function InboxHeaderActions({
     CANONICAL_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ||
     "Needs attention";
   const statusStylesByStatus = {
-    needs_attention: "bg-blue-50 text-blue-700 border-blue-200",
-    waiting_customer: "bg-violet-50 text-violet-700 border-violet-200",
-    waiting_third_party: "bg-amber-50 text-amber-700 border-amber-200",
-    resolved: "bg-green-50 text-green-700 border-green-200",
+    needs_attention: "border-blue-200/80 bg-blue-50/90 text-blue-700",
+    waiting_customer: "border-violet-200/80 bg-violet-50/90 text-violet-700",
+    waiting_third_party: "border-amber-200/80 bg-amber-50/90 text-amber-700",
+    resolved: "border-green-200/80 bg-green-50/90 text-green-700",
   };
   const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
@@ -341,7 +341,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket status"
-          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1 text-xs font-medium shadow-sm transition-[background-color,border-color,color,transform] duration-150 ease-out active:scale-[0.98] ${statusStyles}`}
+          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
         >
           {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -364,7 +364,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket assignee"
-          className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-border/70 bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-muted/70 hover:text-foreground active:scale-[0.98]"
+          className="h-auto w-auto cursor-pointer gap-1.5 rounded-lg border border-border/70 bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/70 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
         >
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
@@ -382,7 +382,7 @@ function InboxHeaderActions({
           <button
             type="button"
             aria-label="More ticket actions"
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-muted/60 hover:text-foreground active:scale-[0.98]"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
           >
             More
             <ChevronDown className="h-3.5 w-3.5" />
@@ -3782,7 +3782,7 @@ export function InboxSplitView({
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
-                className="relative inline-flex cursor-pointer items-center rounded-md border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-muted/60 hover:text-foreground active:scale-[0.98]"
+                className="relative inline-flex cursor-pointer items-center rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
               >
                 View actions
                 {hasActionableReturnTrackingAction ? (
