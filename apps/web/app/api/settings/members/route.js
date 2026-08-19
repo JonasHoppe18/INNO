@@ -48,7 +48,7 @@ export async function GET() {
         .maybeSingle(),
       serviceClient
         .from("shops")
-        .select("id, owner_user_id, shop_domain")
+        .select("id, owner_user_id, shop_domain, platform, installed_at, uninstalled_at")
         .eq("workspace_id", scope.workspaceId)
         .is("uninstalled_at", null)
         .order("created_at", { ascending: false })

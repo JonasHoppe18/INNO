@@ -3278,7 +3278,9 @@ export function SettingsPanel() {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-      } else if (supabaseUserId) {
+        shopRow = latestShop?.data ?? null;
+        shopError = latestShop?.error ?? null;
+      } else if (!shopRow && supabaseUserId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3286,11 +3288,13 @@ export function SettingsPanel() {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-      } else {
+        shopRow = latestShop?.data ?? null;
+        shopError = latestShop?.error ?? null;
+      } else if (!shopRow) {
         latestShop = { data: null, error: null };
+        shopRow = null;
+        shopError = null;
       }
-      shopRow = latestShop?.data ?? null;
-      shopError = latestShop?.error ?? null;
 
       if (shopError) throw shopError;
 

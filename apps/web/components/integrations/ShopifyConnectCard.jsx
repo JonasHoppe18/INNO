@@ -1,9 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { useUser } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -14,113 +12,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
+import { useWorkspaceIntegration } from "@/hooks/useWorkspaceIntegration";
 import { CheckCircle2 } from "lucide-react";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import { ShopifySheet } from "./ShopifySheet";
 
 export function ShopifyConnectCard() {
-  const supabase = useClerkSupabase();
-  const { orgId } = useAuth();
-  const { user } = useUser();
-  // Holder den seneste shop connection så vi kan vise status og bruge den i sheetet.
-  const [connection, setConnection] = useState(null);
-  // Bruges til at vise "Henter..." badge og blokere knapper hvis Supabase klienten mangler.
-  const [loading, setLoading] = useState(true);
+  const { shop: connection, loading, loadStatus: loadConnection } = useWorkspaceIntegration("shopify");
   const [autoSyncStartedFor, setAutoSyncStartedFor] = useState(null);
-
-  // Henter butikkens domæne og ejer via Supabase RLS.
-  const loadConnection = useCallback(async () => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    let workspaceId = null;
-    if (orgId) {
-      const { data: workspace, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id")
-        .eq("clerk_org_id", orgId)
-        .maybeSingle();
-      if (workspaceError) {
-        console.warn("Could not resolve workspace:", workspaceError);
-      } else {
-        workspaceId = workspace?.id ?? null;
-      }
-    }
-
-    if (!workspaceId && user?.id) {
-      const { data: membership, error: membershipError } = await supabase
-        .from("workspace_members")
-        .select("workspace_id")
-        .eq("clerk_user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (membershipError) {
-        console.warn("Could not resolve workspace from membership:", membershipError);
-      } else {
-        workspaceId = membership?.workspace_id ?? null;
-      }
-    }
-
-    let ownerUserId = null;
-    if (!workspaceId && user?.id) {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id")
-        .eq("clerk_user_id", user.id)
-        .maybeSingle();
-      if (profileError) {
-        console.warn("Could not resolve owner user id:", profileError);
-      } else {
-        ownerUserId = profile?.user_id ?? null;
-      }
-    }
-
-    let query = supabase
-      .from("shops")
-      .select("id, shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
-      .eq("platform", "shopify")
-      .order("created_at", { ascending: false })
-      .is("uninstalled_at", null)
-      .limit(1);
-
-    if (workspaceId) {
-      query = query.eq("workspace_id", workspaceId);
-    }
-
-    let { data, error } = await query.maybeSingle();
-
-    // Legacy fallback: only scope by owner if the primary (RLS-scoped) read found nothing.
-    if (!data && !error && !workspaceId && ownerUserId) {
-      const fallback = await supabase
-        .from("shops")
-        .select("id, shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
-        .eq("platform", "shopify")
-        .eq("owner_user_id", ownerUserId)
-        .is("uninstalled_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      data = fallback.data ?? null;
-      error = fallback.error ?? null;
-    }
-
-    if (error) {
-      console.warn("Could not load Shopify connection:", error);
-      setConnection(null);
-    } else {
-      setConnection(data);
-    }
-    setLoading(false);
-  }, [orgId, supabase, user?.id]);
-
-  // Når supabase klienten er klar henter vi forbindelsen én gang og når onConnected kaldes.
-  useEffect(() => {
-    loadConnection();
-  }, [loadConnection]);
 
   // En seedet shop-række kan godt have domæne og indhold uden at OAuth er
   // gennemført. Først callbackens installed_at markerer en reel forbindelse.
