@@ -622,14 +622,14 @@ function TicketDetailComponent({
   const hasTicketNumber = threadTicketRef !== "No ticket ID";
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
-      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0">
+      <header className="flex min-h-[58px] items-center justify-between border-b border-border/70 bg-background/95 px-4 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex min-w-0 items-center gap-3">
           <div
             className={`rounded px-2 py-0.5 font-mono text-[11px] tabular-nums ${
               hasTicketNumber
-                ? "bg-slate-100 font-medium text-slate-600"
-                : "text-slate-400"
+                ? "border border-border/70 bg-muted/55 font-medium text-muted-foreground shadow-sm"
+                : "text-muted-foreground/60"
             }`}
           >
             {threadTicketRef}
@@ -675,7 +675,7 @@ function TicketDetailComponent({
             </div>
           ) : null}
           {orderUpdateError && !shouldShowActionCard ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
               {orderUpdateError}
             </div>
           ) : null}

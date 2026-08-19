@@ -338,8 +338,8 @@ export function TicketList({
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
   return (
-    <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="border-b border-border px-3 py-2">
+    <aside className="animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
+      <div className="border-b border-border/70 bg-muted/15 px-3 py-2">
         <div className="flex items-center gap-1.5">
           <Input
             value={filters.query}
