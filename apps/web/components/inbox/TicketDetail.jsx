@@ -651,7 +651,7 @@ function TicketDetailComponent({
 
       <div
         ref={conversationRef}
-        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="min-h-0 flex-1 overflow-y-auto bg-muted/20 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
         <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
