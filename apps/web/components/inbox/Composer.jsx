@@ -39,6 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const escapeHtml = (input = "") =>
   String(input || "")
@@ -1689,15 +1690,17 @@ function ComposerComponent({
             <span className="text-[13px] font-medium text-violet-600 dark:text-violet-400">Drop to attach</span>
           </div>
         ) : null}
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize reply box"
-          onMouseDown={startResize}
-          className="group flex h-2.5 cursor-row-resize items-center justify-center bg-card"
-        >
-          <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
-        </div>
+        {!isEmptyReply ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize reply box"
+            onMouseDown={startResize}
+            className="group flex h-2.5 cursor-row-resize items-center justify-center bg-card"
+          >
+            <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -2250,6 +2253,7 @@ function ComposerComponent({
             ) : null}
           </div>
           <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
+            <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
                 <div className="flex items-center gap-1.5 text-[12px] text-violet-500">
@@ -2266,35 +2270,45 @@ function ComposerComponent({
                     onChange={handleAddAttachments}
                     disabled={disabled || showDraftLoadingState}
                   />
-                  <button
-                    type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    onClick={() => fileInputRef.current?.click()}
-                    aria-label="Attach file"
-                    title="Attach file"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    onClick={() => {
-                      setSavedRepliesQuery("");
-                      setSavedRepliesOpen(true);
-                    }}
-                    aria-label="Open saved replies"
-                    title="Saved Replies"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <Zap className="h-4 w-4" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={disabled || showDraftLoadingState}
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Attach file"
+                        className="rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Attach file</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={disabled || showDraftLoadingState}
+                        onClick={() => {
+                          setSavedRepliesQuery("");
+                          setSavedRepliesOpen(true);
+                        }}
+                        aria-label="Open saved replies"
+                        className="rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
+                      >
+                        <Zap className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Saved replies</TooltipContent>
+                  </Tooltip>
                   {!isNote && (
                     <Popover open={languagePickerOpen} onOpenChange={setLanguagePickerOpen}>
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+                          aria-label="Change reply language"
+                          title="Change reply language"
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95 disabled:opacity-50"
                           disabled={isTranslating}
                         >
                           {isTranslating ? (
@@ -2338,32 +2352,37 @@ function ComposerComponent({
                     </button>
                   ) : null}
                   {typeof onRefineDraft === "function" ? (
-                    <button
-                      type="button"
-                      disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
-                      onClick={() => {
-                        setRefineOpen((prev) => !prev);
-                        setRefineError("");
-                      }}
-                      aria-label="Refine draft with AI"
-                      title="Refine draft"
-                      className={refineOpen
-                        ? "rounded-md bg-violet-100 dark:bg-violet-500/25 p-1.5 text-violet-600 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-500/30"
-                        : "rounded-md p-1.5 text-violet-400 dark:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 dark:hover:text-violet-400"}
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
+                          onClick={() => {
+                            setRefineOpen((prev) => !prev);
+                            setRefineError("");
+                          }}
+                          aria-label="Refine draft with AI"
+                          className={refineOpen
+                            ? "rounded-md bg-violet-100 p-1.5 text-violet-600 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-100 active:scale-95 dark:bg-violet-500/25 dark:text-violet-300 dark:hover:bg-violet-500/30"
+                            : "rounded-md p-1.5 text-violet-400 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-600 active:scale-95 dark:text-violet-500 dark:hover:bg-violet-500/15 dark:hover:text-violet-400"}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Refine draft with AI</TooltipContent>
+                    </Tooltip>
                   ) : null}
                 </>
               ) : null}
             </div>
+            </TooltipProvider>
             <div className="flex items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
                     disabled={disabled || showDraftLoadingState}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
                       isNote
                         ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
                         : "bg-muted text-foreground/80"
@@ -2385,7 +2404,9 @@ function ComposerComponent({
                 onClick={() => {
                   submitComposer();
                 }}
-                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
+                aria-label="Send reply"
+                title="Send reply"
+                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,transform] duration-150 ease-out hover:bg-violet-700 active:scale-95"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
