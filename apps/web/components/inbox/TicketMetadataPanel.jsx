@@ -94,7 +94,7 @@ function ProductField({ value, availableProducts, onSave }) {
             value ? "text-slate-800" : "text-slate-400 italic"
           }`}
         >
-          {value?.title || "—"}
+          {value?.title || "Add product"}
         </button>
         {open && (
           <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[200px] max-h-56 flex flex-col">
@@ -359,18 +359,18 @@ export function TicketMetadataPanel({ threadId }) {
           label="Summary"
           value={metadata?.issue_summary}
           onSave={(v) => handleSave("issue_summary", v)}
-          placeholder="Click to edit"
+          placeholder="Add a short summary"
           isAI
         />
       </div>
-      <div className="py-2.5 border-t border-slate-100">
+      <div className="border-t border-slate-100/80 py-2.5">
         <ProductField
           value={metadata?.detected_product}
           availableProducts={metadata?.available_products ?? []}
           onSave={(productId) => handleSave("detected_product_id", productId)}
         />
       </div>
-      <div className="py-2.5 border-t border-slate-100">
+      <div className="border-t border-slate-100/80 py-2.5">
         <TagsSection threadId={threadId} />
       </div>
       {(() => {
@@ -378,7 +378,7 @@ export function TicketMetadataPanel({ threadId }) {
         const isSolved = status === "solved" || status === "resolved";
         if (!isSolved) return null;
         return (
-          <div className="pt-2.5 border-t border-slate-100">
+          <div className="border-t border-slate-100/80 pt-2.5">
             <EditableTextField
               label="Solution"
               value={metadata?.solution_summary}

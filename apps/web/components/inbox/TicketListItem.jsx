@@ -6,12 +6,12 @@ import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
 import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 import { formatTicketReference } from "@/lib/tickets/reference";
 
-const STATUS_TEXT_STYLES = {
-  New: "text-green-600 dark:text-green-400",
-  Open: "text-blue-600 dark:text-blue-400",
-  Pending: "text-orange-500 dark:text-orange-400",
-  Waiting: "text-violet-500 dark:text-violet-400",
-  Solved: "text-muted-foreground",
+const STATUS_DOT_STYLES = {
+  New: "bg-emerald-500",
+  Open: "bg-blue-500",
+  Pending: "bg-orange-500",
+  Waiting: "bg-violet-500",
+  Solved: "bg-muted-foreground/60",
 };
 
 const CLASSIFICATION_LABELS = {
@@ -62,6 +62,7 @@ function TicketListItemComponent({
       ? CLASSIFICATION_LABELS[classificationKey] || null
       : null;
   const ticketRef = formatTicketReference(thread?.ticket_number);
+  const statusLabel = status === "Solved" ? "Resolved" : status;
 
   // One flat meta line instead of a variable-height stack — a ticket with a
   // classification label used to render a whole extra <div> below this one,
@@ -245,8 +246,15 @@ function TicketListItemComponent({
             {reason.label}
           </span>
         ) : showLegacyStatus ? (
-          <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
-            {status === "Solved" ? "Resolved" : status}
+          <span
+            title={statusLabel}
+            aria-label={`Status: ${statusLabel}`}
+            className={cn(
+              "h-1.5 w-1.5 shrink-0 rounded-full ring-2 ring-background",
+              STATUS_DOT_STYLES[status] || "bg-muted-foreground/50",
+            )}
+          >
+            <span className="sr-only">{statusLabel}</span>
           </span>
         ) : waitAge ? (
           <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
