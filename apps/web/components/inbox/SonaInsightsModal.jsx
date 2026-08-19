@@ -479,14 +479,14 @@ export function SonaInsightsModal({
     <aside
       ref={containerRef}
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
-        open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
+        open ? "w-[clamp(19rem,22vw,26rem)]" : "w-0"
       }`}
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden p-3 lg:p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Sona Insights</h2>
+      <div className="flex h-full min-w-0 flex-col gap-3 overflow-hidden p-3">
+        <div className="flex items-center justify-between px-0.5">
+          <h2 className="text-base font-semibold tracking-[-0.015em]">Sona Insights</h2>
           <Button
             type="button"
             variant="ghost"
@@ -498,26 +498,27 @@ export function SonaInsightsModal({
               onOpenChange(false);
             }}
             aria-label="Close insights"
+            className="h-8 w-8 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden">
-          <TabsList className="grid w-full min-w-0 grid-cols-3">
-            <TabsTrigger value="actions">Overview</TabsTrigger>
-            <TabsTrigger value="customer">Customer</TabsTrigger>
-            <TabsTrigger value="manual-actions">Actions</TabsTrigger>
+        <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+          <TabsList className="grid h-9 w-full min-w-0 grid-cols-3 rounded-xl bg-muted/55 p-1">
+            <TabsTrigger value="actions" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
+            <TabsTrigger value="customer" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Customer</TabsTrigger>
+            <TabsTrigger value="manual-actions" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Actions</TabsTrigger>
           </TabsList>
           <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="space-y-5">
-              <div className="rounded-2xl border border-border bg-card/90 p-4">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border bg-card/90 p-3 shadow-sm">
                 <TicketMetadataPanel threadId={threadId} />
               </div>
 
               {returnTrackingCandidate || returnTrackingActionState?.error ? (
                 <div>
                   {returnTrackingOrder ? (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <TrackingCard
                         order={returnTrackingOrder}
                         threadId={threadId}
@@ -563,7 +564,7 @@ export function SonaInsightsModal({
                   <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
                 </div>
               ) : trackingInfo ? (
-                <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3">
+                <div className="rounded-xl border border-border bg-card/90 p-3.5 shadow-sm space-y-3">
                   <div className="flex items-center gap-2">
                     <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
@@ -612,7 +613,7 @@ export function SonaInsightsModal({
               ) : null}
 
               {knowledgeGaps.length > 0 && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 shadow-sm space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-600/80">
                       Needs knowledge
@@ -632,7 +633,7 @@ export function SonaInsightsModal({
                 type="button"
                 variant="outline"
                 onClick={() => setSonaLogOpen(true)}
-                className="group h-auto w-full justify-start gap-3 whitespace-normal rounded-2xl border-slate-200 bg-white p-4 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
+                className="group h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border-slate-200 bg-white p-3.5 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white">
                   <SonaLogo size={28} className="h-7 w-7" speed={logsLoading ? "working" : "idle"} />
