@@ -746,16 +746,17 @@ export function SonaInsightsModal({
             />
           </TabsContent>
           <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-3 p-1">
+            <div className="flex flex-col gap-2.5">
               {!hasShopifyShop ? (
-                <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                  Actions is only available for Shopify shops.
-                </p>
+                <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground/80">Shopify actions unavailable</p>
+                  <p className="mt-1 text-xs leading-relaxed">Connect a Shopify shop to manage orders from this ticket.</p>
+                </div>
               ) : (
                 <>
                   {matchedOrder ? (
-                    <div className="flex items-center gap-2.5 px-1 text-sm">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+                    <div className="flex items-center gap-2.5 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background shadow-sm">
                         <Image
                           src={shopifyLogo}
                           alt="Shopify"
@@ -764,7 +765,7 @@ export function SonaInsightsModal({
                           className="h-7 w-auto max-w-none"
                         />
                       </span>
-                      <span className="font-semibold text-foreground">Order {matchedOrder.id}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Order {matchedOrder.id}</span>
                       <OrderStatusPill
                         status={
                           matchedOrder.fulfillmentStatus ||
@@ -774,15 +775,16 @@ export function SonaInsightsModal({
                       />
                     </div>
                   ) : (
-                    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      No order found on this ticket — find the customer/order under the Customer tab.
-                    </p>
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground/80">No order found</p>
+                      <p className="mt-1 text-xs leading-relaxed">Find the customer or order under the Customer tab.</p>
+                    </div>
                   )}
-                  <p className="px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                  <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
                     Available actions
                   </p>
                   {availableManualActions.length ? (
-                    <div className="overflow-hidden rounded-xl border border-border bg-card">
+                    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                     {availableManualActions.map((action) => {
                       const ActionIcon = MANUAL_ACTION_ICONS[action.type];
                       return (
@@ -791,21 +793,21 @@ export function SonaInsightsModal({
                           type="button"
                           disabled={!matchedOrder}
                           onClick={() => setActiveManualAction(action.type)}
-                          className="flex w-full items-center gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
+                          className="group/action flex w-full items-center gap-3 border-b border-border px-3 py-3 text-left transition-[background-color,transform] duration-150 last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60 active:scale-[0.995]"
                         >
                           <div
                             className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                               MANUAL_ACTION_ICON_TONES[action.type] || "bg-muted text-muted-foreground",
                             )}
                           >
                             {ActionIcon ? <ActionIcon className="h-[18px] w-[18px]" /> : null}
                           </div>
-                          <div className="grid flex-1 gap-1">
-                            <p className="text-sm font-medium text-foreground">{action.label}</p>
-                            <p className="text-[13px] leading-snug text-muted-foreground">{action.description}</p>
+                          <div className="grid min-w-0 flex-1 gap-0.5">
+                            <p className="text-[13px] font-semibold text-foreground">{action.label}</p>
+                            <p className="text-xs leading-snug text-muted-foreground">{action.description}</p>
                           </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover/action:translate-x-0.5 group-hover/action:text-foreground" />
                         </button>
                       );
                     })}
