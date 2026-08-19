@@ -363,30 +363,31 @@ export function TicketMetadataPanel({ threadId }) {
           isAI
         />
       </div>
-      <div className="py-4 border-t border-slate-100">
+      <div className="py-2.5 border-t border-slate-100">
         <ProductField
           value={metadata?.detected_product}
           availableProducts={metadata?.available_products ?? []}
           onSave={(productId) => handleSave("detected_product_id", productId)}
         />
       </div>
-      <div className="py-4 border-t border-slate-100">
+      <div className="py-2.5 border-t border-slate-100">
         <TagsSection threadId={threadId} />
       </div>
-      <div className="pt-4 border-t border-slate-100">
-        {(() => {
-          const status = String(metadata?.status ?? "").toLowerCase();
-          const isSolved = status === "solved" || status === "resolved";
-          return (
+      {(() => {
+        const status = String(metadata?.status ?? "").toLowerCase();
+        const isSolved = status === "solved" || status === "resolved";
+        if (!isSolved) return null;
+        return (
+          <div className="pt-2.5 border-t border-slate-100">
             <EditableTextField
               label="Solution"
-              value={isSolved ? metadata?.solution_summary : null}
+              value={metadata?.solution_summary}
               onSave={(v) => handleSave("solution_summary", v)}
-              placeholder={isSolved ? "Click to edit" : "Generated when ticket is solved"}
+              placeholder="Click to edit"
             />
-          );
-        })()}
-      </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

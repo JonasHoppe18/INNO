@@ -626,7 +626,7 @@ function TicketDetailComponent({
       <header className="flex min-h-[60px] items-center justify-between border-b border-border/70 bg-background/95 px-4 py-2 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex min-w-0 items-center gap-2.5">
           <div
-            className={`rounded-md px-2 py-0.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
+            className={`shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
                 ? "border border-border/70 bg-muted/55 font-medium text-muted-foreground shadow-sm"
                 : "text-muted-foreground/60"

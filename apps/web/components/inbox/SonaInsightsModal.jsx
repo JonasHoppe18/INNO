@@ -349,6 +349,26 @@ export function SonaInsightsModal({
     () => resolveMatchedOrder(effectiveLookup?.orders),
     [effectiveLookup?.orders]
   );
+  const isMatchedOrderFulfilled = useMemo(() => {
+    const status = String(
+      matchedOrder?.fulfillmentStatus ||
+        matchedOrder?.fulfillment_status ||
+        matchedOrder?.status ||
+        "",
+    ).trim().toLowerCase();
+    return ["fulfilled", "shipped", "delivered"].includes(status);
+  }, [matchedOrder]);
+  const availableManualActions = useMemo(
+    () =>
+      MANUAL_CORE_ACTIONS.filter(
+        (action) =>
+          !(
+            isMatchedOrderFulfilled &&
+            ["update_shipping_address", "cancel_order"].includes(action.type)
+          ),
+      ),
+    [isMatchedOrderFulfilled],
+  );
   const hasShopifyShop = Boolean(effectiveLookup?.shopDomain);
   const returnTrackingCandidate = returnTrackingActionState?.candidates?.[0] || null;
   const returnTrackingNumber = String(
@@ -560,9 +580,15 @@ export function SonaInsightsModal({
               ) : null}
 
               {trackingOrder ? (
-                <div className="w-full">
-                  <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
-                </div>
+                  <div className="w-full space-y-2">
+                    <div className="flex items-center gap-2 px-1">
+                      <Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                        Order tracking
+                      </span>
+                    </div>
+                    <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
+                  </div>
               ) : trackingInfo ? (
                 <div className="rounded-xl border border-border bg-card/90 p-3.5 shadow-sm space-y-3">
                   <div className="flex items-center gap-2">
@@ -739,7 +765,13 @@ export function SonaInsightsModal({
                         />
                       </span>
                       <span className="font-semibold text-foreground">Order {matchedOrder.id}</span>
-                      <OrderStatusPill status={matchedOrder.status} />
+                      <OrderStatusPill
+                        status={
+                          matchedOrder.fulfillmentStatus ||
+                          matchedOrder.fulfillment_status ||
+                          matchedOrder.status
+                        }
+                      />
                     </div>
                   ) : (
                     <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -749,8 +781,9 @@ export function SonaInsightsModal({
                   <p className="px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
                     Available actions
                   </p>
-                  <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {MANUAL_CORE_ACTIONS.map((action) => {
+                  {availableManualActions.length ? (
+                    <div className="overflow-hidden rounded-xl border border-border bg-card">
+                    {availableManualActions.map((action) => {
                       const ActionIcon = MANUAL_ACTION_ICONS[action.type];
                       return (
                         <button
@@ -776,7 +809,12 @@ export function SonaInsightsModal({
                         </button>
                       );
                     })}
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                      No order actions are available after fulfillment.
+                    </p>
+                  )}
                 </>
               )}
             </div>

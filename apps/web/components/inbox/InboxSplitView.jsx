@@ -3782,7 +3782,7 @@ export function InboxSplitView({
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
-                className="relative inline-flex cursor-pointer items-center rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+                className="relative inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
               >
                 View actions
                 {hasActionableReturnTrackingAction ? (
