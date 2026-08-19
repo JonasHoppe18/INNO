@@ -478,7 +478,7 @@ function ComposerComponent({
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
   const isEmptyReply =
     !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
-  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : isEmptyReply ? 132 : 156;
+  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : isEmptyReply ? 116 : 156;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -1578,7 +1578,7 @@ function ComposerComponent({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = isNote ? 112 : isEmptyReply ? 104 : 124;
+      const chromeHeight = isNote ? 112 : isEmptyReply ? 84 : 124;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
@@ -1675,8 +1675,12 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border bg-card shadow-sm transition-colors ${
-          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : "border-border"
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+          isEmptyReply
+            ? "rounded-2xl border-border/70 bg-background/95 shadow-[0_8px_28px_hsl(var(--foreground)/0.05)]"
+            : "rounded-3xl border-border bg-card"
+        } ${
+          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : ""
         } ${disabled ? "opacity-60" : ""}`}
         style={{
           height: `${composerHeightPx}px`,
@@ -1701,14 +1705,18 @@ function ComposerComponent({
             <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+        <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5 ${
+          isEmptyReply
+            ? "border-border/50 bg-muted/[0.14] px-4 py-2"
+            : "border-border"
+        }`}>
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[12px] text-foreground"
+                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/70 px-2 py-0.5 text-[12px] text-foreground"
                 >
                   {recipient}
                   <button
@@ -1845,7 +1853,9 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto bg-card px-3 py-2">
+          <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-2 ${
+            isEmptyReply ? "bg-transparent px-4 py-2.5" : "bg-card"
+          }`}>
             {refineOpen && !isNote ? (
               <div
                 className="relative mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
@@ -2119,7 +2129,7 @@ function ComposerComponent({
                   className={`relative flex flex-1 flex-col ${replyEditorMinHeightClassName}`}
                 >
                   {!showDraftLoadingState && !String(value || "").trim() ? (
-                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-muted-foreground">
+                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-muted-foreground/80">
                       {disabled ? disabledPlaceholder : "Write your reply..."}
                     </div>
                   ) : null}
@@ -2252,7 +2262,11 @@ function ComposerComponent({
               </div>
             ) : null}
           </div>
-          <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
+          <div className={`sticky bottom-0 z-10 flex items-center justify-between px-3 py-1.5 text-[12px] text-muted-foreground ${
+            isEmptyReply
+              ? "border-t-0 bg-transparent px-3.5 pb-2.5 pt-1.5"
+              : "border-t border-border bg-card"
+          }`}>
             <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
@@ -2346,7 +2360,11 @@ function ComposerComponent({
                       type="button"
                       disabled={disabled || showDraftLoadingState || isGeneratingDraft}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
-                      className="rounded-md border border-border bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-border/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-[background-color,border-color,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                        isEmptyReply
+                          ? "border border-transparent bg-muted/55 hover:bg-muted"
+                          : "border border-border bg-background hover:border-border/80"
+                      }`}
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
                     </button>
