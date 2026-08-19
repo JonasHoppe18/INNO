@@ -471,11 +471,13 @@ function ComposerComponent({
     if (detectedLanguage) setReplyLanguage(detectedLanguage);
   }, [detectedLanguage]);
 
-  const MIN_COMPOSER_HEIGHT_PX = 170;
-  const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
   const isForward = mode === "forward";
+  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : 156;
+  const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
+  const isEmptyReply =
+    !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -758,8 +760,12 @@ function ComposerComponent({
       window.removeEventListener("resize", update);
     };
   }, [refineSnippetsOpen]);
-  const replyEditorMinHeightClassName = "min-h-[72px]";
-  const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
+  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[44px]" : "min-h-[72px]";
+  const editorBodyMinHeightClassName = isNote
+    ? "min-h-[96px]"
+    : isEmptyReply
+      ? "min-h-[48px]"
+      : "min-h-[112px]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
     if (!toLabel) return [];
@@ -1561,7 +1567,7 @@ function ComposerComponent({
         0
       );
       const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 62 : 72;
+      const minEditorHeight = isNote ? 62 : isEmptyReply ? 44 : 72;
       const maxEditorHeight = 240;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
@@ -1571,14 +1577,14 @@ function ComposerComponent({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = isNote ? 112 : 124;
+      const chromeHeight = isNote ? 112 : isEmptyReply ? 112 : 124;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
       return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
     },
-    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote]
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isEmptyReply, isNote]
   );
 
   useEffect(() => {
