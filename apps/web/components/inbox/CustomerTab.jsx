@@ -1,7 +1,7 @@
 import Image from "next/image";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import { memo } from "react";
-import { ExternalLink, RefreshCw, Truck } from "lucide-react";
+import { ChevronRight, ExternalLink, RefreshCw, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTicketReference } from "@/lib/tickets/reference";
 
@@ -98,7 +98,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
           </Button>
         </div>
         {previousTickets.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
             {previousTickets.map((ticket) => {
               const threadId = String(ticket?.thread_id || "").trim();
@@ -111,7 +111,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                     if (!threadId) return;
                     onOpenTicket?.(threadId);
                   }}
-                  className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                  className="group w-full rounded-lg border border-slate-200 bg-white p-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm active:scale-[0.99] disabled:cursor-default disabled:opacity-70"
                   disabled={!threadId}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -124,7 +124,10 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                     >
                       {formatTicketRef(ticket?.ticket_number)}
                     </div>
-                    <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <span>{formatTicketStatus(ticket?.status)}</span>
+                      <ChevronRight className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600" />
+                    </div>
                   </div>
                   <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
                     {String(ticket?.subject || "").trim() || "Untitled ticket"}
@@ -178,22 +181,25 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
         </button>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
           <div className="text-[11px] text-slate-400">Spent</div>
           <div className="mt-0.5 text-[15px] font-semibold text-slate-900">
             {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
           </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
           <div className="text-[11px] text-slate-400">Orders</div>
           <div className="mt-0.5 text-[15px] font-semibold text-slate-900">{orders.length}</div>
         </div>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="text-[11px] font-medium text-slate-400">Recent orders</div>
         {orders.length ? (
           orders.map((order) => (
-            <div key={order.id} className="rounded-lg border border-slate-200 bg-white p-3">
+            <div
+              key={order.id}
+              className="group rounded-lg border border-slate-200 bg-white p-2.5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-slate-300 hover:bg-slate-50/60 hover:shadow-sm"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="text-sm font-semibold text-slate-900">
                   {order?.adminUrl || (shopDomain && order?.adminId) ? (
@@ -204,10 +210,10 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                       }
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 hover:underline"
+                      className="group/order inline-flex items-center gap-1 hover:underline"
                     >
                       Order #{order.id}
-                      <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+                      <ExternalLink className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover/order:text-slate-600" />
                     </a>
                   ) : (
                     <>Order #{order.id}</>
@@ -259,7 +265,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                 </div>
               ) : null}
               {Array.isArray(order?.items) && order.items.length ? (
-                <div className="mt-3 space-y-1 text-sm text-gray-600">
+                <div className="mt-2.5 space-y-1 text-sm text-gray-600">
                   {order.items.map((item, index) => (
                     <div key={`${order.id}-item-${index}`} className="flex items-center gap-2">
                       <span className="h-1 w-1 rounded-full bg-gray-400" />
@@ -286,7 +292,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
           </div>
         )}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
         {previousTickets.length ? (
           previousTickets.map((ticket) => {
@@ -300,7 +306,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                   if (!threadId) return;
                   onOpenTicket?.(threadId);
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                className="group w-full rounded-lg border border-slate-200 bg-white p-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm active:scale-[0.99] disabled:cursor-default disabled:opacity-70"
                 disabled={!threadId}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -313,7 +319,10 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
                   >
                     {formatTicketRef(ticket?.ticket_number)}
                   </div>
-                  <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <span>{formatTicketStatus(ticket?.status)}</span>
+                    <ChevronRight className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600" />
+                  </div>
                 </div>
                 <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
                   {String(ticket?.subject || "").trim() || "Untitled ticket"}
