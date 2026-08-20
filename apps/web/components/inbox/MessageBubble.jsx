@@ -417,6 +417,9 @@ function MessageBubbleComponent({
   direction = "inbound",
   attachments = [],
   outboundSenderName,
+  showMeta = true,
+  compactTimestamp = false,
+  grouped = false,
   editStats = null,
   translatedText = null,
   translationLoading = false,
@@ -463,13 +466,19 @@ function MessageBubbleComponent({
   const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
   const timestamp = timestampValue
-    ? new Date(timestampValue).toLocaleString("da-DK", {
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      month: "short",
-      timeZone: DISPLAY_TIMEZONE,
-    })
+    ? new Date(timestampValue).toLocaleString("da-DK", compactTimestamp
+      ? {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: DISPLAY_TIMEZONE,
+      }
+      : {
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        timeZone: DISPLAY_TIMEZONE,
+      })
     : "";
   const toList = Array.isArray(message.to_emails) ? message.to_emails : [];
   const ccList = Array.isArray(message.cc_emails) ? message.cc_emails : [];
@@ -610,24 +619,26 @@ function MessageBubbleComponent({
       <div className={cn("animate-in fade-in slide-in-from-bottom-1 duration-200 group/bubble w-full", isOutbound ? "flex justify-end" : "flex justify-start")}>
         <div className={cn("w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]")}>
           <div className="min-w-0 space-y-0.5">
-            <div className="flex flex-wrap items-center gap-2 px-1">
-              <div className="text-[13px] font-semibold text-foreground">
-                {senderDisplayName}{" "}
-                <span className="text-[12px] font-normal text-muted-foreground">
-                  {timestamp}
-                </span>
+            {showMeta ? (
+              <div className="flex flex-wrap items-center gap-2 px-1">
+                <div className="text-[13px] font-semibold text-foreground">
+                  {senderDisplayName}{" "}
+                  <span className="text-[12px] font-normal text-muted-foreground">
+                    {timestamp}
+                  </span>
+                </div>
+                {isDraft ? (
+                  <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
+                    Draft
+                  </span>
+                ) : null}
+                {!isDraft && isOutbound ? <AiEditBadge editStats={editStats} /> : null}
               </div>
-              {isDraft ? (
-                <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
-                  Draft
-                </span>
-              ) : null}
-              {!isDraft && isOutbound ? <AiEditBadge editStats={editStats} /> : null}
-            </div>
+            ) : null}
 
             <div
               className={cn(
-                "overflow-hidden rounded-xl border text-xs",
+                `overflow-hidden ${grouped ? "rounded-lg" : "rounded-xl"} border text-xs`,
                 isInternalNote
                   ? "border-yellow-200 bg-yellow-50 dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : isOutbound
@@ -887,6 +898,9 @@ const arePropsEqual = (prev, next) => {
   }
   if (prev.direction !== next.direction) return false;
   if (prev.outboundSenderName !== next.outboundSenderName) return false;
+  if (prev.showMeta !== next.showMeta) return false;
+  if (prev.compactTimestamp !== next.compactTimestamp) return false;
+  if (prev.grouped !== next.grouped) return false;
   if (prev.translatedText !== next.translatedText) return false;
   if (prev.translationLoading !== next.translationLoading) return false;
   const prevEdit = prev.editStats || null;

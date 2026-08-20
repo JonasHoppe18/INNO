@@ -1,4 +1,4 @@
-import { Component, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
@@ -44,6 +44,56 @@ const QUESTION_SIGNAL_PATTERN =
   /(?:\?|\b(?:can|could|would|should|how|what|why|where|when|hvor|hvornår|hvordan|hvad|hvorfor|kan|skal)\b)/i;
 const OPEN_ISSUE_PATTERN =
   /\b(?:problem|issue|doesn'?t|does not|not\s+work(?:ing)?|still|however|but|cost|price|who\s+needs\s+to\s+pay|hvem\s+skal\s+betale)\b/i;
+
+const MESSAGE_DISPLAY_TIMEZONE = "Europe/Copenhagen";
+const MESSAGE_GROUP_WINDOW_MS = 15 * 60 * 1000;
+
+function getMessageTimestampValue(message = null) {
+  return message?.received_at || message?.sent_at || message?.created_at || "";
+}
+
+function getMessageDayKey(message = null) {
+  const timestampValue = getMessageTimestampValue(message);
+  if (!timestampValue) return "";
+  const date = new Date(timestampValue);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: MESSAGE_DISPLAY_TIMEZONE,
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year || ""}-${values.month || ""}-${values.day || ""}`;
+}
+
+function formatMessageDayLabel(message = null) {
+  const timestampValue = getMessageTimestampValue(message);
+  if (!timestampValue) return "";
+  const date = new Date(timestampValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("da-DK", {
+    day: "numeric",
+    month: "long",
+    timeZone: MESSAGE_DISPLAY_TIMEZONE,
+    year: "numeric",
+  });
+}
+
+function canGroupMessages(previousMessage, message, mailboxEmails = []) {
+  if (!previousMessage || !message) return false;
+  const previousDirection = isOutboundMessage(previousMessage, mailboxEmails) ? "outbound" : "inbound";
+  const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
+  if (previousDirection !== direction) return false;
+  if (getMessageDayKey(previousMessage) !== getMessageDayKey(message)) return false;
+  const previousSender = String(getSenderLabel(previousMessage) || "").trim().toLowerCase();
+  const sender = String(getSenderLabel(message) || "").trim().toLowerCase();
+  if (previousSender !== sender) return false;
+  const previousTimestamp = Date.parse(getMessageTimestampValue(previousMessage));
+  const timestamp = Date.parse(getMessageTimestampValue(message));
+  if (!Number.isFinite(previousTimestamp) || !Number.isFinite(timestamp)) return false;
+  return Math.abs(timestamp - previousTimestamp) <= MESSAGE_GROUP_WINDOW_MS;
+}
 
 class TicketRenderBoundary extends Component {
   constructor(props) {
@@ -679,7 +729,12 @@ function TicketDetailComponent({
               {orderUpdateError}
             </div>
           ) : null}
-          {!isConversationLoading || messages.length ? messages.map((message) => {
+          {!isConversationLoading || messages.length ? messages.map((message, messageIndex) => {
+            const previousMessage = messageIndex > 0 ? messages[messageIndex - 1] : null;
+            const groupedWithPrevious = canGroupMessages(previousMessage, message, mailboxEmails);
+            const messageDayKey = getMessageDayKey(message);
+            const previousMessageDayKey = getMessageDayKey(previousMessage);
+            const shouldShowDaySeparator = Boolean(messageDayKey) && messageDayKey !== previousMessageDayKey;
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
@@ -744,7 +799,15 @@ function TicketDetailComponent({
                   }
               : null;
             return (
-              <div key={message.id} className="space-y-3">
+              <Fragment key={message.id}>
+                {shouldShowDaySeparator ? (
+                  <div className="!mt-2 mb-1 flex items-center gap-3 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
+                    <span className="h-px flex-1 bg-border/70" />
+                    <span>{formatMessageDayLabel(message)}</span>
+                    <span className="h-px flex-1 bg-border/70" />
+                  </div>
+                ) : null}
+              <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>
                 {shouldInsertActionCardBeforeMessage ? (
                   <div className="ml-auto flex w-full max-w-[520px] justify-end">
                     <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
@@ -792,6 +855,9 @@ function TicketDetailComponent({
                     direction={direction}
                     attachments={messageAttachments}
                     outboundSenderName={currentUserName}
+                    showMeta={!groupedWithPrevious}
+                    compactTimestamp
+                    grouped={groupedWithPrevious}
                     editStats={direction === "outbound" ? sentDraftStats : null}
                     translatedText={getMessageTranslationText(message, translationItems)}
                     translationLoading={translationLoading}
@@ -808,6 +874,7 @@ function TicketDetailComponent({
                   </div>
                 ) : null}
               </div>
+              </Fragment>
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
