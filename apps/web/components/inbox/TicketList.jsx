@@ -339,7 +339,7 @@ export function TicketList({
 
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="border-b border-border/70 bg-muted/10 px-3 py-2.5">
+      <div className="flex h-16 shrink-0 items-center border-b border-border/70 bg-muted/10 px-3">
         <div className="flex items-center gap-1.5">
           <Input
             value={filters.query}

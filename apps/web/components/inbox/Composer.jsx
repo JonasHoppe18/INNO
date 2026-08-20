@@ -478,7 +478,10 @@ function ComposerComponent({
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
   const isEmptyReply =
     !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
-  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : isEmptyReply ? 116 : 140;
+  // The composer height includes the recipient row, the action footer and the
+  // editor's vertical padding. Keep the minimums in sync with those actual
+  // layout primitives so a draft is never rendered underneath the footer.
+  const MIN_COMPOSER_HEIGHT_PX = isNote ? 224 : isEmptyReply ? 164 : 140;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -820,21 +823,11 @@ function ComposerComponent({
   const [refineError, setRefineError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
-  const [isComposerManuallyResized, setIsComposerManuallyResized] = useState(false);
-  const [hasComposerBodyOverflow, setHasComposerBodyOverflow] = useState(false);
   const composerContainerRef = useRef(null);
   const composerBodyRef = useRef(null);
   const resizeStateRef = useRef(null);
   const manualComposerResizeRef = useRef(false);
   const draftLoadedRef = useRef(false);
-  const maxComposerHeightPx = Math.max(
-    MIN_COMPOSER_HEIGHT_PX,
-    Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
-  );
-  const shouldScrollComposerBody =
-    !isEmptyReply &&
-    hasComposerBodyOverflow &&
-    (isComposerManuallyResized || composerHeightPx >= maxComposerHeightPx - 1);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -894,7 +887,6 @@ function ComposerComponent({
       // clear focus state so value hydration works when reopening.
       replyEditorFocusedRef.current = false;
       manualComposerResizeRef.current = false;
-      setIsComposerManuallyResized(false);
       return;
     }
     if (isNote) {
@@ -1384,7 +1376,6 @@ function ComposerComponent({
     const nextValue = extractPlainTextFromReplyHtml(htmlWithMarkers);
     if (!String(nextValue || "").trim()) {
       manualComposerResizeRef.current = false;
-      setIsComposerManuallyResized(false);
     }
     onChange(nextValue);
     syncComposerHeight(nextValue);
@@ -1586,7 +1577,7 @@ function ComposerComponent({
         0
       );
       const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 62 : isEmptyReply ? 32 : 60;
+      const minEditorHeight = isNote ? 96 : isEmptyReply ? 36 : 80;
       const maxEditorHeight = 240;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
@@ -1596,7 +1587,9 @@ function ComposerComponent({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = isNote ? 112 : isEmptyReply ? 84 : 100;
+      // `chromeHeight` includes the resize handle (reply only), recipient
+      // row, footer and the editor's 20px vertical padding.
+      const chromeHeight = isNote ? 128 : isEmptyReply ? 128 : 138;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
@@ -1645,7 +1638,6 @@ function ComposerComponent({
       const container = composerContainerRef.current;
       if (!container || typeof window === "undefined") return;
       manualComposerResizeRef.current = true;
-      setIsComposerManuallyResized(true);
       const rect = container.getBoundingClientRect();
       resizeStateRef.current = {
         startY: Number(event?.clientY || 0),
@@ -1660,26 +1652,12 @@ function ComposerComponent({
   useEffect(() => () => stopResize(), [stopResize]);
 
   useEffect(() => {
-    if (collapsed) {
-      setHasComposerBodyOverflow(false);
-      return undefined;
-    }
-    const rafId = requestAnimationFrame(() => {
-      const body = composerBodyRef.current;
-      if (!body) return;
-      setHasComposerBodyOverflow(body.scrollHeight > body.clientHeight + 1);
-    });
-    return () => cancelAnimationFrame(rafId);
-  }, [attachments.length, collapsed, composerHeightPx, isNote, refineOpen, showCC, showBCC, showDraftLoadingState, value]);
-
-  useEffect(() => {
     const draftIsLoaded = Boolean(draftLoaded);
     const draftJustLoaded = draftIsLoaded && !draftLoadedRef.current;
     draftLoadedRef.current = draftIsLoaded;
     if (collapsed) return;
     if (draftJustLoaded) {
       manualComposerResizeRef.current = false;
-      setIsComposerManuallyResized(false);
     }
     if (manualComposerResizeRef.current && !draftJustLoaded) return;
     if (replyEditorFocusedRef.current) return;
@@ -1902,9 +1880,7 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={composerBodyRef} className={`min-h-0 flex-1 px-5 py-2.5 ${
-            shouldScrollComposerBody ? "overflow-y-auto" : "overflow-y-visible"
-          } ${
+          <div ref={composerBodyRef} className={`min-h-0 flex-1 overflow-y-auto px-5 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
             isEmptyReply
               ? "bg-transparent"
               : isNote
@@ -2320,7 +2296,7 @@ function ComposerComponent({
               </div>
             ) : null}
           </div>
-          <div className="sticky bottom-0 z-10 flex items-center justify-between bg-transparent px-5 pb-3.5 pt-2.5 text-[12px] text-muted-foreground">
+          <div className="flex-none flex items-center justify-between bg-transparent px-5 pb-3.5 pt-2.5 text-[12px] text-muted-foreground">
             <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
