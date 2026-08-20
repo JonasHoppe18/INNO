@@ -3649,7 +3649,7 @@ export function InboxSplitView({
   ]);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-muted/20 lg:flex-row">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-muted/20 md:flex-row">
       <TicketList
         key={activeView}
         threads={filteredThreads}
