@@ -31,7 +31,7 @@ export function SiteHeader() {
         hasCustomTitle ? "bg-background" : "bg-background"
       }`}>
       {hasCustomTitle ? (
-        <div className="relative flex w-full min-w-0 items-center">
+        <div className="relative flex h-full w-full min-w-0 items-center">
           <div className="pointer-events-none absolute left-4 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 lg:left-6 lg:gap-2">
             <SidebarTrigger className="-ml-1 pointer-events-auto" />
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
