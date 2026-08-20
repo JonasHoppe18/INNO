@@ -531,7 +531,7 @@ export function SonaInsightsModal({
           </TabsList>
           <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
             <div className="space-y-4">
-              <div className="rounded-xl border border-border bg-card/90 p-3 shadow-sm">
+              <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shadow-[0_3px_14px_hsl(var(--foreground)/0.035)]">
                 <TicketMetadataPanel threadId={threadId} />
               </div>
 

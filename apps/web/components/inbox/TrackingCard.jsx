@@ -258,25 +258,25 @@ export function TrackingCard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`group inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 text-left ${
+        className={`group inline-flex items-center gap-2.5 rounded-[14px] border border-slate-200/90 bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.04)] transition-[border-color,background-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_5px_16px_rgba(15,23,42,0.08)] active:scale-[0.995] text-left ${
           fullWidth
             ? "w-full min-w-0 max-w-none"
-            : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[360px]"
+            : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[340px]"
         }`}
       >
-        <CarrierLogo carrier={carrier} className="h-8 w-8" />
+        <CarrierLogo carrier={carrier} className="h-7 w-7" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
-          <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+          <div className="text-[13px] font-semibold text-slate-900">{title}</div>
+          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">
             <span>{carrier}</span>
             <span className="text-slate-300 mx-0.5">·</span>
             <span className={`font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-400 font-mono">
+          <div className="mt-0.5 text-[10px] text-slate-400 font-mono">
             {trackingNumber || "No tracking number"}
           </div>
         </div>
-        <ChevronRight className="h-4 w-4 flex-none text-slate-300 group-hover:text-slate-500 transition-colors" />
+        <ChevronRight className="h-3.5 w-3.5 flex-none text-slate-300 transition-colors group-hover:text-slate-500" />
       </button>
 
       {/* Detail modal */}

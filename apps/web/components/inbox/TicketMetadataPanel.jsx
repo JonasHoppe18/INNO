@@ -155,7 +155,7 @@ function Tag({ tag, onRemove, isRemoving }) {
   );
 }
 
-function TagsSection({ threadId }) {
+function TagsSection({ threadId, onVisibilityChange }) {
   const [assignedTags, setAssignedTags] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -247,6 +247,13 @@ function TagsSection({ threadId }) {
 
   const assignedIds = new Set(assignedTags.map((t) => t.id));
   const unassigned = availableTags.filter((t) => !assignedIds.has(t.id));
+  const hasTagContent = assignedTags.length > 0 || unassigned.length > 0;
+
+  useEffect(() => {
+    onVisibilityChange?.(hasTagContent);
+  }, [hasTagContent, onVisibilityChange]);
+
+  if (!hasTagContent) return null;
 
   return (
     <div className="space-y-1.5">
@@ -288,9 +295,6 @@ function TagsSection({ threadId }) {
             )}
           </div>
         )}
-        {assignedTags.length === 0 && unassigned.length === 0 && (
-          <span className="text-sm text-slate-400 italic">—</span>
-        )}
       </div>
     </div>
   );
@@ -299,6 +303,10 @@ function TagsSection({ threadId }) {
 export function TicketMetadataPanel({ threadId }) {
   const [metadata, setMetadata] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showTagsSection, setShowTagsSection] = useState(false);
+  const handleTagVisibilityChange = useCallback((visible) => {
+    setShowTagsSection(visible);
+  }, []);
 
   const fetchMetadata = useCallback(async () => {
     if (!threadId) return;
@@ -322,6 +330,7 @@ export function TicketMetadataPanel({ threadId }) {
 
   useEffect(() => {
     setMetadata(null);
+    setShowTagsSection(false);
     fetchMetadata();
   }, [fetchMetadata, threadId]);
 
@@ -370,8 +379,8 @@ export function TicketMetadataPanel({ threadId }) {
           onSave={(productId) => handleSave("detected_product_id", productId)}
         />
       </div>
-      <div className="border-t border-slate-100/80 py-2.5">
-        <TagsSection threadId={threadId} />
+      <div className={showTagsSection ? "border-t border-slate-100/80 py-2.5" : "hidden"}>
+        <TagsSection threadId={threadId} onVisibilityChange={handleTagVisibilityChange} />
       </div>
       {(() => {
         const status = String(metadata?.status ?? "").toLowerCase();

@@ -463,6 +463,7 @@ function MessageBubbleComponent({
     senderLower === "sona" ||
     senderLower === "sona ai";
   const senderDisplayName = isAiMessage ? "Sona" : senderLabel || "Unknown sender";
+  const displaySenderName = isAuthoredByCurrentUser ? "You" : senderDisplayName;
   const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
   const timestamp = timestampValue
@@ -621,12 +622,26 @@ function MessageBubbleComponent({
           <div className="min-w-0 space-y-0.5">
             {showMeta ? (
               <div className="flex flex-wrap items-center gap-2 px-1">
-                <div className="text-[13px] font-semibold text-foreground">
-                  {senderDisplayName}{" "}
+                <div
+                  className={cn(
+                    "text-[13px] font-semibold",
+                    isInternalNote
+                      ? "text-amber-800 dark:text-amber-200"
+                      : isOutbound
+                        ? "text-violet-800 dark:text-violet-200"
+                        : "text-foreground"
+                  )}
+                >
+                  {displaySenderName}{" "}
                   <span className="text-[12px] font-normal text-muted-foreground">
                     {timestamp}
                   </span>
                 </div>
+                {isInternalNote ? (
+                  <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    Internal note
+                  </span>
+                ) : null}
                 {isDraft ? (
                   <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
                     Draft
@@ -640,10 +655,10 @@ function MessageBubbleComponent({
               className={cn(
                 `overflow-hidden ${grouped ? "rounded-lg" : "rounded-xl"} border text-xs`,
                 isInternalNote
-                  ? "border-yellow-200 bg-yellow-50 dark:border-yellow-300/40 dark:bg-yellow-500/10"
+                  ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : isOutbound
-                  ? "border-violet-200 bg-violet-50/55 dark:border-violet-400/30 dark:bg-violet-500/10"
-                  : "border-border bg-card"
+                  ? "border-violet-200/80 bg-violet-50/55 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
+                  : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
               )}
             >
               <div
@@ -720,7 +735,7 @@ function MessageBubbleComponent({
                   onClick={() => {
                     startEmailOpenTransition(() => setViewEmailOpen(true));
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                 >
                   <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
@@ -729,7 +744,7 @@ function MessageBubbleComponent({
                   <button
                     type="button"
                     onClick={handleToggleTranslation}
-                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                   >
                     <Globe className="h-3.5 w-3.5" />
                     <span>{showTranslation ? "Show original" : "Translate"}</span>

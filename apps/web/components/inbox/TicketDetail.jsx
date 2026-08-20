@@ -867,7 +867,7 @@ function TicketDetailComponent({
                 {shouldShowTrackingCard &&
                   latestInboundCustomerMessageId &&
                   String(message?.id || "") === latestInboundCustomerMessageId ? (
-                  <div className="ml-auto flex w-full max-w-[620px] justify-end">
+                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
                     <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
                       <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} direction="outbound" />
                     </TicketRenderBoundary>
@@ -878,7 +878,7 @@ function TicketDetailComponent({
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto flex w-full max-w-[620px] justify-end">
+            <div className="ml-auto flex w-full max-w-[520px] justify-end">
               <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                 <ActionCard
                   status={pendingUpdateState}
