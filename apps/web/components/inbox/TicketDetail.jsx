@@ -1097,7 +1097,7 @@ function TicketDetailComponent({
           </div>
         ) : (
         <>
-        {draftActivityLoading || draftActivitySteps.length ? (
+        {draftActivityLoading ? (
           <div className="px-3 pb-0.5">
             <div className="mx-auto w-full max-w-[900px]">
               <TicketRenderBoundary
