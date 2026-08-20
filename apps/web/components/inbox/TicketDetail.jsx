@@ -1006,7 +1006,7 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : (
-        <div className="relative border-t border-border/60 bg-background/90 px-3 pb-2.5 pt-2.5 shadow-[0_-8px_24px_-24px_hsl(var(--foreground)/0.45)] backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="relative bg-transparent px-3 pb-2.5 pt-2.5">
           <TicketRenderBoundary
             section="composer"
             resetKey={`${thread?.id || ""}:${composerMode}:composer`}
