@@ -341,7 +341,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket status"
-          className={`h-7 max-w-[9rem] w-auto cursor-pointer gap-1 rounded-lg border px-2 py-1 text-[12px] font-semibold leading-none shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
+          className={`h-7 max-w-[10.5rem] w-auto cursor-pointer gap-1 rounded-lg border px-2 py-1 text-[12px] font-semibold leading-none shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
         >
           {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />

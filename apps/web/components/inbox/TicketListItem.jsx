@@ -204,7 +204,7 @@ function TicketListItemComponent({
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
+        <div className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/75">
           {reason && reason.key !== "new" ? (
             <span
               className={
@@ -232,7 +232,7 @@ function TicketListItemComponent({
           ) : waitAge ? (
             <span className="max-w-[90px] truncate whitespace-nowrap text-[11px] text-muted-foreground/70">{waitAge}</span>
           ) : null}
-          <span className="shrink-0 font-mono tabular-nums">{ticketRef}</span>
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">{ticketRef}</span>
         </div>
       </div>
     </button>
