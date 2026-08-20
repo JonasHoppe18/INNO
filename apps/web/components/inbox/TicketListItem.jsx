@@ -64,53 +64,18 @@ function TicketListItemComponent({
   const ticketRef = formatTicketReference(thread?.ticket_number);
   const statusLabel = status === "Solved" ? "Resolved" : status;
 
-  // One flat meta line instead of a variable-height stack — a ticket with a
-  // classification label used to render a whole extra <div> below this one,
-  // making rows with vs. without it visibly different heights in the list.
-  // Built as an array (rather than a hand-chained "show a dot if the
-  // previous thing rendered" conditional) so a dot only ever appears before
-  // a real entry — no dangling/missing separators possible by construction.
-  // ticketRef always renders here (not conditional like the rest), so this
-  // line is never actually empty. inboxName is deliberately NOT included —
-  // dropped per direct feedback that the card shouldn't show its inbox.
-  const metaEntries = [
-    <span key="ticket-ref" className="shrink-0 font-mono text-[10px] tabular-nums">
-      {ticketRef}
-    </span>,
-    hasAiDraft ? (
-      <span key="draft" className="text-purple-700 dark:text-purple-400">
-        Draft ready
-      </span>
-    ) : null,
-    // Unassigned is the common case pre-migration/for new threads — showing it
-    // on every row was just noise; an assignee is only worth surfacing once
-    // someone actually owns the ticket.
-    assigneeDisplay ? (
-      <span key="assignee" className="truncate">
-        {assigneeDisplay}
-      </span>
-    ) : null,
-    wakeCountdownText ? (
-      <span key="wake" className="truncate">
-        {wakeCountdownText}
-      </span>
-    ) : null,
-    classificationLabel ? (
-      <span key="classification" className="truncate">
-        {classificationLabel}
-      </span>
-    ) : null,
-  ].filter(Boolean);
-  const metaChildren = metaEntries.flatMap((entry, index) =>
-    index === 0
-      ? [entry]
-      : [
-          <span key={`${entry.key}-dot`} aria-hidden="true">
-            &middot;
-          </span>,
-          entry,
-        ],
-  );
+  // Keep secondary metadata available on hover, but avoid a third line in
+  // every row. The list stays a predictable two-line rhythm while important
+  // queue context (wake time, assignee, classification) remains discoverable.
+  const metadataTitle = [
+    ticketRef,
+    hasAiDraft ? "Draft ready" : null,
+    assigneeDisplay,
+    wakeCountdownText,
+    classificationLabel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const prefetchTimerRef = useRef(null);
 
@@ -177,7 +142,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-1 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
@@ -211,7 +176,7 @@ function TicketListItemComponent({
       aria-pressed={isActive}
       aria-current={isActive ? "page" : undefined}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5">
         {isUnread ? (
           <span
             aria-label="Unread"
@@ -221,51 +186,58 @@ function TicketListItemComponent({
         <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
-        <span className={cn("shrink-0 text-[12px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
+        <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
           {formatMessageTime(timestamp)}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div
+        className="flex min-w-0 items-center justify-between gap-2"
+        title={metadataTitle || undefined}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
-          <span className={cn("truncate", isUnread && "font-semibold text-foreground")}>
+          <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
-          {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
+          {hasAiDraft ? (
+            <span title="Draft ready" aria-label="Draft ready" className="shrink-0">
+              <Sparkles className="h-3 w-3 text-amber-400" />
+            </span>
+          ) : null}
         </div>
-        {reason ? (
-          <span
-            className={
-              "shrink-0 whitespace-nowrap text-xs " +
-              (reason.key === "customer_replied"
-                ? "text-amber-700 dark:text-amber-500"
-                : reason.key === "approve_close"
-                  ? "text-purple-700 dark:text-purple-400"
-                  : "text-green-700 dark:text-green-500")
-            }
-          >
-            {reason.label}
-          </span>
-        ) : showLegacyStatus ? (
-          <span
-            title={statusLabel}
-            aria-label={`Status: ${statusLabel}`}
-            className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full ring-2 ring-background",
-              STATUS_DOT_STYLES[status] || "bg-muted-foreground/50",
-            )}
-          >
-            <span className="sr-only">{statusLabel}</span>
-          </span>
-        ) : waitAge ? (
-          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground/90">
-        {metaChildren}
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
+          {reason ? (
+            <span
+              className={
+                "max-w-[150px] truncate whitespace-nowrap text-[11px] " +
+                (reason.key === "customer_replied"
+                  ? "text-amber-700 dark:text-amber-500"
+                  : reason.key === "approve_close"
+                    ? "text-purple-700 dark:text-purple-400"
+                    : "text-green-700 dark:text-green-500")
+              }
+            >
+              {reason.label}
+            </span>
+          ) : showLegacyStatus ? (
+            <span
+              title={statusLabel}
+              aria-label={`Status: ${statusLabel}`}
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full ring-2 ring-background",
+                STATUS_DOT_STYLES[status] || "bg-muted-foreground/50",
+              )}
+            >
+              <span className="sr-only">{statusLabel}</span>
+            </span>
+          ) : waitAge ? (
+            <span className="max-w-[90px] truncate whitespace-nowrap text-[11px] text-muted-foreground/70">{waitAge}</span>
+          ) : null}
+          <span className="shrink-0 font-mono tabular-nums">{ticketRef}</span>
+        </div>
       </div>
     </button>
     {showApproveCloseActions ? (
-      <div className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5">
+      <div className="flex items-center gap-3 border-t border-border/60 px-3.5 py-1">
         <button
           type="button"
           onClick={(event) => {

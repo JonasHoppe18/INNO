@@ -32,7 +32,7 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 78;
+const VIRTUAL_ROW_HEIGHT_PX = 68;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 export function TicketList({
   threads,
