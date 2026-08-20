@@ -651,10 +651,10 @@ function TicketDetailComponent({
 
       <div
         ref={conversationRef}
-        className="min-h-0 flex-1 overflow-y-auto bg-muted/20 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
-        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-4 px-5 pb-6 pt-5">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
               <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
@@ -801,7 +801,7 @@ function TicketDetailComponent({
                 {shouldShowTrackingCard &&
                   latestInboundCustomerMessageId &&
                   String(message?.id || "") === latestInboundCustomerMessageId ? (
-                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                  <div className="ml-auto flex w-full max-w-[620px] justify-end">
                     <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
                       <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} direction="outbound" />
                     </TicketRenderBoundary>
@@ -811,7 +811,7 @@ function TicketDetailComponent({
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto flex w-full max-w-[520px] justify-end">
+            <div className="ml-auto flex w-full max-w-[620px] justify-end">
               <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                 <ActionCard
                   status={pendingUpdateState}
@@ -939,7 +939,7 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : (
-        <div className="relative px-3 pb-1.5">
+        <div className="relative border-t border-border/60 bg-background/90 px-3 pb-2.5 pt-2.5 shadow-[0_-8px_24px_-24px_hsl(var(--foreground)/0.45)] backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <TicketRenderBoundary
             section="composer"
             resetKey={`${thread?.id || ""}:${composerMode}:composer`}
