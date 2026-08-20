@@ -821,6 +821,8 @@ function ComposerComponent({
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
   const composerContainerRef = useRef(null);
+  const resizeStateRef = useRef(null);
+  const manualComposerResizeRef = useRef(false);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -879,6 +881,7 @@ function ComposerComponent({
       // If the composer is hidden while the contentEditable is active,
       // clear focus state so value hydration works when reopening.
       replyEditorFocusedRef.current = false;
+      manualComposerResizeRef.current = false;
       return;
     }
     if (isNote) {
@@ -1365,7 +1368,12 @@ function ComposerComponent({
       }
     }
     syncingReplyHtmlRef.current = true;
-    onChange(extractPlainTextFromReplyHtml(htmlWithMarkers));
+    const nextValue = extractPlainTextFromReplyHtml(htmlWithMarkers);
+    if (!String(nextValue || "").trim()) {
+      manualComposerResizeRef.current = false;
+    }
+    onChange(nextValue);
+    syncComposerHeight(nextValue);
     syncingReplyHtmlRef.current = false;
   };
 
@@ -1584,6 +1592,58 @@ function ComposerComponent({
     [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isEmptyReply, isNote]
   );
 
+  const syncComposerHeight = useCallback(
+    (nextValue = "") => {
+      if (manualComposerResizeRef.current) return;
+      const measuredEditorHeight = isNote
+        ? Number(textareaRef.current?.scrollHeight || 0)
+        : Number(replyEditorRef.current?.scrollHeight || 0);
+      setComposerHeightPx(getAutoComposerHeightPx(nextValue, measuredEditorHeight));
+    },
+    [getAutoComposerHeightPx, isNote]
+  );
+
+  const onResizeMove = useCallback(
+    (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      const delta = Number(event?.clientY || 0) - state.startY;
+      const maxHeight = Math.max(
+        MIN_COMPOSER_HEIGHT_PX,
+        Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
+      );
+      const next = Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, state.startHeight - delta));
+      setComposerHeightPx(next);
+    },
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX]
+  );
+
+  const stopResize = useCallback(() => {
+    resizeStateRef.current = null;
+    if (typeof window === "undefined") return;
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", stopResize);
+  }, [onResizeMove]);
+
+  const startResize = useCallback(
+    (event) => {
+      event.preventDefault();
+      const container = composerContainerRef.current;
+      if (!container || typeof window === "undefined") return;
+      manualComposerResizeRef.current = true;
+      const rect = container.getBoundingClientRect();
+      resizeStateRef.current = {
+        startY: Number(event?.clientY || 0),
+        startHeight: Math.round(rect.height),
+      };
+      window.addEventListener("pointermove", onResizeMove);
+      window.addEventListener("pointerup", stopResize);
+    },
+    [onResizeMove, stopResize]
+  );
+
+  useEffect(() => () => stopResize(), [stopResize]);
+
   useEffect(() => {
     if (collapsed) return;
     if (replyEditorFocusedRef.current) return;
@@ -1649,6 +1709,17 @@ function ComposerComponent({
           <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[26px] bg-violet-50/90 dark:bg-violet-900/40 backdrop-blur-[1px]">
             <Paperclip className="h-6 w-6 text-violet-500" />
             <span className="text-[13px] font-medium text-violet-600 dark:text-violet-400">Drop to attach</span>
+          </div>
+        ) : null}
+        {!isEmptyReply && !isNote ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize reply box"
+            onPointerDown={startResize}
+            className="group/resize flex h-2.5 cursor-row-resize items-center justify-center bg-transparent opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100"
+          >
+            <span className="h-1 w-10 rounded-full bg-border/80 transition-colors group-hover/resize:bg-muted-foreground/50" />
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1 pt-3">
@@ -2061,7 +2132,10 @@ function ComposerComponent({
                     setMentionState((prev) => ({ ...prev, open: false }));
                   }
                 }}
-                onInput={resizeTextarea}
+                onInput={(event) => {
+                  resizeTextarea();
+                  syncComposerHeight(event.currentTarget.value);
+                }}
                 onBlur={onBlur}
                 placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
                 rows={2}
