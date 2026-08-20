@@ -280,6 +280,7 @@ function TicketDetailComponent({
   const conversationRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
+  const isConversationNearBottomRef = useRef(true);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
@@ -473,19 +474,30 @@ function TicketDetailComponent({
 
   useEffect(() => {
     const node = conversationRef.current;
-    if (!node) return;
-    const threadId = String(thread?.id || "");
-    if (!threadId) return;
-    if (restoredThreadIdRef.current === threadId) return;
+    const threadId = String(thread?.id || "").trim();
+    const hasLoadedConversation = !isConversationLoading || messages.length > 0;
+    if (!node || !threadId || !hasLoadedConversation) return undefined;
+
     const initialScrollTop = Number(initialScrollTopRef.current) || 0;
-    // Restore saved scroll position if available, otherwise scroll to bottom (newest messages)
-    if (Number.isFinite(initialScrollTop) && initialScrollTop > 0) {
-      node.scrollTop = initialScrollTop;
-    } else {
-      node.scrollTop = node.scrollHeight;
-    }
-    restoredThreadIdRef.current = threadId;
-  }, [thread?.id]);
+    const shouldRestoreThread = restoredThreadIdRef.current !== threadId;
+    const shouldKeepLatestVisible = !shouldRestoreThread && isConversationNearBottomRef.current;
+    if (!shouldRestoreThread && !shouldKeepLatestVisible) return undefined;
+
+    // Wait for message content to paint before measuring scrollHeight. This keeps
+    // a newly opened ticket at the latest message even when messages load async.
+    const frameId = requestAnimationFrame(() => {
+      if (shouldRestoreThread && initialScrollTop > 0) {
+        node.scrollTop = initialScrollTop;
+      } else {
+        node.scrollTop = node.scrollHeight;
+      }
+      isConversationNearBottomRef.current =
+        node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
+      if (shouldRestoreThread) restoredThreadIdRef.current = threadId;
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [isConversationLoading, messages.length, thread?.id]);
 
   useEffect(() => {
     const threadId = String(thread?.id || "").trim();
@@ -723,7 +735,12 @@ function TicketDetailComponent({
       <div
         ref={conversationRef}
         className="min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          isConversationNearBottomRef.current =
+            node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
+          onConversationScroll?.(node.scrollTop);
+        }}
       >
         <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-4 px-5 pb-6 pt-5">
           {isConversationLoading && !messages.length ? (
@@ -822,10 +839,12 @@ function TicketDetailComponent({
             return (
               <Fragment key={message.id}>
                 {shouldShowDaySeparator ? (
-                  <div className="!mt-2 mb-1 flex items-center gap-3 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
-                    <span className="h-px flex-1 bg-border/70" />
-                    <span>{formatMessageDayLabel(message)}</span>
-                    <span className="h-px flex-1 bg-border/70" />
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-muted-foreground/80">
+                    <span className="h-px flex-1 bg-border/60" />
+                    <span className="rounded-full border border-border/70 bg-background/80 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
+                      {formatMessageDayLabel(message)}
+                    </span>
+                    <span className="h-px flex-1 bg-border/60" />
                   </div>
                 ) : null}
               <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>

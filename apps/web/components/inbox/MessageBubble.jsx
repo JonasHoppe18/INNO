@@ -614,6 +614,11 @@ function MessageBubbleComponent({
     ? formattedStructuredHtml
     : safeModalBodyHtml;
   const shouldShowBcc = isOutbound && bccList.length > 0;
+  const bubbleRadiusClass = grouped
+    ? isOutbound
+      ? "rounded-xl rounded-tr-md"
+      : "rounded-xl rounded-tl-md"
+    : "rounded-2xl";
 
   return (
     <>
@@ -621,10 +626,10 @@ function MessageBubbleComponent({
         <div className={cn("w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]")}>
           <div className="min-w-0 space-y-0.5">
             {showMeta ? (
-              <div className="flex flex-wrap items-center gap-2 px-1">
-                <div
+              <div className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1", isOutbound && "justify-end text-right")}>
+                <span
                   className={cn(
-                    "text-[13px] font-semibold",
+                    "text-[13px] font-semibold leading-5",
                     isInternalNote
                       ? "text-amber-800 dark:text-amber-200"
                       : isOutbound
@@ -632,18 +637,18 @@ function MessageBubbleComponent({
                         : "text-foreground"
                   )}
                 >
-                  {displaySenderName}{" "}
-                  <span className="text-[12px] font-normal text-muted-foreground">
-                    {timestamp}
-                  </span>
-                </div>
+                  {displaySenderName}
+                </span>
+                <span className="text-[12px] font-normal tabular-nums text-muted-foreground">
+                  {timestamp}
+                </span>
                 {isInternalNote ? (
                   <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
                     Internal note
                   </span>
                 ) : null}
                 {isDraft ? (
-                  <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium leading-4 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300">
                     Draft
                   </span>
                 ) : null}
@@ -653,11 +658,11 @@ function MessageBubbleComponent({
 
             <div
               className={cn(
-                `overflow-hidden ${grouped ? "rounded-lg" : "rounded-xl"} border text-xs`,
+                `overflow-hidden ${bubbleRadiusClass} border text-xs`,
                 isInternalNote
                   ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : isOutbound
-                  ? "border-violet-200/80 bg-violet-50/55 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
+                  ? "border-violet-200/80 bg-violet-50/70 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
                   : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
               )}
             >
@@ -728,8 +733,8 @@ function MessageBubbleComponent({
               </div>
             ) : null}
 
-            {!isInternalNote ? (
-              <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground">
+            {!isInternalNote && !grouped ? (
+              <div className={cn("flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground", isOutbound && "justify-end")}>
                 <button
                   type="button"
                   onClick={() => {
