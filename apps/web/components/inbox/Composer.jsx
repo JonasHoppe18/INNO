@@ -826,6 +826,7 @@ function ComposerComponent({
   const composerBodyRef = useRef(null);
   const resizeStateRef = useRef(null);
   const manualComposerResizeRef = useRef(false);
+  const draftLoadedRef = useRef(false);
   const maxComposerHeightPx = Math.max(
     MIN_COMPOSER_HEIGHT_PX,
     Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
@@ -1672,7 +1673,15 @@ function ComposerComponent({
   }, [attachments.length, collapsed, composerHeightPx, isNote, refineOpen, showCC, showBCC, showDraftLoadingState, value]);
 
   useEffect(() => {
+    const draftIsLoaded = Boolean(draftLoaded);
+    const draftJustLoaded = draftIsLoaded && !draftLoadedRef.current;
+    draftLoadedRef.current = draftIsLoaded;
     if (collapsed) return;
+    if (draftJustLoaded) {
+      manualComposerResizeRef.current = false;
+      setIsComposerManuallyResized(false);
+    }
+    if (manualComposerResizeRef.current && !draftJustLoaded) return;
     if (replyEditorFocusedRef.current) return;
     if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
     const rafId = requestAnimationFrame(() => {
@@ -1682,7 +1691,7 @@ function ComposerComponent({
       setComposerHeightPx(getAutoComposerHeightPx(value, measuredEditorHeight));
     });
     return () => cancelAnimationFrame(rafId);
-  }, [collapsed, getAutoComposerHeightPx, isNote, showDraftLoadingState, value]);
+  }, [collapsed, draftLoaded, getAutoComposerHeightPx, isNote, showDraftLoadingState, value]);
 
   if (collapsed) {
     return (
