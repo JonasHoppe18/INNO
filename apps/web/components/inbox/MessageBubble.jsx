@@ -205,7 +205,7 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[13px] leading-[1.5] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_*]:font-[inherit] [&_*]:text-[13px] [&_*]:leading-[1.5] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 const EMAIL_MODAL_BODY_CLASS =
   "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
 
@@ -667,7 +667,7 @@ function MessageBubbleComponent({
               )}
             >
               <div
-                className={cn("px-4 py-3 text-[14px] leading-[1.55] text-foreground", isOutbound && "text-[14px]")}
+                className={cn("px-3.5 py-2.5 text-[13px] leading-[1.5] text-foreground", isOutbound && "text-[13px]")}
                 onClick={(e) => {
                   if (e.target.tagName !== "IMG") return;
                   const src = e.target.getAttribute("src");
@@ -676,7 +676,7 @@ function MessageBubbleComponent({
                 }}
               >
                 {showTranslation ? (
-                  <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-foreground">
+                  <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-foreground">
                     {translatedText}
                   </p>
                 ) : !isOutbound && translationLoading ? (

@@ -177,7 +177,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex w-full flex-col gap-1 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
@@ -211,7 +211,7 @@ function TicketListItemComponent({
       aria-pressed={isActive}
       aria-current={isActive ? "page" : undefined}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         {isUnread ? (
           <span
             aria-label="Unread"

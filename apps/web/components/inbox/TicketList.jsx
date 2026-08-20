@@ -32,7 +32,7 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 84;
+const VIRTUAL_ROW_HEIGHT_PX = 78;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 export function TicketList({
   threads,
@@ -468,7 +468,7 @@ export function TicketList({
               return (
                 <div key={thread.id}>
                   {groupHeaderLabel ? (
-                    <div className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <div className="px-3.5 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                       {groupHeaderLabel}
                     </div>
                   ) : null}

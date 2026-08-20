@@ -770,7 +770,7 @@ function TicketDetailComponent({
             Jump to latest
           </Button>
         ) : null}
-        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-4 px-5 pb-6 pt-5">
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-3 px-4 pb-5 pt-4">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
               <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
@@ -1058,7 +1058,7 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : null}
-        <div className="relative bg-transparent px-3 pb-2.5 pt-2.5">
+        <div className="relative bg-transparent px-2.5 pb-2 pt-2">
           <TicketRenderBoundary
             section="composer"
             resetKey={`${thread?.id || ""}:${composerMode}:composer`}

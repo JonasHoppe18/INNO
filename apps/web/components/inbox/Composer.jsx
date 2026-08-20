@@ -1690,7 +1690,7 @@ function ComposerComponent({
   }
 
   return (
-    <div className="flex-none bg-transparent px-2.5 pb-2.5 pt-2">
+    <div className="flex-none bg-transparent px-2.5 pb-2 pt-1.5">
       <style>{`
         @keyframes refine-slide-in {
           from { opacity: 0; transform: translateY(-6px); }
@@ -1736,7 +1736,7 @@ function ComposerComponent({
             <span className="h-1 w-10 rounded-full bg-border/80 transition-colors group-hover/resize:bg-muted-foreground/50" />
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-5 pb-1.5 pt-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1.5 pt-3">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-muted-foreground">To:</span>
@@ -1880,7 +1880,7 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={composerBodyRef} className={`min-h-0 flex-1 overflow-y-auto px-5 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          <div ref={composerBodyRef} className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
             isEmptyReply
               ? "bg-transparent"
               : isNote
@@ -2154,7 +2154,7 @@ function ComposerComponent({
                 placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
                 rows={2}
                 disabled={disabled}
-                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] focus-visible:!ring-0 bg-yellow-50/40"
+                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[13px] leading-[1.5] focus-visible:!ring-0 bg-yellow-50/40"
               />
             ) : (
               <div className={`flex flex-col ${editorBodyMinHeightClassName}`}>
@@ -2227,7 +2227,7 @@ function ComposerComponent({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none selection:bg-violet-100 selection:text-foreground [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[13px] leading-[1.5] text-foreground outline-none selection:bg-violet-100 selection:text-foreground [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
@@ -2296,7 +2296,7 @@ function ComposerComponent({
               </div>
             ) : null}
           </div>
-          <div className="flex-none flex items-center justify-between bg-transparent px-5 pb-3.5 pt-2.5 text-[12px] text-muted-foreground">
+          <div className="flex-none flex items-center justify-between bg-transparent px-4 pb-2.5 pt-2 text-[12px] text-muted-foreground">
             <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
@@ -2430,7 +2430,7 @@ function ComposerComponent({
                   <button
                     type="button"
                     disabled={disabled || showDraftLoadingState}
-                    className={`inline-flex h-9 items-center gap-1 rounded-xl px-3 py-1 text-[13px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
+                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
                       isNote
                         ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
                         : "bg-transparent text-foreground/75 hover:bg-muted/70"
@@ -2455,7 +2455,7 @@ function ComposerComponent({
                 aria-label="Send reply"
                 title="Send reply"
                 aria-keyshortcuts="Meta+Enter"
-                className="h-10 w-10 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2478,7 +2478,7 @@ function ComposerComponent({
               value={savedRepliesQuery}
               onChange={(event) => setSavedRepliesQuery(event.target.value)}
               placeholder="Search replies..."
-              className="h-9 text-[13px]"
+              className="h-8 text-[12px]"
             />
           </div>
           <div className="max-h-[400px] overflow-y-auto p-2">
