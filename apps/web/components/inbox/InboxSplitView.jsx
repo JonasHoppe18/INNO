@@ -2983,7 +2983,10 @@ export function InboxSplitView({
             activeThreadId={selectedThreadId}
             unreadByThread={unreadByThread}
             onSelectTab={(threadId) =>
-              handleSelectThreadInWorkspace(threadId, { newTab: false })
+              handleSelectThreadInWorkspace(threadId, {
+                newTab: false,
+                preserveScroll: true,
+              })
             }
             onCloseTab={(threadId) => {
               const closingId = String(threadId || "").trim();
@@ -3404,6 +3407,14 @@ export function InboxSplitView({
           immediate: true,
           threadIdOverride: previousThreadId,
           valueOverride: previousDraftValue,
+        });
+      }
+      if (nextThreadId && options?.preserveScroll !== true) {
+        scrollPositionByThreadRef.current[nextThreadId] = 0;
+        setScrollPositionByThread((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, nextThreadId)) return prev;
+          if (!prev[nextThreadId]) return prev;
+          return { ...prev, [nextThreadId]: 0 };
         });
       }
       openThreadInWorkspace(threadId, options);
