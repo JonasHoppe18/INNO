@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
+import { Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -658,8 +658,18 @@ function TicketDetailComponent({
 
   if (!thread) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
-        Select a ticket to view the conversation.
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-muted/[0.18] px-6 text-center">
+        <div className="flex max-w-[320px] flex-col items-center gap-3 rounded-2xl border border-border/70 bg-card/80 px-8 py-9 shadow-[0_8px_28px_hsl(var(--foreground)/0.035)]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-500 dark:bg-violet-500/10 dark:text-violet-300">
+            <Inbox className="h-5 w-5" />
+          </span>
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold text-foreground">Select a ticket</h2>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Choose a conversation from the inbox to view the thread.
+            </p>
+          </div>
+        </div>
       </section>
     );
   }

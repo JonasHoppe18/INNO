@@ -159,9 +159,10 @@ export function useThreadSelection({
       setSelectedThreadId(null);
       return;
     }
-    const fallbackThreadId = filteredThreads[0]?.id || null;
-    setOpenThreadIds([fallbackThreadId]);
-    setSelectedThreadId(fallbackThreadId);
+    // Keep the conversation pane empty until the agent explicitly opens a
+    // ticket. Automatically selecting the first visible row made the inbox
+    // feel like it had opened a random conversation on page load.
+    setSelectedThreadId(null);
   }, [
     filteredThreads,
     openThreadIds,

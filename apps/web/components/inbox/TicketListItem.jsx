@@ -177,14 +177,14 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex w-full flex-col gap-1 px-4 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
         // lavender surface and stronger brand rail.
-        isUnread && "hover:bg-violet-50/60 dark:hover:bg-violet-500/[0.08]",
-        isActive && "bg-violet-100/80 ring-1 ring-inset ring-violet-200/70 hover:bg-violet-100 dark:bg-violet-500/[0.18] dark:ring-violet-300/20 dark:hover:bg-violet-500/[0.22] before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-violet-600 dark:before:bg-violet-400",
+        isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
+        isActive && "bg-violet-50/85 ring-1 ring-inset ring-violet-200/70 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:ring-violet-300/20 dark:hover:bg-violet-500/[0.19] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -260,7 +260,7 @@ function TicketListItemComponent({
           <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
         ) : null}
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground/90">
         {metaChildren}
       </div>
     </button>
