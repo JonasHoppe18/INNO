@@ -821,7 +821,9 @@ function ComposerComponent({
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
   const [isComposerManuallyResized, setIsComposerManuallyResized] = useState(false);
+  const [hasComposerBodyOverflow, setHasComposerBodyOverflow] = useState(false);
   const composerContainerRef = useRef(null);
+  const composerBodyRef = useRef(null);
   const resizeStateRef = useRef(null);
   const manualComposerResizeRef = useRef(false);
   const maxComposerHeightPx = Math.max(
@@ -829,7 +831,9 @@ function ComposerComponent({
     Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
   );
   const shouldScrollComposerBody =
-    !isEmptyReply && (isComposerManuallyResized || composerHeightPx >= maxComposerHeightPx - 1);
+    !isEmptyReply &&
+    hasComposerBodyOverflow &&
+    (isComposerManuallyResized || composerHeightPx >= maxComposerHeightPx - 1);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -1655,6 +1659,19 @@ function ComposerComponent({
   useEffect(() => () => stopResize(), [stopResize]);
 
   useEffect(() => {
+    if (collapsed) {
+      setHasComposerBodyOverflow(false);
+      return undefined;
+    }
+    const rafId = requestAnimationFrame(() => {
+      const body = composerBodyRef.current;
+      if (!body) return;
+      setHasComposerBodyOverflow(body.scrollHeight > body.clientHeight + 1);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [attachments.length, collapsed, composerHeightPx, isNote, refineOpen, showCC, showBCC, showDraftLoadingState, value]);
+
+  useEffect(() => {
     if (collapsed) return;
     if (replyEditorFocusedRef.current) return;
     if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
@@ -1876,7 +1893,7 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className={`min-h-0 flex-1 px-4 py-2.5 ${
+          <div ref={composerBodyRef} className={`min-h-0 flex-1 px-4 py-2.5 ${
             shouldScrollComposerBody ? "overflow-y-auto" : "overflow-y-visible"
           } ${
             isEmptyReply
