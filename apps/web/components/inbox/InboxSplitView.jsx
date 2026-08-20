@@ -341,7 +341,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket status"
-          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
+          className={`h-8 w-auto cursor-pointer gap-1.5 rounded-xl border px-3 py-1 text-[13px] font-semibold leading-none shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
         >
           {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -364,7 +364,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket assignee"
-          className="h-auto w-auto cursor-pointer gap-1.5 rounded-lg border border-border/70 bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/70 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+          className="h-8 w-auto cursor-pointer gap-1.5 rounded-xl border border-border/70 bg-muted/30 px-3 py-1 text-[13px] font-medium leading-none text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/70 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
         >
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
@@ -382,7 +382,7 @@ function InboxHeaderActions({
           <button
             type="button"
             aria-label="More ticket actions"
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+            className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-border/70 bg-background px-3 py-1 text-[13px] font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
           >
             More
             <ChevronDown className="h-3.5 w-3.5" />
@@ -3793,7 +3793,7 @@ export function InboxSplitView({
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
-                className="relative inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap rounded-lg border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+                className="relative inline-flex h-8 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-xl border border-border/70 bg-background px-3 py-1 text-[13px] font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
               >
                 View actions
                 {hasActionableReturnTrackingAction ? (

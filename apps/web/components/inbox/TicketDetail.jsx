@@ -680,27 +680,38 @@ function TicketDetailComponent({
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
   const threadTicketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketNumber = threadTicketRef !== "No ticket ID";
+  const threadSubject = String(
+    thread?.subject || thread?.title || firstMessage?.subject || "",
+  ).trim();
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0">
-      <header className="flex min-h-[60px] items-center justify-between border-b border-border/70 bg-background/95 px-4 py-2 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
-        <div className="flex min-w-0 items-center gap-2.5">
+      <header className="flex min-h-[64px] items-center justify-between border-b border-border/70 bg-background/95 px-5 py-2.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        <div className="flex min-w-0 items-center gap-3">
           <div
-            className={`shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
+            className={`flex h-7 shrink-0 items-center whitespace-nowrap rounded-lg px-2.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
-                ? "border border-border/70 bg-muted/55 font-medium text-muted-foreground shadow-sm"
+                ? "border border-border/70 bg-muted/55 font-medium text-muted-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]"
                 : "text-muted-foreground/60"
             }`}
           >
             {threadTicketRef}
           </div>
+          {threadSubject ? (
+            <>
+              <span className="h-5 w-px shrink-0 bg-border/70" aria-hidden="true" />
+              <span className="min-w-0 max-w-[min(30vw,280px)] truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+                {threadSubject}
+              </span>
+            </>
+          ) : null}
           {headerActions ? (
             <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
-              <div className="flex shrink-0 items-center gap-1.5">{headerActions}</div>
+              <div className="flex shrink-0 items-center gap-2">{headerActions}</div>
             </TicketRenderBoundary>
           ) : null}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-2 pl-3">
           <TicketRenderBoundary section="rightHeaderActions" resetKey={`${thread?.id || ""}:rightHeader`}>
             {rightHeaderActions}
           </TicketRenderBoundary>

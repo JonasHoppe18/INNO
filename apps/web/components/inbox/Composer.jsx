@@ -1728,10 +1728,10 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_10px_30px_hsl(var(--foreground)/0.055)] transition-[background-color,border-color,box-shadow] duration-150 ${
           isEmptyReply
-            ? "rounded-[26px] border-border/70 bg-background/95 shadow-[0_8px_28px_hsl(var(--foreground)/0.05)]"
-            : "rounded-[26px] border-border/80 bg-card/95 shadow-[0_8px_28px_hsl(var(--foreground)/0.05)]"
+            ? "rounded-[24px] border-border/70 bg-background/95"
+            : "rounded-[24px] border-border/80 bg-card/95"
         } ${
           isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : ""
         } ${disabled ? "opacity-60" : ""}`}
@@ -1758,7 +1758,7 @@ function ComposerComponent({
             <span className="h-1 w-10 rounded-full bg-border/80 transition-colors group-hover/resize:bg-muted-foreground/50" />
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-5 pb-1.5 pt-3.5">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-muted-foreground">To:</span>
@@ -1902,7 +1902,7 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={composerBodyRef} className={`min-h-0 flex-1 px-4 py-2.5 ${
+          <div ref={composerBodyRef} className={`min-h-0 flex-1 px-5 py-2.5 ${
             shouldScrollComposerBody ? "overflow-y-auto" : "overflow-y-visible"
           } ${
             isEmptyReply
@@ -2320,7 +2320,7 @@ function ComposerComponent({
               </div>
             ) : null}
           </div>
-          <div className="sticky bottom-0 z-10 flex items-center justify-between bg-transparent px-4 pb-3 pt-2 text-[12px] text-muted-foreground">
+          <div className="sticky bottom-0 z-10 flex items-center justify-between bg-transparent px-5 pb-3.5 pt-2.5 text-[12px] text-muted-foreground">
             <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
@@ -2454,7 +2454,7 @@ function ComposerComponent({
                   <button
                     type="button"
                     disabled={disabled || showDraftLoadingState}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
+                    className={`inline-flex h-9 items-center gap-1 rounded-xl px-3 py-1 text-[13px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
                       isNote
                         ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
                         : "bg-transparent text-foreground/75 hover:bg-muted/70"
@@ -2479,7 +2479,7 @@ function ComposerComponent({
                 aria-label="Send reply"
                 title="Send reply"
                 aria-keyshortcuts="Meta+Enter"
-                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-10 w-10 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
