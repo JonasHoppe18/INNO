@@ -552,7 +552,7 @@ function WorkspaceTabsRow({
           return (
             <div
               key={threadId}
-              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 px-4 py-1.5 transition ${
+              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-1.5 px-3 py-1 transition ${
                 inline
                   ? isActive
                     ? "ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
@@ -576,7 +576,7 @@ function WorkspaceTabsRow({
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
                 ) : null}
                 <div className="min-w-0 pr-1">
-                  <span className="block min-w-0 truncate text-[12px] font-semibold leading-[16px]">
+                  <span className={`block min-w-0 truncate text-[12px] leading-4 ${isActive ? "font-semibold" : "font-medium"}`}>
                     {subject}
                   </span>
                 </div>
@@ -597,7 +597,7 @@ function WorkspaceTabsRow({
         <button
           type="button"
           onClick={() => onAddTab?.()}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
           aria-label="Open new tab"
         >
           <Plus className="h-4 w-4" />
@@ -2963,17 +2963,17 @@ export function InboxSplitView({
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
         <div className="flex h-full min-w-0 flex-1 items-center">
-          <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
+          <div className="hidden h-9 shrink-0 items-center justify-end gap-2 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
             <button
               type="button"
               onClick={handleViewAllTickets}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition hover:text-foreground"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-muted-foreground transition hover:text-foreground"
             >
               View all
               <ArrowUpRight className="h-3.5 w-3.5" />
             </button>
             {unreadThreadCount > 0 ? (
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground">
                 {unreadThreadCount}
               </span>
             ) : null}
