@@ -338,7 +338,7 @@ export function TicketList({
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
   return (
-    <aside className="animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
+    <aside className="animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)] lg:flex-none">
       <div className="flex h-14 shrink-0 items-center border-b border-border/70 bg-muted/10 px-2.5">
         <div className="flex min-w-0 items-center gap-1">
           <Input
