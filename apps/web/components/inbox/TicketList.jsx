@@ -339,28 +339,28 @@ export function TicketList({
 
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="flex h-16 shrink-0 items-center border-b border-border/70 bg-muted/10 px-3">
-        <div className="flex items-center gap-1.5">
+      <div className="flex h-14 shrink-0 items-center border-b border-border/70 bg-muted/10 px-2.5">
+        <div className="flex min-w-0 items-center gap-1">
           <Input
             value={filters.query}
             onChange={(event) => onFiltersChange({ query: event.target.value })}
             placeholder="Search..."
-            className="h-9 min-w-0 flex-1 rounded-lg bg-background text-[13px] shadow-sm transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
+            className="h-7 min-w-0 flex-1 rounded-md bg-background text-[12px] shadow-sm transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
           />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97] ${
+                className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97] ${
                   activeFilterCount
                     ? "border-primary/35 bg-primary/10 text-primary"
                     : "border-input bg-background"
                 }`}
                 title="Filters"
               >
-                <Filter className="h-4 w-4" />
+                <Filter className="h-3.5 w-3.5" />
                 {activeFilterCount ? (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+                  <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-semibold leading-none text-primary-foreground">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -409,10 +409,10 @@ export function TicketList({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-9 max-w-[128px] shrink-0 items-center gap-1.5 rounded-lg border border-input bg-background px-2.5 text-[13px] text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+                className="flex h-7 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-input bg-background px-2 text-[12px] text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
                 title={`Sort: ${selectedSortLabel}`}
               >
-                <ArrowDownUp className="h-4 w-4 shrink-0" />
+                <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{selectedSortLabel}</span>
               </button>
             </DropdownMenuTrigger>

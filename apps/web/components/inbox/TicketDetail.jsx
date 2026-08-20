@@ -909,7 +909,7 @@ function TicketDetailComponent({
                 ) : null}
               <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>
                 {shouldInsertActionCardBeforeMessage ? (
-                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                  <div className="ml-auto flex w-full max-w-[480px] justify-end">
                     <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                       <ActionCard
                         status={pendingUpdateState}
@@ -968,7 +968,7 @@ function TicketDetailComponent({
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto flex w-full max-w-[520px] justify-end">
+            <div className="ml-auto flex w-full max-w-[480px] justify-end">
               <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                 <ActionCard
                   status={pendingUpdateState}
@@ -1002,9 +1002,9 @@ function TicketDetailComponent({
       </div>
 
       {isActionPending ? (
-        <div className="flex-none border-t border-violet-100 bg-violet-50/60 px-4 py-2.5">
-          <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 text-[13px] text-violet-700">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-500" />
+        <div className="flex-none border-t border-violet-100 bg-violet-50/60 px-3 py-1.5">
+          <div className="mx-auto flex w-full max-w-[900px] items-center gap-1.5 text-xs text-violet-700">
+            <Sparkles className="h-3 w-3 shrink-0 animate-pulse text-violet-500" />
             <span>Review the action above to proceed</span>
           </div>
         </div>

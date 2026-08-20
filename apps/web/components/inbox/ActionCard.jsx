@@ -676,35 +676,35 @@ export function ActionCard({
   if (isResultState) {
     return (
       <>
-        <div className="inline-flex w-[360px] max-w-full flex-col items-end">
+        <div className="inline-flex w-[340px] max-w-full flex-col items-end">
           {resultMeta ? (
             <div className="mb-1 px-1 text-right text-xs text-muted-foreground">{resultMeta}</div>
           ) : null}
-          <div className="inline-flex w-full items-center rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="flex h-12 w-12 flex-none items-center justify-center">
+          <div className="inline-flex w-full items-center rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-9 w-9 flex-none items-center justify-center">
                 {forwardActionResult ? (
-                  <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <MailCheck className="size-5" aria-hidden="true" />
+                  <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <MailCheck className="size-4" aria-hidden="true" />
                   </div>
                 ) : (
-                  <Image src={shopifyLogo} alt="" className="h-24 w-24 object-contain" />
+                  <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[15px] font-semibold text-foreground">
+                <div className="truncate text-sm font-semibold text-foreground">
                   {forwardActionResult ? (
                     forwardActionResult.title
                   ) : hasResolvedOrderNumber ? (
                     orderTitle
                   ) : (
-                    <span className="inline-flex items-center gap-2 text-muted-foreground">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                       Loading order...
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <span>{resultStatusText}</span>
                   {!forwardActionResult && orderTotal ? <span>&bull; {orderTotal}</span> : null}
                 </div>
@@ -713,10 +713,10 @@ export function ActionCard({
             <button
               type="button"
               onClick={() => setShowApprovedDetail(true)}
-              className="ml-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-accent-foreground active:scale-90"
+              className="ml-2 inline-flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-accent-foreground active:scale-90"
               aria-label={`View ${actionName} details`}
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -814,10 +814,10 @@ export function ActionCard({
 
   if (isExecuting) {
     return (
-      <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
+      <div className="w-full max-w-[480px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-foreground">{actionName}</div>
@@ -830,15 +830,15 @@ export function ActionCard({
 
   if (isDeclined) {
     return (
-      <div className="rounded-lg border border-border bg-muted/50 px-4 opacity-75">
+      <div className="rounded-lg border border-border bg-muted/50 px-3 opacity-75">
         <button
           type="button"
-          className="flex h-12 w-full items-center gap-3 text-left"
+          className="flex h-10 w-full items-center gap-2.5 text-left"
           onClick={() => canExpand && setExpanded((prev) => !prev)}
           disabled={!canExpand}
         >
           <XCircle className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground line-through">{actionName} declined.</span>
+          <span className="text-xs text-muted-foreground line-through">{actionName} declined.</span>
           {canExpand ? (
             expanded ? (
               <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
@@ -867,10 +867,10 @@ export function ActionCard({
       error || detail || "Order is Fulfilled and cannot be changed"
     );
     return (
-      <div className="rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-4">
-        <div className="flex h-12 w-full items-center gap-3 text-left">
+      <div className="rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-3">
+        <div className="flex h-10 w-full items-center gap-2.5 text-left">
           <XCircle className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-          <span className="text-sm font-medium text-violet-900 dark:text-violet-200">{failedDetail}</span>
+          <span className="text-xs font-medium text-violet-900 dark:text-violet-200">{failedDetail}</span>
         </div>
       </div>
     );
@@ -878,26 +878,26 @@ export function ActionCard({
 
   return (
     <>
-      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
-        <div className="p-3">
-          <div className="flex items-center justify-between gap-4">
+      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[480px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
+        <div className="p-2.5">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center">
-                <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center">
+                <Image src={shopifyLogo} alt="" className="h-8 w-8 object-contain" />
               </div>
-              <div className="truncate text-l font-semibold leading-tight text-foreground">
+              <div className="truncate text-sm font-semibold leading-tight text-foreground">
                 {proposedTitle}
               </div>
             </div>
-            <div className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-violet-600 dark:text-violet-400">
-              <LoaderCircle className="h-5 w-5 animate-spin" />
+            <div className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
               <span>Awaiting approval</span>
             </div>
           </div>
 
         {normalizedAction === "forward_email" ? (
-          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
-            <div className="flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-foreground/80">
+          <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-[13px] text-foreground/80">
               <span>{forwardSentence.lead}</span>
               <DropdownMenu>
                 {isCustomForwardTarget ? (
@@ -911,7 +911,7 @@ export function ActionCard({
                       placeholder="name@company.com"
                       aria-label="Forwarding email address"
                       aria-invalid={Boolean(selectedForwardEmail && !hasValidForwardEmail)}
-                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-sm shadow-none focus-visible:ring-0"
+                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-[13px] shadow-none focus-visible:ring-0"
                     />
                     <DropdownMenuTrigger asChild>
                       <button
@@ -927,7 +927,7 @@ export function ActionCard({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
+                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
                     >
                       <span className="truncate">{forwardTargetEmail || "Choose recipient"}</span>
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -975,8 +975,8 @@ export function ActionCard({
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
-            <div className="space-y-0.5 text-sm text-foreground/80">
+          <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
+            <div className="space-y-0.5 text-[13px] text-foreground/80">
               {impactSummaryLines.map((line, index) => (
                 <div key={`impact-line-${index}`}>{line}</div>
               ))}
@@ -993,10 +993,10 @@ export function ActionCard({
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-violet-200/70 dark:border-violet-500/20 px-3 py-2">
+      <div className="flex items-center justify-end gap-1.5 border-t border-violet-200/70 px-2.5 py-1.5 dark:border-violet-500/20">
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => setShowDeclineDialog(true)}
           disabled={loading}
         >
@@ -1004,7 +1004,7 @@ export function ActionCard({
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => {
             if (normalizedAction === "forward_email") {
               setShowForwardApprovalDialog(true);
