@@ -263,6 +263,13 @@ function TicketDetailComponent({
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
   const isConversationNearBottomRef = useRef(true);
+  const firstUnreadMessageIndex = useMemo(() => {
+    if (!Array.isArray(messages)) return -1;
+    return messages.findIndex(
+      (message) =>
+        message?.is_read === false && !isOutboundMessage(message, mailboxEmails),
+    );
+  }, [mailboxEmails, messages]);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
@@ -800,7 +807,11 @@ function TicketDetailComponent({
             const groupedWithPrevious = canGroupMessages(previousMessage, message, mailboxEmails);
             const messageDayKey = getMessageDayKey(message);
             const previousMessageDayKey = getMessageDayKey(previousMessage);
-            const shouldShowDaySeparator = Boolean(messageDayKey) && messageDayKey !== previousMessageDayKey;
+            const shouldShowDaySeparator =
+              Boolean(previousMessage) &&
+              Boolean(messageDayKey) &&
+              messageDayKey !== previousMessageDayKey;
+            const shouldShowNewMessagesDivider = messageIndex === firstUnreadMessageIndex;
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
@@ -859,6 +870,15 @@ function TicketDetailComponent({
                       {formatMessageDayLabel(message)}
                     </span>
                     <span className="h-px flex-1 bg-border/60" />
+                  </div>
+                ) : null}
+                {shouldShowNewMessagesDivider ? (
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-violet-700/80">
+                    <span className="h-px flex-1 bg-violet-200/80" />
+                    <span className="rounded-full border border-violet-200/80 bg-violet-50 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
+                      New messages
+                    </span>
+                    <span className="h-px flex-1 bg-violet-200/80" />
                   </div>
                 ) : null}
               <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>
