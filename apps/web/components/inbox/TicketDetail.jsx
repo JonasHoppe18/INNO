@@ -268,6 +268,8 @@ function TicketDetailComponent({
   onReturnTrackingActionStateChange = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [draftActivityLogs, setDraftActivityLogs] = useState([]);
+  const [draftActivityLoading, setDraftActivityLoading] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
@@ -441,6 +443,56 @@ function TicketDetailComponent({
     shouldShowActionCard,
   ]);
   const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
+  const shouldLoadDraftActivity = Boolean(
+    thread?.id &&
+      !String(thread.id).startsWith("local-") &&
+      (draftLoaded || showThinkingCard),
+  );
+
+  useEffect(() => {
+    const threadId = String(thread?.id || "").trim();
+    if (!shouldLoadDraftActivity || !threadId) {
+      setDraftActivityLogs([]);
+      setDraftActivityLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setDraftActivityLoading(Boolean(showThinkingCard));
+    fetch(`/api/threads/${encodeURIComponent(threadId)}/insights`, {
+      method: "GET",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setDraftActivityLogs(Array.isArray(payload?.logs) ? payload.logs : []);
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setDraftActivityLogs([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDraftActivityLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [draftLoaded, shouldLoadDraftActivity, showThinkingCard, thread?.id]);
+
+  const draftActivitySteps = useMemo(() => {
+    const logs = Array.isArray(draftActivityLogs) ? draftActivityLogs : [];
+    if (!logs.length) return [];
+
+    const draftLogs = logs.filter((log) => log?.draft_id);
+    const latestDraftId = draftLogs[draftLogs.length - 1]?.draft_id;
+    const latestLogs = latestDraftId
+      ? draftLogs.filter((log) => String(log?.draft_id) === String(latestDraftId))
+      : logs;
+
+    return latestLogs
+      .filter((log) => log?.step_name || log?.step_detail)
+      .slice(-8);
+  }, [draftActivityLogs]);
+
   let actionCardInserted = false;
   const processReturnExtraContent =
     isProcessReturnAction && pendingUpdateState === "proposed" ? (
@@ -844,20 +896,6 @@ function TicketDetailComponent({
             if (shouldInsertActionCardBeforeMessage) {
               actionCardInserted = true;
             }
-            const primaryLog =
-              Array.isArray(message.ai_logs) && message.ai_logs.length
-                ? message.ai_logs[0]
-                : null;
-            const thinkingData = isDraft
-              ? primaryLog
-                ? {
-                    type: primaryLog.step_name,
-                    detail: primaryLog.step_detail,
-                  }
-                : message?.ai_context || message?.context || {
-                    summary: "Analyzed request using Store Policies.",
-                  }
-              : null;
             return (
               <Fragment key={message.id}>
                 {shouldShowDaySeparator ? (
@@ -897,16 +935,6 @@ function TicketDetailComponent({
                         onDecline={(declineContext) =>
                           onOrderUpdateDecision?.("denied", declineContext)
                         }
-                      />
-                    </TicketRenderBoundary>
-                  </div>
-                ) : null}
-                {isDraft ? (
-                  <div className="ml-auto w-full max-w-[520px]">
-                    <TicketRenderBoundary section="thinkingCard" resetKey={`${thread?.id || ""}:${messageId}:thinking`}>
-                      <ThinkingCard
-                        data={thinkingData}
-                        onClick={() => onOpenInsights?.(true)}
                       />
                     </TicketRenderBoundary>
                   </div>
@@ -1068,6 +1096,23 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : (
+        <>
+        {draftActivityLoading || draftActivitySteps.length ? (
+          <div className="px-3 pb-0.5">
+            <div className="mx-auto w-full max-w-[900px]">
+              <TicketRenderBoundary
+                section="thinkingCard"
+                resetKey={`${thread?.id || ""}:${draftActivitySteps.length}:${draftActivityLoading}`}
+              >
+                <ThinkingCard
+                  steps={draftActivitySteps}
+                  loading={draftActivityLoading}
+                  onClick={() => onOpenInsights?.(true)}
+                />
+              </TicketRenderBoundary>
+            </div>
+          </div>
+        ) : null}
         <div className="relative bg-transparent px-3 pb-2.5 pt-2.5">
           <TicketRenderBoundary
             section="composer"
@@ -1101,6 +1146,7 @@ function TicketDetailComponent({
             />
           </TicketRenderBoundary>
         </div>
+        </>
         )}
         </>
       )}
