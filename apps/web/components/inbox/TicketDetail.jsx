@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -271,6 +271,7 @@ function TicketDetailComponent({
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [returnTrackingSubmitting, setReturnTrackingSubmitting] = useState("");
   const [returnTrackingError, setReturnTrackingError] = useState("");
   const [createdReturnTrackingByThread, setCreatedReturnTrackingByThread] = useState({});
@@ -493,6 +494,7 @@ function TicketDetailComponent({
       }
       isConversationNearBottomRef.current =
         node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
+      setShowJumpToLatest(!isConversationNearBottomRef.current);
       if (shouldRestoreThread) restoredThreadIdRef.current = threadId;
     });
 
@@ -734,14 +736,34 @@ function TicketDetailComponent({
 
       <div
         ref={conversationRef}
-        className="min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="relative min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => {
           const node = event.currentTarget;
-          isConversationNearBottomRef.current =
-            node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
+          const isNearBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
+          isConversationNearBottomRef.current = isNearBottom;
+          setShowJumpToLatest(!isNearBottom);
           onConversationScroll?.(node.scrollTop);
         }}
       >
+        {showJumpToLatest ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Jump to latest message"
+            onClick={() => {
+              const node = conversationRef.current;
+              if (!node) return;
+              node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+              isConversationNearBottomRef.current = true;
+              setShowJumpToLatest(false);
+            }}
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border-border/80 bg-background/95 px-3 text-xs font-medium shadow-md backdrop-blur-sm hover:bg-background"
+          >
+            <ArrowDown className="mr-1.5 h-3.5 w-3.5" />
+            Jump to latest
+          </Button>
+        ) : null}
         <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-4 px-5 pb-6 pt-5">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
