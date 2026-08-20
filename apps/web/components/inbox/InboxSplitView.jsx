@@ -528,7 +528,7 @@ function WorkspaceTabsRow({
     <div
       className={
         inline
-          ? "relative min-w-0 flex-1 bg-background"
+          ? "relative h-full min-w-0 flex-1 bg-background"
           : "border-b border-border bg-background"
       }
     >
@@ -538,7 +538,7 @@ function WorkspaceTabsRow({
       <div
         className={
           inline
-            ? "flex min-w-0 items-end overflow-x-auto pr-3 pt-0.5"
+            ? "flex h-full min-w-0 items-end overflow-x-auto pr-3 pt-0.5"
             : "mx-auto flex w-full max-w-[900px] items-center gap-1 overflow-x-auto px-4 py-1"
         }
       >
@@ -555,7 +555,7 @@ function WorkspaceTabsRow({
               className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 px-4 py-1.5 transition ${
                 inline
                   ? isActive
-                    ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
+                    ? "ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
                     : "rounded-t-[12px] rounded-b-none bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
                   : isActive
                     ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
@@ -2962,7 +2962,7 @@ export function InboxSplitView({
   useEffect(() => {
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
-        <div className="flex min-w-0 flex-1 items-center">
+        <div className="flex h-full min-w-0 flex-1 items-center">
           <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
             <button
               type="button"

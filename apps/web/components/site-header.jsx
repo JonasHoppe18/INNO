@@ -36,7 +36,7 @@ export function SiteHeader() {
             <SidebarTrigger className="-ml-1 pointer-events-auto" />
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
           </div>
-          <div className="min-w-0 flex-1">{titleContent}</div>
+          <div className="h-full min-w-0 flex-1">{titleContent}</div>
           <div className="ml-auto flex items-center gap-2">
             {showBell && <NotificationBell />}
             {actions}
