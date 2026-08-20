@@ -260,6 +260,7 @@ function TicketDetailComponent({
   const [returnTrackingStateByThread, setReturnTrackingStateByThread] = useState({});
   const closeSuggestionEnabled = false; // Temporarily disabled until heuristics are reworked.
   const conversationRef = useRef(null);
+  const actionCardRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
   const isConversationNearBottomRef = useRef(true);
@@ -374,6 +375,9 @@ function TicketDetailComponent({
       });
     return Boolean(lowered) || isApprovalPending;
   })();
+  const handleReviewPendingAction = () => {
+    actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
   const detailSuggestsTestMode = (() => {
     const detailText = String(pendingOrderUpdate?.detail || "").toLowerCase();
     return detailText.includes("test mode") || detailText.includes("simulated");
@@ -897,7 +901,7 @@ function TicketDetailComponent({
                 ) : null}
               <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>
                 {shouldInsertActionCardBeforeMessage ? (
-                  <div className="ml-auto flex w-full max-w-[480px] justify-end">
+                  <div ref={actionCardRef} className="ml-auto flex w-full max-w-[480px] justify-end">
                     <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                       <ActionCard
                         status={pendingUpdateState}
@@ -948,7 +952,7 @@ function TicketDetailComponent({
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto flex w-full max-w-[480px] justify-end">
+            <div ref={actionCardRef} className="ml-auto flex w-full max-w-[480px] justify-end">
               <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                 <ActionCard
                   status={pendingUpdateState}
@@ -982,10 +986,25 @@ function TicketDetailComponent({
       </div>
 
       {isActionPending ? (
-        <div className="flex-none border-t border-violet-100 bg-violet-50/60 px-3 py-1.5">
-          <div className="mx-auto flex w-full max-w-[900px] items-center gap-1.5 text-xs text-violet-700">
-            <Sparkles className="h-3 w-3 shrink-0 animate-pulse text-violet-500" />
-            <span>Review the action above to proceed</span>
+        <div className="flex-none border-t border-violet-200/70 bg-violet-50/80 px-3 py-2 shadow-[0_-4px_16px_hsl(var(--foreground)/0.03)]">
+          <div className="mx-auto flex w-full max-w-[900px] items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-violet-200/80 bg-white text-violet-600 shadow-[0_1px_2px_hsl(var(--foreground)/0.05)]">
+                <Sparkles className="size-3.5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium text-violet-900">Action awaiting approval</p>
+                <p className="truncate text-[11px] text-violet-700/80">Review the proposed action before continuing.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleReviewPendingAction}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-violet-200 bg-white px-2.5 text-[11px] font-medium text-violet-700 shadow-sm transition-[background-color,border-color,transform] duration-150 hover:bg-violet-100/70 active:scale-[0.97]"
+            >
+              Review action
+              <ArrowDown className="size-3.5" aria-hidden="true" />
+            </button>
           </div>
         </div>
       ) : (

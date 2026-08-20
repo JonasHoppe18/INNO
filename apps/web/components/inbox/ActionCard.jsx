@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock3,
   LoaderCircle,
   MailCheck,
   Plus,
@@ -878,8 +879,8 @@ export function ActionCard({
 
   return (
     <>
-      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[480px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
-        <div className="p-2.5">
+      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[480px] overflow-hidden rounded-xl border border-violet-200/80 bg-card shadow-[0_8px_24px_hsl(var(--foreground)/0.06)] duration-300 dark:border-violet-500/30">
+        <div className="px-3 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center">
@@ -890,7 +891,7 @@ export function ActionCard({
               </div>
             </div>
             <div className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Awaiting approval</span>
             </div>
           </div>
