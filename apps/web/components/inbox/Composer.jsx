@@ -820,9 +820,16 @@ function ComposerComponent({
   const [refineError, setRefineError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
+  const [isComposerManuallyResized, setIsComposerManuallyResized] = useState(false);
   const composerContainerRef = useRef(null);
   const resizeStateRef = useRef(null);
   const manualComposerResizeRef = useRef(false);
+  const maxComposerHeightPx = Math.max(
+    MIN_COMPOSER_HEIGHT_PX,
+    Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
+  );
+  const shouldScrollComposerBody =
+    !isEmptyReply && (isComposerManuallyResized || composerHeightPx >= maxComposerHeightPx - 1);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -882,6 +889,7 @@ function ComposerComponent({
       // clear focus state so value hydration works when reopening.
       replyEditorFocusedRef.current = false;
       manualComposerResizeRef.current = false;
+      setIsComposerManuallyResized(false);
       return;
     }
     if (isNote) {
@@ -1371,6 +1379,7 @@ function ComposerComponent({
     const nextValue = extractPlainTextFromReplyHtml(htmlWithMarkers);
     if (!String(nextValue || "").trim()) {
       manualComposerResizeRef.current = false;
+      setIsComposerManuallyResized(false);
     }
     onChange(nextValue);
     syncComposerHeight(nextValue);
@@ -1631,6 +1640,7 @@ function ComposerComponent({
       const container = composerContainerRef.current;
       if (!container || typeof window === "undefined") return;
       manualComposerResizeRef.current = true;
+      setIsComposerManuallyResized(true);
       const rect = container.getBoundingClientRect();
       resizeStateRef.current = {
         startY: Number(event?.clientY || 0),
@@ -1866,7 +1876,9 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className={`min-h-0 flex-1 overflow-y-auto px-4 py-2.5 ${
+          <div className={`min-h-0 flex-1 px-4 py-2.5 ${
+            shouldScrollComposerBody ? "overflow-y-auto" : "overflow-y-visible"
+          } ${
             isEmptyReply
               ? "bg-transparent"
               : isNote
