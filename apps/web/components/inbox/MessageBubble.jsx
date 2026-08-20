@@ -419,6 +419,7 @@ function MessageBubbleComponent({
   outboundSenderName,
   showMeta = true,
   compactTimestamp = false,
+  showTimestamp = true,
   grouped = false,
   editStats = null,
   translatedText = null,
@@ -466,7 +467,16 @@ function MessageBubbleComponent({
   const displaySenderName = isAuthoredByCurrentUser ? "You" : senderDisplayName;
   const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
-  const timestamp = timestampValue
+  const fullTimestamp = timestampValue
+    ? new Date(timestampValue).toLocaleString("da-DK", {
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        timeZone: DISPLAY_TIMEZONE,
+      })
+    : "";
+  const timestamp = showTimestamp && timestampValue
     ? new Date(timestampValue).toLocaleString("da-DK", compactTimestamp
       ? {
         hour: "2-digit",
@@ -639,9 +649,11 @@ function MessageBubbleComponent({
                 >
                   {displaySenderName}
                 </span>
-                <span className="text-[12px] font-normal tabular-nums text-muted-foreground">
-                  {timestamp}
-                </span>
+                {timestamp ? (
+                  <span className="text-[12px] font-normal tabular-nums text-muted-foreground">
+                    {timestamp}
+                  </span>
+                ) : null}
                 {isInternalNote ? (
                   <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
                     Internal note
@@ -791,7 +803,7 @@ function MessageBubbleComponent({
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Date</span>
-                <span className="text-[13px] text-foreground">{timestamp || "-"}</span>
+                <span className="text-[13px] text-foreground">{fullTimestamp || "-"}</span>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
@@ -920,6 +932,7 @@ const arePropsEqual = (prev, next) => {
   if (prev.outboundSenderName !== next.outboundSenderName) return false;
   if (prev.showMeta !== next.showMeta) return false;
   if (prev.compactTimestamp !== next.compactTimestamp) return false;
+  if (prev.showTimestamp !== next.showTimestamp) return false;
   if (prev.grouped !== next.grouped) return false;
   if (prev.translatedText !== next.translatedText) return false;
   if (prev.translationLoading !== next.translationLoading) return false;

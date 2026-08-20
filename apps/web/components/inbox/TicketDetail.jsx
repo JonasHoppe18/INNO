@@ -263,6 +263,10 @@ function TicketDetailComponent({
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
   const isConversationNearBottomRef = useRef(true);
+  const todayMessageDayKey = useMemo(
+    () => getMessageDayKey({ created_at: new Date().toISOString() }),
+    [],
+  );
   const firstUnreadMessageIndex = useMemo(() => {
     if (!Array.isArray(messages)) return -1;
     return messages.findIndex(
@@ -812,6 +816,8 @@ function TicketDetailComponent({
               Boolean(messageDayKey) &&
               messageDayKey !== previousMessageDayKey;
             const shouldShowNewMessagesDivider = messageIndex === firstUnreadMessageIndex;
+            const showMessageTimestamp =
+              Boolean(messageDayKey) && messageDayKey === todayMessageDayKey;
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
@@ -921,6 +927,7 @@ function TicketDetailComponent({
                     outboundSenderName={currentUserName}
                     showMeta={!groupedWithPrevious}
                     compactTimestamp
+                    showTimestamp={showMessageTimestamp}
                     grouped={groupedWithPrevious}
                     editStats={direction === "outbound" ? sentDraftStats : null}
                     translatedText={getMessageTranslationText(message, translationItems)}
