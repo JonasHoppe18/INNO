@@ -478,7 +478,7 @@ function ComposerComponent({
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
   const isEmptyReply =
     !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
-  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : isEmptyReply ? 116 : 156;
+  const MIN_COMPOSER_HEIGHT_PX = isNote ? 170 : isEmptyReply ? 116 : 140;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -761,12 +761,12 @@ function ComposerComponent({
       window.removeEventListener("resize", update);
     };
   }, [refineSnippetsOpen]);
-  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[32px]" : "min-h-[72px]";
+  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[32px]" : "min-h-[60px]";
   const editorBodyMinHeightClassName = isNote
     ? "min-h-[96px]"
     : isEmptyReply
       ? "min-h-[36px]"
-      : "min-h-[112px]";
+      : "min-h-[80px]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
     if (!toLabel) return [];
@@ -1568,7 +1568,7 @@ function ComposerComponent({
         0
       );
       const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 62 : isEmptyReply ? 32 : 72;
+      const minEditorHeight = isNote ? 62 : isEmptyReply ? 32 : 60;
       const maxEditorHeight = 240;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
@@ -1578,7 +1578,7 @@ function ComposerComponent({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = isNote ? 112 : isEmptyReply ? 84 : 124;
+      const chromeHeight = isNote ? 112 : isEmptyReply ? 84 : 100;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
@@ -1854,7 +1854,11 @@ function ComposerComponent({
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-2 ${
-            isEmptyReply ? "bg-transparent px-4 py-2.5" : "bg-card"
+            isEmptyReply
+              ? "bg-transparent px-4 py-2.5"
+              : isNote
+                ? "bg-yellow-50/[0.08]"
+                : "bg-muted/[0.06]"
           }`}>
             {refineOpen && !isNote ? (
               <div
@@ -2193,7 +2197,7 @@ function ComposerComponent({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none selection:bg-violet-100 selection:text-foreground [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
@@ -2265,7 +2269,7 @@ function ComposerComponent({
           <div className={`sticky bottom-0 z-10 flex items-center justify-between px-3 py-1.5 text-[12px] text-muted-foreground ${
             isEmptyReply
               ? "border-t-0 bg-transparent px-3.5 pb-2.5 pt-1.5"
-              : "border-t border-border bg-card"
+              : "border-t border-border bg-card/95"
           }`}>
             <TooltipProvider delayDuration={300}>
             <div className="flex items-center gap-2">
@@ -2360,10 +2364,10 @@ function ComposerComponent({
                       type="button"
                       disabled={disabled || showDraftLoadingState || isGeneratingDraft}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
-                      className={`rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-[background-color,border-color,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                      className={`rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
                         isEmptyReply
                           ? "border border-transparent bg-muted/55 hover:bg-muted"
-                          : "border border-border bg-background hover:border-border/80"
+                          : "border border-border bg-background shadow-sm hover:border-border/80 hover:shadow"
                       }`}
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
@@ -2424,7 +2428,8 @@ function ComposerComponent({
                 }}
                 aria-label="Send reply"
                 title="Send reply"
-                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,transform] duration-150 ease-out hover:bg-violet-700 active:scale-95"
+                aria-keyshortcuts="Meta+Enter"
+                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
