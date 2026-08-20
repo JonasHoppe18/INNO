@@ -205,7 +205,7 @@ function TicketListItemComponent({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
-          {reason ? (
+          {reason && reason.key !== "new" ? (
             <span
               className={
                 "max-w-[150px] truncate whitespace-nowrap text-[11px] " +
