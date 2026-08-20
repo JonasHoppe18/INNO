@@ -72,7 +72,7 @@ function formatMessageDayLabel(message = null) {
   if (!timestampValue) return "";
   const date = new Date(timestampValue);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("da-DK", {
+  return date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     timeZone: MESSAGE_DISPLAY_TIMEZONE,
