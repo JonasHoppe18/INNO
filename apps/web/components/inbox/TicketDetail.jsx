@@ -268,12 +268,20 @@ function TicketDetailComponent({
     [],
   );
   const firstUnreadMessageIndex = useMemo(() => {
-    if (!Array.isArray(messages)) return -1;
+    if (
+      !Array.isArray(messages) ||
+      thread?.is_read === true ||
+      Number(thread?.unread_count ?? 0) <= 0
+    ) {
+      return -1;
+    }
     return messages.findIndex(
-      (message) =>
-        message?.is_read === false && !isOutboundMessage(message, mailboxEmails),
+      (message, index) =>
+        index > 0 &&
+        message?.is_read === false &&
+        !isOutboundMessage(message, mailboxEmails),
     );
-  }, [mailboxEmails, messages]);
+  }, [mailboxEmails, messages, thread?.is_read, thread?.unread_count]);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
