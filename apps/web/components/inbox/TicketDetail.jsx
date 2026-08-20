@@ -5,7 +5,6 @@ import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/Message
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
-import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { ThreadTagsBar } from "@/components/inbox/ThreadTagsBar";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { formatTicketReference } from "@/lib/tickets/reference";
@@ -29,12 +28,6 @@ const APPROVAL_ACTION_TYPES = new Set([
   "add_tag",
   "add_internal_note_or_tag",
 ]);
-
-const TRACKING_KEYWORD_PATTERN =
-  /\b(track|tracking|trace|shipment|shipping|delivery|delivered|out for delivery|parcel|package|pakke|pakken|forsendelse|levering|leveret|spor|sporing|track and trace|track&trace)\b/i;
-
-const TRACKING_STATUS_QUESTION_PATTERN =
-  /\b(where is my order|order status|shipping status|delivery status|when will .*arriv|estimated delivery|not received|still haven'?t received|hvor er min ordre|hvor bliver .* af|hvornår .* lever|leveringstid|forventet levering|ikke modtaget)\b/i;
 
 const SATISFACTION_CLOSURE_PATTERN =
   /\b(?:thanks?(?:\s+a\s+lot)?|thank you(?:\s+so\s+much)?|tak(?:\s+for\s+hjælpen)?|perfekt|super|awesome|great|issue(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|problem(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it works(?:\s+now)?|works(?:\s+perfectly|fine|great)?(?:\s+now)?|alt(?:\s+er)?\s+løst|det(?:\s+er)?\s+løst|det virker(?:\s+nu)?|virker\s+nu|fungerer(?:\s+nu)?|all good(?:\s+now)?|all set|you can close(?:\s+the\s+ticket)?|close\s+the\s+ticket)\b/i;
@@ -134,20 +127,6 @@ function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
     return message;
   }
   return null;
-}
-
-function messageLooksLikeTrackingQuestion(message = null) {
-  if (!message) return false;
-  const haystack = [message?.clean_body_text, message?.body_text, message?.snippet]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join("\n");
-  if (!haystack) return false;
-  const hasTrackingKeyword = TRACKING_KEYWORD_PATTERN.test(haystack);
-  if (!hasTrackingKeyword) return false;
-  if (TRACKING_STATUS_QUESTION_PATTERN.test(haystack)) return true;
-  const hasQuestionSignal = /\?|\b(where|when|how long|hvor|hvornår|hvordan)\b/i.test(haystack);
-  return hasQuestionSignal;
 }
 
 function messageLooksLikeSatisfactionClosure(message = null) {
@@ -410,7 +389,6 @@ function TicketDetailComponent({
     () => getLatestInboundCustomerMessage(messages, mailboxEmails),
     [mailboxEmails, messages]
   );
-  const latestInboundCustomerMessageId = String(latestInboundCustomerMessage?.id || "");
   const shouldSuggestCloseFromCustomerReply = useMemo(() => {
     const normalizedTicketStatus = String(ticketState?.status || "").trim().toLowerCase();
     if (normalizedTicketStatus === "solved" || normalizedTicketStatus === "resolved") return false;
@@ -418,30 +396,6 @@ function TicketDetailComponent({
     if (threadId && dismissedCloseSuggestionByThread[threadId]) return false;
     return messageLooksLikeSatisfactionClosure(latestInboundCustomerMessage);
   }, [dismissedCloseSuggestionByThread, latestInboundCustomerMessage, thread?.id, ticketState?.status]);
-  const shouldShowTrackingCard = useMemo(() => {
-    const hasTrackingData = Boolean(
-      selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
-    );
-    if (!hasTrackingData) return false;
-    // Never show when an action card is pending — avoids visual clutter
-    if (shouldShowActionCard) return false;
-    // Never show for return/exchange/complaint tickets — tracking is not the focus
-    const classKey = String(thread?.classification_key || "").toLowerCase();
-    const isReturnOrExchange = classKey === "return" || classKey === "exchange" || classKey === "complaint";
-    const tags = Array.isArray(thread?.tags) ? thread.tags : [];
-    const hasReturnTag = tags.some((t) => /^return/i.test(String(t || "")));
-    if (isReturnOrExchange || hasReturnTag) return false;
-    // Show only for explicitly tracking-tagged threads or clear tracking questions
-    const threadIsTracking = tags.includes("Tracking");
-    return threadIsTracking || messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
-  }, [
-    thread?.tags,
-    thread?.classification_key,
-    latestInboundCustomerMessage,
-    selectedOrderSummary?.tracking?.number,
-    selectedOrderSummary?.tracking?.url,
-    shouldShowActionCard,
-  ]);
   const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
   const shouldLoadDraftActivity = Boolean(
     thread?.id &&
@@ -954,15 +908,6 @@ function TicketDetailComponent({
                     onRequestTranslation={onRequestTranslation}
                   />
                 </MessageRenderBoundary>
-                {shouldShowTrackingCard &&
-                  latestInboundCustomerMessageId &&
-                  String(message?.id || "") === latestInboundCustomerMessageId ? (
-                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
-                    <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
-                      <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} direction="outbound" />
-                    </TicketRenderBoundary>
-                  </div>
-                ) : null}
               </div>
               </Fragment>
             );
