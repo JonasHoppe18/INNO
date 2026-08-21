@@ -37,6 +37,16 @@ function EditableTextField({ label, value, onSave, placeholder = "—" }) {
     if (next !== current) onSave(next || null);
   };
 
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      setDraft(value ?? "");
+      setEditing(false);
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.currentTarget.blur();
+    }
+  };
+
   return (
     <div className="space-y-1.5">
       <SectionLabel>{label}</SectionLabel>
@@ -46,6 +56,8 @@ function EditableTextField({ label, value, onSave, placeholder = "—" }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          aria-label={`Edit ${label.toLowerCase()}`}
           rows={3}
           className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
         />
@@ -96,19 +108,19 @@ function ProductField({ value, availableProducts, onSave }) {
           {value?.title || "Add product"}
         </button>
         {open && (
-          <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[200px] max-h-56 flex flex-col">
+          <div className="absolute left-0 top-full z-50 mt-1 flex min-w-[200px] max-h-56 flex-col rounded-lg border border-border bg-background py-1 shadow-lg">
             <input
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search products…"
-              className="mx-2 my-1 px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none"
+              className="mx-2 my-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <div className="overflow-y-auto flex-1">
               <button
                 type="button"
                 onClick={() => { onSave(null); setOpen(false); }}
-                className="flex items-center w-full px-3 py-1.5 text-sm text-slate-400 italic hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out"
+                className="flex w-full items-center px-3 py-1.5 text-left text-sm italic text-muted-foreground transition-[transform,background-color] duration-100 ease-out hover:bg-muted active:scale-[0.98]"
               >
                 None
               </button>
@@ -117,15 +129,15 @@ function ProductField({ value, availableProducts, onSave }) {
                   key={p.id}
                   type="button"
                   onClick={() => { onSave(p.id); setOpen(false); }}
-                  className={`flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out ${
-                    value?.id === p.id ? "font-medium text-violet-700" : "text-slate-700"
+                    className={`flex w-full items-center px-3 py-1.5 text-left text-sm transition-[transform,background-color] duration-100 ease-out hover:bg-muted active:scale-[0.98] ${
+                    value?.id === p.id ? "font-medium text-violet-700" : "text-foreground"
                   }`}
                 >
                   {p.title}
                 </button>
               ))}
               {filtered.length === 0 && (
-                <p className="px-3 py-2 text-xs text-slate-400">No products found.</p>
+                <p className="px-3 py-2 text-xs text-muted-foreground">No products found.</p>
               )}
             </div>
           </div>
@@ -154,7 +166,7 @@ function Tag({ tag, onRemove, isRemoving }) {
   );
 }
 
-function TagsSection({ threadId, onVisibilityChange }) {
+function TagsSection({ threadId }) {
   const [assignedTags, setAssignedTags] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -246,13 +258,6 @@ function TagsSection({ threadId, onVisibilityChange }) {
 
   const assignedIds = new Set(assignedTags.map((t) => t.id));
   const unassigned = availableTags.filter((t) => !assignedIds.has(t.id));
-  const hasTagContent = assignedTags.length > 0 || unassigned.length > 0;
-
-  useEffect(() => {
-    onVisibilityChange?.(hasTagContent);
-  }, [hasTagContent, onVisibilityChange]);
-
-  if (!hasTagContent) return null;
 
   return (
     <div className="space-y-1.5">
@@ -277,14 +282,14 @@ function TagsSection({ threadId, onVisibilityChange }) {
               Tag
             </button>
             {dropdownOpen && (
-              <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px] max-h-48 overflow-y-auto">
+              <div className="absolute left-0 top-full z-50 mt-1 max-h-48 min-w-[160px] overflow-y-auto rounded-lg border border-border bg-background py-1 shadow-lg">
                 {unassigned.map((tag) => (
                   <button
                     key={tag.id}
                     type="button"
                     onClick={() => handleAdd(tag)}
                     disabled={adding === tag.id}
-                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out disabled:opacity-50"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-[transform,background-color] duration-100 ease-out hover:bg-muted active:scale-[0.98] disabled:opacity-50"
                   >
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
                     {tag.name}
@@ -294,6 +299,9 @@ function TagsSection({ threadId, onVisibilityChange }) {
             )}
           </div>
         )}
+        {assignedTags.length === 0 && unassigned.length === 0 ? (
+          <span className="py-1 text-[12px] italic text-muted-foreground">No tags yet</span>
+        ) : null}
       </div>
     </div>
   );
@@ -318,6 +326,11 @@ export function TicketMetadataSnapshot({ threadId }) {
   const [metadata, setMetadata] = useState(null);
   const [assignedTags, setAssignedTags] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+
+  useEffect(() => {
+    setSummaryExpanded(false);
+  }, [threadId]);
 
   useEffect(() => {
     let active = true;
@@ -368,16 +381,28 @@ export function TicketMetadataSnapshot({ threadId }) {
   }, [threadId]);
 
   const summary = typeof metadata?.issue_summary === "string" ? metadata.issue_summary.trim() : "";
+  const canExpandSummary = summary.length > 180;
 
   return (
-    <div className="space-y-3">
-      <section className="space-y-2 border-b border-border/70 pb-3">
-        <SectionLabel>Summary</SectionLabel>
+    <div className="space-y-2.5">
+      <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel>Summary</SectionLabel>
+          {canExpandSummary ? (
+            <button
+              type="button"
+              onClick={() => setSummaryExpanded((value) => !value)}
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              {summaryExpanded ? "Show less" : "Show more"}
+            </button>
+          ) : null}
+        </div>
         {loading && !metadata ? (
-          <div className="h-10 animate-pulse rounded-md bg-muted/55" aria-label="Loading summary" />
+          <div className="h-9 animate-pulse rounded-md bg-muted/55" aria-label="Loading summary" />
         ) : (
           <p
-            className={`line-clamp-3 text-[12px] leading-5 ${summary ? "text-foreground" : "text-muted-foreground italic"}`}
+            className={`${summaryExpanded ? "" : "line-clamp-2"} text-[12px] leading-[1.45] ${summary ? "text-foreground" : "text-muted-foreground italic"}`}
             title={summary || undefined}
           >
             {summary || "No summary yet"}
@@ -386,16 +411,16 @@ export function TicketMetadataSnapshot({ threadId }) {
       </section>
 
       {metadata?.detected_product?.title ? (
-        <section className="space-y-2 border-b border-border/70 pb-3">
+        <section className="space-y-1.5 border-b border-border/70 pb-2.5">
           <SectionLabel>Product</SectionLabel>
-          <p className="truncate text-[12px] leading-5 text-foreground" title={metadata.detected_product.title}>
+          <p className="truncate text-[12px] leading-[1.45] text-foreground" title={metadata.detected_product.title}>
             {metadata.detected_product.title}
           </p>
         </section>
       ) : null}
 
       {assignedTags.length > 0 ? (
-        <section className="space-y-2 border-b border-border/70 pb-3">
+        <section className="space-y-1.5 border-b border-border/70 pb-2.5">
           <SectionLabel>Tags</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
             {assignedTags.map((tag) => <ReadOnlyTag key={tag.id} tag={tag} />)}
@@ -404,9 +429,9 @@ export function TicketMetadataSnapshot({ threadId }) {
       ) : null}
 
       {typeof metadata?.solution_summary === "string" && metadata.solution_summary.trim() ? (
-        <section className="space-y-2 border-b border-border/70 pb-3">
+        <section className="space-y-1.5 border-b border-border/70 pb-2.5">
           <SectionLabel>Solution</SectionLabel>
-          <p className="line-clamp-3 text-[12px] leading-5 text-foreground" title={metadata.solution_summary.trim()}>
+          <p className="line-clamp-2 text-[12px] leading-[1.45] text-foreground" title={metadata.solution_summary.trim()}>
             {metadata.solution_summary.trim()}
           </p>
         </section>
@@ -418,10 +443,6 @@ export function TicketMetadataSnapshot({ threadId }) {
 export function TicketMetadataPanel({ threadId }) {
   const [metadata, setMetadata] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showTagsSection, setShowTagsSection] = useState(false);
-  const handleTagVisibilityChange = useCallback((visible) => {
-    setShowTagsSection(visible);
-  }, []);
 
   const fetchMetadata = useCallback(async () => {
     if (!threadId) return;
@@ -445,7 +466,6 @@ export function TicketMetadataPanel({ threadId }) {
 
   useEffect(() => {
     setMetadata(null);
-    setShowTagsSection(false);
     fetchMetadata();
   }, [fetchMetadata, threadId]);
 
@@ -473,12 +493,12 @@ export function TicketMetadataPanel({ threadId }) {
   }, [threadId]);
 
   if (loading) {
-    return <div className="text-sm text-slate-400 py-6 text-center">Loading…</div>;
+    return <div className="py-5 text-center text-xs text-muted-foreground">Loading…</div>;
   }
 
   return (
-    <div>
-      <div className="pb-4">
+    <div className="space-y-2.5">
+      <div className="border-b border-border/70 pb-2.5">
         <EditableTextField
           label="Summary"
           value={metadata?.issue_summary}
@@ -486,33 +506,22 @@ export function TicketMetadataPanel({ threadId }) {
           placeholder="Add a short summary"
         />
       </div>
-      {metadata?.detected_product ? (
-        <div className="border-t border-slate-100/80 py-2.5">
-          <ProductField
-            value={metadata.detected_product}
-            availableProducts={metadata?.available_products ?? []}
-            onSave={(productId) => handleSave("detected_product_id", productId)}
-          />
-        </div>
-      ) : null}
-      <div className={showTagsSection ? "border-t border-slate-100/80 py-2.5" : "hidden"}>
-        <TagsSection threadId={threadId} onVisibilityChange={handleTagVisibilityChange} />
+      <div className="border-b border-border/70 pb-2.5">
+        <ProductField
+          value={metadata?.detected_product}
+          availableProducts={metadata?.available_products ?? []}
+          onSave={(productId) => handleSave("detected_product_id", productId)}
+        />
       </div>
-      {(() => {
-        const status = String(metadata?.status ?? "").toLowerCase();
-        const isSolved = status === "solved" || status === "resolved";
-        if (!isSolved) return null;
-        return (
-          <div className="border-t border-slate-100/80 pt-2.5">
-            <EditableTextField
-              label="Solution"
-              value={metadata?.solution_summary}
-              onSave={(v) => handleSave("solution_summary", v)}
-              placeholder="Click to edit"
-            />
-          </div>
-        );
-      })()}
+      <div className="border-b border-border/70 pb-2.5">
+        <TagsSection threadId={threadId} />
+      </div>
+      <EditableTextField
+        label="Solution"
+        value={metadata?.solution_summary}
+        onSave={(v) => handleSave("solution_summary", v)}
+        placeholder="Add a solution summary"
+      />
     </div>
   );
 }

@@ -3789,7 +3789,7 @@ export function InboxSplitView({
             ) : null
           }
           rightHeaderActions={
-            selectedThreadId ? (
+            selectedThreadId && !insightsOpen ? (
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
