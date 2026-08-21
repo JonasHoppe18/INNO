@@ -753,7 +753,11 @@ function TicketDetailComponent({
           toLabel={toLabel}
           mentionUsers={mentionUsers}
           onBlur={() => onDraftBlur?.(thread?.id || null)}
-          isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
+          isDraftLoading={
+            disabled
+              ? false
+              : showThinkingCard || isDraftFetching || isPostApprovalDraftLoading
+          }
           onGenerateDraft={onGenerateDraft}
           isGeneratingDraft={isGeneratingDraft}
           onRefineDraft={onRefineDraft}
