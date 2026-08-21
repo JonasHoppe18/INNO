@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { Activity, Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
+import { Activity, Ban, Banknote, ChevronLeft, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
@@ -90,6 +90,33 @@ const getSonaConfidenceLabel = (value) => {
   if (value >= 0.65) return "Medium confidence";
   return "Needs review";
 };
+
+const formatOrderTotal = (order) => {
+  const raw = order?.total ?? order?.total_price ?? order?.totalPrice;
+  if (raw == null || raw === "") return "";
+  const currency = String(order?.currency || order?.currencyCode || "DKK").toUpperCase();
+  const rawString = String(raw).replace(/[^\d,.-]/g, "");
+  const normalized = rawString.includes(",") && rawString.includes(".")
+    ? rawString.lastIndexOf(",") > rawString.lastIndexOf(".")
+      ? rawString.replace(/\./g, "").replace(",", ".")
+      : rawString.replace(/,/g, "")
+    : rawString.replace(",", ".");
+  const numeric = typeof raw === "number" ? raw : Number(normalized);
+  if (!Number.isFinite(numeric)) return String(raw);
+  try {
+    return new Intl.NumberFormat("da-DK", { style: "currency", currency }).format(numeric);
+  } catch {
+    return `${numeric.toLocaleString("da-DK")} ${currency}`;
+  }
+};
+
+function SidebarSectionLabel({ children }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+      {children}
+    </div>
+  );
+}
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -326,6 +353,8 @@ export function SonaInsightsModal({
   const [diagnostic, setDiagnostic] = useState(null);
   const [activeManualAction, setActiveManualAction] = useState(null);
   const [pendingManualActionId, setPendingManualActionId] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [showTicketFields, setShowTicketFields] = useState(false);
 
   const {
     data: internalLookup,
@@ -485,6 +514,20 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(gapLog.step_detail);
     return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
   }, [logs]);
+  const previousTickets = Array.isArray(effectiveLookup?.previousTickets)
+    ? effectiveLookup.previousTickets
+    : [];
+  const suggestedContext = useMemo(() => {
+    const intent = diagnostic?.intent
+      ? SONA_INTENT_LABELS[diagnostic.intent] || "General inquiry"
+      : trackingInfo || trackingOrder
+        ? "Tracking"
+        : null;
+    const confidence = diagnostic?.confidence != null
+      ? getSonaConfidenceLabel(diagnostic.confidence)
+      : null;
+    return { intent, confidence };
+  }, [diagnostic, trackingInfo, trackingOrder]);
   useEffect(() => {
     if (open) return;
     const containerEl = containerElRef.current;
@@ -494,6 +537,12 @@ export function SonaInsightsModal({
       activeEl.blur();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab("overview");
+    setShowTicketFields(false);
+  }, [open, threadId]);
 
   return (
     <aside
@@ -509,9 +558,6 @@ export function SonaInsightsModal({
         <div className="flex items-start justify-between gap-3 border-b border-border/70 px-0.5 pb-3">
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-[-0.015em]">Ticket details</h2>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              Customer, order, and ticket context
-            </p>
           </div>
           <Button
             type="button"
@@ -529,55 +575,93 @@ export function SonaInsightsModal({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs defaultValue="overview" className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
-          <TabsList className="grid h-8 w-full min-w-0 grid-cols-3 rounded-lg bg-muted/70 p-0.5">
-            <TabsTrigger value="overview" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
-            <TabsTrigger value="customer" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Customer</TabsTrigger>
-            <TabsTrigger value="manual-actions" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Actions</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="space-y-3">
-              <div className="border-b border-border/70 px-0.5 pb-3">
-                <TicketMetadataPanel threadId={threadId} />
-              </div>
-
-              {(effectiveLookup?.customer || matchedOrder) ? (
-                <div className="space-y-2 border-b border-border/70 px-0.5 pb-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                    Ticket context
+            <div className="space-y-4 px-0.5 pb-3">
+              <section className="space-y-2 border-b border-border/70 pb-3">
+                <SidebarSectionLabel>Customer</SidebarSectionLabel>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium text-foreground">
+                    {effectiveLookup?.customer?.name || effectiveLookup?.customer?.email || "Unknown customer"}
                   </div>
-                  <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15">
-                    {effectiveLookup?.customer ? (
-                      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-                        <span className="text-xs text-muted-foreground">Customer</span>
-                        <span className="min-w-0 truncate text-right text-xs font-medium text-foreground">
-                          {effectiveLookup.customer.name || effectiveLookup.customer.email || "Unknown customer"}
-                        </span>
-                      </div>
-                    ) : null}
-                    {matchedOrder ? (
-                      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-                        <span className="text-xs text-muted-foreground">Order</span>
-                        <span className="flex min-w-0 items-center justify-end gap-2 text-right text-xs font-medium text-foreground">
-                          <span className="truncate">#{matchedOrder.id}</span>
-                          <OrderStatusPill
-                            status={
-                              matchedOrder.fulfillmentStatus ||
-                              matchedOrder.fulfillment_status ||
-                              matchedOrder.status
-                            }
-                          />
-                        </span>
-                      </div>
-                    ) : null}
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {effectiveLookup?.customer?.email || "No email available"}
                   </div>
                 </div>
+              </section>
+
+              {matchedOrder ? (
+                <section className="space-y-2 border-b border-border/70 pb-3">
+                  <SidebarSectionLabel>Order</SidebarSectionLabel>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium text-foreground">
+                        #{matchedOrder.id}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                        {formatOrderTotal(matchedOrder) || "Amount unavailable"}
+                      </div>
+                    </div>
+                    <OrderStatusPill
+                      status={
+                        matchedOrder.fulfillmentStatus ||
+                        matchedOrder.fulfillment_status ||
+                        matchedOrder.status
+                      }
+                    />
+                  </div>
+                </section>
               ) : null}
 
-              {returnTrackingCandidate || returnTrackingActionState?.error ? (
-                <div>
+              {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
+                <section className="space-y-2 border-b border-border/70 pb-3">
+                  <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
+                  <button
+                    type="button"
+                    onClick={() => setSonaLogOpen(true)}
+                    className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-foreground">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+                      <span className="truncate">
+                        {suggestedContext.intent || "Tracking"}
+                        {suggestedContext.confidence ? ` · ${suggestedContext.confidence}` : ""}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
+                      Details
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+
+                  {trackingOrder ? (
+                    <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
+                  ) : trackingInfo ? (
+                    <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2.5">
+                      <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+                        <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+                        {trackingInfo.trackingCarrier || "Tracking"}
+                        {trackingInfo.trackingStatus ? (
+                          <span className="ml-auto text-[11px] text-muted-foreground">
+                            {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
+                          </span>
+                        ) : null}
+                      </div>
+                      {trackingInfo.trackingNumber ? (
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {trackingInfo.trackingUrl ? (
+                            <a href={trackingInfo.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
+                              #{trackingInfo.trackingNumber}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : `#${trackingInfo.trackingNumber}`}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {returnTrackingOrder ? (
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       <TrackingCard
                         order={returnTrackingOrder}
                         threadId={threadId}
@@ -591,7 +675,7 @@ export function SonaInsightsModal({
                           <Button
                             type="button"
                             size="sm"
-                            className="h-7 bg-slate-900 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+                            className="h-7 bg-foreground px-2.5 text-xs text-background shadow-none hover:bg-foreground/90"
                             disabled={returnTrackingActionState?.submitting === returnTrackingNumber}
                             onClick={() => returnTrackingActionState?.onAdd?.(returnTrackingCandidate)}
                           >
@@ -601,7 +685,7 @@ export function SonaInsightsModal({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            className="h-7 px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => returnTrackingActionState?.onDismiss?.(returnTrackingCandidate)}
                           >
                             Dismiss
@@ -611,123 +695,74 @@ export function SonaInsightsModal({
                     </div>
                   ) : null}
                   {returnTrackingActionState?.error ? (
-                    <div className={returnTrackingCandidate ? "mt-3 text-xs text-red-600" : "text-xs text-red-600"}>
-                      {returnTrackingActionState.error}
-                    </div>
+                    <div className="text-xs text-destructive">{returnTrackingActionState.error}</div>
                   ) : null}
-                </div>
+                </section>
               ) : null}
 
-              {trackingOrder ? (
-                  <div className="w-full space-y-2">
-                    <div className="flex items-center gap-2 px-1">
-                      <Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                        Order tracking
-                      </span>
-                    </div>
-                    <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
-                  </div>
-              ) : trackingInfo ? (
-                <div className="rounded-xl border border-border bg-card/90 p-3.5 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                      Tracking
-                    </span>
-                    {trackingInfo.trackingStatus && (
-                      <span className="ml-auto rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                        {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    {trackingInfo.trackingCarrier && (
-                      <div className="text-[13px] font-semibold text-slate-800">
-                        {trackingInfo.trackingCarrier}
-                      </div>
-                    )}
-                    {trackingInfo.trackingNumber && (
-                      <div className="text-[12px] text-slate-500">
-                        {trackingInfo.trackingUrl ? (
-                          <a
-                            href={trackingInfo.trackingUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 hover:underline text-slate-600"
-                          >
-                            #{trackingInfo.trackingNumber}
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : (
-                          `#${trackingInfo.trackingNumber}`
-                        )}
-                      </div>
-                    )}
-                    {trackingInfo.trackingEvents?.length > 0 && (
-                      <div className="mt-2 space-y-0.5">
-                        {trackingInfo.trackingEvents.slice(0, 2).map((event, i) => (
-                          <div key={i} className="text-[11px] text-slate-400">
-                            {event}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {knowledgeGaps.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 shadow-sm space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-600/80">
-                      Needs knowledge
-                    </span>
-                  </div>
-                  <div className="space-y-1">
+              {knowledgeGaps.length > 0 ? (
+                <section className="space-y-2 border-b border-border/70 pb-3">
+                  <SidebarSectionLabel>Needs knowledge</SidebarSectionLabel>
+                  <div className="space-y-1 text-[11px] leading-snug text-muted-foreground">
                     {knowledgeGaps.map((gap, i) => (
-                      <div key={i} className="text-xs text-amber-800 leading-snug">
-                        {gap.suggested_title || gap.gap_type}
-                      </div>
+                      <div key={i}>{gap.suggested_title || gap.gap_type}</div>
                     ))}
                   </div>
-                </div>
-              )}
+                </section>
+              ) : null}
 
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSonaLogOpen(true)}
-                className="group h-auto w-full justify-start gap-2.5 whitespace-normal rounded-xl border-border/70 bg-background p-2.5 text-left shadow-none transition-[border-color,background-color,transform] duration-150 ease-out hover:border-border hover:bg-muted/45 active:scale-[0.99]"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/35 text-muted-foreground">
-                  <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold text-foreground">
+              <section className="space-y-2 border-b border-border/70 pb-3">
+                <SidebarSectionLabel>Customer history</SidebarSectionLabel>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("customer")}
+                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                >
+                  <span className="text-[13px] font-medium text-foreground">
+                    {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+              </section>
+
+              <section className="space-y-2 border-b border-border/70 pb-3">
+                <SidebarSectionLabel>More actions</SidebarSectionLabel>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("manual-actions")}
+                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                >
+                  <span className="text-[13px] font-medium text-foreground">View available actions</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSonaLogOpen(true)}
+                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                >
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
                     View Sona activity
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                    {logsLoading
-                      ? "Loading Sona’s activity…"
-                      : diagnostic
-                        ? [
-                            SONA_INTENT_LABELS[diagnostic.intent] || null,
-                            getSonaConfidenceLabel(diagnostic.confidence),
-                            `${(diagnostic.kb_chunks?.length || 0) + (diagnostic.ticket_examples?.length || 0)} references`,
-                          ].filter(Boolean).join(" · ")
-                        : "No activity recorded yet"}
-                  </span>
-                </span>
-                {diagnostic?.decision?.routingHint === "review" ? (
-                  <span className={`${badgeVariants({ variant: "outline" })} hidden shrink-0 border-amber-200 bg-amber-50 text-[10px] text-amber-700 sm:inline-flex`}>
-                    Review
-                  </span>
-                ) : null}
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-muted group-hover:text-slate-500">
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              </Button>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTicketFields((value) => !value)}
+                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                  aria-expanded={showTicketFields}
+                >
+                  <span className="text-[13px] font-medium text-foreground">Edit ticket details</span>
+                  <ChevronRight className={cn("h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:text-foreground", showTicketFields && "rotate-90")} />
+                </button>
+              </section>
+
+              {showTicketFields ? (
+                <section className="space-y-2">
+                  <SidebarSectionLabel>Ticket details</SidebarSectionLabel>
+                  <TicketMetadataPanel threadId={threadId} />
+                </section>
+              ) : null}
 
               <Dialog open={sonaLogOpen} onOpenChange={setSonaLogOpen}>
                 <DialogContent className="flex max-h-[90vh] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden border-border/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-w-[720px]">
@@ -775,6 +810,14 @@ export function SonaInsightsModal({
             </div>
           </TabsContent>
           <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab("overview")}
+              className="mb-3 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Back to ticket details
+            </button>
             <CustomerTab
               data={effectiveLookup}
               loading={effectiveLookupLoading}
@@ -786,6 +829,14 @@ export function SonaInsightsModal({
           </TabsContent>
           <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
             <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab("overview")}
+                className="inline-flex items-center gap-1 self-start text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Back to ticket details
+              </button>
               {!hasShopifyShop ? (
                 <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
                   <p className="font-medium text-foreground/80">Shopify actions unavailable</p>
