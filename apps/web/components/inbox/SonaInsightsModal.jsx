@@ -61,7 +61,7 @@ function OrderStatusPill({ status }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
         tone,
       )}
     >
@@ -128,7 +128,7 @@ const buildShopifyOrderUrl = (order, shopDomain) => {
 
 function SidebarSectionLabel({ children }) {
   return (
-    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
       {children}
     </div>
   );
@@ -584,10 +584,10 @@ export function SonaInsightsModal({
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-2.5 overflow-hidden bg-muted/[0.12] p-3">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-0.5 pb-2.5">
+      <div className="flex h-full min-w-0 flex-col gap-2 overflow-hidden bg-muted/[0.12] p-2.5">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-0.5 pb-2">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold tracking-[-0.015em]">Ticket details</h2>
+            <h2 className="text-[14px] font-semibold tracking-[-0.015em]">Ticket details</h2>
           </div>
           <Button
             type="button"
@@ -600,15 +600,15 @@ export function SonaInsightsModal({
               onOpenChange(false);
             }}
             aria-label="Close ticket details"
-            className="h-8 w-8 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="h-7 w-7 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2.5 overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="space-y-3 px-0.5 pb-3">
-              <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+            <div className="space-y-2.5 px-0.5 pb-2.5">
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>Customer</SidebarSectionLabel>
                 <div className="min-w-0">
                   <div className="truncate text-[13px] font-medium text-foreground">
@@ -621,10 +621,10 @@ export function SonaInsightsModal({
               </section>
 
               {matchedOrder ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Order</SidebarSectionLabel>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       {matchedOrderUrl ? (
                         <a
                           href={matchedOrderUrl}
@@ -644,52 +644,51 @@ export function SonaInsightsModal({
                           #{matchedOrder.id}
                         </div>
                       )}
-                      <div className="mt-0.5 text-[11px] text-muted-foreground">
-                        {formatOrderTotal(matchedOrder) || "Amount unavailable"}
-                      </div>
-                      {matchedOrderItems.length ? (
-                        <div className="mt-2 border-t border-border/60 pt-2">
-                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                            Products
-                          </div>
-                          <div className="space-y-1">
-                            {matchedOrderItems.slice(0, 2).map((item, index) => (
-                              <div
-                                key={`${matchedOrder.id}-item-${index}`}
-                                title={item}
-                                className="flex min-w-0 items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"
-                              >
-                                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                                <span className="line-clamp-2 min-w-0">{item}</span>
-                              </div>
-                            ))}
-                            {matchedOrderItems.length > 2 ? (
-                              <div className="pl-2.5 text-[10px] text-muted-foreground/70">
-                                +{matchedOrderItems.length - 2} more
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
+                      <OrderStatusPill
+                        status={
+                          matchedOrder.fulfillmentStatus ||
+                          matchedOrder.fulfillment_status ||
+                          matchedOrder.status
+                        }
+                      />
                     </div>
-                    <OrderStatusPill
-                      status={
-                        matchedOrder.fulfillmentStatus ||
-                        matchedOrder.fulfillment_status ||
-                        matchedOrder.status
-                      }
-                    />
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {formatOrderTotal(matchedOrder) || "Amount unavailable"}
+                    </div>
+                    {matchedOrderItems.length ? (
+                      <div className="mt-2 border-t border-border/60 pt-2">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+                          Order items
+                        </div>
+                        <div className="space-y-1">
+                          {matchedOrderItems.slice(0, 2).map((item, index) => (
+                            <div
+                              key={`${matchedOrder.id}-item-${index}`}
+                              title={item}
+                              className="flex min-w-0 items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"
+                            >
+                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                              <span className="line-clamp-2 min-w-0">{item}</span>
+                            </div>
+                          ))}
+                          {matchedOrderItems.length > 2 ? (
+                            <div className="pl-2.5 text-[10px] text-muted-foreground/70">
+                              +{matchedOrderItems.length - 2} more
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </section>
               ) : null}
 
-              <section className="space-y-2 border-b border-border/70 pb-2.5">
-                <SidebarSectionLabel>Ticket details</SidebarSectionLabel>
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <TicketMetadataPanel threadId={threadId} />
               </section>
 
               {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
                   <button
                     type="button"
@@ -778,7 +777,7 @@ export function SonaInsightsModal({
               ) : null}
 
               {knowledgeGaps.length > 0 ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Needs knowledge</SidebarSectionLabel>
                   <div className="space-y-1 text-[11px] leading-snug text-muted-foreground">
                     {knowledgeGaps.map((gap, i) => (
@@ -788,7 +787,7 @@ export function SonaInsightsModal({
                 </section>
               ) : null}
 
-              <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>Customer history</SidebarSectionLabel>
                 <button
                   type="button"
@@ -802,7 +801,7 @@ export function SonaInsightsModal({
                 </button>
               </section>
 
-              <section className="space-y-1.5 border-b border-border/70 pb-2.5">
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>More actions</SidebarSectionLabel>
                 <button
                   type="button"
