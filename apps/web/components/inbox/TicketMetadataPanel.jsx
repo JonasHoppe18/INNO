@@ -299,6 +299,122 @@ function TagsSection({ threadId, onVisibilityChange }) {
   );
 }
 
+function ReadOnlyTag({ tag }) {
+  return (
+    <span
+      className="inline-flex max-w-full items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-medium text-orange-700"
+      title={tag.source === "ai" ? "Set by AI" : "Set manually"}
+    >
+      <span className="truncate">{tag.name}</span>
+    </span>
+  );
+}
+
+/**
+ * Compact, read-only metadata for the first sidebar view.
+ * Editing remains in TicketMetadataPanel so the overview stays scannable.
+ */
+export function TicketMetadataSnapshot({ threadId }) {
+  const [metadata, setMetadata] = useState(null);
+  const [assignedTags, setAssignedTags] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      if (!threadId) {
+        setMetadata(null);
+        setAssignedTags([]);
+        setLoading(false);
+        return;
+      }
+
+      const cachedMetadata = metadataCache.get(threadId);
+      const cachedTags = assignedTagsCache.get(threadId);
+      if (cachedMetadata) setMetadata(cachedMetadata);
+      if (cachedTags) setAssignedTags(cachedTags);
+      setLoading(!cachedMetadata && !cachedTags);
+
+      const metadataRequest = cachedMetadata
+        ? Promise.resolve(cachedMetadata)
+        : fetch(`/api/threads/${encodeURIComponent(threadId)}/metadata`)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null);
+      const tagsRequest = cachedTags
+        ? Promise.resolve(cachedTags)
+        : fetch(`/api/threads/${encodeURIComponent(threadId)}/tags`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((json) => json?.tags ?? [])
+            .catch(() => []);
+
+      const [nextMetadata, nextTags] = await Promise.all([metadataRequest, tagsRequest]);
+      if (!active) return;
+      if (nextMetadata) {
+        metadataCache.set(threadId, nextMetadata);
+        setMetadata(nextMetadata);
+      }
+      if (Array.isArray(nextTags)) {
+        assignedTagsCache.set(threadId, nextTags);
+        setAssignedTags(nextTags);
+      }
+      setLoading(false);
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [threadId]);
+
+  const summary = typeof metadata?.issue_summary === "string" ? metadata.issue_summary.trim() : "";
+
+  return (
+    <div className="space-y-3">
+      <section className="space-y-2 border-b border-border/70 pb-3">
+        <SectionLabel>Summary</SectionLabel>
+        {loading && !metadata ? (
+          <div className="h-10 animate-pulse rounded-md bg-muted/55" aria-label="Loading summary" />
+        ) : (
+          <p
+            className={`line-clamp-3 text-[12px] leading-5 ${summary ? "text-foreground" : "text-muted-foreground italic"}`}
+            title={summary || undefined}
+          >
+            {summary || "No summary yet"}
+          </p>
+        )}
+      </section>
+
+      {metadata?.detected_product?.title ? (
+        <section className="space-y-2 border-b border-border/70 pb-3">
+          <SectionLabel>Product</SectionLabel>
+          <p className="truncate text-[12px] leading-5 text-foreground" title={metadata.detected_product.title}>
+            {metadata.detected_product.title}
+          </p>
+        </section>
+      ) : null}
+
+      {assignedTags.length > 0 ? (
+        <section className="space-y-2 border-b border-border/70 pb-3">
+          <SectionLabel>Tags</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {assignedTags.map((tag) => <ReadOnlyTag key={tag.id} tag={tag} />)}
+          </div>
+        </section>
+      ) : null}
+
+      {typeof metadata?.solution_summary === "string" && metadata.solution_summary.trim() ? (
+        <section className="space-y-2 border-b border-border/70 pb-3">
+          <SectionLabel>Solution</SectionLabel>
+          <p className="line-clamp-3 text-[12px] leading-5 text-foreground" title={metadata.solution_summary.trim()}>
+            {metadata.solution_summary.trim()}
+          </p>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function TicketMetadataPanel({ threadId }) {
   const [metadata, setMetadata] = useState(null);
   const [loading, setLoading] = useState(true);

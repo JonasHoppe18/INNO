@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { Activity, Ban, Banknote, ChevronLeft, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
-import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
+import { TicketMetadataPanel, TicketMetadataSnapshot } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
@@ -612,6 +612,8 @@ export function SonaInsightsModal({
                   </div>
                 </section>
               ) : null}
+
+              <TicketMetadataSnapshot threadId={threadId} />
 
               {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
                 <section className="space-y-2 border-b border-border/70 pb-3">
