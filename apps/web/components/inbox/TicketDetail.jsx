@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, ArrowUp, Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -727,6 +727,44 @@ function TicketDetailComponent({
     thread?.subject || thread?.title || firstMessage?.subject || "",
   ).trim();
 
+  const renderComposer = (disabled = false) => (
+    <div className="relative bg-transparent px-2.5 pb-2 pt-2">
+      <TicketRenderBoundary
+        section="composer"
+        resetKey={`${thread?.id || ""}:${composerMode}:composer`}
+        fallback={
+          <div className="mx-auto w-full max-w-[900px] rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Composer could not be rendered for this ticket.
+          </div>
+        }
+      >
+        <Composer
+          key={`${thread?.id || "thread"}:${composerMode}`}
+          value={draftValue}
+          onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
+          collapsed={composerCollapsed}
+          onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
+          draftLoaded={draftLoaded}
+          canSend={canSend}
+          onSend={onSend}
+          isSending={isSending}
+          mode={composerMode}
+          onModeChange={onComposerModeChange}
+          toLabel={toLabel}
+          mentionUsers={mentionUsers}
+          onBlur={() => onDraftBlur?.(thread?.id || null)}
+          isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
+          onGenerateDraft={onGenerateDraft}
+          isGeneratingDraft={isGeneratingDraft}
+          onRefineDraft={onRefineDraft}
+          isRefiningDraft={isRefiningDraft}
+          disabled={disabled}
+          disabledPlaceholder="Action awaiting approval"
+        />
+      </TicketRenderBoundary>
+    </div>
+  );
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0">
       <header className="flex min-h-[56px] flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
@@ -986,23 +1024,19 @@ function TicketDetailComponent({
       </div>
 
       {isActionPending ? (
-        <div className="flex-none border-t border-border/70 bg-background/95 px-3 py-1.5">
-          <div className="mx-auto flex min-h-8 w-full max-w-[900px] items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Sparkles className="size-3.5 shrink-0 text-violet-600" aria-hidden="true" />
-              <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
-                <span className="truncate font-medium text-foreground">Action awaiting approval</span>
-                <span className="hidden shrink-0 text-muted-foreground sm:inline">·</span>
-                <span className="hidden truncate text-muted-foreground sm:inline">Review before continuing</span>
-              </div>
-            </div>
+        <div className="relative flex-none">
+          {renderComposer(true)}
+          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center rounded-3xl bg-background/70 px-3 backdrop-blur-[2px]">
             <button
               type="button"
               onClick={handleReviewPendingAction}
-              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-violet-700 transition-[background-color,transform] duration-150 hover:bg-violet-50 active:scale-[0.97]"
+              className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-background/90 px-3 py-2 text-left text-[12px] shadow-[0_4px_16px_hsl(var(--foreground)/0.08)] transition-[background-color,transform] duration-150 hover:bg-background active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
             >
-              Review action
-              <ArrowUp className="size-3.5" aria-hidden="true" />
+              <span className="truncate font-medium text-foreground">Action awaiting approval</span>
+              <span className="hidden truncate text-muted-foreground sm:inline">
+                Review the action above to continue
+              </span>
+              <ArrowUp className="size-3.5 shrink-0 text-violet-600" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -1111,39 +1145,7 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : null}
-        <div className="relative bg-transparent px-2.5 pb-2 pt-2">
-          <TicketRenderBoundary
-            section="composer"
-            resetKey={`${thread?.id || ""}:${composerMode}:composer`}
-            fallback={
-              <div className="mx-auto w-full max-w-[900px] rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Composer could not be rendered for this ticket.
-              </div>
-            }
-          >
-            <Composer
-              key={`${thread?.id || "thread"}:${composerMode}`}
-              value={draftValue}
-              onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
-              collapsed={composerCollapsed}
-              onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
-              draftLoaded={draftLoaded}
-              canSend={canSend}
-              onSend={onSend}
-              isSending={isSending}
-              mode={composerMode}
-              onModeChange={onComposerModeChange}
-              toLabel={toLabel}
-              mentionUsers={mentionUsers}
-              onBlur={() => onDraftBlur?.(thread?.id || null)}
-              isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
-              onGenerateDraft={onGenerateDraft}
-              isGeneratingDraft={isGeneratingDraft}
-              onRefineDraft={onRefineDraft}
-              isRefiningDraft={isRefiningDraft}
-            />
-          </TicketRenderBoundary>
-        </div>
+        {renderComposer(false)}
         </>
         )}
         </>
