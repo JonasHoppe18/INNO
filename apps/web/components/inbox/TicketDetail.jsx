@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, ArrowUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -1038,8 +1038,8 @@ function TicketDetailComponent({
               className="group inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-background/75 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
             >
               <span className="truncate">Review action above</span>
-              <ArrowUp
-                className="size-3.5 shrink-0 text-violet-600 transition-transform duration-150 ease-out group-hover:-translate-y-0.5"
+              <ChevronUp
+                className="size-3 shrink-0 text-violet-500/80 transition-transform duration-150 ease-out group-hover:-translate-y-0.5"
                 aria-hidden="true"
               />
             </button>
