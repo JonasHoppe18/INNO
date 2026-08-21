@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Inbox, Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -986,24 +986,23 @@ function TicketDetailComponent({
       </div>
 
       {isActionPending ? (
-        <div className="flex-none border-t border-violet-200/70 bg-violet-50/80 px-3 py-2 shadow-[0_-4px_16px_hsl(var(--foreground)/0.03)]">
-          <div className="mx-auto flex w-full max-w-[900px] items-center justify-between gap-3">
+        <div className="flex-none border-t border-border/70 bg-background/95 px-3 py-1.5">
+          <div className="mx-auto flex min-h-8 w-full max-w-[900px] items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-violet-200/80 bg-white text-violet-600 shadow-[0_1px_2px_hsl(var(--foreground)/0.05)]">
-                <Sparkles className="size-3.5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[12px] font-medium text-violet-900">Action awaiting approval</p>
-                <p className="truncate text-[11px] text-violet-700/80">Review the proposed action before continuing.</p>
+              <Sparkles className="size-3.5 shrink-0 text-violet-600" aria-hidden="true" />
+              <div className="flex min-w-0 items-center gap-1.5 text-[12px]">
+                <span className="truncate font-medium text-foreground">Action awaiting approval</span>
+                <span className="hidden shrink-0 text-muted-foreground sm:inline">·</span>
+                <span className="hidden truncate text-muted-foreground sm:inline">Review before continuing</span>
               </div>
             </div>
             <button
               type="button"
               onClick={handleReviewPendingAction}
-              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-violet-200 bg-white px-2.5 text-[11px] font-medium text-violet-700 shadow-sm transition-[background-color,border-color,transform] duration-150 hover:bg-violet-100/70 active:scale-[0.97]"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-violet-700 transition-[background-color,transform] duration-150 hover:bg-violet-50 active:scale-[0.97]"
             >
               Review action
-              <ArrowDown className="size-3.5" aria-hidden="true" />
+              <ArrowUp className="size-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
