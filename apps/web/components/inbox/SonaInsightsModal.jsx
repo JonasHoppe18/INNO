@@ -110,6 +110,22 @@ const formatOrderTotal = (order) => {
   }
 };
 
+const buildShopifyOrderUrl = (order, shopDomain) => {
+  const directUrl = asString(order?.adminUrl);
+  if (directUrl) return directUrl;
+
+  const normalizedDomain = asString(shopDomain)
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+  const adminId = order?.adminId;
+  if (!normalizedDomain || adminId === null || adminId === undefined || adminId === "") {
+    return "";
+  }
+
+  const normalizedAdminId = String(adminId).replace(/^gid:\/\/shopify\/Order\//i, "");
+  return `https://${normalizedDomain}/admin/orders/${encodeURIComponent(normalizedAdminId)}`;
+};
+
 function SidebarSectionLabel({ children }) {
   return (
     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -378,6 +394,15 @@ export function SonaInsightsModal({
     () => resolveMatchedOrder(effectiveLookup?.orders),
     [effectiveLookup?.orders]
   );
+  const shopDomain = asString(
+    effectiveLookup?.shopDomain ||
+      effectiveLookup?.shop?.domain ||
+      effectiveLookup?.shop?.shop_domain,
+  );
+  const matchedOrderUrl = useMemo(
+    () => buildShopifyOrderUrl(matchedOrder, shopDomain),
+    [matchedOrder, shopDomain],
+  );
   const isMatchedOrderFulfilled = useMemo(() => {
     const status = String(
       matchedOrder?.fulfillmentStatus ||
@@ -398,7 +423,7 @@ export function SonaInsightsModal({
       ),
     [isMatchedOrderFulfilled],
   );
-  const hasShopifyShop = Boolean(effectiveLookup?.shopDomain);
+  const hasShopifyShop = Boolean(shopDomain);
   const returnTrackingCandidate = returnTrackingActionState?.candidates?.[0] || null;
   const returnTrackingNumber = String(
     returnTrackingCandidate?.normalized_tracking_number ||
@@ -595,9 +620,25 @@ export function SonaInsightsModal({
                   <SidebarSectionLabel>Order</SidebarSectionLabel>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-foreground">
-                        #{matchedOrder.id}
-                      </div>
+                      {matchedOrderUrl ? (
+                        <a
+                          href={matchedOrderUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open order #${matchedOrder.id} in Shopify`}
+                          className="group/order inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
+                        >
+                          <span className="truncate">#{matchedOrder.id}</span>
+                          <ExternalLink
+                            aria-hidden="true"
+                            className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/order:text-violet-600 dark:group-hover/order:text-violet-300"
+                          />
+                        </a>
+                      ) : (
+                        <div className="truncate text-[13px] font-medium text-foreground">
+                          #{matchedOrder.id}
+                        </div>
+                      )}
                       <div className="mt-0.5 text-[11px] text-muted-foreground">
                         {formatOrderTotal(matchedOrder) || "Amount unavailable"}
                       </div>
