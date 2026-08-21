@@ -1,24 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, X, Plus } from "lucide-react";
+import { X, Plus } from "lucide-react";
 
 const metadataCache = new Map();
 const assignedTagsCache = new Map();
 let availableTagsCache = null;
 
-function SectionLabel({ children, isAI = false }) {
+function SectionLabel({ children }) {
   return (
-    <div className="flex items-center gap-1.5">
-      {isAI && <Sparkles className="w-3 h-3 text-violet-400 shrink-0" />}
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+    <div>
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
         {children}
       </span>
     </div>
   );
 }
 
-function EditableTextField({ label, value, onSave, placeholder = "—", isAI = false }) {
+function EditableTextField({ label, value, onSave, placeholder = "—" }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const textareaRef = useRef(null);
@@ -40,7 +39,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—", isAI = f
 
   return (
     <div className="space-y-1.5">
-      <SectionLabel isAI={isAI && Boolean(value)}>{label}</SectionLabel>
+      <SectionLabel>{label}</SectionLabel>
       {editing ? (
         <textarea
           ref={textareaRef}
@@ -54,8 +53,8 @@ function EditableTextField({ label, value, onSave, placeholder = "—", isAI = f
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
-            value ? "text-slate-800" : "text-slate-400 italic"
+          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-[13px] leading-5 hover:bg-muted/55 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
+            value ? "text-foreground" : "text-muted-foreground italic"
           }`}
         >
           {value || placeholder}
@@ -85,13 +84,13 @@ function ProductField({ value, availableProducts, onSave }) {
 
   return (
     <div className="space-y-1.5">
-      <SectionLabel isAI={Boolean(value)}>Product</SectionLabel>
+      <SectionLabel>Product</SectionLabel>
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
           onClick={() => { setOpen((v) => !v); setSearch(""); }}
-          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
-            value ? "text-slate-800" : "text-slate-400 italic"
+          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-[13px] leading-5 hover:bg-muted/55 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
+            value ? "text-foreground" : "text-muted-foreground italic"
           }`}
         >
           {value?.title || "Add product"}
@@ -369,16 +368,17 @@ export function TicketMetadataPanel({ threadId }) {
           value={metadata?.issue_summary}
           onSave={(v) => handleSave("issue_summary", v)}
           placeholder="Add a short summary"
-          isAI
         />
       </div>
-      <div className="border-t border-slate-100/80 py-2.5">
-        <ProductField
-          value={metadata?.detected_product}
-          availableProducts={metadata?.available_products ?? []}
-          onSave={(productId) => handleSave("detected_product_id", productId)}
-        />
-      </div>
+      {metadata?.detected_product ? (
+        <div className="border-t border-slate-100/80 py-2.5">
+          <ProductField
+            value={metadata.detected_product}
+            availableProducts={metadata?.available_products ?? []}
+            onSave={(productId) => handleSave("detected_product_id", productId)}
+          />
+        </div>
+      ) : null}
       <div className={showTagsSection ? "border-t border-slate-100/80 py-2.5" : "hidden"}>
         <TagsSection threadId={threadId} onVisibilityChange={handleTagVisibilityChange} />
       </div>

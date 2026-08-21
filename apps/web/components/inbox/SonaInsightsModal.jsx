@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
+import { Activity, Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
@@ -505,8 +505,8 @@ export function SonaInsightsModal({
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-2.5 overflow-hidden p-2.5">
-        <div className="flex items-start justify-between gap-3 px-0.5">
+      <div className="flex h-full min-w-0 flex-col gap-3 overflow-hidden bg-muted/[0.12] p-3">
+        <div className="flex items-start justify-between gap-3 border-b border-border/70 px-0.5 pb-3">
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-[-0.015em]">Ticket details</h2>
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
@@ -529,11 +529,11 @@ export function SonaInsightsModal({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs defaultValue="overview" className="flex min-w-0 flex-1 flex-col gap-2.5 overflow-hidden">
-          <TabsList className="grid h-9 w-full min-w-0 grid-cols-3 rounded-xl bg-muted/55 p-1">
-            <TabsTrigger value="overview" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
-            <TabsTrigger value="customer" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Customer</TabsTrigger>
-            <TabsTrigger value="manual-actions" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Actions</TabsTrigger>
+        <Tabs defaultValue="overview" className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+          <TabsList className="grid h-8 w-full min-w-0 grid-cols-3 rounded-lg bg-muted/70 p-0.5">
+            <TabsTrigger value="overview" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
+            <TabsTrigger value="customer" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Customer</TabsTrigger>
+            <TabsTrigger value="manual-actions" className="rounded-md px-2 text-[11px] data-[state=active]:bg-background data-[state=active]:shadow-sm">Actions</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
             <div className="space-y-3">
@@ -700,8 +700,8 @@ export function SonaInsightsModal({
                 onClick={() => setSonaLogOpen(true)}
                 className="group h-auto w-full justify-start gap-2.5 whitespace-normal rounded-xl border-border/70 bg-background p-2.5 text-left shadow-none transition-[border-color,background-color,transform] duration-150 ease-out hover:border-border hover:bg-muted/45 active:scale-[0.99]"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-500/10">
-                  <SonaLogo size={22} className="h-5 w-5" speed={logsLoading ? "working" : "idle"} />
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/35 text-muted-foreground">
+                  <Activity className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-semibold text-foreground">
