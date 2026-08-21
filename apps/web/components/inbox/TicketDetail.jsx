@@ -1030,17 +1030,18 @@ function TicketDetailComponent({
       {isActionPending ? (
         <div className="relative flex-none">
           {renderComposer(true)}
-          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center rounded-3xl bg-background/70 px-3 backdrop-blur-[2px]">
+          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center rounded-3xl bg-background/65 px-3 backdrop-blur-[2px]">
             <button
               type="button"
               onClick={handleReviewPendingAction}
-              className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-background/90 px-3 py-2 text-left text-[12px] shadow-[0_4px_16px_hsl(var(--foreground)/0.08)] transition-[background-color,transform] duration-150 hover:bg-background active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+              aria-label="Review action above"
+              className="group inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-background/75 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
             >
-              <span className="truncate font-medium text-foreground">Action awaiting approval</span>
-              <span className="hidden truncate text-muted-foreground sm:inline">
-                Review the action above to continue
-              </span>
-              <ArrowUp className="size-3.5 shrink-0 text-violet-600" aria-hidden="true" />
+              <span className="truncate">Review action above</span>
+              <ArrowUp
+                className="size-3.5 shrink-0 text-violet-600 transition-transform duration-150 ease-out group-hover:-translate-y-0.5"
+                aria-hidden="true"
+              />
             </button>
           </div>
         </div>
