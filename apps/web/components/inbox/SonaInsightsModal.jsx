@@ -501,12 +501,18 @@ export function SonaInsightsModal({
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
         open ? "w-[clamp(19rem,22vw,26rem)]" : "w-0"
       }`}
+      aria-label="Ticket details"
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-3 overflow-hidden p-3">
-        <div className="flex items-center justify-between px-0.5">
-          <h2 className="text-base font-semibold tracking-[-0.015em]">Sona Insights</h2>
+      <div className="flex h-full min-w-0 flex-col gap-2.5 overflow-hidden p-2.5">
+        <div className="flex items-start justify-between gap-3 px-0.5">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-[-0.015em]">Ticket details</h2>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              Customer, order, and ticket context
+            </p>
+          </div>
           <Button
             type="button"
             variant="ghost"
@@ -517,23 +523,56 @@ export function SonaInsightsModal({
               }
               onOpenChange(false);
             }}
-            aria-label="Close insights"
+            aria-label="Close ticket details"
             className="h-8 w-8 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+        <Tabs defaultValue="overview" className="flex min-w-0 flex-1 flex-col gap-2.5 overflow-hidden">
           <TabsList className="grid h-9 w-full min-w-0 grid-cols-3 rounded-xl bg-muted/55 p-1">
-            <TabsTrigger value="actions" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
+            <TabsTrigger value="overview" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
             <TabsTrigger value="customer" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Customer</TabsTrigger>
             <TabsTrigger value="manual-actions" className="rounded-lg px-2 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">Actions</TabsTrigger>
           </TabsList>
-          <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-card/85 p-3.5 shadow-[0_3px_14px_hsl(var(--foreground)/0.035)]">
+          <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
+            <div className="space-y-3">
+              <div className="border-b border-border/70 px-0.5 pb-3">
                 <TicketMetadataPanel threadId={threadId} />
               </div>
+
+              {(effectiveLookup?.customer || matchedOrder) ? (
+                <div className="space-y-2 border-b border-border/70 px-0.5 pb-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                    Ticket context
+                  </div>
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15">
+                    {effectiveLookup?.customer ? (
+                      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                        <span className="text-xs text-muted-foreground">Customer</span>
+                        <span className="min-w-0 truncate text-right text-xs font-medium text-foreground">
+                          {effectiveLookup.customer.name || effectiveLookup.customer.email || "Unknown customer"}
+                        </span>
+                      </div>
+                    ) : null}
+                    {matchedOrder ? (
+                      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                        <span className="text-xs text-muted-foreground">Order</span>
+                        <span className="flex min-w-0 items-center justify-end gap-2 text-right text-xs font-medium text-foreground">
+                          <span className="truncate">#{matchedOrder.id}</span>
+                          <OrderStatusPill
+                            status={
+                              matchedOrder.fulfillmentStatus ||
+                              matchedOrder.fulfillment_status ||
+                              matchedOrder.status
+                            }
+                          />
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               {returnTrackingCandidate || returnTrackingActionState?.error ? (
                 <div>
@@ -659,16 +698,16 @@ export function SonaInsightsModal({
                 type="button"
                 variant="outline"
                 onClick={() => setSonaLogOpen(true)}
-                className="group h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border-slate-200 bg-white p-3.5 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
+                className="group h-auto w-full justify-start gap-2.5 whitespace-normal rounded-xl border-border/70 bg-background p-2.5 text-left shadow-none transition-[border-color,background-color,transform] duration-150 ease-out hover:border-border hover:bg-muted/45 active:scale-[0.99]"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white">
-                  <SonaLogo size={28} className="h-7 w-7" speed={logsLoading ? "working" : "idle"} />
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-500/10">
+                  <SonaLogo size={22} className="h-5 w-5" speed={logsLoading ? "working" : "idle"} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-slate-900">
-                    How Sona built this draft
+                  <span className="block text-[13px] font-semibold text-foreground">
+                    View Sona activity
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-slate-500">
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                     {logsLoading
                       ? "Loading Sona’s activity…"
                       : diagnostic
@@ -681,11 +720,11 @@ export function SonaInsightsModal({
                   </span>
                 </span>
                 {diagnostic?.decision?.routingHint === "review" ? (
-                  <span className={`${badgeVariants({ variant: "outline" })} hidden shrink-0 border-amber-200 bg-amber-50 text-amber-700 sm:inline-flex`}>
+                  <span className={`${badgeVariants({ variant: "outline" })} hidden shrink-0 border-amber-200 bg-amber-50 text-[10px] text-amber-700 sm:inline-flex`}>
                     Review
                   </span>
                 ) : null}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-slate-100 group-hover:text-slate-500">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-muted group-hover:text-slate-500">
                   <ChevronRight className="h-4 w-4" />
                 </span>
               </Button>
@@ -698,7 +737,7 @@ export function SonaInsightsModal({
                         <SonaLogo size={26} className="size-7" speed={logsLoading ? "working" : "idle"} />
                       </span>
                       <div className="flex min-w-0 flex-col gap-1">
-                        <DialogTitle className="text-xl tracking-[-0.02em]">How Sona built this draft</DialogTitle>
+                        <DialogTitle className="text-xl tracking-[-0.02em]">Sona activity</DialogTitle>
                         <DialogDescription className="leading-relaxed">
                           The context, evidence, and decisions that shaped the reply.
                         </DialogDescription>
@@ -746,7 +785,7 @@ export function SonaInsightsModal({
             />
           </TabsContent>
           <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-3">
               {!hasShopifyShop ? (
                 <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
                   <p className="font-medium text-foreground/80">Shopify actions unavailable</p>
@@ -781,10 +820,10 @@ export function SonaInsightsModal({
                     </div>
                   )}
                   <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                    Available actions
+                    Order actions
                   </p>
                   {availableManualActions.length ? (
-                    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                    <div className="overflow-hidden rounded-xl border border-border/80 bg-background">
                     {availableManualActions.map((action) => {
                       const ActionIcon = MANUAL_ACTION_ICONS[action.type];
                       return (
@@ -793,19 +832,19 @@ export function SonaInsightsModal({
                           type="button"
                           disabled={!matchedOrder}
                           onClick={() => setActiveManualAction(action.type)}
-                          className="group/action flex w-full items-center gap-3 border-b border-border px-3 py-3 text-left transition-[background-color,transform] duration-150 last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60 active:scale-[0.995]"
+                          className="group/action flex w-full items-center gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-[background-color,transform] duration-150 last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/55 active:scale-[0.995]"
                         >
                           <div
                             className={cn(
-                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                               MANUAL_ACTION_ICON_TONES[action.type] || "bg-muted text-muted-foreground",
                             )}
                           >
-                            {ActionIcon ? <ActionIcon className="h-[18px] w-[18px]" /> : null}
+                            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
                           </div>
                           <div className="grid min-w-0 flex-1 gap-0.5">
-                            <p className="text-[13px] font-semibold text-foreground">{action.label}</p>
-                            <p className="text-xs leading-snug text-muted-foreground">{action.description}</p>
+                            <p className="text-[13px] font-medium text-foreground">{action.label}</p>
+                            <p className="text-[11px] leading-snug text-muted-foreground">{action.description}</p>
                           </div>
                           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover/action:translate-x-0.5 group-hover/action:text-foreground" />
                         </button>

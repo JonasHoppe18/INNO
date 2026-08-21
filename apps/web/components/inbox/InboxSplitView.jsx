@@ -3793,9 +3793,10 @@ export function InboxSplitView({
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
+                aria-label="View ticket details"
                 className="relative inline-flex h-7 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-lg border border-border/70 bg-background px-2 py-1 text-[12px] font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
               >
-                View actions
+                View details
                 {hasActionableReturnTrackingAction ? (
                   <span
                     className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-violet-500 ring-2 ring-white"
