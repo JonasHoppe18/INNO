@@ -403,6 +403,13 @@ export function SonaInsightsModal({
     () => buildShopifyOrderUrl(matchedOrder, shopDomain),
     [matchedOrder, shopDomain],
   );
+  const matchedOrderItems = useMemo(
+    () =>
+      (Array.isArray(matchedOrder?.items) ? matchedOrder.items : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    [matchedOrder?.items],
+  );
   const isMatchedOrderFulfilled = useMemo(() => {
     const status = String(
       matchedOrder?.fulfillmentStatus ||
@@ -642,6 +649,30 @@ export function SonaInsightsModal({
                       <div className="mt-0.5 text-[11px] text-muted-foreground">
                         {formatOrderTotal(matchedOrder) || "Amount unavailable"}
                       </div>
+                      {matchedOrderItems.length ? (
+                        <div className="mt-2 border-t border-border/60 pt-2">
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                            Products
+                          </div>
+                          <div className="space-y-1">
+                            {matchedOrderItems.slice(0, 2).map((item, index) => (
+                              <div
+                                key={`${matchedOrder.id}-item-${index}`}
+                                title={item}
+                                className="flex min-w-0 items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"
+                              >
+                                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                                <span className="line-clamp-2 min-w-0">{item}</span>
+                              </div>
+                            ))}
+                            {matchedOrderItems.length > 2 ? (
+                              <div className="pl-2.5 text-[10px] text-muted-foreground/70">
+                                +{matchedOrderItems.length - 2} more
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     <OrderStatusPill
                       status={
