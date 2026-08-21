@@ -37,8 +37,7 @@ function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
       <Image
         src={bringLogo}
         alt="Bring"
-        className={`${className} flex-none rounded-xl object-contain`}
-        style={{ width: "3.5rem" }}
+        className={`${className} flex-none object-contain`}
       />
     );
   }
@@ -258,25 +257,27 @@ export function TrackingCard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`group inline-flex items-center gap-2.5 rounded-[14px] border border-slate-200/90 bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.04)] transition-[border-color,background-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_5px_16px_rgba(15,23,42,0.08)] active:scale-[0.995] text-left ${
+        className={`group inline-flex items-center gap-2.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2.5 shadow-none transition-[border-color,background-color,transform] duration-150 ease-out hover:border-border hover:bg-muted/25 active:scale-[0.995] text-left ${
           fullWidth
             ? "w-full min-w-0 max-w-none"
             : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[340px]"
         }`}
       >
-        <CarrierLogo carrier={carrier} className="h-7 w-7" />
+        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-border/60 bg-muted/35">
+          <CarrierLogo carrier={carrier} className="h-6 w-6" />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-slate-900">{title}</div>
-          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">
+          <div className="text-[13px] font-semibold leading-5 text-foreground">{title}</div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
             <span>{carrier}</span>
-            <span className="text-slate-300 mx-0.5">·</span>
-            <span className={`font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
+            <span className="mx-0.5 text-muted-foreground/45">·</span>
+            <span className={`truncate font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-slate-400 font-mono">
+          <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/70">
             {trackingNumber || "No tracking number"}
           </div>
         </div>
-        <ChevronRight className="h-3.5 w-3.5 flex-none text-slate-300 transition-colors group-hover:text-slate-500" />
+        <ChevronRight className="h-4 w-4 flex-none text-muted-foreground/45 transition-[color,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
       </button>
 
       {/* Detail modal */}
