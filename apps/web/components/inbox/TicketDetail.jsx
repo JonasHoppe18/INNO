@@ -1,4 +1,4 @@
-import { Component, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowDown, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
@@ -264,6 +264,21 @@ function TicketDetailComponent({
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
   const isConversationNearBottomRef = useRef(true);
+  const shouldShowJumpToLatestForNode = useCallback((node) => {
+    if (!node) return false;
+
+    // A long latest message can fill the viewport while the agent scrolls
+    // through it. In that case there is nothing newer to jump to, even though
+    // the scroll position is not at the container's absolute bottom.
+    const latestMessage = node.querySelector('[data-latest-message="true"]');
+    if (latestMessage) {
+      const containerRect = node.getBoundingClientRect();
+      const latestMessageRect = latestMessage.getBoundingClientRect();
+      return latestMessageRect.top > containerRect.bottom - 24;
+    }
+
+    return node.scrollHeight - node.scrollTop - node.clientHeight > 96;
+  }, []);
   const todayMessageDayKey = useMemo(
     () => getMessageDayKey({ created_at: new Date().toISOString() }),
     [],
@@ -521,14 +536,14 @@ function TicketDetailComponent({
       } else {
         node.scrollTop = node.scrollHeight;
       }
-      isConversationNearBottomRef.current =
-        node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
-      setShowJumpToLatest(!isConversationNearBottomRef.current);
+      const shouldShowJumpToLatest = shouldShowJumpToLatestForNode(node);
+      isConversationNearBottomRef.current = !shouldShowJumpToLatest;
+      setShowJumpToLatest(shouldShowJumpToLatest);
       if (shouldRestoreThread) restoredThreadIdRef.current = threadId;
     });
 
     return () => cancelAnimationFrame(frameId);
-  }, [isConversationLoading, messages.length, thread?.id]);
+  }, [isConversationLoading, messages.length, shouldShowJumpToLatestForNode, thread?.id]);
 
   useEffect(() => {
     const threadId = String(thread?.id || "").trim();
@@ -810,9 +825,9 @@ function TicketDetailComponent({
         className="relative min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => {
           const node = event.currentTarget;
-          const isNearBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= 96;
-          isConversationNearBottomRef.current = isNearBottom;
-          setShowJumpToLatest(!isNearBottom);
+          const shouldShowJumpToLatest = shouldShowJumpToLatestForNode(node);
+          isConversationNearBottomRef.current = !shouldShowJumpToLatest;
+          setShowJumpToLatest(shouldShowJumpToLatest);
           onConversationScroll?.(node.scrollTop);
         }}
       >
@@ -941,7 +956,10 @@ function TicketDetailComponent({
                     <span className="h-px flex-1 bg-violet-200/80" />
                   </div>
                 ) : null}
-              <div className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}>
+              <div
+                data-latest-message={messageIndex === messages.length - 1 ? "true" : undefined}
+                className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}
+              >
                 {shouldInsertActionCardBeforeMessage ? (
                   <div ref={actionCardRef} className="ml-auto flex w-full max-w-[480px] justify-end">
                     <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
