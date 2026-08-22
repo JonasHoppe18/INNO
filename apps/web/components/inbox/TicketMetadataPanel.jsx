@@ -15,7 +15,7 @@ function SectionLabel({ children }) {
   );
 }
 
-function EditableTextField({ label, value, onSave, placeholder = "—" }) {
+function EditableTextField({ label, value, onSave, placeholder = "—", compact = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const textareaRef = useRef(null);
@@ -56,8 +56,8 @@ function EditableTextField({ label, value, onSave, placeholder = "—" }) {
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           aria-label={`Edit ${label.toLowerCase()}`}
-          rows={3}
-          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+          rows={compact ? 2 : 3}
+          className={`w-full rounded-md border border-input bg-background px-2 py-1.5 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none ${compact ? "text-[12px]" : "text-sm"}`}
         />
       ) : (
         <div className="group/field relative">
@@ -65,7 +65,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—" }) {
             type="button"
             onClick={() => setEditing(true)}
             aria-label={`Edit ${label.toLowerCase()}`}
-            className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-[13px] leading-5 transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
+            className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${compact ? "text-[12px] leading-[1.45]" : "text-[13px] leading-5"} ${
               value ? "text-foreground" : "text-muted-foreground"
             }`}
           >
@@ -108,12 +108,12 @@ function ProductField({ value, availableProducts, onSave }) {
 
   return (
     <div className="space-y-1.5">
-      <SectionLabel>Product</SectionLabel>
+      <SectionLabel>Ticket product</SectionLabel>
       <div className="group/field relative" ref={dropdownRef}>
         <button
           type="button"
           onClick={() => { setOpen((v) => !v); setSearch(""); }}
-          aria-label="Edit product"
+          aria-label="Edit ticket product"
           className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-[13px] leading-5 transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
             value ? "text-foreground" : "text-muted-foreground"
           }`}
@@ -123,7 +123,7 @@ function ProductField({ value, availableProducts, onSave }) {
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <Plus aria-hidden="true" className="h-3 w-3 text-muted-foreground/70" />
-              Add product
+              Add ticket product
             </span>
           )}
         </button>
@@ -436,7 +436,7 @@ export function TicketMetadataSnapshot({ threadId }) {
 
       {metadata?.detected_product?.title ? (
         <section className="space-y-1.5 border-b border-border/70 pb-2.5">
-          <SectionLabel>Product</SectionLabel>
+          <SectionLabel>Ticket product</SectionLabel>
           <p className="truncate text-[12px] leading-[1.45] text-foreground" title={metadata.detected_product.title}>
             {metadata.detected_product.title}
           </p>
@@ -521,12 +521,13 @@ export function TicketMetadataPanel({ threadId }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <EditableTextField
         label="Summary"
         value={metadata?.issue_summary}
         onSave={(v) => handleSave("issue_summary", v)}
         placeholder="Add a short summary"
+        compact
       />
       <ProductField
         value={metadata?.detected_product}
@@ -539,6 +540,7 @@ export function TicketMetadataPanel({ threadId }) {
         value={metadata?.solution_summary}
         onSave={(v) => handleSave("solution_summary", v)}
         placeholder="Add a solution summary"
+        compact
       />
     </div>
   );
