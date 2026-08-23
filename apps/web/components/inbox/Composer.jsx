@@ -1673,8 +1673,8 @@ function ComposerComponent({
 
   if (collapsed) {
     return (
-      <div className="flex-none border-t border-border bg-background px-4 py-2">
-        <div className="flex items-center justify-between rounded-md border border-border bg-muted px-3 py-2">
+      <div className="flex-none bg-transparent px-3 pb-3 pt-2 sm:px-4">
+        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 shadow-[0_10px_24px_hsl(var(--foreground)/0.06)]">
           <span className="text-[12px] font-medium text-muted-foreground">Reply box hidden</span>
           <button
             type="button"
@@ -1690,7 +1690,7 @@ function ComposerComponent({
   }
 
   return (
-    <div className="flex-none bg-transparent px-2.5 pb-2 pt-1.5">
+    <div className="flex-none bg-transparent px-0 pb-0 pt-0">
       <style>{`
         @keyframes refine-slide-in {
           from { opacity: 0; transform: translateY(-6px); }
@@ -1706,10 +1706,10 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_6px_24px_hsl(var(--foreground)/0.045)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
           isEmptyReply
-            ? "rounded-[22px] border-border/60 bg-background/90"
-            : "rounded-[22px] border-border/70 bg-background/85"
+            ? "rounded-[22px] border-border/60 bg-background/95"
+            : "rounded-[22px] border-border/70 bg-background/95"
         } ${
           isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : ""
         } ${disabled ? "opacity-60" : ""}`}

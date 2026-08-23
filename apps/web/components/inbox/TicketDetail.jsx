@@ -743,7 +743,7 @@ function TicketDetailComponent({
   ).trim();
 
   const renderComposer = (disabled = false) => (
-    <div className="relative bg-transparent px-2.5 pb-2 pt-2">
+    <div className="relative z-20 bg-transparent px-3 pb-4 pt-3 sm:px-4 sm:pb-5">
       <TicketRenderBoundary
         section="composer"
         resetKey={`${thread?.id || ""}:${composerMode}:composer`}
