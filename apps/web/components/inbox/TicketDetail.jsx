@@ -756,7 +756,7 @@ function TicketDetailComponent({
   ).trim();
 
   const renderComposer = (disabled = false) => (
-    <div className="relative z-20 bg-transparent px-3 pb-4 pt-3 sm:px-4 sm:pb-5">
+    <div className="relative z-20 bg-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
       <TicketRenderBoundary
         section="composer"
         resetKey={`${thread?.id || ""}:${composerMode}:composer`}
@@ -798,7 +798,7 @@ function TicketDetailComponent({
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30 lg:min-w-0">
       <header className="flex min-h-[56px] flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           <div
