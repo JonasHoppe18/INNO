@@ -137,26 +137,26 @@ function PreviousTicketCard({ ticket, onOpenTicket }) {
         if (threadId) onOpenTicket?.(threadId);
       }}
       disabled={!threadId}
-      className="group w-full rounded-xl border border-border/70 bg-background/75 px-3 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:border-border hover:bg-background hover:shadow-sm active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
+      className="group flex w-full items-center gap-3 rounded-xl border border-border/70 bg-background/65 px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:border-border hover:bg-background hover:shadow-sm active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
     >
-      <div className="flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.dotClassName}`} />
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
-          {status.label}
-        </span>
-        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">{timestamp || "—"}</span>
-      </div>
-      <div className="mt-2 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-[13px] font-medium leading-5 text-foreground">{subject}</div>
-          <div className="mt-1 text-[10px] font-mono tracking-[0.04em] text-muted-foreground/75">
-            {ticketRef}
-          </div>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{subject}</div>
+          <span className="shrink-0 text-[10px] text-muted-foreground/70">{timestamp || "—"}</span>
         </div>
-        {threadId ? (
-          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-        ) : null}
+        <div className="mt-1 flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
+            {status.label}
+          </span>
+          <span className="truncate text-[10px] font-mono tracking-[0.04em] text-muted-foreground/70">
+            {ticketRef}
+          </span>
+        </div>
       </div>
+      {threadId ? (
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+      ) : null}
     </button>
   );
 }
@@ -377,16 +377,20 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-border/70 bg-background/60 px-3 py-2.5">
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Total spent</div>
-          <div className="mt-1 text-[14px] font-semibold tabular-nums text-foreground">
+      <section className="grid grid-cols-3 gap-2">
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
+          <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
+          <div className="mt-1 truncate text-[13px] font-semibold tabular-nums text-foreground">
             {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
           </div>
         </div>
-        <div className="rounded-xl border border-border/70 bg-background/60 px-3 py-2.5">
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
           <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Orders</div>
-          <div className="mt-1 text-[14px] font-semibold tabular-nums text-foreground">{orders.length}</div>
+          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{orders.length}</div>
+        </div>
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Tickets</div>
+          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{previousTickets.length}</div>
         </div>
       </section>
 
