@@ -76,6 +76,15 @@ function normalizeLookupText(value) {
     .trim();
 }
 
+function isCustomerNameLabel(value) {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[.:]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ["den skal sendes til", "ships to", "ship to"].includes(normalized);
+}
+
 function toShopifyOrderName(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits ? `#${digits}` : "";
@@ -255,11 +264,13 @@ function mapCustomer(orders, fallbackEmail) {
   const primary = orders[0] || {};
   const customer = primary?.customer || {};
   const shipping = primary?.shipping_address || {};
-  const name =
-    shipping?.name ||
-    customer?.name ||
-    [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") ||
-    null;
+  const name = [
+    customer?.name,
+    [customer?.first_name, customer?.last_name].filter(Boolean).join(" "),
+    shipping?.name,
+  ]
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+    .find((value) => value && !isCustomerNameLabel(value)) || null;
   return {
     name: name || fallbackEmail || "Unknown customer",
     email: primary?.email || customer?.email || fallbackEmail || null,
