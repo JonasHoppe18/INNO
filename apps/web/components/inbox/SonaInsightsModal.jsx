@@ -21,6 +21,7 @@ import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
 import { CORE_ACTIONS } from "@/lib/action-modes";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { MANUAL_ACTION_TYPES, resolveMatchedOrder } from "@/lib/inbox/manual-actions";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
@@ -382,6 +383,10 @@ export function SonaInsightsModal({
   });
 
   const effectiveLookup = customerLookup ?? internalLookup;
+  const customerDisplayName = getCustomerDisplayName({
+    customer: effectiveLookup?.customer,
+    fallbackEmail: effectiveLookup?.customer?.email,
+  });
   const effectiveLookupLoading = customerLookup != null ? customerLookupLoading : internalLookupLoading;
   const effectiveLookupError = customerLookup != null ? customerLookupError : internalLookupError;
   const effectiveRefresh = onCustomerRefresh ?? internalLookupRefresh;
@@ -612,7 +617,7 @@ export function SonaInsightsModal({
                 <SidebarSectionLabel>Customer</SidebarSectionLabel>
                 <div className="min-w-0">
                   <div className="truncate text-[13px] font-medium text-foreground">
-                    {effectiveLookup?.customer?.name || effectiveLookup?.customer?.email || "Unknown customer"}
+                    {customerDisplayName}
                   </div>
                   <div className="truncate text-[11px] text-muted-foreground">
                     {effectiveLookup?.customer?.email || "No email available"}

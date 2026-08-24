@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
@@ -74,15 +75,6 @@ function normalizeLookupText(value) {
     .replace(/\bnew customer message on\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function isCustomerNameLabel(value) {
-  const normalized = String(value || "")
-    .toLowerCase()
-    .replace(/[.:]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return ["den skal sendes til", "ships to", "ship to"].includes(normalized);
 }
 
 function toShopifyOrderName(value) {
@@ -264,15 +256,13 @@ function mapCustomer(orders, fallbackEmail) {
   const primary = orders[0] || {};
   const customer = primary?.customer || {};
   const shipping = primary?.shipping_address || {};
-  const name = [
-    customer?.name,
-    [customer?.first_name, customer?.last_name].filter(Boolean).join(" "),
-    shipping?.name,
-  ]
-    .map((value) => String(value || "").replace(/\s+/g, " ").trim())
-    .find((value) => value && !isCustomerNameLabel(value)) || null;
+  const name = getCustomerDisplayName({
+    customer,
+    shippingName: shipping?.name,
+    fallbackEmail,
+  });
   return {
-    name: name || fallbackEmail || "Unknown customer",
+    name,
     email: primary?.email || customer?.email || fallbackEmail || null,
     phone: shipping?.phone || customer?.phone || null,
     tags: customer?.tags || null,

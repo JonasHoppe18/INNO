@@ -2,6 +2,7 @@ import { memo } from "react";
 import { ChevronRight, ExternalLink, RefreshCw, ShoppingBag, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTicketReference } from "@/lib/tickets/reference";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 
 const DISPLAY_LOCALE = "en-GB";
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
@@ -280,7 +281,11 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
     .filter((value) => value !== null);
   const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
   const currency = orders.find((order) => order?.currency)?.currency || null;
-  const initials = getInitials(customer?.name, customer?.email);
+  const customerDisplayName = getCustomerDisplayName({
+    customer,
+    fallbackEmail: customer?.email,
+  });
+  const initials = getInitials(customerDisplayName, customer?.email);
   const hasCustomerData = Boolean(data?.customer || orders.length);
 
   if (loading) {
@@ -365,7 +370,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
           </div>
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold text-foreground">
-              {customer?.name || "Unknown customer"}
+              {customerDisplayName}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">{customer?.email || "No email available"}</div>
           </div>
