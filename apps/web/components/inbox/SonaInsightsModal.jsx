@@ -545,9 +545,6 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(gapLog.step_detail);
     return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
   }, [logs]);
-  const previousTickets = Array.isArray(effectiveLookup?.previousTickets)
-    ? effectiveLookup.previousTickets
-    : [];
   const suggestedContext = useMemo(() => {
     const intent = diagnostic?.intent
       ? SONA_INTENT_LABELS[diagnostic.intent] || "General inquiry"
@@ -787,20 +784,6 @@ export function SonaInsightsModal({
                   </div>
                 </section>
               ) : null}
-
-              <section className="space-y-1.5 border-b border-border/70 pb-2">
-                <SidebarSectionLabel>Customer history</SidebarSectionLabel>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("customer")}
-                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
-                >
-                  <span className="text-[13px] font-medium text-foreground">
-                    {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-                </button>
-              </section>
 
               <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>More actions</SidebarSectionLabel>
