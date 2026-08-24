@@ -589,8 +589,8 @@ export function SonaInsightsModal({
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-2 overflow-hidden bg-muted/[0.12] p-2.5">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-0.5 pb-2">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-muted/[0.12]">
+        <div className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
           <div className="min-w-0">
             <h2 className="text-[14px] font-semibold tracking-[-0.015em]">Ticket details</h2>
           </div>
@@ -610,7 +610,7 @@ export function SonaInsightsModal({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-2.5">
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
             <div className="space-y-2.5 px-0.5 pb-2.5">
               <section className="space-y-1.5 border-b border-border/70 pb-2">
