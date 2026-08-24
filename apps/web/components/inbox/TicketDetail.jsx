@@ -835,7 +835,7 @@ function TicketDetailComponent({
 
       <div
         ref={conversationRef}
-        className="relative min-h-0 flex-1 overflow-y-auto bg-muted/30 dark:bg-muted/15 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="relative min-h-0 flex-1 overflow-y-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => {
           const node = event.currentTarget;
           const shouldShowJumpToLatest = shouldShowJumpToLatestForNode(node);
