@@ -695,11 +695,7 @@ export function SonaInsightsModal({
               {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
                 <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
-                  <button
-                    type="button"
-                    onClick={() => setSonaLogOpen(true)}
-                    className="group flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
-                  >
+                  <div className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left">
                     <span className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-foreground">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
                       <span className="truncate">
@@ -707,11 +703,10 @@ export function SonaInsightsModal({
                         {suggestedContext.confidence ? ` · ${suggestedContext.confidence}` : ""}
                       </span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
-                      Details
-                      <ChevronRight className="h-3.5 w-3.5" />
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
+                      Detected
                     </span>
-                  </button>
+                  </div>
 
                   {trackingOrder ? (
                     <div className="pt-0.5">
