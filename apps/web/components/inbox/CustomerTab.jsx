@@ -1,5 +1,3 @@
-import Image from "next/image";
-import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import { memo } from "react";
 import { ChevronRight, ExternalLink, RefreshCw, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +13,39 @@ const formatTimestamp = (value) => {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+  });
+};
+
+const HISTORY_DISPLAY_TIMEZONE = "Europe/Copenhagen";
+
+const getDateKey = (date) => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: HISTORY_DISPLAY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+const formatHistoryTimestamp = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const todayKey = getDateKey(new Date());
+  const currentKey = getDateKey(date);
+  if (currentKey === todayKey) return "Today";
+  const todayMs = Date.parse(`${todayKey}T00:00:00Z`);
+  const currentMs = Date.parse(`${currentKey}T00:00:00Z`);
+  const daysAgo = Math.round((todayMs - currentMs) / 86400000);
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return `${daysAgo} days ago`;
+  return date.toLocaleDateString("da-DK", {
+    timeZone: HISTORY_DISPLAY_TIMEZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
   });
 };
 
@@ -47,16 +78,65 @@ const getInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-const formatTicketStatus = (value) => {
+const getTicketStatusMeta = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "solved" || normalized === "resolved") return "Resolved";
-  if (normalized === "pending") return "Pending";
-  if (normalized === "waiting") return "Waiting";
-  if (normalized === "new") return "New";
-  return "Open";
+  if (normalized === "solved" || normalized === "resolved") {
+    return { label: "Resolved", className: "bg-emerald-50 text-emerald-700" };
+  }
+  if (normalized === "pending" || normalized === "waiting") {
+    return {
+      label: normalized === "pending" ? "Pending" : "Waiting",
+      className: "bg-amber-50 text-amber-700",
+    };
+  }
+  if (normalized === "new") {
+    return { label: "New", className: "bg-blue-50 text-blue-700" };
+  }
+  return { label: "Open", className: "bg-slate-100 text-slate-600" };
 };
 
 const formatTicketRef = (ticketNumber) => formatTicketReference(ticketNumber);
+
+function PreviousTicketCard({ ticket, onOpenTicket }) {
+  const threadId = String(ticket?.thread_id || "").trim();
+  const ticketRef = formatTicketRef(ticket?.ticket_number);
+  const subject = String(ticket?.subject || "").trim() || "Untitled ticket";
+  const status = getTicketStatusMeta(ticket?.status);
+  const timestamp = formatHistoryTimestamp(ticket?.last_message_at);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (threadId) onOpenTicket?.(threadId);
+      }}
+      className="group w-full rounded-xl border border-slate-200/80 bg-white px-3 py-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50/70 hover:shadow-sm active:scale-[0.99] disabled:cursor-default disabled:opacity-70"
+      disabled={!threadId}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div
+          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-mono font-medium tracking-[0.06em] ${
+            ticketRef !== "No ticket ID" ? "bg-slate-100 text-slate-500" : "text-slate-400"
+          }`}
+        >
+          {ticketRef}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}>
+            {status.label}
+          </span>
+          {threadId ? (
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600" />
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-2 line-clamp-2 text-[13px] font-medium leading-5 text-slate-900">
+        {subject}
+      </div>
+      <div className="mt-1.5 text-[11px] text-slate-400">{timestamp || "—"}</div>
+    </button>
+  );
+}
 
 function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
   if (loading) {
@@ -98,42 +178,20 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
           </Button>
         </div>
         {previousTickets.length > 0 && (
-          <div className="space-y-1.5">
-            <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Previous tickets
+            </div>
             {previousTickets.map((ticket) => {
-              const threadId = String(ticket?.thread_id || "").trim();
-              const lastActivity = formatTimestamp(ticket?.last_message_at);
               return (
-                <button
-                  key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
-                  type="button"
-                  onClick={() => {
-                    if (!threadId) return;
-                    onOpenTicket?.(threadId);
-                  }}
-                  className="group w-full rounded-lg border border-slate-200 bg-white p-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm active:scale-[0.99] disabled:cursor-default disabled:opacity-70"
-                  disabled={!threadId}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
-                        formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
-                          ? "bg-slate-100 font-mono font-medium text-slate-500"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {formatTicketRef(ticket?.ticket_number)}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                      <span>{formatTicketStatus(ticket?.status)}</span>
-                      <ChevronRight className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600" />
-                    </div>
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
-                    {String(ticket?.subject || "").trim() || "Untitled ticket"}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
-                </button>
+                <PreviousTicketCard
+                  key={
+                    String(ticket?.thread_id || "").trim() ||
+                    `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
+                  }
+                  ticket={ticket}
+                  onOpenTicket={onOpenTicket}
+                />
               );
             })}
           </div>
@@ -192,8 +250,10 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
           <div className="mt-0.5 text-[15px] font-semibold text-slate-900">{orders.length}</div>
         </div>
       </div>
-      <div className="space-y-1.5">
-        <div className="text-[11px] font-medium text-slate-400">Recent orders</div>
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          Recent orders
+        </div>
         {orders.length ? (
           orders.map((order) => (
             <div
@@ -287,52 +347,30 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
             </div>
           ))
         ) : (
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3 text-[13px] text-slate-500">
             Ingen ordrer fundet.
           </div>
         )}
       </div>
-      <div className="space-y-1.5">
-        <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          Previous tickets
+        </div>
         {previousTickets.length ? (
           previousTickets.map((ticket) => {
-            const threadId = String(ticket?.thread_id || "").trim();
-            const lastActivity = formatTimestamp(ticket?.last_message_at);
             return (
-              <button
-                key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
-                type="button"
-                onClick={() => {
-                  if (!threadId) return;
-                  onOpenTicket?.(threadId);
-                }}
-                className="group w-full rounded-lg border border-slate-200 bg-white p-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm active:scale-[0.99] disabled:cursor-default disabled:opacity-70"
-                disabled={!threadId}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div
-                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
-                      formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
-                        ? "bg-slate-100 font-mono font-medium text-slate-500"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    {formatTicketRef(ticket?.ticket_number)}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                    <span>{formatTicketStatus(ticket?.status)}</span>
-                    <ChevronRight className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-slate-600" />
-                  </div>
-                </div>
-                <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
-                  {String(ticket?.subject || "").trim() || "Untitled ticket"}
-                </div>
-                <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
-              </button>
+              <PreviousTicketCard
+                key={
+                  String(ticket?.thread_id || "").trim() ||
+                  `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
+                }
+                ticket={ticket}
+                onOpenTicket={onOpenTicket}
+              />
             );
           })
         ) : (
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-3 text-[13px] text-slate-500">
             No previous tickets found.
           </div>
         )}
