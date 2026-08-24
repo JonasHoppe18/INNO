@@ -137,7 +137,7 @@ function PreviousTicketCard({ ticket, onOpenTicket }) {
         if (threadId) onOpenTicket?.(threadId);
       }}
       disabled={!threadId}
-      className="group flex w-full items-center gap-3 rounded-xl border border-border/70 bg-background/65 px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:border-border hover:bg-background hover:shadow-sm active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
+      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-background/80 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
       <div className="min-w-0 flex-1">
@@ -165,12 +165,12 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
   return (
     <section className="space-y-2.5 border-t border-border/70 pt-5">
       <SectionHeading
-        title="Customer history"
+        title="Previous conversations"
         description="Previous conversations with this customer."
         count={tickets.length}
       />
       {tickets.length ? (
-        <div className="space-y-2">
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
           {tickets.map((ticket) => (
             <PreviousTicketCard
               key={
@@ -377,10 +377,10 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
         </div>
       </section>
 
-      <section className="grid grid-cols-3 gap-2">
+      <section className="grid grid-cols-[1.35fr_0.825fr_0.825fr] gap-2">
         <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
           <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
-          <div className="mt-1 truncate text-[13px] font-semibold tabular-nums text-foreground">
+          <div className="mt-1 whitespace-nowrap text-[12px] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
             {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
           </div>
         </div>
