@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, RefreshCw, ShoppingBag, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTicketReference } from "@/lib/tickets/reference";
@@ -44,6 +44,17 @@ const formatHistoryTimestamp = (value) => {
     month: "short",
     year: "numeric",
   });
+};
+
+const getTicketTimeGroup = (value) => {
+  if (!value) return "Earlier";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Earlier";
+  const daysAgo = getCalendarDayDistance(getDateKey(new Date()), getDateKey(date));
+  if (daysAgo === 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return "This week";
+  return "Earlier";
 };
 
 const parseAmount = (value) => {
@@ -137,13 +148,13 @@ function PreviousTicketCard({ ticket, onOpenTicket }) {
         if (threadId) onOpenTicket?.(threadId);
       }}
       disabled={!threadId}
-      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-background/80 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
+      className="group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-background/80 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
           <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{subject}</div>
-          <span className="shrink-0 text-[10px] text-muted-foreground/70">{timestamp || "—"}</span>
+          <span className="shrink-0 text-right text-[10px] text-muted-foreground/70">{timestamp || "—"}</span>
         </div>
         <div className="mt-1 flex items-center gap-2">
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
@@ -162,6 +173,25 @@ function PreviousTicketCard({ ticket, onOpenTicket }) {
 }
 
 function PreviousTicketsSection({ tickets, onOpenTicket }) {
+  const [visibleCount, setVisibleCount] = useState(5);
+  const firstTicketId = String(tickets[0]?.thread_id || "").trim();
+
+  useEffect(() => {
+    setVisibleCount(5);
+  }, [tickets.length, firstTicketId]);
+
+  const visibleTickets = tickets.slice(0, visibleCount);
+  const groups = visibleTickets.reduce((result, ticket) => {
+    const label = getTicketTimeGroup(ticket?.last_message_at);
+    const existingGroup = result.find((group) => group.label === label);
+    if (existingGroup) {
+      existingGroup.tickets.push(ticket);
+    } else {
+      result.push({ label, tickets: [ticket] });
+    }
+    return result;
+  }, []);
+
   return (
     <section className="space-y-2.5 border-t border-border/70 pt-5">
       <SectionHeading
@@ -170,17 +200,36 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
         count={tickets.length}
       />
       {tickets.length ? (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
-          {tickets.map((ticket) => (
-            <PreviousTicketCard
-              key={
-                String(ticket?.thread_id || "").trim() ||
-                `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
-              }
-              ticket={ticket}
-              onOpenTicket={onOpenTicket}
-            />
+        <div className="space-y-3">
+          {groups.map((group) => (
+            <div key={group.label} className="space-y-1.5">
+              <div className="px-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
+                {group.label}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
+                {group.tickets.map((ticket) => (
+                  <PreviousTicketCard
+                    key={
+                      String(ticket?.thread_id || "").trim() ||
+                      `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
+                    }
+                    ticket={ticket}
+                    onOpenTicket={onOpenTicket}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
+          {visibleCount < tickets.length ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => Math.min(count + 5, tickets.length))}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+            >
+              <span>Load more conversations</span>
+              <span className="tabular-nums text-muted-foreground/70">{tickets.length - visibleCount} remaining</span>
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-[12px] text-muted-foreground">
