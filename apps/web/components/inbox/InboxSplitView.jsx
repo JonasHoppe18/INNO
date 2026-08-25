@@ -3423,6 +3423,22 @@ export function InboxSplitView({
     [openThreadInWorkspace, saveThreadDraft],
   );
 
+  const handleBackToInbox = useCallback(() => {
+    const currentThreadId = String(selectedThreadIdRef.current || "").trim();
+    if (currentThreadId) {
+      void saveThreadDraft({
+        immediate: true,
+        threadIdOverride: currentThreadId,
+        valueOverride: draftValueRef.current,
+      });
+    }
+    // Clear the mobile workspace selection so the inbox list is immediately
+    // reachable again. The ticket remains in the source inbox and can be
+    // reopened normally from the list.
+    setOpenThreadIds([]);
+    setSelectedThreadId(null);
+  }, [saveThreadDraft, selectedThreadIdRef, setOpenThreadIds, setSelectedThreadId]);
+
   const handleOpenPreviousTicket = useCallback(
     (threadId) => {
       const nextThreadId = String(threadId || "").trim();
@@ -3649,11 +3665,12 @@ export function InboxSplitView({
   ]);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-muted/20 lg:flex-row">
+    <div className="relative flex h-full flex-1 flex-col overflow-hidden bg-muted/20 lg:flex-row">
       <TicketList
         key={activeView}
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
+        className={selectedThreadId ? "hidden lg:flex" : "flex"}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
         onSelectThread={handleSelectThreadInWorkspace}
@@ -3682,7 +3699,11 @@ export function InboxSplitView({
         getAssigneeLabel={getAssigneeLabelForId}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 bg-background">
+      <div
+        className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 bg-background ${
+          selectedThreadId ? "flex" : "hidden lg:flex"
+        }`}
+      >
         <InboxContentBoundary resetKey={selectedThreadId || "no-thread"}>
           <TicketDetail
           thread={selectedThread}
@@ -3698,6 +3719,7 @@ export function InboxSplitView({
           }
           onTicketStateChange={handleTicketStateChange}
           onOpenInsights={() => setInsightsOpen(true)}
+          onBackToInbox={handleBackToInbox}
           showThinkingCard={isDraftGenerating}
           isDraftFetching={
             !draftReady &&

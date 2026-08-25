@@ -587,13 +587,15 @@ export function SonaInsightsModal({
     <aside
       ref={containerRef}
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
-        open ? "w-[clamp(19rem,22vw,26rem)]" : "w-0"
+        open
+          ? "w-[clamp(19rem,22vw,26rem)] max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-full max-lg:border-l-0"
+          : "w-0 max-lg:pointer-events-none max-lg:absolute max-lg:inset-y-0 max-lg:right-0"
       }`}
       aria-label="Ticket details"
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-muted/[0.12]">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background lg:bg-muted/[0.12]">
         <div className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
           <div className="min-w-0">
             <h2 className="text-[14px] font-semibold tracking-[-0.015em]">Ticket details</h2>
@@ -614,7 +616,7 @@ export function SonaInsightsModal({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-2.5">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3 lg:p-2.5">
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-2.5 px-0.5 pb-2.5">
               <section className="space-y-1.5 border-b border-border/70 pb-2">

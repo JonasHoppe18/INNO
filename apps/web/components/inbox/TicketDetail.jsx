@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -221,6 +221,7 @@ function TicketDetailComponent({
   ticketState,
   onTicketStateChange,
   onOpenInsights,
+  onBackToInbox = null,
   showThinkingCard = false,
   isDraftFetching = false,
   isPostApprovalDraftLoading = false,
@@ -756,7 +757,7 @@ function TicketDetailComponent({
   ).trim();
 
   const renderComposer = (disabled = false) => (
-    <div className="relative z-20 bg-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+    <div className="relative z-20 bg-transparent px-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4">
       <TicketRenderBoundary
         section="composer"
         resetKey={`${thread?.id || ""}:${composerMode}:composer`}
@@ -798,9 +799,20 @@ function TicketDetailComponent({
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30 lg:min-w-0">
-      <header className="flex min-h-[56px] flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0 lg:bg-muted/30">
+      <header className="flex min-h-[52px] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[56px] sm:px-3 lg:px-2.5">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {onBackToInbox ? (
+            <button
+              type="button"
+              onClick={onBackToInbox}
+              aria-label="Back to inbox"
+              className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 lg:hidden"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <span>Inbox</span>
+            </button>
+          ) : null}
           <div
             className={`flex h-7 shrink-0 items-center whitespace-nowrap rounded-lg px-2.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
@@ -863,7 +875,7 @@ function TicketDetailComponent({
             Jump to latest
           </Button>
         ) : null}
-        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-3 px-4 pb-5 pt-4">
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-3 px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
               <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
