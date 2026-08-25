@@ -2,7 +2,12 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-import { ChevronRightIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  ArrowUpRightIcon,
+  CalendarDaysIcon,
+  ChevronRightIcon,
+} from "lucide-react";
 
 import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +19,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
@@ -46,7 +50,7 @@ function formatTime(value) {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   if (isToday) {
-    return date.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
@@ -54,8 +58,8 @@ function formatTime(value) {
     date.getFullYear() === yesterday.getFullYear() &&
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate();
-  if (isYesterday) return "I går";
-  return date.toLocaleDateString("da-DK", { day: "numeric", month: "short" });
+  if (isYesterday) return "Yesterday";
+  return date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
 function formatDuration(minutes) {
@@ -315,18 +319,48 @@ function PerformanceStrip({ analytics }) {
     { label: "Avg. first reply", value: formatDuration(analytics.averageFirstReplyMinutes), sub: "response time" },
   ];
   return (
-    <Card className="rounded-xl shadow-sm">
-      <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
-        {items.map((item, index) => (
-          <div key={item.label} className={cn("p-5", index > 0 && "sm:border-l")}>
-            <CardDescription>{item.label}</CardDescription>
-            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{item.value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{item.sub}</p>
-            {index < items.length - 1 ? <Separator className="mt-5 sm:hidden" /> : null}
+    <section aria-labelledby="performance-heading">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p id="performance-heading" className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Performance
+        </p>
+        <p className="text-xs text-muted-foreground">Last 30 days</p>
+      </div>
+      <Card className="overflow-hidden rounded-2xl border-border/70 shadow-sm">
+        <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-[1.1fr_repeat(4,minmax(0,1fr))]">
+          <Link
+            href="/inbox"
+            className="group flex min-h-[136px] flex-col justify-between bg-primary/[0.045] p-4 transition-colors hover:bg-primary/[0.08] sm:col-span-2 sm:min-h-[144px] sm:p-5 xl:col-span-1"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <CardDescription>Open tickets</CardDescription>
+              <ArrowUpRightIcon className="size-4 text-primary/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </div>
+            <div>
+              <p className="mt-5 text-3xl font-semibold tracking-tight tabular-nums">{analytics.unsolvedTickets}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Not marked as solved</p>
+            </div>
+          </Link>
+          <div className="grid grid-cols-2 gap-0 sm:col-span-2 xl:col-span-4 xl:grid-cols-4">
+            {items.map((item, index) => (
+              <div
+                key={item.label}
+                className={cn(
+                  "min-h-[128px] border-border/70 p-4 sm:min-h-[144px] sm:p-5",
+                  index % 2 === 1 && "border-l",
+                  index > 1 && "border-t xl:border-t-0",
+                  index > 0 && "xl:border-l",
+                )}
+              >
+                <CardDescription>{item.label}</CardDescription>
+                <p className="mt-5 text-2xl font-semibold tracking-tight tabular-nums">{item.value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.sub}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -378,20 +412,47 @@ export default async function Page() {
 
   return (
     <div className="@container/main flex flex-1 flex-col bg-muted/30">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 lg:px-7 lg:py-6">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-7 px-4 py-6 lg:px-7 lg:py-8">
+        <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Workspace overview</p>
+            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Support overview</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              A clear view of your team&apos;s workload, response speed, and latest activity.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-sm text-muted-foreground">
+              <CalendarDaysIcon className="size-4" />
+              Last 30 days
+            </div>
+            <Button asChild className="h-9 rounded-lg">
+              <Link href="/inbox">
+                Open inbox
+                <ArrowUpRightIcon data-icon="inline-end" />
+              </Link>
+            </Button>
+          </div>
+        </header>
+
         <PerformanceStrip analytics={supportAnalytics} />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <Card className="flex min-h-[320px] flex-col rounded-xl shadow-sm">
-            <CardHeader className="p-5 pb-3">
+          <Card className="flex min-h-[360px] flex-col rounded-2xl border-border/70 shadow-sm">
+            <CardHeader className="p-5 pb-4">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="text-lg">Recent activity</CardTitle>
-                  <CardDescription>Replies, drafts, and approved actions.</CardDescription>
+                <div className="flex items-start gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <ActivityIcon className="size-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">Recent activity</CardTitle>
+                    <CardDescription className="mt-1">Replies, drafts, and approved actions.</CardDescription>
+                  </div>
                 </div>
                 <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
                   <Link href="/inbox">
-                    View all
+                    View inbox
                     <ChevronRightIcon className="ml-1 size-4" />
                   </Link>
                 </Button>
@@ -399,21 +460,35 @@ export default async function Page() {
             </CardHeader>
             <CardContent className="flex-1 p-5 pt-0">
               {recentActivity.length === 0 ? (
-                <div className="flex h-full min-h-[250px] items-center justify-center rounded-lg border border-dashed p-6 text-center">
-                  <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+                <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 px-6 text-center">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm">
+                    <ActivityIcon className="size-4" />
+                  </div>
+                  <p className="mt-3 text-sm font-medium">No recent activity</p>
+                  <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+                    Sent replies and completed actions will appear here.
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-4 rounded-lg" asChild>
+                    <Link href="/inbox">Go to inbox</Link>
+                  </Button>
                 </div>
               ) : (
-                <ol className="space-y-1">
-                  {recentActivity.map((event) => (
+                <ol className="space-y-0">
+                  {recentActivity.map((event, index) => (
                     <li
                       key={event.id}
-                      className="flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-muted/45"
+                      className="group relative flex gap-3 pb-1 last:pb-0"
                     >
-                      <div className={`size-2.5 shrink-0 rounded-full ring-4 ${ACTIVITY_DOT_CLASSES[event.badge]}`} />
-                      <div className="min-w-0 flex-1">
+                      {index < recentActivity.length - 1 ? (
+                        <span className="absolute bottom-0 left-[9px] top-5 w-px bg-border" aria-hidden="true" />
+                      ) : null}
+                      <div className="relative z-10 flex w-5 shrink-0 justify-center pt-3">
+                        <div className={`size-2.5 rounded-full ring-4 ${ACTIVITY_DOT_CLASSES[event.badge] ?? ACTIVITY_DOT_CLASSES.pending}`} />
+                      </div>
+                      <div className="min-w-0 flex-1 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-150 group-hover:border-border/70 group-hover:bg-muted/30">
                         <div className="flex min-w-0 items-center gap-2">
                           <p className="truncate text-sm font-medium">{event.label}</p>
-                          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
                             {formatTime(event.time)}
                           </span>
                         </div>

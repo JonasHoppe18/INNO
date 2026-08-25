@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2Icon, PackageMinusIcon, TicketIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -303,28 +304,45 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
   }, [lookupRows]);
 
   return (
-    <Card className={`min-h-[340px] rounded-xl shadow-sm ${returnTrackingRows.length > 0 ? "border-violet-500/20" : ""}`}>
-      <CardHeader className="p-5 pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-lg">Returns on the way back</CardTitle>
-            <CardDescription>Customer-provided return tracking awaiting review</CardDescription>
+    <Card className={`flex min-h-[360px] flex-col rounded-2xl border-border/70 shadow-sm ${returnTrackingRows.length > 0 ? "border-violet-500/20" : ""}`}>
+      <CardHeader className="p-5 pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+              <PackageMinusIcon className="size-4" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Returns on the way back</CardTitle>
+              <CardDescription className="mt-1">Customer returns that need a status check.</CardDescription>
+            </div>
           </div>
-          {returnTrackingRows.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setAllOpen(true)}
-              className="shrink-0 text-xs font-medium text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-700 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300"
-            >
-              View all
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {returnTrackingRows.length > 0 ? (
+              <Badge variant="secondary" className="rounded-full px-2.5 text-xs tabular-nums">
+                {returnTrackingRows.length}
+              </Badge>
+            ) : null}
+            {returnTrackingRows.length > 0 ? (
+              <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" onClick={() => setAllOpen(true)}>
+                View all
+              </Button>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-5 pt-0">
         {returnTrackingRows.length === 0 ? (
-          <div className="flex min-h-[210px] items-center justify-center rounded-xl border border-dashed p-6 text-center">
-            <p className="text-sm text-muted-foreground">No return tracking rows yet.</p>
+          <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 px-6 text-center">
+            <div className="flex size-10 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm">
+              <PackageMinusIcon className="size-4" />
+            </div>
+            <p className="mt-3 text-sm font-medium">No returns to review</p>
+            <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+              Returns with tracking details will appear here.
+            </p>
+            <Button variant="outline" size="sm" className="mt-4 rounded-lg" asChild>
+              <Link href="/inbox">Open inbox</Link>
+            </Button>
           </div>
         ) : (
           <div className="divide-y divide-border">
