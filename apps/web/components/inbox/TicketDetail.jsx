@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Loader2, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -856,6 +856,18 @@ function TicketDetailComponent({
           onConversationScroll?.(node.scrollTop);
         }}
       >
+        {isConversationLoading ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center"
+          >
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+              <Loader2 className="size-3 animate-spin text-violet-500" aria-hidden="true" />
+              Loading conversation
+            </span>
+          </div>
+        ) : null}
         {showJumpToLatest ? (
           <Button
             type="button"

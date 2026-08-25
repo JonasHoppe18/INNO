@@ -44,7 +44,7 @@ export default function InboxLoading() {
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[20px] bg-sidebar">
 
         {/* Ticket list panel — matches actual TicketList aside */}
-        <aside className="hidden w-[clamp(16rem,18vw,21rem)] shrink-0 flex-col border-r border-border bg-background lg:flex">
+        <aside className="flex w-full shrink-0 flex-col border-r border-border bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:flex-none">
           {/* Search + filter bar */}
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
             <div className="h-8 flex-1 animate-pulse rounded-md bg-muted" />
@@ -66,7 +66,7 @@ export default function InboxLoading() {
         </aside>
 
         {/* Detail panel — matches actual TicketDetail section */}
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+        <section className="hidden min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:flex">
           {/* Header — ticket ref + action buttons */}
           <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
             <div className="flex items-center gap-3">

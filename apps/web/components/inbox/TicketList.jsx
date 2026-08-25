@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
-import { ArrowDownUp, Filter, Inbox } from "lucide-react";
+import { ArrowDownUp, Filter, Inbox, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
@@ -118,6 +118,8 @@ export function TicketList({
         : [];
   const activeFilterCount =
     selectedStatuses.length + (filters.unreadsOnly ? 1 : 0);
+  const hasActiveSearch = Boolean(String(filters.query || "").trim());
+  const hasActiveListFilters = hasActiveSearch || activeFilterCount > 0;
   const selectedSortLabel =
     SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
       ?.label || "Newest";
@@ -342,12 +344,32 @@ export function TicketList({
     <aside className={`animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)] lg:flex-none ${className}`}>
       <div className="flex h-14 shrink-0 items-center border-b border-border/70 bg-muted/10 px-2.5">
         <div className="flex min-w-0 items-center gap-1">
-          <Input
-            value={filters.query}
-            onChange={(event) => onFiltersChange({ query: event.target.value })}
-            placeholder="Search..."
-            className="h-7 min-w-0 flex-1 rounded-md bg-background text-[12px] shadow-sm transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
-          />
+          <div className="relative min-w-0 flex-1">
+            <Input
+              value={filters.query}
+              onChange={(event) => onFiltersChange({ query: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && hasActiveSearch) {
+                  event.preventDefault();
+                  onFiltersChange({ query: "" });
+                }
+              }}
+              aria-label="Search tickets"
+              placeholder="Search..."
+              className="h-7 min-w-0 rounded-md bg-background pr-7 text-[12px] shadow-sm transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
+            />
+            {hasActiveSearch ? (
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ query: "" })}
+                aria-label="Clear search"
+                title="Clear search"
+                className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -521,7 +543,7 @@ export function TicketList({
               <div style={{ height: virtualWindow.after }} aria-hidden="true" />
             ) : null}
           </div>
-        ) : isNeedsAttentionRoute ? (
+        ) : isNeedsAttentionRoute && !hasActiveListFilters ? (
           // Task 10, Plan 2: quiet inbox-zero state for the needs-attention
           // queue (default view, "mine", or an inbox-scoped needs_attention
           // tab) when it has no threads — no confetti, Sona-quiet.
@@ -535,8 +557,27 @@ export function TicketList({
             </div>
           </div>
         ) : (
-          <div className="px-4 py-8 text-[13px] text-muted-foreground">
-            No tickets found yet.
+          <div className="flex min-h-[260px] flex-col items-center justify-center px-6 py-10 text-center">
+            <span className="flex size-10 items-center justify-center rounded-2xl bg-muted/70 text-muted-foreground/70">
+              {hasActiveListFilters ? <SearchX className="size-4" /> : <Inbox className="size-4" />}
+            </span>
+            <p className="mt-3 text-[13px] font-medium text-foreground">
+              {hasActiveListFilters ? "No matching tickets" : "No tickets in this inbox"}
+            </p>
+            <p className="mt-1 max-w-[220px] text-[12px] leading-5 text-muted-foreground">
+              {hasActiveListFilters
+                ? "Try a different search or clear the active filters."
+                : "New conversations will appear here when they arrive."}
+            </p>
+            {hasActiveListFilters ? (
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ query: "", statuses: [], status: "All", unreadsOnly: false })}
+                className="mt-4 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:text-violet-300 dark:hover:bg-violet-500/10"
+              >
+                Clear search and filters
+              </button>
+            ) : null}
           </div>
         )}
       </div>
