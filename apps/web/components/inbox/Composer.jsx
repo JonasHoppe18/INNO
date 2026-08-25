@@ -1679,7 +1679,7 @@ function ComposerComponent({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground hover:bg-muted"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -1762,7 +1762,7 @@ function ComposerComponent({
                   onRecipientKey(event, toInput, setToRecipients, setToInput)
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
-                disabled={disabled}
+                disabled={disabled || isSending}
                 className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
               />
             </div>
@@ -1770,17 +1770,19 @@ function ComposerComponent({
           <div className="flex items-center gap-3 pr-2 text-[12px]">
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled || isSending}
               onClick={() => setShowCC((prev) => !prev)}
-              className="font-medium text-muted-foreground hover:text-foreground"
+              aria-label="Add Cc recipients"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               Cc
             </button>
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled || isSending}
               onClick={() => setShowBCC((prev) => !prev)}
-              className="font-medium text-muted-foreground hover:text-foreground"
+              aria-label="Add Bcc recipients"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               Bcc
             </button>
@@ -1789,7 +1791,7 @@ function ComposerComponent({
               onClick={onToggleCollapse}
               aria-label="Hide reply box"
               title="Hide reply box"
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1820,7 +1822,7 @@ function ComposerComponent({
                 onRecipientKey(event, ccInput, setCcRecipients, setCcInput)
               }
               placeholder="Add CC"
-              disabled={disabled}
+              disabled={disabled || isSending}
               className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
@@ -1862,7 +1864,7 @@ function ComposerComponent({
                 onRecipientKey(event, bccInput, setBccRecipients, setBccInput)
               }
               placeholder="Add BCC"
-              disabled={disabled}
+              disabled={disabled || isSending}
               className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
@@ -2298,10 +2300,15 @@ function ComposerComponent({
           </div>
           <div className="flex-none flex items-center justify-between bg-transparent px-4 pb-2.5 pt-2 text-[12px] text-muted-foreground">
             <TooltipProvider delayDuration={300}>
-            <div className="flex items-center gap-2">
-              {showDraftLoadingState ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {isSending ? (
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-violet-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Sending reply...
+                </div>
+              ) : showDraftLoadingState ? (
                 <div className="flex items-center gap-1.5 text-[12px] text-violet-500">
-                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
                   {isRefiningDraft ? "Refining draft..." : "Drafting reply..."}
                 </div>
               ) : !isNote ? (
@@ -2312,13 +2319,13 @@ function ComposerComponent({
                     multiple
                     className="hidden"
                     onChange={handleAddAttachments}
-                    disabled={disabled || showDraftLoadingState}
+                    disabled={disabled || showDraftLoadingState || isSending}
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        disabled={disabled || showDraftLoadingState}
+                        disabled={disabled || showDraftLoadingState || isSending}
                         onClick={() => fileInputRef.current?.click()}
                         aria-label="Attach file"
                         className="rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
@@ -2332,7 +2339,7 @@ function ComposerComponent({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        disabled={disabled || showDraftLoadingState}
+                        disabled={disabled || showDraftLoadingState || isSending}
                         onClick={() => {
                           setSavedRepliesQuery("");
                           setSavedRepliesOpen(true);
@@ -2353,7 +2360,7 @@ function ComposerComponent({
                           aria-label="Change reply language"
                           title="Change reply language"
                           className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95 disabled:opacity-50"
-                          disabled={isTranslating}
+                          disabled={isTranslating || isSending}
                         >
                           {isTranslating ? (
                             <span className="inline-block h-4 w-4 animate-spin rounded-full border border-border border-t-foreground" />
@@ -2388,7 +2395,7 @@ function ComposerComponent({
                   {typeof onGenerateDraft === "function" ? (
                     <button
                       type="button"
-                      disabled={disabled || showDraftLoadingState || isGeneratingDraft}
+                      disabled={disabled || showDraftLoadingState || isGeneratingDraft || isSending}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
                       className={`rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
                         isEmptyReply
@@ -2404,7 +2411,7 @@ function ComposerComponent({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
+                          disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft || isSending}
                           onClick={() => {
                             setRefineOpen((prev) => !prev);
                             setRefineError("");
@@ -2429,11 +2436,12 @@ function ComposerComponent({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
+                    disabled={disabled || showDraftLoadingState || isSending}
+                    aria-label={`Change composer mode. Current mode: ${isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}`}
+                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 ${
                       isNote
                         ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
-                        : "bg-transparent text-foreground/75 hover:bg-muted/70"
+                        : "bg-muted/45 text-foreground/80 hover:bg-muted"
                     }`}
                   >
                     {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
@@ -2453,9 +2461,10 @@ function ComposerComponent({
                   submitComposer();
                 }}
                 aria-label="Send reply"
-                title="Send reply"
-                aria-keyshortcuts="Meta+Enter"
-                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                title={isSending ? "Sending reply..." : "Send reply (⌘↵ / Ctrl+↵)"}
+                aria-busy={isSending}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
+                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-2"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
