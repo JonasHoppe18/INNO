@@ -42,6 +42,10 @@ const MANUAL_ACTION_ICON_TONES = {
   refund_order: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
   initiate_return: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300",
 };
+const SIDEBAR_ROW_CLASS =
+  "group flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/30";
+const SIDEBAR_BACK_CLASS =
+  "inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 hover:text-foreground active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30";
 
 function OrderStatusPill({ status }) {
   const raw = String(status || "").trim().toLowerCase();
@@ -605,13 +609,13 @@ export function SonaInsightsModal({
               onOpenChange(false);
             }}
             aria-label="Close ticket details"
-            className="h-7 w-7 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="h-7 w-7 rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-2.5">
-          <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto">
+          <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-2.5 px-0.5 pb-2.5">
               <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>Customer</SidebarSectionLabel>
@@ -793,7 +797,7 @@ export function SonaInsightsModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab("customer")}
-                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                  className={SIDEBAR_ROW_CLASS}
                 >
                   <span className="text-[13px] font-medium text-foreground">
                     {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
@@ -807,7 +811,7 @@ export function SonaInsightsModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab("manual-actions")}
-                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                  className={SIDEBAR_ROW_CLASS}
                 >
                   <span className="text-[13px] font-medium text-foreground">View available actions</span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
@@ -815,7 +819,7 @@ export function SonaInsightsModal({
                 <button
                   type="button"
                   onClick={() => setSonaLogOpen(true)}
-                  className="group flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99]"
+                  className={SIDEBAR_ROW_CLASS}
                 >
                   <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
                     <Activity className="h-3.5 w-3.5 text-muted-foreground" />
@@ -870,11 +874,11 @@ export function SonaInsightsModal({
               </Dialog>
             </div>
           </TabsContent>
-          <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto">
+          <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
             <button
               type="button"
               onClick={() => setActiveTab("overview")}
-              className="mb-3 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className={`${SIDEBAR_BACK_CLASS} mb-3`}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Back to ticket details
@@ -888,12 +892,12 @@ export function SonaInsightsModal({
               onOpenTicket={onOpenTicket}
             />
           </TabsContent>
-          <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
+          <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => setActiveTab("overview")}
-                className="inline-flex items-center gap-1 self-start text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className={`${SIDEBAR_BACK_CLASS} self-start`}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
                 Back to ticket details
