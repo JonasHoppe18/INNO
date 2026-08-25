@@ -5,10 +5,10 @@ import { createClient } from "@supabase/supabase-js";
 import {
   ActivityIcon,
   ArrowUpRightIcon,
-  CalendarDaysIcon,
   ChevronRightIcon,
 } from "lucide-react";
 
+import { DashboardPeriodPicker } from "@/components/dashboard/DashboardPeriodPicker";
 import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,58 @@ function formatTime(value) {
     date.getDate() === yesterday.getDate();
   if (isYesterday) return "Yesterday";
   return date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+}
+
+function searchParamValue(searchParams, key) {
+  const value = searchParams?.[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function formatPeriodDate(value) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function resolveDashboardPeriod(searchParams = {}) {
+  const start = String(searchParamValue(searchParams, "start") || "").trim();
+  const end = String(searchParamValue(searchParams, "end") || "").trim();
+  const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (isDate(start) && isDate(end) && end >= start) {
+    return {
+      key: "custom",
+      label: `${formatPeriodDate(start)} – ${formatPeriodDate(end)}`,
+      range: { start, end },
+    };
+  }
+
+  const requested = String(searchParamValue(searchParams, "period") || "30");
+  const key = new Set(["7", "30", "this_month"]).has(requested) ? requested : "30";
+  return {
+    key,
+    label: key === "7" ? "Last 7 days" : key === "this_month" ? "This month" : "Last 30 days",
+    range: { start: "", end: "" },
+  };
+}
+
+function dashboardPeriodWindow(period) {
+  const now = new Date();
+  if (period.key === "custom") {
+    const sinceDate = new Date(`${period.range.start}T00:00:00.000Z`);
+    const untilDate = new Date(`${period.range.end}T00:00:00.000Z`);
+    untilDate.setUTCDate(untilDate.getUTCDate() + 1);
+    return { since: sinceDate.toISOString(), until: untilDate.toISOString() };
+  }
+
+  if (period.key === "this_month") {
+    const sinceDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    return { since: sinceDate.toISOString(), until: now.toISOString() };
+  }
+
+  const days = period.key === "7" ? 7 : 30;
+  const sinceDate = new Date(now);
+  sinceDate.setUTCDate(now.getUTCDate() - days);
+  return { since: sinceDate.toISOString(), until: now.toISOString() };
 }
 
 function formatDuration(minutes) {
@@ -138,12 +190,15 @@ function actionLabel(actionType) {
   return labels[actionType] ?? "Action executed";
 }
 
-async function loadRecentActivity(serviceClient, scope, shopId) {
+async function loadRecentActivity(serviceClient, scope, shopId, period) {
+  const { since, until } = dashboardPeriodWindow(period);
   const draftsPromise = applyScope(
     serviceClient
       .from("drafts")
       .select("id, draft_id, message_id, created_at, customer_email, subject, status")
       .eq("status", "sent")
+      .gte("created_at", since)
+      .lt("created_at", until)
       .order("created_at", { ascending: false })
       .limit(10),
     scope
@@ -156,6 +211,8 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
       .eq("from_me", true)
       .eq("is_draft", false)
       .not("sent_at", "is", null)
+      .gte("sent_at", since)
+      .lt("sent_at", until)
       .order("sent_at", { ascending: false })
       .limit(10),
     scope
@@ -167,6 +224,8 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
         .select("id, action_type, payload, created_at, status")
         .eq("shop_id", shopId)
         .eq("status", "applied")
+        .gte("created_at", since)
+        .lt("created_at", until)
         .order("created_at", { ascending: false })
         .limit(10)
     : Promise.resolve({ data: [] });
@@ -218,15 +277,14 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
     .slice(0, 5);
 }
 
-async function loadDashboardSupportAnalytics(serviceClient, scope) {
-  const sinceDate = new Date();
-  sinceDate.setUTCDate(sinceDate.getUTCDate() - 30);
-  const since = sinceDate.toISOString();
+async function loadDashboardSupportAnalytics(serviceClient, scope, period) {
+  const { since, until } = dashboardPeriodWindow(period);
 
   let threadsQ = serviceClient
     .from("mail_threads")
     .select("id, status, classification_key, tags, created_at, updated_at")
     .gte("created_at", since)
+    .lt("created_at", until)
     .order("created_at", { ascending: false });
   threadsQ = applyScope(threadsQ, scope);
 
@@ -311,7 +369,7 @@ const ACTIVITY_BADGE_LABEL = {
   pending: "Pending",
 };
 
-function PerformanceStrip({ analytics }) {
+function PerformanceStrip({ analytics, periodLabel }) {
   const items = [
     { label: "Created", value: analytics.createdTickets, sub: "tickets" },
     { label: "Solved", value: analytics.solvedTickets, sub: "tickets" },
@@ -324,7 +382,7 @@ function PerformanceStrip({ analytics }) {
         <p id="performance-heading" className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Performance
         </p>
-        <p className="text-xs text-muted-foreground">Last 30 days</p>
+        <p className="text-xs text-muted-foreground">{periodLabel}</p>
       </div>
       <Card className="overflow-hidden rounded-2xl border-border/70 shadow-sm">
         <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-[1.1fr_repeat(4,minmax(0,1fr))]">
@@ -364,13 +422,14 @@ function PerformanceStrip({ analytics }) {
   );
 }
 
-export default async function Page() {
+export default async function Page({ searchParams }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
     redirect("/sign-in?redirect_url=/dashboard");
   }
 
   const serviceClient = createServiceClient();
+  const dashboardPeriod = resolveDashboardPeriod(searchParams);
 
   let returnTrackingRows = [];
   let recentActivity = [];
@@ -396,8 +455,8 @@ export default async function Page() {
         supportAnalyticsResult,
       ] = await Promise.all([
         listReturnTrackingShipments(serviceClient, scope).catch(() => []),
-        loadRecentActivity(serviceClient, scope, shopId),
-        loadDashboardSupportAnalytics(serviceClient, scope),
+        loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod),
+        loadDashboardSupportAnalytics(serviceClient, scope, dashboardPeriod),
       ]);
 
       returnTrackingRows = Array.isArray(returnTrackingResult)
@@ -422,20 +481,11 @@ export default async function Page() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-sm text-muted-foreground">
-              <CalendarDaysIcon className="size-4" />
-              Last 30 days
-            </div>
-            <Button asChild className="h-9 rounded-lg">
-              <Link href="/inbox">
-                Open inbox
-                <ArrowUpRightIcon data-icon="inline-end" />
-              </Link>
-            </Button>
+            <DashboardPeriodPicker period={dashboardPeriod.key} range={dashboardPeriod.range} />
           </div>
         </header>
 
-        <PerformanceStrip analytics={supportAnalytics} />
+        <PerformanceStrip analytics={supportAnalytics} periodLabel={dashboardPeriod.label} />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <Card className="flex min-h-[360px] flex-col rounded-2xl border-border/70 shadow-sm">
