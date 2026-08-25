@@ -196,12 +196,15 @@ function OrderCard({ order, shopDomain }) {
     ? order?.adminUrl || `https://${shopDomain}/admin/orders/${order.adminId}`
     : "";
   const total = order?.total ? formatCurrency(parseAmount(order.total) ?? order.total, order.currency) : "—";
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const visibleItems = items.slice(0, 2);
+  const remainingItemCount = items.length - visibleItems.length;
 
   return (
-    <div className="rounded-xl border border-border/70 bg-background/75 p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-border hover:bg-background hover:shadow-sm">
+    <div className="px-3.5 py-3 transition-colors duration-150 hover:bg-background/80">
       <div className="flex items-start gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-          <ShoppingBag className="size-4" />
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+          <ShoppingBag className="size-3.5" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
@@ -245,25 +248,21 @@ function OrderCard({ order, shopDomain }) {
         </div>
       </div>
 
-      {Array.isArray(order?.items) && order.items.length ? (
-        <div className="mt-3 space-y-1 border-t border-border/60 pt-2.5">
-          {order.items.slice(0, 3).map((item, index) => (
-            <div key={`${order.id}-item-${index}`} className="flex min-w-0 items-start gap-2 text-[11px] leading-4 text-muted-foreground">
-              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-              <span className="line-clamp-2 min-w-0">{item}</span>
-            </div>
-          ))}
-          {order.items.length > 3 ? (
-            <div className="pl-3 text-[10px] text-muted-foreground/70">+{order.items.length - 3} more items</div>
-          ) : null}
+      {visibleItems.length ? (
+        <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+          <span className="truncate">
+            {visibleItems.join(" · ")}
+            {remainingItemCount > 0 ? ` · +${remainingItemCount} more` : ""}
+          </span>
         </div>
       ) : null}
 
       {order?.tracking?.url && order?.tracking?.number ? (
-        <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <Truck className="size-3.5 shrink-0" />
           <a href={order.tracking.url} target="_blank" rel="noreferrer" className="truncate hover:text-foreground hover:underline">
-            {order.tracking.number}
+            Tracking {order.tracking.number}
           </a>
         </div>
       ) : null}
@@ -397,7 +396,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
       <section className="space-y-2.5">
         <SectionHeading title="Recent orders" description="Orders linked to this customer." count={orders.length} />
         {orders.length ? (
-          <div className="space-y-2">
+          <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
             {orders.map((order, index) => (
               <OrderCard key={order.id || `order-${index}`} order={order} shopDomain={shopDomain} />
             ))}
