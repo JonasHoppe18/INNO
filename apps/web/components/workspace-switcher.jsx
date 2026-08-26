@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, useOrganizationList } from "@clerk/nextjs";
-import { Building2, Check, ChevronDown, Loader2 } from "lucide-react";
+import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -28,6 +28,16 @@ function membershipOrganization(membership) {
     id: String(organization.id),
     name: String(organization.name || "Workspace"),
   };
+}
+
+function organizationInitials(name) {
+  return String(name || "Workspace")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "W";
 }
 
 export function WorkspaceSwitcher() {
@@ -77,7 +87,9 @@ export function WorkspaceSwitcher() {
   };
 
   const label = activeOrganization?.name || (isLoaded ? "Select workspace" : "Loading workspace");
-  const hasMultipleOrganizations = organizations.length > 1;
+  const workspaceMark = switchingTo
+    ? <Loader2 className="size-3.5 animate-spin" />
+    : organizationInitials(activeOrganization?.name || label);
 
   return (
     <SidebarMenu>
@@ -85,24 +97,19 @@ export function WorkspaceSwitcher() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
-              size="lg"
+              size="default"
               disabled={!isLoaded || organizations.length === 0 || Boolean(switchingTo)}
               tooltip={label}
-              className="group-data-[collapsible=icon]:justify-center"
+              className="h-9 border-0 bg-transparent px-2 transition-[transform,background-color,color] duration-150 ease-out hover:bg-sidebar-accent/70 active:scale-[0.98] group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-1.5"
               aria-label={label}
             >
-              {switchingTo ? (
-                <Loader2 className="size-4 shrink-0 animate-spin" />
-              ) : (
-                <Building2 className="size-4 shrink-0" />
-              )}
-              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                <span className="truncate font-medium">{label}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {hasMultipleOrganizations ? "Workspace" : "Active workspace"}
-                </span>
-              </div>
-              <ChevronDown className="ml-auto size-4 shrink-0 group-data-[collapsible=icon]:hidden" />
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-[10px] font-semibold tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                {workspaceMark}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium group-data-[collapsible=icon]:hidden">
+                {label}
+              </span>
+              <ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -112,7 +119,7 @@ export function WorkspaceSwitcher() {
             sideOffset={6}
           >
             <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Workspace
+              Switch workspace
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {organizations.map((organization) => (
@@ -122,7 +129,9 @@ export function WorkspaceSwitcher() {
                 onSelect={() => handleSelect(organization.id)}
                 className="gap-3 py-2.5"
               >
-                <Building2 className="size-4 text-muted-foreground" />
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-[10px] font-semibold tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                  {organizationInitials(organization.name)}
+                </span>
                 <span className="min-w-0 flex-1 truncate">{organization.name}</span>
                 {organization.id === orgId ? <Check className="size-4 text-primary" /> : null}
               </DropdownMenuItem>

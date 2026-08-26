@@ -463,7 +463,9 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <WorkspaceSwitcher />
+        <div className="mt-1">
+          <WorkspaceSwitcher />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
