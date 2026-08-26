@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveClerkOrgId, resolveScopedShop } from "@/lib/server/workspace-auth";
 import {
   getKnowledgeDocument,
   publishKnowledgeDocument,
@@ -67,7 +67,9 @@ async function embedText(input: string): Promise<number[]> {
 }
 
 async function resolveRequestScope(request: Request, requestedShopId?: string) {
-  const { userId: clerkUserId, orgId } = await auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return { error: NextResponse.json({ error: "You must be signed in." }, { status: 401 }) };
   }

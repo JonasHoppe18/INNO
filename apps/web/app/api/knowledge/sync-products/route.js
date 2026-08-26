@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
-import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { applyScope, resolveAuthScope, resolveClerkOrgId, resolveScopedShop } from "@/lib/server/workspace-auth";
 import {
   detectPlaceholderPrice,
   mapShopifyProductToNormalizedProduct,
@@ -389,7 +389,9 @@ async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
 }
 
 export async function GET(request) {
-  const { userId: clerkUserId, orgId } = auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -421,7 +423,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { userId: clerkUserId, orgId } = auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }

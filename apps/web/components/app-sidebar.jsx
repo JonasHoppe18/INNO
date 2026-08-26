@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/sidebar"
 
 import { SonaLogo } from "@/components/ui/SonaLogo"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 
 const baseData = {
   user: {
@@ -462,6 +463,7 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />

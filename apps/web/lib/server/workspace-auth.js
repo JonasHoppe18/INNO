@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 function normalizedId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -13,13 +15,28 @@ export function resolveClerkOrgId({ orgId, sessionClaims } = {}) {
 
 export async function resolveAuthScope(
   serviceClient,
-  { clerkUserId, orgId },
-  { requireExplicitWorkspace = false } = {}
+  { clerkUserId, orgId, sessionClaims = null },
+  _options = {}
 ) {
   let supabaseUserId = null;
   let workspaceId = null;
+  let activeOrgId = resolveClerkOrgId({ orgId, sessionClaims });
 
-  if (orgId) {
+  // Older callers only pass auth().orgId. Clerk can expose the active
+  // organization in the compact session claim instead, so recover it here to
+  // keep every server route on the same workspace scope.
+  if (!activeOrgId && clerkUserId && !sessionClaims) {
+    try {
+      const authState = await auth();
+      if (authState?.userId === clerkUserId) {
+        activeOrgId = resolveClerkOrgId(authState);
+      }
+    } catch (_error) {
+      // Background jobs and unit tests may not have a request auth context.
+    }
+  }
+
+  if (activeOrgId) {
     // profiles and workspaces are independent — run in parallel
     const [profileResult, workspaceResult] = await Promise.all([
       serviceClient
@@ -30,7 +47,7 @@ export async function resolveAuthScope(
       serviceClient
         .from("workspaces")
         .select("id")
-        .eq("clerk_org_id", orgId)
+        .eq("clerk_org_id", activeOrgId)
         .maybeSingle(),
     ]);
     if (profileResult.error) throw new Error(profileResult.error.message);
@@ -38,8 +55,8 @@ export async function resolveAuthScope(
     supabaseUserId = profileResult.data?.user_id ?? null;
     workspaceId = workspaceResult.data?.id ?? null;
 
-    // A stale or mismatched Clerk org must not select a workspace the user
-    // does not belong to. Fall back to the user's real membership below.
+    // A stale or mismatched Clerk org must never select another workspace as a
+    // fallback. The active Clerk organization is the authoritative scope.
     if (workspaceId) {
       const { data: orgMembership, error: orgMembershipError } = await serviceClient
         .from("workspace_members")
@@ -49,38 +66,22 @@ export async function resolveAuthScope(
         .maybeSingle();
       if (orgMembershipError) throw new Error(orgMembershipError.message);
       if (!orgMembership?.workspace_id) {
-        workspaceId = null;
+        throw new Error("Active workspace is not available to this account.");
       }
     }
 
-    // Fallback: if org exists but workspace row not yet provisioned, try membership
     if (!workspaceId) {
-      const { data: membership, error: membershipError } = await serviceClient
-        .from("workspace_members")
-        .select("workspace_id")
-        .eq("clerk_user_id", clerkUserId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (membershipError) throw new Error(membershipError.message);
-      workspaceId = membership?.workspace_id ?? null;
+      throw new Error("Active workspace is not available to this account.");
     }
   } else {
-    // profiles and workspace_members are independent — run in parallel
-    const membershipQuery = requireExplicitWorkspace
-      ? serviceClient
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("clerk_user_id", clerkUserId)
-          .order("created_at", { ascending: false })
-          .limit(2)
-      : serviceClient
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("clerk_user_id", clerkUserId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+    // Without an active Clerk organization, resolve only an unambiguous
+    // membership. Never silently choose the latest workspace.
+    const membershipQuery = serviceClient
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("clerk_user_id", clerkUserId)
+      .order("created_at", { ascending: false })
+      .limit(2);
 
     const [profileResult, membershipResult] = await Promise.all([
       serviceClient
@@ -95,15 +96,11 @@ export async function resolveAuthScope(
 
     supabaseUserId = profileResult.data?.user_id ?? null;
 
-    if (requireExplicitWorkspace) {
-      const rows = Array.isArray(membershipResult.data) ? membershipResult.data : [];
-      if (rows.length > 1) {
-        throw new Error("Ambiguous workspace scope. Select a workspace explicitly.");
-      }
-      workspaceId = rows[0]?.workspace_id ?? null;
-    } else {
-      workspaceId = membershipResult.data?.workspace_id ?? null;
+    const rows = Array.isArray(membershipResult.data) ? membershipResult.data : [];
+    if (rows.length > 1) {
+      throw new Error("Ambiguous workspace scope. Select a workspace explicitly.");
     }
+    workspaceId = rows[0]?.workspace_id ?? null;
   }
 
   return { supabaseUserId, workspaceId };
