@@ -12,6 +12,7 @@ import {
   BarChart2Icon,
   BookOpenIcon,
   CableIcon,
+  CirclePlayIcon,
   LayoutDashboardIcon,
   MailIcon,
   SquarePenIcon,
@@ -45,7 +46,6 @@ import {
 } from "@/components/ui/sidebar"
 
 import { SonaLogo } from "@/components/ui/SonaLogo"
-import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 
 const baseData = {
   user: {
@@ -463,9 +463,6 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="mt-1">
-          <WorkspaceSwitcher />
-        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
@@ -479,6 +476,24 @@ export function AppSidebar({
         />
       </SidebarContent>
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="Learn Sona"
+              className={cn(
+                "justify-start text-foreground",
+                pathname.startsWith("/guides") &&
+                  "bg-accent text-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
+                <CirclePlayIcon className="h-4 w-4" />
+                <span>Learn Sona</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <NavUser user={data.user} />
       </SidebarFooter>
       <Dialog open={createInboxOpen} onOpenChange={setCreateInboxOpen}>
