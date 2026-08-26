@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const ICON_MAP = {
@@ -273,26 +272,41 @@ const ICON_COLORS = {
   BookOpen: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
 };
 
-function CategoryCard({ category, onClick, index = 0 }) {
+function CategoryCard({ category, onClick }) {
   const iconColor = ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
   return (
     <Card
-      className="group cursor-pointer border-gray-200 transition-all duration-150 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] dark:border-gray-800 dark:hover:border-gray-700"
-      style={{ animationDelay: `${index * 50}ms` }}
+      role="link"
+      tabIndex={0}
+      aria-label={`Open ${category.label}`}
+      className="group cursor-pointer rounded-2xl border-border/70 shadow-sm transition-[transform,border-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-md active:scale-[0.98]"
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
     >
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconColor}`}>
-            <CategoryIcon name={category.icon} className="h-4 w-4" />
+      <CardHeader className="p-5 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className={`flex size-10 items-center justify-center rounded-xl ${iconColor}`}>
+            <CategoryIcon name={category.icon} className="size-4" />
           </div>
-          <ChevronRight className="h-4 w-4 text-gray-300 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-gray-400" />
+          <div className="flex items-center gap-2">
+            {Number.isFinite(Number(category.count)) ? (
+              <Badge variant="secondary" className="rounded-full px-2 text-xs tabular-nums">
+                {category.count}
+              </Badge>
+            ) : null}
+            <ChevronRight className="size-4 text-muted-foreground/40 transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <CardTitle className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{category.label}</CardTitle>
+      <CardContent className="p-5 pt-0">
+        <CardTitle className="text-base font-semibold tracking-tight">{category.label}</CardTitle>
         {category.description && (
-          <CardDescription className="mt-1 text-[12px] line-clamp-2 leading-[1.5] dark:text-gray-400">
+          <CardDescription className="mt-1.5 line-clamp-2 text-sm leading-5">
             {category.description}
           </CardDescription>
         )}
@@ -652,24 +666,36 @@ function SavedRepliesSection() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">Saved Replies</h2>
-          {replies.length > 0 && (
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              {replies.length}
-            </span>
-          )}
+    <section className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <BookMarked className="size-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold tracking-tight">Saved replies</h2>
+              {replies.length > 0 && (
+                <Badge variant="secondary" className="rounded-full px-2 text-xs tabular-nums">
+                  {replies.length}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Reusable replies your team can insert into drafts.
+            </p>
+          </div>
         </div>
-        <Button size="sm" variant="outline" onClick={openNew} className="gap-1">
-          <Plus className="h-3.5 w-3.5" />
-          New reply
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" onClick={openNew} className="h-9 rounded-lg gap-1.5">
+            <Plus className="size-3.5" />
+            New reply
+          </Button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="rounded-lg border divide-y overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-border/70 divide-y divide-border/70">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 px-4 py-3">
               <Skeleton className="h-4 w-1/3" />
@@ -678,21 +704,21 @@ function SavedRepliesSection() {
           ))}
         </div>
       ) : replies.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
-          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-muted mb-3">
-            <BookMarked className="h-5 w-5 text-muted-foreground" />
+        <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-6 py-10 text-center">
+          <div className="flex size-10 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm">
+            <BookMarked className="size-4" />
           </div>
           <p className="text-sm font-medium">No saved replies yet</p>
-          <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-            Create reusable replies your team can insert into drafts with one click.
+          <p className="mt-1 max-w-sm text-sm leading-5 text-muted-foreground">
+            Create a reusable response your team can insert into drafts with one click.
           </p>
-          <Button className="mt-4" onClick={openNew}>
-            <Plus className="h-4 w-4 mr-1.5" />
+          <Button className="mt-4 h-9 rounded-lg" onClick={openNew}>
+            <Plus className="mr-1.5 size-4" />
             Create first reply
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden dark:border-gray-800 dark:divide-gray-800">
+        <div className="overflow-hidden rounded-2xl border border-border/70 divide-y divide-border/70">
           {replies.map((reply) => (
             <div key={reply.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/60 dark:hover:bg-gray-800/40">
               <div className="min-w-0 flex-1">
@@ -948,7 +974,7 @@ function SavedRepliesSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   );
 }
 
@@ -1024,9 +1050,6 @@ export function KnowledgeCategoriesClient() {
   const router = useRouter();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newLabel, setNewLabel] = useState("");
-  const [creating, setCreating] = useState(false);
   const [ticketExamplesCount, setTicketExamplesCount] = useState(null);
 
   const fetchTicketExamplesCount = useCallback(async () => {
@@ -1062,154 +1085,113 @@ export function KnowledgeCategoriesClient() {
     fetchTicketExamplesCount();
   }, [fetchTicketExamplesCount]);
 
-  const handleCreate = async () => {
-    const label = newLabel.trim();
-    if (!label || creating) return;
-    const slug = label
-      .toLowerCase()
-      .replace(/[^a-z0-9æøå\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    setCreating(true);
-    try {
-      const res = await fetch("/api/knowledge/categories", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label, slug }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Could not create category.");
-      }
-      const category = payload?.category || { slug, label, icon: "Tag", description: "", count: 0 };
-      setCategories((prev) => {
-        const filtered = prev.filter((item) => item.slug !== category.slug);
-        return [...filtered, category];
-      });
-      setCreateOpen(false);
-      setNewLabel("");
-      router.push(`/knowledge/${category.slug}?label=${encodeURIComponent(category.label || label)}`);
-    } catch (error) {
-      toast.error(error?.message || "Could not create category.");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleCreateFromGap = useCallback((suggestedTitle) => {
-    setNewLabel(suggestedTitle);
-    setCreateOpen(true);
-  }, []);
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Knowledge Base</h1>
-          <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-0.5">
-            Manage what your AI knows about your store
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Knowledge workspace</p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Knowledge Base</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            Give Sona the product, policy, and support knowledge it needs to answer with confidence.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={() => router.push("/knowledge/simulate")}
-            className="gap-1.5"
+            className="h-9 rounded-lg gap-1.5"
           >
             Simulate a conversation
           </Button>
           <Button
             variant="outline"
             onClick={() => router.push("/knowledge/all")}
-            className="gap-1.5"
+            className="h-9 rounded-lg gap-1.5"
           >
-            <List className="h-4 w-4" />
+            <List className="size-4" />
             Browse all snippets
           </Button>
         </div>
-      </div>
+      </header>
 
       {/* KnowledgeGapsSection temporarily hidden — it suggested creating
           gap-named categories which confused early customers. Re-enable once
           we have a clearer "fill the gap inline" flow (no new category). */}
       {/* <KnowledgeGapsSection onCreateCategory={handleCreateFromGap} /> */}
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-9 w-9 rounded-md" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-3 w-full" />
-              </CardContent>
-            </Card>
-          ))}
+      <section className="space-y-4" aria-labelledby="knowledge-categories-heading">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 id="knowledge-categories-heading" className="text-lg font-semibold tracking-tight">Knowledge categories</h2>
+              {!loading ? (
+                <Badge variant="secondary" className="rounded-full px-2 text-xs tabular-nums">
+                  {categories.length}
+                </Badge>
+              ) : null}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Organize product, policy, and process knowledge for faster answers.
+            </p>
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {categories.map((cat, i) => (
-            <CategoryCard
-              key={cat.slug}
-              category={cat}
-              index={i}
-              onClick={() => router.push(`/knowledge/${cat.slug}`)}
-            />
-          ))}
-          {/* Internal rules card temporarily hidden — not yet clear how merchants
-              should use it. Re-enable once the usage story is settled. */}
-        </div>
-      )}
 
-      <Separator className="dark:opacity-20" />
-      <div className="flex items-center justify-end gap-2">
-        {ticketExamplesCount !== null ? (
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">
-            {ticketExamplesCount} imported ticket examples
+        {loading ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i} className="rounded-2xl border-border/70 p-5 shadow-sm">
+                <Skeleton className="size-10 rounded-xl" />
+                <div className="mt-5 space-y-2">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : categories.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {categories.map((cat) => (
+              <CategoryCard
+                key={cat.slug}
+                category={cat}
+                onClick={() => router.push(`/knowledge/${cat.slug}`)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-6 py-12 text-center">
+            <div className="flex size-11 items-center justify-center rounded-full bg-background text-primary shadow-sm">
+              <BookOpen className="size-5" />
+            </div>
+            <h3 className="mt-4 text-base font-semibold tracking-tight">Start building your knowledge base</h3>
+            <p className="mt-1 max-w-md text-sm leading-5 text-muted-foreground">
+              Knowledge categories will appear here once your workspace has been configured.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground shadow-sm">
+          <BookMarked className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">Imported ticket examples</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {ticketExamplesCount !== null
+              ? `${ticketExamplesCount} examples available to improve Sona’s replies.`
+              : "Use past tickets as examples for better replies."}
           </p>
-        ) : null}
-        <Button
-          variant="ghost"
-          className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-          asChild
-        >
-          <Link href="/integrations/zendesk">Manage ticket import</Link>
+        </div>
+        <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2" asChild>
+          <Link href="/integrations/zendesk">
+            Manage import
+            <ChevronRight className="ml-1 size-4" />
+          </Link>
         </Button>
       </div>
-      <SavedRepliesSection />
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Create new category</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label>Name</Label>
-              <Input
-                placeholder="e.g. Warranty, Technical support..."
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                disabled={creating}
-                autoFocus
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={!newLabel.trim() || creating}>
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SavedRepliesSection />
     </div>
   );
 }
