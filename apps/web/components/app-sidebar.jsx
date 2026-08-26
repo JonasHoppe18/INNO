@@ -480,7 +480,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              tooltip="Learn Sona"
+              tooltip="Sona Academy"
               className={cn(
                 "justify-start text-foreground",
                 pathname.startsWith("/guides") &&
@@ -489,7 +489,7 @@ export function AppSidebar({
             >
               <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
                 <CirclePlayIcon className="h-4 w-4" />
-                <span>Learn Sona</span>
+                <span>Sona Academy</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
