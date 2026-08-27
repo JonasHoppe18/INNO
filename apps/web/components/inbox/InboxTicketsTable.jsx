@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, Clock3, Inbox, Search, Ticket, UserRound, X } from "lucide-react";
+import { ArrowLeft, Clock3, Inbox, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -250,38 +250,23 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
           </Button>
         </div>
 
-        <Card className="overflow-hidden rounded-2xl border-border/80 shadow-sm">
-          <CardHeader className="gap-5 p-4 sm:p-5">
+        <Card className="overflow-hidden rounded-2xl border-border/80 shadow-none">
+          <CardHeader className="gap-4 p-4 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Ticket className="size-3.5" />
-                    Total
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">{filterCounts.all}</div>
-                </div>
-                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Inbox className="size-3.5" />
-                    Open
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">{filterCounts.open}</div>
-                </div>
-                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <UserRound className="size-3.5" />
-                    Unassigned
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">{filterCounts.unassigned}</div>
-                </div>
-                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <CheckCircle2 className="size-3.5" />
-                    Resolved
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">{filterCounts.resolved}</div>
-                </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                <span className="font-semibold text-foreground">{filterCounts.all} tickets</span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-blue-500" />
+                  {filterCounts.open} open
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-orange-500" />
+                  {filterCounts.unassigned} unassigned
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-emerald-500" />
+                  {filterCounts.resolved} resolved
+                </span>
               </div>
 
               <div className="text-sm text-muted-foreground" aria-live="polite">
@@ -371,17 +356,17 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
             <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow className="border-b border-border/80 bg-muted/25 hover:bg-muted/25">
-                  <TableHead className="w-12 px-4 py-3 sm:px-5">
+                  <TableHead className="w-12 px-4 py-2 sm:px-5">
                     <Checkbox
                       checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
                       onCheckedChange={(checked) => setAllVisibleSelected(checked === true)}
                       aria-label="Select visible tickets"
                     />
                   </TableHead>
-                  <TableHead className="w-[51%] px-4 py-3 sm:px-5">Conversation</TableHead>
-                  <TableHead className="w-[13%] px-4 py-3 sm:px-5">Status</TableHead>
-                  <TableHead className="w-[20%] px-4 py-3 sm:px-5">Owner</TableHead>
-                  <TableHead className="w-[16%] px-4 py-3 sm:px-5">Last activity</TableHead>
+                  <TableHead className="w-[51%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Conversation</TableHead>
+                  <TableHead className="w-[13%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Status</TableHead>
+                  <TableHead className="w-[20%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Owner</TableHead>
+                  <TableHead className="w-[16%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Last activity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -394,39 +379,36 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                         selectedIds.has(row.id) && "bg-primary/[0.03]"
                       )}
                     >
-                      <TableCell className="px-4 py-4 align-top sm:px-5">
+                      <TableCell className="px-4 py-3 align-middle sm:px-5">
                         <Checkbox
                           checked={selectedIds.has(row.id)}
                           onCheckedChange={(checked) => setRowSelected(row.id, checked === true)}
                           aria-label={`Select ${row.ticketRef}`}
                         />
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-top sm:px-5">
+                      <TableCell className="px-4 py-3 align-middle sm:px-5">
                         <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block min-w-0">
                           <div className="flex min-w-0 items-center gap-2">
+                            <div className="max-w-[180px] shrink-0 truncate text-xs font-medium text-muted-foreground">
+                              {row.customerName || row.customerEmail || "Unknown customer"}
+                            </div>
+                            <span className="text-muted-foreground/60" aria-hidden="true">—</span>
                             <div
                               className={cn(
-                                "min-w-0 truncate font-semibold text-foreground",
+                                "max-w-[320px] shrink truncate font-semibold text-foreground",
                                 row.unread && "font-bold"
                               )}
                             >
                               {row.subject}
                             </div>
-                            {row.unread ? (
-                              <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
-                            ) : null}
-                          </div>
-                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                            <span className="max-w-[220px] truncate font-medium text-foreground/75">
-                              {row.customerName || row.customerEmail || "Unknown customer"}
-                            </span>
-                            {row.customerName && row.customerEmail ? <span aria-hidden="true">•</span> : null}
-                            {row.customerName && row.customerEmail ? (
-                              <span className="max-w-[260px] truncate">{row.customerEmail}</span>
+                            {row.snippet ? (
+                              <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground lg:inline">
+                                — {row.snippet}
+                              </span>
                             ) : null}
                             <span
                               className={cn(
-                                "rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em]",
+                                "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em]",
                                 row.ticketRef !== "No ticket ID"
                                   ? "border-indigo-200 bg-indigo-50 text-indigo-700"
                                   : "border-border bg-muted text-muted-foreground"
@@ -434,13 +416,13 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                             >
                               {row.ticketRef}
                             </span>
-                          </div>
-                          <div className="mt-2 line-clamp-1 text-sm leading-6 text-muted-foreground">
-                            {row.snippet || "No preview available."}
+                            {row.unread ? (
+                              <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+                            ) : null}
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-top sm:px-5">
+                      <TableCell className="px-4 py-3 align-middle sm:px-5">
                         <Badge
                           variant="outline"
                           className={`mt-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(row.status)}`}
@@ -448,7 +430,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           {row.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-top text-sm sm:px-5">
+                      <TableCell className="px-4 py-3 align-middle text-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span
                             className={cn(
@@ -470,7 +452,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-top text-sm sm:px-5">
+                      <TableCell className="px-4 py-3 align-middle text-sm sm:px-5">
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Clock3 className="size-3.5 text-muted-foreground" />
                           {formatRelativeTime(row.lastActivity)}
