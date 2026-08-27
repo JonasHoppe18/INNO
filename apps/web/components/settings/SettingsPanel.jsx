@@ -7,6 +7,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bot,
   Building2,
+  Check,
+  ChevronRight,
+  CircleAlert,
   Clock,
   CreditCard,
   Globe,
@@ -78,7 +81,7 @@ const MENU_SECTIONS = [
     items: [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
-      { key: "mailboxes", label: "Channels", icon: Inbox },
+      { key: "mailboxes", label: "Channels & mailboxes", icon: Inbox },
       { key: "tags", label: "Tags", icon: Tag },
     ],
   },
@@ -87,7 +90,7 @@ const MENU_SECTIONS = [
     items: [
       { key: "ai", label: "AI instructions", icon: Bot },
       { key: "automation", label: "Actions & automation", icon: Zap },
-      { key: "playground", label: "Playground", icon: SlidersHorizontal },
+      { key: "playground", label: "Test & preview", icon: SlidersHorizontal },
     ],
   },
   {
@@ -593,6 +596,101 @@ function GeneralTab({
         onSave={onSave}
         onDiscard={onReset}
       />
+    </section>
+  );
+}
+
+function WorkspaceSetupCard({
+  shopDomain,
+  shopId,
+  workspaceInboxes,
+  aiPrompt,
+  members,
+  onNavigate,
+}) {
+  const setupItems = [
+    {
+      key: "store",
+      label: "Store connection",
+      detail: shopDomain || (shopId ? "Connected store" : "Connect a store"),
+      complete: Boolean(shopDomain || shopId),
+      tab: "general",
+    },
+    {
+      key: "channels",
+      label: "Channels",
+      detail: workspaceInboxes.length
+        ? `${workspaceInboxes.length} connected`
+        : "Connect a channel",
+      complete: workspaceInboxes.length > 0,
+      tab: "mailboxes",
+    },
+    {
+      key: "ai",
+      label: "AI instructions",
+      detail: aiPrompt.trim() ? "Configured" : "Add instructions",
+      complete: Boolean(aiPrompt.trim()),
+      tab: "ai",
+    },
+    {
+      key: "team",
+      label: "Team members",
+      detail: members.length ? `${members.length} members` : "Invite your team",
+      complete: members.length > 0,
+      tab: "members",
+    },
+  ];
+
+  const completedCount = setupItems.filter((item) => item.complete).length;
+
+  return (
+    <section className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Workspace setup
+            </p>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {completedCount}/{setupItems.length} ready
+            </span>
+          </div>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+            Get Sona ready for your team
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Connect the essentials before you start handling customer conversations.
+          </p>
+        </div>
+        <div className="hidden rounded-full bg-muted/70 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:block">
+          Setup checklist
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        {setupItems.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onNavigate(item.tab)}
+            className="group flex items-center gap-3 rounded-xl border border-border/80 bg-background/70 p-3 text-left transition-[border-color,background-color,transform] duration-150 hover:border-primary/35 hover:bg-muted/40 active:scale-[0.99]"
+          >
+            <span
+              className={cn(
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                item.complete ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+              )}
+            >
+              {item.complete ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">{item.label}</span>
+              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{item.detail}</span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -4462,6 +4560,14 @@ export function SettingsPanel() {
     [updateSettingsUrl]
   );
 
+  const currentTabSaveStatus = loading
+    ? null
+    : activeTab === "general" || activeTab === "email"
+      ? hasCurrentTabChanges
+        ? "unsaved"
+        : "saved"
+      : null;
+
   const renderContent = () => {
     if (loading) {
       return <TabSkeleton />;
@@ -4586,26 +4692,36 @@ export function SettingsPanel() {
       case "general":
       default:
         return (
-          <GeneralTab
-            shopDomain={shopDomain}
-            teamName={teamName}
-            onTeamNameChange={setTeamName}
-            testMode={testMode}
-            onTestModeChange={setTestMode}
-            testEmail={testEmail}
-            onTestEmailChange={setTestEmail}
-            supportLanguage={supportLanguage}
-            onSupportLanguageChange={setSupportLanguage}
-            autoCloseMode={autoCloseMode}
-            onAutoCloseModeChange={setAutoCloseMode}
-            needsAttentionStaleDays={needsAttentionStaleDays}
-            onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
-            hasWorkspaceScope={Boolean(workspaceId)}
-            onSave={handleSaveGeneral}
-            onReset={handleResetGeneral}
-            saving={saving}
-            canSave={canSave}
-          />
+          <>
+            <WorkspaceSetupCard
+              shopDomain={shopDomain}
+              shopId={shopId}
+              workspaceInboxes={workspaceInboxesForRules}
+              aiPrompt={aiPrompt}
+              members={members}
+              onNavigate={handleSelectTab}
+            />
+            <GeneralTab
+              shopDomain={shopDomain}
+              teamName={teamName}
+              onTeamNameChange={setTeamName}
+              testMode={testMode}
+              onTestModeChange={setTestMode}
+              testEmail={testEmail}
+              onTestEmailChange={setTestEmail}
+              supportLanguage={supportLanguage}
+              onSupportLanguageChange={setSupportLanguage}
+              autoCloseMode={autoCloseMode}
+              onAutoCloseModeChange={setAutoCloseMode}
+              needsAttentionStaleDays={needsAttentionStaleDays}
+              onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
+              hasWorkspaceScope={Boolean(workspaceId)}
+              onSave={handleSaveGeneral}
+              onReset={handleResetGeneral}
+              saving={saving}
+              canSave={canSave}
+            />
+          </>
         );
     }
   };
@@ -4648,10 +4764,11 @@ export function SettingsPanel() {
                       key={item.key}
                       type="button"
                       onClick={() => handleSelectTab(item.key)}
+                      aria-current={active ? "page" : undefined}
                       className={cn(
                         "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-primary/10 font-semibold text-primary"
+                          ? "bg-primary/10 font-semibold text-primary shadow-[inset_2px_0_0_hsl(var(--primary))]"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -4673,6 +4790,40 @@ export function SettingsPanel() {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
+          <div className="mb-8 flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Workspace settings
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Configure how your team works with Sona.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {currentTabSaveStatus ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
+                    currentTabSaveStatus === "unsaved"
+                      ? "bg-amber-500/10 text-amber-700"
+                      : "bg-emerald-500/10 text-emerald-700"
+                  )}
+                >
+                  {currentTabSaveStatus === "unsaved" ? (
+                    <CircleAlert className="h-3.5 w-3.5" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  {currentTabSaveStatus === "unsaved" ? "Unsaved changes" : "All changes saved"}
+                </span>
+              ) : null}
+              <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <Building2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate text-foreground">{teamName.trim() || "Your workspace"}</span>
+              </span>
+            </div>
+          </div>
           <div className="min-w-0">
             {renderContent()}
           </div>
