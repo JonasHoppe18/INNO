@@ -19,9 +19,19 @@ const TITLE_MAP = {
   "/playground": "Playground",
 };
 
+function getSiteTitle(pathname) {
+  if (TITLE_MAP[pathname]) return TITLE_MAP[pathname];
+  if (pathname?.startsWith("/knowledge/product-questions")) return "Product Questions";
+  if (pathname?.startsWith("/knowledge/returns")) return "Returns & Refunds";
+  if (pathname?.startsWith("/knowledge/shipping")) return "Shipping & Delivery";
+  if (pathname?.startsWith("/knowledge/general")) return "General";
+  if (pathname?.startsWith("/knowledge")) return "Knowledge";
+  return "Sona";
+}
+
 export function SiteHeader() {
   const pathname = usePathname();
-  const title = TITLE_MAP[pathname] || "Sona";
+  const title = getSiteTitle(pathname);
   const { actions, titleContent } = useSiteHeaderActions();
   const hasCustomTitle = Boolean(titleContent);
   const showBell = pathname === "/dashboard";

@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
-  ChevronDown,
   ChevronRight,
   MessageSquare,
   Package,
@@ -31,13 +30,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
 import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-types";
 import { buildStarters } from "@/lib/knowledge/starters";
 import { SnippetEditor } from "./SnippetEditor";
 import { KnowledgeDocumentEditorCard } from "./KnowledgeDocumentEditorCard";
+import { KnowledgeDocumentOutline } from "./KnowledgeDocumentOutline";
+import { KnowledgeDocsCanvas } from "./KnowledgeDocsCanvas";
+import { KnowledgeDocsToolbar } from "./KnowledgeDocsToolbar";
+import { useKnowledgeDocsEditor } from "@/lib/knowledge/use-knowledge-docs-editor";
+import { parseKnowledgeDocumentOutline } from "@/lib/knowledge/knowledge-doc-outline";
 
 const KNOWLEDGE_TYPE_LABELS = {
   fact: "Fact",
@@ -480,9 +482,12 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  // Start expanded so the policy is readable/editable immediately; the
-  // collapse toggle below still lets the admin tuck it away if they want to.
-  const [expanded, setExpanded] = useState(true);
+  const [activeSectionId, setActiveSectionId] = useState(null);
+  const { editor } = useKnowledgeDocsEditor({
+    value,
+    onChange: setValue,
+  });
+  const sections = useMemo(() => parseKnowledgeDocumentOutline(value), [value]);
 
   useEffect(() => {
     const decoded = decodeEntities(initialContent);
@@ -493,12 +498,14 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   const syncedAgo = formatRelativeTimestamp(syncedAt);
 
   const isDirty = value !== saved;
-  // Short policies (or empty) don't benefit from collapse — just render inline.
-  const SHORT_POLICY_THRESHOLD = 320;
-  const isShort = (value || "").length <= SHORT_POLICY_THRESHOLD;
-  const isEffectivelyExpanded = expanded || isDirty || isShort;
-  const previewText = (value || "").trim().replace(/\s+/g, " ").slice(0, 240);
   const wordCount = (value || "").trim().split(/\s+/).filter(Boolean).length;
+
+  useEffect(() => {
+    setActiveSectionId((current) => {
+      if (current && sections.some((section) => section.id === current)) return current;
+      return sections[0]?.id || null;
+    });
+  }, [sections]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -538,90 +545,93 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
     }
   };
 
+  const scrollToSection = (sectionId) => {
+    const target = window.document.getElementById(sectionId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveSectionId(sectionId);
+  };
+
   return (
     <>
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold">{title}</h2>
-              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
-                Pinned
-              </span>
+      <div className="flex gap-6">
+        <div className="hidden w-60 shrink-0 md:block">
+          <KnowledgeDocumentOutline
+            sections={sections}
+            activeSectionId={activeSectionId}
+            onSelectSection={scrollToSection}
+          />
+        </div>
+        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card">
+          <div className="max-h-[75vh] min-h-[420px] overflow-y-auto">
+            <div className="sticky top-0 z-20 bg-card/95 shadow-[0_1px_0_hsl(var(--border)/0.7)] backdrop-blur supports-[backdrop-filter]:bg-card/85">
+              <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full bg-primary/10 px-2 py-1 font-medium text-primary">
+                      Category knowledge
+                    </span>
+                    <span className="text-muted-foreground">
+                      Applies to <span className="font-medium text-foreground">Shipping &amp; Delivery</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold">{title}</h2>
+                    <span
+                      aria-live="polite"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                    >
+                      {isDirty ? "Unsaved changes" : "Pinned"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-start gap-1 md:items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={handleSync}
+                    disabled={syncing}
+                  >
+                    <RotateCcw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+                    {syncing ? "Syncing…" : "Sync from Shopify"}
+                  </Button>
+                  {syncedAgo && (
+                    <p className="text-[10.5px] text-muted-foreground">
+                      Last synced {syncedAgo}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <KnowledgeDocsToolbar editor={editor} />
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={handleSync}
-              disabled={syncing}
-            >
-              <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing…" : "Sync from Shopify"}
-            </Button>
-            {syncedAgo && (
-              <p className="text-[10.5px] text-gray-400">
-                Last synced {syncedAgo}
-              </p>
-            )}
+            <div className="px-6 py-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Use section headings to organise delivery times, exceptions, and address changes.
+                </p>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
+                </span>
+              </div>
+              <KnowledgeDocsCanvas
+                editor={editor}
+                emptyState={
+                  editor && !value.trim() ? (
+                    <div className="mx-auto max-w-md rounded-xl border border-dashed border-border/80 bg-muted/20 px-5 py-5 text-center shadow-sm">
+                      <p className="text-sm font-medium text-foreground">Add your shipping policy</p>
+                      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        Add section headings for delivery times, shipping exceptions, and address changes.
+                      </p>
+                    </div>
+                  ) : null
+                }
+              />
+            </div>
           </div>
         </div>
-        {isEffectivelyExpanded ? (
-          <div className="px-6 py-5">
-            <Textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              rows={16}
-              placeholder="Click here to write your policy…"
-              className="min-h-[240px] max-h-[480px] resize-y overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed border-0 shadow-none p-0 focus-visible:ring-0 bg-transparent"
-            />
-            {!isShort && (
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-[11px] text-gray-400">
-                  {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
-                </p>
-                {!isDirty && (
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(false)}
-                    className="inline-flex items-center gap-1 text-[11.5px] text-gray-500 hover:text-gray-800"
-                  >
-                    <ChevronDown className="h-3 w-3 rotate-180" />
-                    Collapse
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="group flex w-full items-start justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-gray-50/60 dark:hover:bg-gray-800/30"
-          >
-            <div className="min-w-0 flex-1">
-              {previewText ? (
-                <>
-                  <p className="line-clamp-3 text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
-                    {previewText}
-                    {(value || "").length > previewText.length ? "…" : ""}
-                  </p>
-                  <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-                    {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"} · click to expand and edit
-                  </p>
-                </>
-              ) : (
-                <p className="text-[12.5px] text-gray-400 dark:text-gray-500">
-                  No policy yet — click to add one, or sync from Shopify.
-                </p>
-              )}
-            </div>
-            <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400" />
-          </button>
-        )}
       </div>
 
       <StickySaveBar
