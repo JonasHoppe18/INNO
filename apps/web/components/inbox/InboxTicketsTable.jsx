@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
-import { ArrowLeft, Clock3, Inbox, Search, X } from "lucide-react";
+import { ArrowLeft, Clock3, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -230,48 +230,31 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
 
   return (
     <div className="min-h-full bg-muted/[0.18]">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-10">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Inbox className="size-4" />
-              Inbox overview
-            </div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">All tickets</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Search, filter, and jump into any customer conversation.
-            </p>
-          </div>
-          <Button asChild variant="outline" className="w-full justify-center lg:w-auto">
-            <Link href="/inbox">
-              <ArrowLeft className="size-4" />
-              Back to inbox
-            </Link>
-          </Button>
-        </div>
-
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-10">
         <Card className="overflow-hidden rounded-2xl border-border/80 shadow-none">
-          <CardHeader className="gap-4 p-4 sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                <span className="font-semibold text-foreground">{filterCounts.all} tickets</span>
-                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-blue-500" />
-                  {filterCounts.open} open
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-orange-500" />
-                  {filterCounts.unassigned} unassigned
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-emerald-500" />
-                  {filterCounts.resolved} resolved
-                </span>
+          <CardHeader className="gap-3 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Link
+                  href="/inbox"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                >
+                  <ArrowLeft className="size-4" />
+                  <span className="hidden sm:inline">Back to inbox</span>
+                </Link>
+                <span className="h-5 w-px bg-border" aria-hidden="true" />
+                <h1 className="truncate text-base font-semibold text-foreground">All tickets</h1>
               </div>
 
               <div className="text-sm text-muted-foreground" aria-live="polite">
-                Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
-                <span className="font-medium text-foreground">{allRows.length}</span>
+                {rows.length === allRows.length ? (
+                  <span className="font-medium text-foreground">{allRows.length} tickets</span>
+                ) : (
+                  <>
+                    Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
+                    <span className="font-medium text-foreground">{allRows.length}</span>
+                  </>
+                )}
               </div>
             </div>
 
