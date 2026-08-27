@@ -14,6 +14,7 @@ export default async function InboxTicketsPage() {
   let mailboxes = [];
   let threads = [];
   let members = [];
+  let threadTags = [];
 
   try {
     const data = await loadInboxData({
@@ -22,10 +23,12 @@ export default async function InboxTicketsPage() {
       includeMessages: false,
       includeAttachments: false,
       includeMembers: true,
+      includeTags: true,
     });
     mailboxes = data.mailboxes;
     threads = data.threads;
     members = data.members;
+    threadTags = data.threadTags;
   } catch (error) {
     console.error("Inbox tickets lookup failed:", error);
   }
@@ -46,5 +49,5 @@ export default async function InboxTicketsPage() {
     );
   }
 
-  return <InboxTicketsTable threads={threads} members={members} />;
+  return <InboxTicketsTable threads={threads} members={members} threadTags={threadTags} />;
 }

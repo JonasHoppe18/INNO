@@ -109,7 +109,7 @@ function statusClasses(status) {
   return "border-blue-200 bg-blue-50 text-blue-700";
 }
 
-export function InboxTicketsTable({ threads = [], members = [] }) {
+export function InboxTicketsTable({ threads = [], members = [], threadTags = [] }) {
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -124,6 +124,18 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
     });
     return map;
   }, [members]);
+
+  const tagsByThreadId = useMemo(() => {
+    const map = new Map();
+    (threadTags || []).forEach((tag) => {
+      const threadId = String(tag?.thread_id || "").trim();
+      if (!threadId || !tag?.id || !tag?.name) return;
+      const tags = map.get(threadId) || [];
+      tags.push(tag);
+      map.set(threadId, tags);
+    });
+    return map;
+  }, [threadTags]);
 
   const allRows = useMemo(() => {
     return (threads || [])
@@ -152,6 +164,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
           customerEmail,
           status,
           assigneeLabel,
+          tags: tagsByThreadId.get(String(thread?.id || "").trim()) || [],
           unread: thread?.is_read === false || Number(thread?.unread_count || 0) > 0,
           priority: String(thread?.priority || "").trim().toLowerCase(),
           createdAt,
@@ -159,7 +172,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
         };
       })
       .sort((a, b) => getTime(b.lastActivity) - getTime(a.lastActivity));
-  }, [membersById, threads]);
+  }, [membersById, tagsByThreadId, threads]);
 
   const filterCounts = useMemo(() => {
     return {
@@ -233,8 +246,8 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
   return (
     <div className="min-h-full bg-background">
       <div className="mx-auto flex w-full max-w-none flex-col px-2 py-2 sm:px-4 lg:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-1 pb-3">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-1 py-1.5">
+          <div className="flex min-w-0 items-center">
             <Link
               href="/inbox"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.98]"
@@ -242,8 +255,6 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
               <ArrowLeft className="size-4" />
               <span className="hidden sm:inline">Back to inbox</span>
             </Link>
-            <span className="h-5 w-px bg-border" aria-hidden="true" />
-            <h1 className="truncate text-base font-semibold text-foreground">All tickets</h1>
           </div>
 
           <div className="text-sm text-muted-foreground" aria-live="polite">
@@ -384,10 +395,10 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                               </div>
                               {row.ticketRef !== "No ticket ID" ? (
                                 <span
-                                  className="inline-flex shrink-0 items-center rounded-md border border-primary/20 bg-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-primary"
+                                  className="shrink-0 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
                                   title={`Ticket ID ${row.ticketRef}`}
                                 >
-                                  {row.ticketRef}
+                                  #{row.ticketRef.replace(/^T-/, "")}
                                 </span>
                               ) : null}
                               {row.unread ? (
@@ -404,6 +415,29 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                               >
                                 {row.subject}
                               </div>
+                              {row.tags.length ? (
+                                <div className="hidden shrink-0 items-center gap-1 sm:flex">
+                                  {row.tags.slice(0, 2).map((tag) => (
+                                    <span
+                                      key={tag.id}
+                                      className="inline-flex max-w-[108px] items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                      title={`Tag: ${tag.name}`}
+                                    >
+                                      <span
+                                        className="size-1.5 shrink-0 rounded-full"
+                                        style={{ backgroundColor: tag.color || "#94a3b8" }}
+                                        aria-hidden="true"
+                                      />
+                                      <span className="truncate">{tag.name}</span>
+                                    </span>
+                                  ))}
+                                  {row.tags.length > 2 ? (
+                                    <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+                                      +{row.tags.length - 2}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             {row.snippet ? (
                               <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground xl:inline" title={row.snippet}>
                                 — {row.snippet}

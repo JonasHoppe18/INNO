@@ -9,7 +9,7 @@ import { NotificationBell } from "@/components/dashboard/NotificationBell";
 const TITLE_MAP = {
   "/dashboard": "Dashboard",
   "/inbox": "Inbox",
-  "/inbox/tickets": "Tickets",
+  "/inbox/tickets": "All tickets",
   "/automation": "Automation",
   "/knowledge-hub": "Knowledge",
   "/knowledge": "Knowledge",
