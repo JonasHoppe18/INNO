@@ -400,12 +400,12 @@ export function KnowledgeDocumentEditorCard({
                 editor={editor}
                 emptyState={
                   editor && !value.trim() ? (
-                    <div className="mx-auto max-w-md rounded-xl border border-dashed border-border/80 bg-muted/20 px-5 py-5 text-center shadow-sm">
+                    <div className="mx-auto max-w-md rounded-xl border border-dashed border-border/80 bg-muted/20 px-5 py-4 text-center shadow-sm">
                       <p className="text-sm font-medium text-foreground">Start with a section heading</p>
                       <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
                         Create focused sections like Setup, Troubleshooting, or Compatibility so Sona can retrieve the right answer.
                       </p>
-                      <Button type="button" size="sm" className="mt-4" onClick={createFirstSection}>
+                      <Button type="button" size="sm" className="mt-3" onClick={createFirstSection}>
                         Add first section
                       </Button>
                     </div>

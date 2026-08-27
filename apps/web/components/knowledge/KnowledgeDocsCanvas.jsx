@@ -22,7 +22,7 @@ export function KnowledgeDocsCanvas({ editor, emptyState = null }) {
         )}
       />
       {emptyState && (
-        <div className="pointer-events-none absolute inset-x-0 top-20 flex justify-center px-8">
+        <div className="pointer-events-none absolute inset-x-0 top-8 flex justify-center px-8">
           <div className="pointer-events-auto w-full">{emptyState}</div>
         </div>
       )}
