@@ -39,6 +39,8 @@ export function KnowledgeDocumentEditorCard({
   title,
   description,
   helperText = "Use section headings to organise the guide. Each section heading becomes a focused knowledge section for the AI.",
+  scopeLabel,
+  scopeValue,
   allowPublish = true,
 }) {
   const router = useRouter();
@@ -263,6 +265,11 @@ export function KnowledgeDocumentEditorCard({
     router.push(buildKnowledgeDocumentSimulationHref(document.id));
   };
 
+  const createFirstSection = () => {
+    if (!editor) return;
+    editor.chain().focus().toggleHeading({ level: 2 }).insertContent("Overview").run();
+  };
+
   if (loading) {
     return (
       <div className="flex gap-6">
@@ -305,12 +312,32 @@ export function KnowledgeDocumentEditorCard({
             className={cn("overflow-y-auto", EDITOR_SCROLL_HEIGHT_CLASS)}
             style={{ "--knowledge-doc-header-height": `${headerHeight}px` }}
           >
-            <div ref={stickyHeaderRef} className="sticky top-0 z-20 bg-card">
+            <div
+              ref={stickyHeaderRef}
+              className="sticky top-0 z-20 bg-card/95 shadow-[0_1px_0_hsl(var(--border)/0.7)] backdrop-blur supports-[backdrop-filter]:bg-card/85"
+            >
               <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
+                  {(scopeLabel || scopeValue) && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                      {scopeLabel && (
+                        <span className="rounded-full bg-primary/10 px-2 py-1 font-medium text-primary">
+                          {scopeLabel}
+                        </span>
+                      )}
+                      {scopeValue && (
+                        <span className="text-muted-foreground">
+                          Applies to <span className="font-medium text-foreground">{scopeValue}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold">{title}</h2>
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                    <span
+                      aria-live="polite"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                    >
                       {currentStatus}
                     </span>
                   </div>
@@ -369,7 +396,22 @@ export function KnowledgeDocumentEditorCard({
                   {previewError}
                 </div>
               )}
-              <KnowledgeDocsCanvas editor={editor} />
+              <KnowledgeDocsCanvas
+                editor={editor}
+                emptyState={
+                  editor && !value.trim() ? (
+                    <div className="mx-auto max-w-md rounded-xl border border-dashed border-border/80 bg-muted/20 px-5 py-5 text-center shadow-sm">
+                      <p className="text-sm font-medium text-foreground">Start with a section heading</p>
+                      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        Create focused sections like Setup, Troubleshooting, or Compatibility so Sona can retrieve the right answer.
+                      </p>
+                      <Button type="button" size="sm" className="mt-4" onClick={createFirstSection}>
+                        Add first section
+                      </Button>
+                    </div>
+                  ) : null
+                }
+              />
             </div>
           </div>
         </div>

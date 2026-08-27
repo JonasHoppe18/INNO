@@ -783,6 +783,8 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             documentType="returns_refunds"
             title="Returns & Refunds"
             description="Define your return policy and how refunds work"
+            scopeLabel="Category knowledge"
+            scopeValue="Returns & Refunds"
           />
         ) : (
           <PolicyEditor
@@ -806,6 +808,8 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
           documentType="general"
           title="General Knowledge"
           description="Define store-wide procedures, contact details, and merchant-specific handling."
+          scopeLabel="All categories"
+          scopeValue="Your workspace"
         />
       )}
 
