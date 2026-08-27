@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
-import { CheckCircle2, Inbox, Search, Ticket, UserRound, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Inbox, Search, Ticket, UserRound, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -50,26 +50,40 @@ function formatCreated(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("da-DK", {
-    day: "2-digit",
-    month: "2-digit",
+  return date.toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
     year: "numeric",
     timeZone: "UTC",
   });
 }
 
-function formatLastActivity(value) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("da-DK", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+function formatRelativeTime(value) {
+  const time = getTime(value);
+  if (!time) return "No activity";
+
+  const elapsed = Math.max(0, Date.now() - time);
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatCreated(value);
+}
+
+function getInitials(value) {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "—";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 }
 
 function getTime(value) {
@@ -123,14 +137,21 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
         const lastActivity = thread?.last_message_at || thread?.updated_at || createdAt || null;
         const ticketRef = formatTicketReference(thread?.ticket_number);
         const ticketRefSearchTerms = ticketReferenceSearchTerms(thread?.ticket_number);
+        const customerName = String(thread?.customer_name || "").trim();
+        const customerEmail = String(thread?.customer_email || "").trim();
+        const assigneeLabel = formatAssignee(assignee);
         return {
           id: String(thread?.id || ""),
           ticketRef,
           ticketRefSearchTerms,
           subject,
           snippet: String(thread?.snippet || "").trim(),
+          customerName,
+          customerEmail,
           status,
-          assigneeLabel: formatAssignee(assignee),
+          assigneeLabel,
+          unread: thread?.is_read === false || Number(thread?.unread_count || 0) > 0,
+          priority: String(thread?.priority || "").trim().toLowerCase(),
           createdAt,
           lastActivity,
         };
@@ -173,7 +194,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
           : false;
         return (
           ticketMatch ||
-          [row.subject, row.snippet, row.assigneeLabel]
+          [row.subject, row.snippet, row.customerName, row.customerEmail, row.assigneeLabel]
             .join(" ")
             .toLowerCase()
             .includes(normalizedQuery)
@@ -208,53 +229,53 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
   }
 
   return (
-    <div className="min-h-full bg-muted/30">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-8">
+    <div className="min-h-full bg-muted/[0.18]">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <Inbox className="size-4" />
               Inbox overview
             </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Tickets</h1>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">All tickets</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Search, filter, and jump into customer conversations.
+              Search, filter, and jump into any customer conversation.
             </p>
           </div>
-          <Button asChild className="w-full justify-center lg:w-auto">
+          <Button asChild variant="outline" className="w-full justify-center lg:w-auto">
             <Link href="/inbox">
-              Open inbox
-              <Inbox className="size-4" />
+              <ArrowLeft className="size-4" />
+              Back to inbox
             </Link>
           </Button>
         </div>
 
-        <Card className="overflow-hidden rounded-lg border-border shadow-sm">
-          <CardHeader className="gap-4 p-4">
+        <Card className="overflow-hidden rounded-2xl border-border/80 shadow-sm">
+          <CardHeader className="gap-5 p-4 sm:p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-lg border bg-background px-3 py-2">
+                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <Ticket className="size-3.5" />
                     Total
                   </div>
                   <div className="mt-1 text-xl font-semibold">{filterCounts.all}</div>
                 </div>
-                <div className="rounded-lg border bg-background px-3 py-2">
+                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <Inbox className="size-3.5" />
                     Open
                   </div>
                   <div className="mt-1 text-xl font-semibold">{filterCounts.open}</div>
                 </div>
-                <div className="rounded-lg border bg-background px-3 py-2">
+                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <UserRound className="size-3.5" />
                     Unassigned
                   </div>
                   <div className="mt-1 text-xl font-semibold">{filterCounts.unassigned}</div>
                 </div>
-                <div className="rounded-lg border bg-background px-3 py-2">
+                <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <CheckCircle2 className="size-3.5" />
                     Resolved
@@ -263,7 +284,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                 </div>
               </div>
 
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-muted-foreground" aria-live="polite">
                 Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
                 <span className="font-medium text-foreground">{allRows.length}</span>
               </div>
@@ -317,6 +338,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                 type="button"
                 variant="outline"
                 className="h-10 justify-start gap-2"
+                disabled={!query && activeFilter === "all" && assigneeFilter === "all"}
                 onClick={() => {
                   setQuery("");
                   setActiveFilter("all");
@@ -347,51 +369,78 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
             ) : null}
 
             <Table className="table-fixed">
-              <TableHeader className="sticky top-0 z-10 bg-white">
-                <TableRow className="border-b border-slate-200 bg-slate-50/70 hover:bg-slate-50/70">
-                  <TableHead className="w-12 px-5 py-3">
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow className="border-b border-border/80 bg-muted/25 hover:bg-muted/25">
+                  <TableHead className="w-12 px-4 py-3 sm:px-5">
                     <Checkbox
                       checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
                       onCheckedChange={(checked) => setAllVisibleSelected(checked === true)}
                       aria-label="Select visible tickets"
                     />
                   </TableHead>
-                  <TableHead className="w-[56%] px-5 py-3">Conversation</TableHead>
-                  <TableHead className="w-[14%] px-5 py-3">Status</TableHead>
-                  <TableHead className="w-[26%] px-5 py-3">Owner and timing</TableHead>
+                  <TableHead className="w-[51%] px-4 py-3 sm:px-5">Conversation</TableHead>
+                  <TableHead className="w-[13%] px-4 py-3 sm:px-5">Status</TableHead>
+                  <TableHead className="w-[20%] px-4 py-3 sm:px-5">Owner</TableHead>
+                  <TableHead className="w-[16%] px-4 py-3 sm:px-5">Last activity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.length ? (
                   rows.map((row) => (
-                    <TableRow key={row.id} className="border-b border-slate-200/80 hover:bg-slate-50/60">
-                      <TableCell className="px-5 py-4 align-top">
+                    <TableRow
+                      key={row.id}
+                      className={cn(
+                        "group border-b border-border/70 transition-colors hover:bg-muted/35",
+                        selectedIds.has(row.id) && "bg-primary/[0.03]"
+                      )}
+                    >
+                      <TableCell className="px-4 py-4 align-top sm:px-5">
                         <Checkbox
                           checked={selectedIds.has(row.id)}
                           onCheckedChange={(checked) => setRowSelected(row.id, checked === true)}
                           aria-label={`Select ${row.ticketRef}`}
                         />
                       </TableCell>
-                      <TableCell className="px-5 py-4 align-top">
+                      <TableCell className="px-4 py-4 align-top sm:px-5">
                         <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block min-w-0">
                           <div className="flex min-w-0 items-center gap-2">
                             <div
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
+                              className={cn(
+                                "min-w-0 truncate font-semibold text-foreground",
+                                row.unread && "font-bold"
+                              )}
+                            >
+                              {row.subject}
+                            </div>
+                            {row.unread ? (
+                              <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+                            ) : null}
+                          </div>
+                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                            <span className="max-w-[220px] truncate font-medium text-foreground/75">
+                              {row.customerName || row.customerEmail || "Unknown customer"}
+                            </span>
+                            {row.customerName && row.customerEmail ? <span aria-hidden="true">•</span> : null}
+                            {row.customerName && row.customerEmail ? (
+                              <span className="max-w-[260px] truncate">{row.customerEmail}</span>
+                            ) : null}
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em]",
                                 row.ticketRef !== "No ticket ID"
-                                  ? "border border-indigo-200 bg-indigo-50 font-mono text-indigo-700"
-                                  : "border border-slate-200 bg-slate-50 text-slate-500"
-                              }`}
+                                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                  : "border-border bg-muted text-muted-foreground"
+                              )}
                             >
                               {row.ticketRef}
-                            </div>
-                            <div className="truncate font-medium text-foreground">{row.subject}</div>
+                            </span>
                           </div>
-                          <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                          <div className="mt-2 line-clamp-1 text-sm leading-6 text-muted-foreground">
                             {row.snippet || "No preview available."}
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="px-5 py-4 align-top">
+                      <TableCell className="px-4 py-4 align-top sm:px-5">
                         <Badge
                           variant="outline"
                           className={`mt-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(row.status)}`}
@@ -399,25 +448,40 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           {row.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-5 py-4 align-top text-sm">
-                        <div
-                          className={cn(
-                            "font-medium",
-                            row.assigneeLabel === "Unassigned" ? "text-orange-700" : "text-foreground"
-                          )}
-                        >
-                          {row.assigneeLabel}
+                      <TableCell className="px-4 py-4 align-top text-sm sm:px-5">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                              row.assigneeLabel === "Unassigned"
+                                ? "bg-orange-500/10 text-orange-700"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {row.assigneeLabel === "Unassigned" ? "—" : getInitials(row.assigneeLabel)}
+                          </span>
+                          <span
+                            className={cn(
+                              "min-w-0 truncate font-medium",
+                              row.assigneeLabel === "Unassigned" ? "text-orange-700" : "text-foreground"
+                            )}
+                          >
+                            {row.assigneeLabel}
+                          </span>
                         </div>
-                        <div className="mt-1 text-muted-foreground">Created {formatCreated(row.createdAt)}</div>
-                        <div className="text-muted-foreground">
-                          Last activity {formatLastActivity(row.lastActivity)}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-top text-sm sm:px-5">
+                        <div className="flex items-center gap-1.5 font-medium text-foreground">
+                          <Clock3 className="size-3.5 text-muted-foreground" />
+                          {formatRelativeTime(row.lastActivity)}
                         </div>
+                        <div className="mt-1 text-xs text-muted-foreground">Created {formatCreated(row.createdAt)}</div>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-28 text-center text-sm text-slate-500">
+                    <TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">
                       No tickets match this view.
                     </TableCell>
                   </TableRow>
