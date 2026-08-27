@@ -23,6 +23,8 @@ import { KnowledgeDocsCanvas } from "./KnowledgeDocsCanvas";
 const EDITOR_SCROLL_HEIGHT_CLASS = "max-h-[75vh] min-h-[420px]";
 const SECTION_HIGHLIGHT_CLASS = "animate-knowledge-doc-section-flash";
 const SECTION_HIGHLIGHT_DURATION_MS = 900;
+const AI_INDEXING_FALLBACK_WARNING =
+  "AI preview is not ready yet. Your changes are saved, but preview and publishing are unavailable until AI indexing succeeds.";
 
 function statusLabel({ isDirty, document }) {
   if (isDirty) return "Unsaved changes";
@@ -52,6 +54,7 @@ export function KnowledgeDocumentEditorCard({
   const [value, setValue] = useState("");
   const [savedValue, setSavedValue] = useState("");
   const [error, setError] = useState("");
+  const [indexingWarning, setIndexingWarning] = useState("");
   const [previewError, setPreviewError] = useState("");
   const [activeSectionId, setActiveSectionId] = useState(null);
 
@@ -78,6 +81,12 @@ export function KnowledgeDocumentEditorCard({
       setDocument(data.document);
       setValue(data.document?.draft_markdown || "");
       setSavedValue(data.document?.draft_markdown || "");
+      const previewIndex = data.document?.metadata?.knowledge_index?.preview;
+      setIndexingWarning(
+        previewIndex?.status === "error"
+          ? previewIndex.message || AI_INDEXING_FALLBACK_WARNING
+          : "",
+      );
       if (data?.shop_id) onShopId?.(data.shop_id);
     } catch (err) {
       setError(err.message || "Could not load document.");
@@ -94,6 +103,7 @@ export function KnowledgeDocumentEditorCard({
     value,
     onChange: (markdown) => {
       setValue(markdown);
+      setError("");
       setPreviewError("");
     },
   });
@@ -179,9 +189,12 @@ export function KnowledgeDocumentEditorCard({
   }, []);
 
   const isDirty = value !== savedValue;
+  const previewIndexStatus = document?.metadata?.knowledge_index?.preview?.status;
+  const canRetryIndexing = !isDirty && previewIndexStatus === "error";
   const previewBlockedReason = getKnowledgeDocumentPreviewBlockedReason({
     documentId: document?.id,
     isDirty,
+    indexingStatus: previewIndexStatus,
   });
   const canPreview = !previewBlockedReason;
   const currentStatus = statusLabel({ isDirty, document });
@@ -206,8 +219,16 @@ export function KnowledgeDocumentEditorCard({
       if (!res.ok) throw new Error(data?.error || "Could not save document.");
       setDocument(data.document);
       setSavedValue(data.document?.draft_markdown || value);
+      const warning = data?.warning || (
+        data?.indexing?.status === "error" ? AI_INDEXING_FALLBACK_WARNING : ""
+      );
+      setIndexingWarning(warning);
       setPreviewError("");
-      toast.success("Knowledge document saved");
+      if (warning) {
+        toast.warning("Changes saved, but AI preview is not ready");
+      } else {
+        toast.success("Knowledge document saved");
+      }
     } catch (err) {
       setError(err.message || "Could not save document.");
       toast.error(err.message || "Could not save document.");
@@ -236,6 +257,8 @@ export function KnowledgeDocumentEditorCard({
       setDocument(data.document);
       setSavedValue(data.document?.draft_markdown || value);
       setValue(data.document?.draft_markdown || value);
+      setIndexingWarning("");
+      setPreviewError("");
       toast.success("Knowledge document published");
     } catch (err) {
       setError(err.message || "Could not publish document.");
@@ -350,6 +373,7 @@ export function KnowledgeDocumentEditorCard({
                       variant="outline"
                       size="sm"
                       onClick={openTicketPreview}
+                      disabled={!canPreview}
                       title={previewBlockedReason || "Run an A/B preview against a ticket"}
                     >
                       Test against ticket
@@ -359,6 +383,7 @@ export function KnowledgeDocumentEditorCard({
                       variant="outline"
                       size="sm"
                       onClick={openSimulation}
+                      disabled={!canPreview}
                       title={previewBlockedReason || "Open simulation with this draft document preview"}
                     >
                       Simulate conversation
@@ -372,12 +397,18 @@ export function KnowledgeDocumentEditorCard({
                         size="sm"
                         onClick={publishDraft}
                         disabled={publishing || isDirty || !document?.id}
+                        title={isDirty ? "Save changes before publishing" : "Publish this knowledge document"}
                       >
                         {publishing ? "Publishing..." : "Publish"}
                       </Button>
                     )}
-                    <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
-                      {saving ? "Saving..." : "Save changes"}
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={saveDraft}
+                      disabled={saving || (!isDirty && !canRetryIndexing)}
+                    >
+                      {saving ? "Saving..." : canRetryIndexing ? "Retry indexing" : "Save changes"}
                     </Button>
                   </div>
                 </div>
@@ -389,6 +420,14 @@ export function KnowledgeDocumentEditorCard({
               {error && (
                 <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
                   {error}
+                </div>
+              )}
+              {indexingWarning && (
+                <div
+                  role="status"
+                  className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                >
+                  {indexingWarning}
                 </div>
               )}
               {previewError && (

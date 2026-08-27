@@ -1,6 +1,9 @@
-export function getKnowledgeDocumentPreviewBlockedReason({ documentId, isDirty }) {
+export function getKnowledgeDocumentPreviewBlockedReason({ documentId, isDirty, indexingStatus }) {
   if (isDirty) return "Save changes before testing it.";
   if (!String(documentId || "").trim()) return "Save the document before testing it.";
+  if (indexingStatus === "error") {
+    return "AI preview is not ready yet. Resolve the AI indexing setup, then save again.";
+  }
   return "";
 }
 
