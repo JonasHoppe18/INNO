@@ -357,10 +357,11 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                       aria-label="Select visible tickets"
                     />
                   </TableHead>
-                  <TableHead className="w-[51%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Conversation</TableHead>
-                  <TableHead className="w-[13%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Status</TableHead>
-                  <TableHead className="w-[20%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Owner</TableHead>
-                  <TableHead className="w-[16%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Last activity</TableHead>
+                  <TableHead className="w-[47%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Conversation</TableHead>
+                  <TableHead className="w-[11%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Status</TableHead>
+                  <TableHead className="w-[15%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Type</TableHead>
+                  <TableHead className="w-[15%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Owner</TableHead>
+                  <TableHead className="w-[12%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Last activity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -415,34 +416,11 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                               >
                                 {row.subject}
                               </div>
-                              {row.tags.length ? (
-                                <div className="hidden shrink-0 items-center gap-1 sm:flex">
-                                  {row.tags.slice(0, 2).map((tag) => (
-                                    <span
-                                      key={tag.id}
-                                      className="inline-flex max-w-[108px] items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                                      title={`Tag: ${tag.name}`}
-                                    >
-                                      <span
-                                        className="size-1.5 shrink-0 rounded-full"
-                                        style={{ backgroundColor: tag.color || "#94a3b8" }}
-                                        aria-hidden="true"
-                                      />
-                                      <span className="truncate">{tag.name}</span>
-                                    </span>
-                                  ))}
-                                  {row.tags.length > 2 ? (
-                                    <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
-                                      +{row.tags.length - 2}
-                                    </span>
-                                  ) : null}
-                                </div>
+                              {row.snippet ? (
+                                <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground xl:inline" title={row.snippet}>
+                                  — {row.snippet}
+                                </span>
                               ) : null}
-                            {row.snippet ? (
-                              <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground xl:inline" title={row.snippet}>
-                                — {row.snippet}
-                              </span>
-                            ) : null}
                             </div>
                           </div>
                         </Link>
@@ -454,6 +432,30 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                         >
                           {row.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 align-middle sm:px-5">
+                        {row.tags.length ? (
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span
+                              className="inline-flex min-w-0 max-w-[132px] items-center gap-1.5 rounded-full border border-border/80 bg-muted/35 px-2 py-1 text-xs font-medium text-foreground"
+                              title={`Tag: ${row.tags[0].name}`}
+                            >
+                              <span
+                                className="size-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: row.tags[0].color || "#94a3b8" }}
+                                aria-hidden="true"
+                              />
+                              <span className="truncate">{row.tags[0].name}</span>
+                            </span>
+                            {row.tags.length > 1 ? (
+                              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+                                +{row.tags.length - 1}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground/60">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="px-4 py-2.5 align-middle text-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-2.5">
@@ -488,7 +490,7 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="h-32 text-center text-sm text-muted-foreground">
                       No tickets match this view.
                     </TableCell>
                   </TableRow>
