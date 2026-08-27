@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -40,6 +39,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const ICON_MAP = {
   Package,
@@ -274,12 +281,14 @@ const ICON_COLORS = {
 
 function CategoryCard({ category, onClick }) {
   const iconColor = ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
+  const count = Number(category.count);
+  const hasContent = Number.isFinite(count) && count > 0;
   return (
     <Card
       role="link"
       tabIndex={0}
       aria-label={`Open ${category.label}`}
-      className="group cursor-pointer rounded-2xl border-border/70 shadow-sm transition-[transform,border-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-md active:scale-[0.98]"
+      className="group flex h-full cursor-pointer flex-col rounded-2xl border-border/70 shadow-sm transition-[transform,border-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-md active:scale-[0.98]"
       onClick={onClick}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -303,13 +312,22 @@ function CategoryCard({ category, onClick }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-5 pt-0">
+      <CardContent className="flex flex-1 flex-col p-5 pt-0">
         <CardTitle className="text-base font-semibold tracking-tight">{category.label}</CardTitle>
         {category.description && (
           <CardDescription className="mt-1.5 line-clamp-2 text-sm leading-5">
             {category.description}
           </CardDescription>
         )}
+        <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {Number.isFinite(count) ? `${count} ${count === 1 ? "item" : "items"}` : "No content yet"}
+          </span>
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${hasContent ? "text-foreground" : "text-primary"}`}>
+            {hasContent ? "View content" : "Add content"}
+            <ChevronRight className="size-3.5 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
+          </span>
+        </div>
       </CardContent>
     </Card>
   );
@@ -704,15 +722,15 @@ function SavedRepliesSection() {
           ))}
         </div>
       ) : replies.length === 0 ? (
-        <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-6 py-10 text-center">
-          <div className="flex size-10 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm">
+        <div className="flex min-h-[168px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-6 py-7 text-center">
+          <div className="flex size-9 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm">
             <BookMarked className="size-4" />
           </div>
           <p className="text-sm font-medium">No saved replies yet</p>
           <p className="mt-1 max-w-sm text-sm leading-5 text-muted-foreground">
             Create a reusable response your team can insert into drafts with one click.
           </p>
-          <Button className="mt-4 h-9 rounded-lg" onClick={openNew}>
+          <Button className="mt-3 h-9 rounded-lg" onClick={openNew}>
             <Plus className="mr-1.5 size-4" />
             Create first reply
           </Button>
@@ -1050,19 +1068,12 @@ export function KnowledgeCategoriesClient() {
   const router = useRouter();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [ticketExamplesCount, setTicketExamplesCount] = useState(null);
 
-  const fetchTicketExamplesCount = useCallback(async () => {
-    try {
-      const res = await fetch("/api/knowledge/import-zendesk", { credentials: "include" });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) return;
-      const nextCount = Number(payload?.count);
-      if (Number.isFinite(nextCount)) setTicketExamplesCount(nextCount);
-    } catch {
-      // no-op
-    }
-  }, []);
+  const totalKnowledgeItems = categories.reduce((total, category) => {
+    const count = Number(category?.count);
+    return total + (Number.isFinite(count) ? count : 0);
+  }, 0);
+  const hasKnowledge = totalKnowledgeItems > 0;
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
@@ -1081,10 +1092,6 @@ export function KnowledgeCategoriesClient() {
     fetchCategories();
   }, [fetchCategories]);
 
-  useEffect(() => {
-    fetchTicketExamplesCount();
-  }, [fetchTicketExamplesCount]);
-
   return (
     <div className="space-y-8">
       <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
@@ -1096,6 +1103,36 @@ export function KnowledgeCategoriesClient() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                disabled={loading || categories.length === 0}
+                className="h-9 rounded-lg gap-1.5"
+              >
+                <Plus className="size-4" />
+                Add knowledge
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 rounded-xl">
+              <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Choose a category
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {categories.map((category) => (
+                <DropdownMenuItem
+                  key={category.slug}
+                  onSelect={() => router.push(`/knowledge/${category.slug}`)}
+                  className="gap-3 py-2.5"
+                >
+                  <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500"}`}>
+                    <CategoryIcon name={category.icon} className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{category.label}</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             onClick={() => router.push("/knowledge/simulate")}
@@ -1104,7 +1141,7 @@ export function KnowledgeCategoriesClient() {
             Simulate a conversation
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             onClick={() => router.push("/knowledge/all")}
             className="h-9 rounded-lg gap-1.5"
           >
@@ -1113,6 +1150,35 @@ export function KnowledgeCategoriesClient() {
           </Button>
         </div>
       </header>
+
+      {!loading && categories.length > 0 && !hasKnowledge ? (
+        <section className="rounded-2xl border border-border/70 bg-muted/20 p-4 sm:p-5" aria-labelledby="knowledge-get-started-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Get started</p>
+              <h2 id="knowledge-get-started-heading" className="mt-1 text-base font-semibold tracking-tight">Build Sona&apos;s knowledge base</h2>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Add the context Sona needs before it starts answering customers.
+              </p>
+            </div>
+            <Button
+              type="button"
+              className="h-9 shrink-0 rounded-lg"
+              onClick={() => {
+                const nextCategory = categories.find((category) => Number(category?.count) === 0) || categories[0];
+                if (nextCategory?.slug) router.push(`/knowledge/${nextCategory.slug}`);
+              }}
+            >
+              <Plus className="mr-1.5 size-4" />
+              Add your first source
+            </Button>
+          </div>
+          <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-primary" />
+            Choose a category below to add product details, policies, or support answers.
+          </div>
+        </section>
+      ) : null}
 
       {/* KnowledgeGapsSection temporarily hidden — it suggested creating
           gap-named categories which confused early customers. Re-enable once
@@ -1170,26 +1236,6 @@ export function KnowledgeCategoriesClient() {
           </div>
         )}
       </section>
-
-      <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground shadow-sm">
-          <BookMarked className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Imported ticket examples</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {ticketExamplesCount !== null
-              ? `${ticketExamplesCount} examples available to improve Sona’s replies.`
-              : "Use past tickets as examples for better replies."}
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2" asChild>
-          <Link href="/integrations/zendesk">
-            Manage import
-            <ChevronRight className="ml-1 size-4" />
-          </Link>
-        </Button>
-      </div>
 
       <SavedRepliesSection />
     </div>

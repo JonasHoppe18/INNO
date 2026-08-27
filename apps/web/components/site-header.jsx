@@ -12,7 +12,7 @@ const TITLE_MAP = {
   "/inbox/tickets": "Tickets",
   "/automation": "Automation",
   "/knowledge-hub": "Knowledge",
-  "/knowledge": "Knowledge Base",
+  "/knowledge": "Knowledge",
   "/integrations": "Integrations",
   "/settings": "Settings",
   "/playground": "Playground",
