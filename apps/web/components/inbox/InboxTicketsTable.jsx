@@ -6,9 +6,7 @@ import { ArrowLeft, Clock3, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -31,6 +29,7 @@ import {
   formatTicketReference,
   ticketReferenceSearchTerms,
 } from "@/lib/tickets/reference";
+import { isAutomated } from "@/lib/inbox/view-model";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -128,6 +127,9 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
 
   const allRows = useMemo(() => {
     return (threads || [])
+      // Keep automated notifications in the dedicated Spam inbox. The main
+      // ticket overview should only represent customer conversations.
+      .filter((thread) => !isAutomated(thread))
       .map((thread) => {
         const assigneeId = String(thread?.assignee_id || "").trim();
         const assignee = assigneeId ? membersById.get(assigneeId) || null : null;
@@ -229,37 +231,35 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
   }
 
   return (
-    <div className="min-h-full bg-muted/[0.18]">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-10">
-        <Card className="overflow-hidden rounded-2xl border-border/80 shadow-none">
-          <CardHeader className="gap-3 p-3 sm:p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <Link
-                  href="/inbox"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.98]"
-                >
-                  <ArrowLeft className="size-4" />
-                  <span className="hidden sm:inline">Back to inbox</span>
-                </Link>
-                <span className="h-5 w-px bg-border" aria-hidden="true" />
-                <h1 className="truncate text-base font-semibold text-foreground">All tickets</h1>
-              </div>
+    <div className="min-h-full bg-background">
+      <div className="mx-auto flex w-full max-w-none flex-col px-2 py-2 sm:px-4 lg:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-1 pb-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href="/inbox"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.98]"
+            >
+              <ArrowLeft className="size-4" />
+              <span className="hidden sm:inline">Back to inbox</span>
+            </Link>
+            <span className="h-5 w-px bg-border" aria-hidden="true" />
+            <h1 className="truncate text-base font-semibold text-foreground">All tickets</h1>
+          </div>
 
-              <div className="text-sm text-muted-foreground" aria-live="polite">
-                {rows.length === allRows.length ? (
-                  <span className="font-medium text-foreground">{allRows.length} tickets</span>
-                ) : (
-                  <>
-                    Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
-                    <span className="font-medium text-foreground">{allRows.length}</span>
-                  </>
-                )}
-              </div>
-            </div>
+          <div className="text-sm text-muted-foreground" aria-live="polite">
+            {rows.length === allRows.length ? (
+              <span className="font-medium text-foreground">{allRows.length} tickets</span>
+            ) : (
+              <>
+                Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
+                <span className="font-medium text-foreground">{allRows.length}</span>
+              </>
+            )}
+          </div>
+        </div>
 
-            <Separator />
-
+        <div className="overflow-hidden border-b border-border/70 bg-background">
+          <div className="border-b border-border/70 py-3">
             <div className="grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[auto_minmax(0,1fr)_auto]">
               <Tabs value={activeFilter} onValueChange={setActiveFilter} className="min-w-0 overflow-x-auto">
                 <TabsList className="h-10 justify-start">
@@ -317,11 +317,11 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                 Clear filters
               </Button>
             </div>
-          </CardHeader>
+          </div>
 
-          <CardContent className="p-0">
+          <div>
             {selectedCount > 0 ? (
-              <div className="flex flex-col gap-2 border-t bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 border-b bg-muted/40 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm font-medium">
                   {selectedCount} ticket{selectedCount === 1 ? "" : "s"} selected
                 </div>
@@ -337,7 +337,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
             ) : null}
 
             <Table className="table-fixed">
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="border-b border-border/80 bg-muted/25 hover:bg-muted/25">
                   <TableHead className="w-12 px-4 py-2 sm:px-5">
                     <Checkbox
@@ -362,50 +362,58 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                         selectedIds.has(row.id) && "bg-primary/[0.03]"
                       )}
                     >
-                      <TableCell className="px-4 py-3 align-middle sm:px-5">
+                      <TableCell className="px-4 py-2.5 align-middle sm:px-5">
                         <Checkbox
                           checked={selectedIds.has(row.id)}
                           onCheckedChange={(checked) => setRowSelected(row.id, checked === true)}
                           aria-label={`Select ${row.ticketRef}`}
                         />
                       </TableCell>
-                      <TableCell className="px-4 py-3 align-middle sm:px-5">
+                      <TableCell className="px-4 py-2.5 align-middle sm:px-5">
                         <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block min-w-0">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div className="max-w-[180px] shrink-0 truncate text-xs font-medium text-muted-foreground">
-                              {row.customerName || row.customerEmail || "Unknown customer"}
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div
+                                className={cn(
+                                  "min-w-0 truncate text-xs font-medium text-muted-foreground",
+                                  row.unread && "font-semibold text-foreground"
+                                )}
+                                title={row.customerName || row.customerEmail || "Unknown customer"}
+                              >
+                                {row.customerName || row.customerEmail || "Unknown customer"}
+                              </div>
+                              {row.ticketRef !== "No ticket ID" ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-md border border-primary/20 bg-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-primary"
+                                  title={`Ticket ID ${row.ticketRef}`}
+                                >
+                                  {row.ticketRef}
+                                </span>
+                              ) : null}
+                              {row.unread ? (
+                                <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+                              ) : null}
                             </div>
-                            <span className="text-muted-foreground/60" aria-hidden="true">—</span>
-                            <div
-                              className={cn(
-                                "max-w-[320px] shrink truncate font-semibold text-foreground",
-                                row.unread && "font-bold"
-                              )}
-                            >
-                              {row.subject}
-                            </div>
+                            <div className="flex min-w-0 items-baseline gap-2">
+                              <div
+                                className={cn(
+                                  "min-w-0 truncate font-semibold text-foreground",
+                                  row.unread && "font-bold"
+                                )}
+                                title={row.subject}
+                              >
+                                {row.subject}
+                              </div>
                             {row.snippet ? (
-                              <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground lg:inline">
+                              <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground xl:inline" title={row.snippet}>
                                 — {row.snippet}
                               </span>
                             ) : null}
-                            <span
-                              className={cn(
-                                "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.04em]",
-                                row.ticketRef !== "No ticket ID"
-                                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                                  : "border-border bg-muted text-muted-foreground"
-                              )}
-                            >
-                              {row.ticketRef}
-                            </span>
-                            {row.unread ? (
-                              <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
-                            ) : null}
+                            </div>
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="px-4 py-3 align-middle sm:px-5">
+                      <TableCell className="px-4 py-2.5 align-middle sm:px-5">
                         <Badge
                           variant="outline"
                           className={`mt-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(row.status)}`}
@@ -413,7 +421,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           {row.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-4 py-3 align-middle text-sm sm:px-5">
+                      <TableCell className="px-4 py-2.5 align-middle text-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span
                             className={cn(
@@ -435,7 +443,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="px-4 py-3 align-middle text-sm sm:px-5">
+                      <TableCell className="px-4 py-2.5 align-middle text-sm sm:px-5">
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Clock3 className="size-3.5 text-muted-foreground" />
                           {formatRelativeTime(row.lastActivity)}
@@ -453,8 +461,8 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
