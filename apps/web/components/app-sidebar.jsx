@@ -106,13 +106,14 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
   }
 
   return (
-    <div className="flex w-[52px] shrink-0 flex-col border-r border-sidebar-border/70 bg-sidebar">
+    <div className="flex w-[68px] shrink-0 flex-col border-r border-sidebar-border/70 bg-sidebar">
       <div className="flex items-center justify-center px-2 py-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               tooltip="Sona AI"
+              tooltipAlways
               className="size-8 justify-center px-0"
             >
               <Link href="/dashboard" aria-label="Sona AI">
@@ -134,6 +135,7 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
                   asChild
                   isActive={isActive(item.url)}
                   tooltip={item.title}
+                  tooltipAlways
                   className="size-8 justify-center px-0"
                 >
                   <Link href={item.url} aria-label={item.title}>
@@ -147,13 +149,14 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
         </SidebarMenu>
       </div>
 
-      <div className="space-y-1 p-2">
-        <SidebarMenu>
+      <div className="mt-auto border-t border-sidebar-border/70 p-2">
+        <SidebarMenu className="gap-1">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               isActive={pathname.startsWith("/guides")}
               tooltip="Sona Academy"
+              tooltipAlways
               className="size-8 justify-center px-0"
             >
               <Link href="/guides" aria-label="Sona Academy">
@@ -167,6 +170,7 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
               asChild
               isActive={pathname.startsWith("/settings")}
               tooltip="Settings"
+              tooltipAlways
               className="size-8 justify-center px-0"
             >
               <Link href="/settings" aria-label="Settings">
@@ -190,7 +194,7 @@ export function AppSidebar({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isMobile, state } = useSidebar()
+  const { isMobile } = useSidebar()
   // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
   // literal param value, "" meaning the needs-attention default. NavQueue
   // compares this directly against each row's target view. Only meaningful
@@ -545,16 +549,16 @@ export function AppSidebar({
 
   return (
     <Sidebar
-      collapsible="icon"
+      collapsible={isMobile ? "offcanvas" : "none"}
       className={cn("[&_a]:text-inherit [&_a]:no-underline", className)}
       {...props}
       style={
-        !isMobile && state === "expanded" && !isInboxRoute
-          ? { "--sidebar-width": "68px" }
+        !isMobile
+          ? { "--sidebar-width": isInboxRoute ? "23rem" : "68px" }
           : undefined
       }
     >
-      {isInboxRoute && state === "expanded" && !isMobile ? (
+      {isInboxRoute && !isMobile ? (
         <div className="flex h-full w-full min-w-0">
           <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
           <div className="flex min-w-0 flex-1 flex-col bg-sidebar">
@@ -586,7 +590,7 @@ export function AppSidebar({
             </SidebarContent>
           </div>
         </div>
-      ) : !isMobile && state === "expanded" ? (
+      ) : !isMobile ? (
         <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
       ) : (
         <>

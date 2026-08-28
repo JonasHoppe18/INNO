@@ -109,8 +109,9 @@ export function NavUser({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              tooltip={compact ? user.name : undefined}
-              aria-label={compact ? user.name : undefined}
+              tooltip={compact ? "Account menu" : undefined}
+              tooltipAlways={compact}
+              aria-label={compact ? "Account menu" : undefined}
               className={cn(
                 "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground",
                 compact && "size-8 justify-center px-0"

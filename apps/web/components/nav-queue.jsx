@@ -101,7 +101,7 @@ export function NavQueue({
   onConfigureNotifications,
 }) {
   const { state } = useSidebar()
-  const isCollapsed = state === "collapsed"
+  const isCollapsed = !contextual && state === "collapsed"
   const [contextMenu, setContextMenu] = useState(null)
   // Inbox is a collapsible parent; Assigned to me / Waiting / Resolved nest
   // under it (iconless, indented). Default expanded.
