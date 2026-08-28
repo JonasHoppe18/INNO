@@ -169,9 +169,12 @@ const Sidebar = React.forwardRef((
     return (
       <div
         className={cn(
-          "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+          "flex h-full min-h-0 w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
           className
         )}
+        style={{
+          minHeight: "calc(100svh - var(--app-top-offset, 0px))",
+        }}
         ref={ref}
         {...props}>
         {children}

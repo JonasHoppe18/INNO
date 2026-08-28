@@ -2963,7 +2963,7 @@ export function InboxSplitView({
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
         <div className="flex h-full min-w-0 flex-1 items-center">
-          <div className="hidden h-9 shrink-0 items-center justify-end gap-2 bg-background px-3 lg:flex lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)]">
+          <div className="hidden h-9 shrink-0 items-center justify-end gap-2 border-r border-border/50 bg-muted/[0.18] px-3 lg:flex lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)]">
             <button
               type="button"
               onClick={handleViewAllTickets}

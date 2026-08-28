@@ -17,6 +17,7 @@ import {
   LayoutDashboardIcon,
   ListIcon,
   MailIcon,
+  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
   Trash2,
@@ -97,8 +98,8 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
   }
 
   return (
-    <div className="flex w-[68px] shrink-0 flex-col border-r border-sidebar-border/70 bg-sidebar">
-      <div className="flex items-center justify-center px-2 py-3">
+    <div className="flex h-full min-h-0 w-[68px] shrink-0 flex-col border-r border-sidebar-border/55 bg-sidebar">
+      <div className="flex items-center justify-center px-2 py-3.5">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -117,7 +118,7 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
-        <SidebarMenu className="gap-1">
+        <SidebarMenu className="gap-1.5">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
@@ -133,8 +134,8 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="mx-2 my-2 h-px bg-sidebar-border/70" />
-        <SidebarMenu className="gap-1">
+        <div className="mx-2 my-2.5 h-px bg-sidebar-border/55" />
+        <SidebarMenu className="gap-1.5">
           {items.map((item) => {
             const Icon = item.icon
             return (
@@ -157,8 +158,8 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
         </SidebarMenu>
       </div>
 
-      <div className="mt-auto border-t border-sidebar-border/70 p-2">
-        <SidebarMenu className="gap-1">
+      <div className="mt-auto border-t border-sidebar-border/55 p-2">
+        <SidebarMenu className="gap-1.5">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
@@ -570,19 +571,31 @@ export function AppSidebar({
         <div className="flex h-full w-full min-w-0">
           <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
           <div className="flex min-w-0 flex-1 flex-col bg-sidebar">
-            <div className="border-b border-sidebar-border/70 px-3 py-3">
+            <div className="border-b border-sidebar-border/55 px-3 py-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-sidebar-foreground">Inbox</p>
-                  <p className="truncate text-xs text-sidebar-foreground/60">Customer conversations</p>
+                  <p className="truncate text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">Inbox</p>
+                  <p className="truncate text-[11px] text-sidebar-foreground/55">Customer conversations</p>
                 </div>
-                <Link
-                  href="/inbox/tickets"
-                  aria-label="All tickets"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <ListIcon className="h-4 w-4" />
-                </Link>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    aria-label="Search inbox"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-foreground active:scale-[0.97]"
+                    onClick={() => {
+                      document.querySelector('[aria-label="Search tickets"]')?.focus()
+                    }}
+                  >
+                    <SearchIcon className="h-3.5 w-3.5" />
+                  </button>
+                  <Link
+                    href="/inbox/tickets"
+                    aria-label="All tickets"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-foreground active:scale-[0.97]"
+                  >
+                    <ListIcon className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
               </div>
             </div>
             <SidebarContent className="gap-0">

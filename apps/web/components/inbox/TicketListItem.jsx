@@ -23,6 +23,17 @@ const CLASSIFICATION_LABELS = {
 };
 const PREFETCH_HOVER_DELAY_MS = 700;
 
+function getTicketTypeLabel(thread, classificationKey) {
+  const firstTag = (Array.isArray(thread?.tags) ? thread.tags : [])
+    .map((tag) => (typeof tag === "string" ? tag : tag?.name || tag?.label))
+    .map((tag) => String(tag || "").trim())
+    .find((tag) => tag && !tag.toLowerCase().startsWith("inbox:"));
+  if (firstTag) return firstTag;
+  return classificationKey && classificationKey !== "support"
+    ? CLASSIFICATION_LABELS[classificationKey] || null
+    : null;
+}
+
 function TicketListItemComponent({
   thread,
   isActive,
@@ -57,16 +68,14 @@ function TicketListItemComponent({
   const wakeCountdownText = formatWakeCountdown(wakeDays);
 
   const classificationKey = String(thread?.classification_key || "").toLowerCase();
-  const classificationLabel =
-    classificationKey && classificationKey !== "support"
-      ? CLASSIFICATION_LABELS[classificationKey] || null
-      : null;
+  const classificationLabel = getTicketTypeLabel(thread, classificationKey);
   const ticketRef = formatTicketReference(thread?.ticket_number);
+  const hasTicketRef = ticketRef !== "No ticket ID";
   const statusLabel = status === "Solved" ? "Resolved" : status;
 
-  // Keep secondary metadata available on hover, but avoid a third line in
-  // every row. The list stays a predictable two-line rhythm while important
-  // queue context (wake time, assignee, classification) remains discoverable.
+  // Keep queue context in the existing two-line rhythm. Type and ticket ID are
+  // visible because they help agents scan the queue; the rest remains in the
+  // hover title so the list does not become a dense data table.
   const metadataTitle = [
     ticketRef,
     hasAiDraft ? "Draft ready" : null,
@@ -142,14 +151,14 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[68px] w-full flex-col justify-center gap-1 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
         // lavender surface and stronger brand rail.
         isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
-        isActive && "bg-violet-50/85 ring-1 ring-inset ring-violet-200/70 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:ring-violet-300/20 dark:hover:bg-violet-500/[0.19] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
+        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -183,9 +192,19 @@ function TicketListItemComponent({
             className="size-2 shrink-0 rounded-full bg-violet-600 ring-2 ring-violet-100 dark:bg-violet-400 dark:ring-violet-500/20"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium text-foreground", isUnread && "font-bold")}>
+        <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
+        {classificationLabel ? (
+          <span className="hidden max-w-[94px] shrink-0 truncate rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 sm:inline-flex">
+            {classificationLabel}
+          </span>
+        ) : null}
+        {hasTicketRef ? (
+          <span className="shrink-0 rounded-full border border-border/70 bg-muted/45 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground">
+            {ticketRef}
+          </span>
+        ) : null}
         <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
           {formatMessageTime(timestamp)}
         </span>
@@ -194,7 +213,7 @@ function TicketListItemComponent({
         className="flex min-w-0 items-center justify-between gap-2"
         title={metadataTitle || undefined}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
@@ -232,7 +251,9 @@ function TicketListItemComponent({
           ) : waitAge ? (
             <span className="max-w-[90px] truncate whitespace-nowrap text-[11px] text-muted-foreground/70">{waitAge}</span>
           ) : null}
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">{ticketRef}</span>
+          {!hasTicketRef ? (
+            <span className="sr-only">No ticket ID</span>
+          ) : null}
         </div>
       </div>
     </button>

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
-import { ArrowDownUp, Filter, Inbox, SearchX, X } from "lucide-react";
+import { ArrowDownUp, Filter, Inbox, Search, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
@@ -341,10 +341,11 @@ export function TicketList({
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
   return (
-    <aside className={`animate-view-enter flex w-full flex-col border-r border-border/70 bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)] lg:flex-none ${className}`}>
-      <div className="flex h-14 shrink-0 items-center border-b border-border/70 bg-muted/10 px-2.5">
+    <aside className={`animate-view-enter flex w-full flex-col bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)] lg:flex-none ${className}`}>
+      <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-muted/[0.18] px-3">
         <div className="flex min-w-0 items-center gap-1">
           <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
             <Input
               value={filters.query}
               onChange={(event) => onFiltersChange({ query: event.target.value })}
@@ -356,7 +357,7 @@ export function TicketList({
               }}
               aria-label="Search tickets"
               placeholder="Search..."
-              className="h-7 min-w-0 rounded-md bg-background pr-7 text-[12px] shadow-sm transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
+              className="h-8 min-w-0 rounded-md border-border/70 bg-background pl-7 pr-7 text-[12px] shadow-none transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring/35"
             />
             {hasActiveSearch ? (
               <button
@@ -374,10 +375,11 @@ export function TicketList({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97] ${
+                aria-label="Filter tickets"
+                className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97] ${
                   activeFilterCount
-                    ? "border-primary/35 bg-primary/10 text-primary"
-                    : "border-input bg-background"
+                    ? "border-primary/25 bg-primary/10 text-primary"
+                    : "bg-transparent"
                 }`}
                 title="Filters"
               >
@@ -432,7 +434,8 @@ export function TicketList({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-7 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-input bg-background px-2 text-[12px] text-muted-foreground shadow-sm ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:bg-accent hover:text-accent-foreground hover:shadow focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+                aria-label={`Sort tickets: ${selectedSortLabel}`}
+                className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-[12px] text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
                 title={`Sort: ${selectedSortLabel}`}
               >
                 <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />
@@ -458,7 +461,7 @@ export function TicketList({
         onScroll={updateVirtualViewport}
       >
         {renderedThreads.length ? (
-          <div className="divide-y divide-border/60">
+          <div className="divide-y divide-border/50">
             {virtualWindow.before ? (
               <div style={{ height: virtualWindow.before }} aria-hidden="true" />
             ) : null}

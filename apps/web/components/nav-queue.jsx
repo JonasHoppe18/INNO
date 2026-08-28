@@ -191,9 +191,9 @@ export function NavQueue({
 
   return (
     <>
-      <SidebarGroup className={cn("pt-0", contextual && "pt-3")}>
-        <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+      <SidebarGroup className={cn("pt-1", contextual && "pt-3")}>
+        <div className="mb-1.5 px-2 group-data-[collapsible=icon]:hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
             Tickets
           </span>
         </div>
@@ -346,9 +346,9 @@ export function NavQueue({
         </SidebarGroupContent>
       </SidebarGroup>
 
-      <SidebarGroup className="pt-0 relative">
-        <div className="mb-1 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+      <SidebarGroup className="relative pt-2">
+        <div className="mb-1.5 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
             INBOXES
           </span>
           <button
