@@ -16,7 +16,7 @@ export function DashboardShell({ children }) {
   return (
     <SidebarInset className={cn(isFixedWorkspace ? "h-[calc(100svh_-_var(--app-top-offset,0px))] overflow-hidden" : "min-h-svh")}>
       <SiteHeaderActionsProvider>
-        <SiteHeader />
+        {isInboxWorkspace ? <SiteHeader /> : null}
         <SetupBanner />
         <div
           className={cn(

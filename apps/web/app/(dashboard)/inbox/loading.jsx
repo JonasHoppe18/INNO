@@ -41,7 +41,7 @@ function SkeletonMessage({ align = "left", delay = 0, lines = 3 }) {
 export default function InboxLoading() {
   return (
     <div className="inbox-theme flex min-h-0 flex-1 bg-white pb-2">
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[20px] bg-sidebar">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-none bg-sidebar">
 
         {/* Ticket list panel — matches actual TicketList aside */}
         <aside className="flex w-full shrink-0 flex-col border-r border-border bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:flex-none">

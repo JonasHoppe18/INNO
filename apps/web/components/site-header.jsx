@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
-import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 const TITLE_MAP = {
   "/dashboard": "Dashboard",
@@ -34,13 +33,10 @@ export function SiteHeader() {
   const title = getSiteTitle(pathname);
   const { actions, titleContent } = useSiteHeaderActions();
   const hasCustomTitle = Boolean(titleContent);
-  const showBell = pathname === "/dashboard";
 
   return (
     <header
-      className={`group-has-data-[collapsible=icon]/sidebar-wrapper:h-10 flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background text-foreground transition-[width,height] ease-linear ${
-        hasCustomTitle ? "bg-background" : "bg-background"
-      }`}>
+      className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background pt-2 text-foreground transition-[width,height] ease-linear">
       {hasCustomTitle ? (
         <div className="relative flex h-full w-full min-w-0 items-center">
           <div className="pointer-events-none absolute left-4 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 md:hidden lg:left-6 lg:gap-2">
@@ -49,7 +45,6 @@ export function SiteHeader() {
           </div>
           <div className="h-full min-w-0 flex-1">{titleContent}</div>
           <div className="ml-auto flex items-center gap-2">
-            {showBell && <NotificationBell />}
             {actions}
           </div>
         </div>
@@ -61,7 +56,6 @@ export function SiteHeader() {
           </div>
           <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
-            {showBell && <NotificationBell />}
             {actions}
           </div>
         </div>

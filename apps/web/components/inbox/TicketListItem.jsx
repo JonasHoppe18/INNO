@@ -14,25 +14,7 @@ const STATUS_DOT_STYLES = {
   Solved: "bg-muted-foreground/60",
 };
 
-const CLASSIFICATION_LABELS = {
-  support: "Support",
-  notification: "Notification",
-  partnership: "Partnership",
-  job: "Job",
-  invoice: "Invoice",
-};
 const PREFETCH_HOVER_DELAY_MS = 700;
-
-function getTicketTypeLabel(thread, classificationKey) {
-  const firstTag = (Array.isArray(thread?.tags) ? thread.tags : [])
-    .map((tag) => (typeof tag === "string" ? tag : tag?.name || tag?.label))
-    .map((tag) => String(tag || "").trim())
-    .find((tag) => tag && !tag.toLowerCase().startsWith("inbox:"));
-  if (firstTag) return firstTag;
-  return classificationKey && classificationKey !== "support"
-    ? CLASSIFICATION_LABELS[classificationKey] || null
-    : null;
-}
 
 function TicketListItemComponent({
   thread,
@@ -67,8 +49,6 @@ function TicketListItemComponent({
   const assigneeDisplay = assigneeLabel ? assigneeInitials(assigneeLabel) : null;
   const wakeCountdownText = formatWakeCountdown(wakeDays);
 
-  const classificationKey = String(thread?.classification_key || "").toLowerCase();
-  const classificationLabel = getTicketTypeLabel(thread, classificationKey);
   const ticketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketRef = ticketRef !== "No ticket ID";
   const ticketNumberLabel = hasTicketRef
@@ -77,14 +57,13 @@ function TicketListItemComponent({
   const statusLabel = status === "Solved" ? "Resolved" : status;
 
   // Keep the compact two-line mail rhythm: sender/time first, subject and
-  // quiet context second. Type and ticket ID remain visible without competing
-  // with the sender for horizontal space.
+  // ticket ID second. Ticket type belongs in the full ticket view, where it
+  // can be read without competing with the subject in this narrow list.
   const metadataTitle = [
     ticketRef,
     hasAiDraft ? "Draft ready" : null,
     assigneeDisplay,
     wakeCountdownText,
-    classificationLabel,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -154,14 +133,14 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
         // lavender surface and stronger brand rail.
         isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
-        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
+        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19]",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -217,11 +196,6 @@ function TicketListItemComponent({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
-          {classificationLabel ? (
-            <span className="max-w-[72px] truncate rounded-full bg-violet-50/80 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-              {classificationLabel}
-            </span>
-          ) : null}
           {ticketNumberLabel ? (
             <span className="shrink-0 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground/70">
               {ticketNumberLabel}

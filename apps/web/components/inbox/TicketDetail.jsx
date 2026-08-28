@@ -752,6 +752,9 @@ function TicketDetailComponent({
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
   const threadTicketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketNumber = threadTicketRef !== "No ticket ID";
+  const ticketNumberLabel = hasTicketNumber
+    ? `#${threadTicketRef.replace(/^T-/, "")}`
+    : threadTicketRef;
   const threadSubject = String(
     thread?.subject || thread?.title || firstMessage?.subject || "",
   ).trim();
@@ -813,27 +816,26 @@ function TicketDetailComponent({
               <span>Inbox</span>
             </button>
           ) : null}
-          <div
-            className={`flex h-7 shrink-0 items-center whitespace-nowrap rounded-lg px-2.5 font-mono text-[11px] tabular-nums tracking-[-0.01em] ${
+          <span
+            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-mono text-[12px] tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
-                ? "border border-border/70 bg-muted/55 font-medium text-muted-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]"
+                ? "font-medium text-muted-foreground"
                 : "text-muted-foreground/60"
             }`}
           >
-            {threadTicketRef}
-          </div>
+            {ticketNumberLabel}
+          </span>
+          {headerActions ? (
+            <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">{headerActions}</div>
+            </TicketRenderBoundary>
+          ) : null}
           {threadSubject ? (
             <span className="hidden min-w-0 items-center gap-2 2xl:inline-flex">
-              <span className="h-5 w-px shrink-0 bg-border/70" aria-hidden="true" />
-              <span className="min-w-0 max-w-[min(30vw,280px)] truncate text-[12px] font-semibold tracking-[-0.01em] text-foreground">
+              <span className="min-w-0 max-w-[min(38vw,360px)] truncate text-[12px] font-semibold tracking-[-0.01em] text-foreground">
                 {threadSubject}
               </span>
             </span>
-          ) : null}
-          {headerActions ? (
-            <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
-              <div className="flex min-w-0 flex-wrap items-center gap-1">{headerActions}</div>
-            </TicketRenderBoundary>
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -1085,7 +1087,7 @@ function TicketDetailComponent({
       {isActionPending ? (
         <div className="relative flex-none">
           {renderComposer(true)}
-          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center rounded-3xl bg-background/65 px-3 backdrop-blur-[2px]">
+          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center px-3">
             <button
               type="button"
               onClick={handleReviewPendingAction}

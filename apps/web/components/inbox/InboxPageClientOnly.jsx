@@ -8,7 +8,7 @@ const InboxPageClient = dynamic(
     ssr: false,
     loading: () => (
       <div className="inbox-theme flex min-h-0 flex-1 bg-white pb-2">
-        <div className="flex min-h-0 flex-1 overflow-hidden rounded-[20px] bg-sidebar">
+        <div className="flex min-h-0 flex-1 overflow-hidden rounded-none bg-sidebar">
           <div className="flex min-h-0 w-[clamp(16rem,18vw,21rem)] flex-col border-r border-border bg-background p-3">
             <div className="mb-3 h-9 rounded-md bg-muted animate-pulse" />
             <div className="space-y-2">

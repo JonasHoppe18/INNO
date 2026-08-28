@@ -159,6 +159,7 @@ const Sidebar = React.forwardRef((
     collapsible = "offcanvas",
     className,
     children,
+    style: sidebarStyle,
     ...props
   },
   ref
@@ -168,16 +169,32 @@ const Sidebar = React.forwardRef((
   if (collapsible === "none") {
     return (
       <div
+        ref={ref}
         className={cn(
-          "flex h-full min-h-0 w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+          "group peer hidden min-h-svh text-sidebar-foreground transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)] md:block",
           className
         )}
-        style={{
-          minHeight: "calc(100svh - var(--app-top-offset, 0px))",
-        }}
-        ref={ref}
+        style={sidebarStyle}
         {...props}>
-        {children}
+        {/* Keep the sidebar's width in the document flow while the panel stays viewport-anchored. */}
+        <div className="relative min-h-svh w-[--sidebar-width] shrink-0 bg-transparent transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)]" />
+        <div
+          className={cn(
+            "fixed z-10 hidden w-[--sidebar-width] transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)] md:flex",
+            side === "left" ? "left-0" : "right-0"
+          )}
+          style={{
+            top: "var(--app-top-offset, 0px)",
+            height: "calc(100svh - var(--app-top-offset, 0px))",
+          }}
+        >
+          <div
+            data-sidebar="sidebar"
+            className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground"
+          >
+            {children}
+          </div>
+        </div>
       </div>
     );
   }
@@ -236,6 +253,7 @@ const Sidebar = React.forwardRef((
           className
         )}
         style={{
+          ...sidebarStyle,
           top: "var(--app-top-offset, 0px)",
           height: "calc(100svh - var(--app-top-offset, 0px))",
         }}

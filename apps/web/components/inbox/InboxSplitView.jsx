@@ -10,7 +10,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { TicketList } from "@/components/inbox/TicketList";
+import { TicketList, TicketListToolbar } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
@@ -49,7 +49,7 @@ import {
   waitTimestamp,
   waitingGroup,
 } from "@/lib/inbox/view-model";
-import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
+import { useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import {
   publishLiveSidebarCounts,
 } from "@/lib/inbox/live-sidebar-counts";
@@ -80,7 +80,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  ArrowUpRight,
   Bell,
   CheckCircle,
   CheckCircle2,
@@ -213,7 +212,10 @@ function FirstTagPill({ threadId, refreshTrigger }) {
   if (!tag) return null;
 
   return (
-    <span className="hidden h-7 shrink-0 items-center rounded-lg border border-orange-200/80 bg-orange-50/90 px-2 py-1 text-[11px] font-medium leading-none text-orange-600 shadow-sm lg:inline-flex">
+    <span
+      title={tag.name}
+      className="hidden h-7 max-w-[9rem] shrink-0 items-center truncate rounded-md border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[11px] font-medium leading-none text-violet-700 transition-colors lg:inline-flex dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-300"
+    >
       {tag.name}
     </span>
   );
@@ -334,7 +336,7 @@ function InboxHeaderActions({
   };
   const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       <Select
         value={currentStatus}
         onValueChange={(value) => onTicketStateChange({ status: value })}
@@ -377,6 +379,7 @@ function InboxHeaderActions({
           ))}
         </SelectContent>
       </Select>
+      <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -397,7 +400,6 @@ function InboxHeaderActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
       {/* The current-inbox chip used to render here; removed per feedback —
           the inbox a ticket lives in is shown by the sidebar (it sits under
           that inbox), and it's moved via drag-and-drop or More > Move, so the
@@ -532,13 +534,10 @@ function WorkspaceTabsRow({
           : "border-b border-border bg-background"
       }
     >
-      {inline ? (
-        <div className="absolute inset-y-0 left-0 z-10 w-2 bg-background" />
-      ) : null}
       <div
         className={
           inline
-            ? "flex h-full min-w-0 items-end overflow-x-auto pr-3 pt-0.5"
+            ? "flex h-full min-w-0 items-stretch overflow-x-auto pr-2"
             : "mx-auto flex w-full max-w-[900px] items-center gap-1 overflow-x-auto px-4 py-1"
         }
       >
@@ -552,11 +551,11 @@ function WorkspaceTabsRow({
           return (
             <div
               key={threadId}
-              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-1.5 px-3 py-1 transition ${
+              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-1.5 px-3 transition-colors ${
                 inline
                   ? isActive
-                    ? "ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
-                    : "rounded-t-[12px] rounded-b-none bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-background text-foreground"
+                    : "bg-transparent text-muted-foreground hover:bg-muted/45 hover:text-foreground"
                   : isActive
                     ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
                     : "rounded-t-lg rounded-b-none border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
@@ -564,7 +563,7 @@ function WorkspaceTabsRow({
             >
               {isActive ? (
                 <span
-                  className={`absolute inset-x-0 bottom-0 h-[3px] ${inline ? "rounded-b-[12px]" : "rounded-b-lg"} bg-indigo-500`}
+                  className={`absolute inset-x-2 bottom-0 h-0.5 ${inline ? "rounded-full" : "rounded-b-lg"} bg-indigo-500`}
                 />
               ) : null}
               <button
@@ -584,7 +583,7 @@ function WorkspaceTabsRow({
               <button
                 type="button"
                 onClick={() => onCloseTab?.(threadId)}
-                className={`rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground ${
+                className={`rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] ${
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 }`}
                 aria-label={`Close ${subject}`}
@@ -597,7 +596,7 @@ function WorkspaceTabsRow({
         <button
           type="button"
           onClick={() => onAddTab?.()}
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          className="inline-flex h-full w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
           aria-label="Open new tab"
         >
           <Plus className="h-4 w-4" />
@@ -2290,14 +2289,6 @@ export function InboxSplitView({
     },
     [knownUserLabelById, memberLookupById],
   );
-  const unreadThreadCount = useMemo(() => {
-    return filteredThreads.filter((thread) => {
-      const threadId = String(thread?.id || "").trim();
-      if (!threadId) return false;
-      if (readOverrides[threadId] || thread?.is_read) return false;
-      return Number(thread?.unread_count ?? 0) > 0;
-    }).length;
-  }, [filteredThreads, readOverrides]);
   const unreadByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
@@ -2841,9 +2832,9 @@ export function InboxSplitView({
     }
   }, []);
 
-  const handleFiltersChange = (updates) => {
+  const handleFiltersChange = useCallback((updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));
-  };
+  }, [setFilters]);
 
   // Live sidebar counts: computed from the same client-side thread list the
   // tabs use (exact + optimistic-aware, works pre-migration where the
@@ -2908,16 +2899,6 @@ export function InboxSplitView({
     publishLiveSidebarCounts(liveSidebarCounts);
   }, [liveSidebarCounts]);
 
-  const handleViewAllTickets = useCallback(() => {
-    setFilters(DEFAULT_FILTERS);
-    if (typeof window !== "undefined") {
-      window.open("/inbox/tickets", "_blank", "noopener,noreferrer");
-      return;
-    }
-    router.push("/inbox/tickets");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is the stable setter returned by useThreadFilters (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
-  }, [router]);
-
   const handleCreateTicket = useCallback(() => {
     const nowIso = new Date().toISOString();
     const id = `local-new-ticket-${Date.now()}`;
@@ -2963,20 +2944,11 @@ export function InboxSplitView({
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
         <div className="flex h-full min-w-0 flex-1 items-center">
-          <div className="hidden h-9 shrink-0 items-center justify-end gap-2 border-r border-border/50 bg-muted/[0.18] px-3 lg:flex lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)]">
-            <button
-              type="button"
-              onClick={handleViewAllTickets}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-muted-foreground transition hover:text-foreground"
-            >
-              View all
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </button>
-            {unreadThreadCount > 0 ? (
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground">
-                {unreadThreadCount}
-              </span>
-            ) : null}
+          <div className="hidden h-10 shrink-0 items-center bg-background lg:flex lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:border-l lg:border-border/90">
+            <TicketListToolbar
+              filters={filters}
+              onFiltersChange={handleFiltersChange}
+            />
           </div>
           <WorkspaceTabsRow
             tabs={openThreads}
@@ -3009,14 +2981,15 @@ export function InboxSplitView({
     return () => setTitleContent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSelectThreadInWorkspace is declared below this title effect because it depends on composer state. The callback is created only when the effect runs, after the full render has initialized it.
   }, [
+    activeView,
     closeThreadTab,
-    handleViewAllTickets,
+    filters,
     handleCreateTicket,
+    handleFiltersChange,
     openThreads,
     selectedThreadId,
     setTitleContent,
     unreadByThread,
-    unreadThreadCount,
   ]);
 
   useEffect(() => {
@@ -3679,12 +3652,10 @@ export function InboxSplitView({
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
-        onCreateTicket={handleCreateTicket}
         onOpenInNewTab={(threadId) =>
           handleSelectThreadInWorkspace(threadId, { newTab: true })
         }
         onDeleteThread={deleteThreadById}
-        hideSolvedFilter={activeView === ""}
         resolvedView={resolvedView}
         isNeedsAttentionRoute={isNeedsAttentionRoute}
         groups={waitingGroups || needsAttentionGroups}

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { DashboardPeriodPicker } from "@/components/dashboard/DashboardPeriodPicker";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -481,6 +482,7 @@ export default async function Page({ searchParams }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <NotificationBell />
             <DashboardPeriodPicker period={dashboardPeriod.key} range={dashboardPeriod.range} />
           </div>
         </header>

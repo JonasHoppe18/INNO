@@ -15,9 +15,7 @@ import {
   CirclePlayIcon,
   InboxIcon,
   LayoutDashboardIcon,
-  ListIcon,
   MailIcon,
-  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
   Trash2,
@@ -69,11 +67,6 @@ const baseData = {
       icon: LayoutDashboardIcon,
     },
     {
-      title: "New Ticket",
-      url: "/inbox?new=1",
-      icon: SquarePenIcon,
-    },
-    {
       title: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
@@ -91,52 +84,56 @@ const baseData = {
   ],
 }
 
-function SidebarWorkspaceRail({ items, pathname, user }) {
+function SidebarWorkspaceRail({
+  items,
+  pathname,
+  user,
+  navigationOpen,
+  onToggleNavigation,
+}) {
   const isActive = (url) => {
     if (url === "/inbox") return pathname.startsWith("/inbox")
     return pathname === url || pathname.startsWith(`${url}/`)
   }
+  const dashboardItem = items.find((item) => item.url === "/dashboard")
+  const railItems = [
+    ...(dashboardItem ? [dashboardItem] : []),
+    {
+      title: "Inbox",
+      url: "/inbox",
+      icon: InboxIcon,
+    },
+    ...items.filter((item) => item.url !== "/dashboard"),
+  ]
 
   return (
-    <div className="flex h-full min-h-0 w-[68px] shrink-0 flex-col border-r border-sidebar-border/55 bg-sidebar">
-      <div className="flex items-center justify-center px-2 py-3.5">
+    <div className="flex h-full min-h-0 w-[68px] shrink-0 flex-col bg-sidebar">
+      <div className="flex h-12 items-center justify-center px-2 pt-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              tooltip="Sona AI"
+              tooltip={navigationOpen ? "Close navigation" : "Open navigation"}
               tooltipAlways
               className="size-8 justify-center px-0"
             >
-              <Link href="/dashboard" aria-label="Sona AI">
+              <button
+                type="button"
+                onClick={onToggleNavigation}
+                aria-label={navigationOpen ? "Close navigation" : "Open navigation"}
+                aria-expanded={navigationOpen}
+              >
                 <SonaLogo size={20} className="h-5 w-5 shrink-0" />
                 <span className="sr-only">Sona AI</span>
-              </Link>
+              </button>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-2">
         <SidebarMenu className="gap-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={isActive("/inbox")}
-              tooltip="Inbox"
-              tooltipAlways
-              className="size-8 justify-center px-0"
-            >
-              <Link href="/inbox" aria-label="Inbox">
-                <InboxIcon className="h-4 w-4" />
-                <span className="sr-only">Inbox</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div className="mx-2 my-2.5 h-px bg-sidebar-border/55" />
-        <SidebarMenu className="gap-1.5">
-          {items.map((item) => {
+          {railItems.map((item) => {
             const Icon = item.icon
             return (
               <SidebarMenuItem key={item.title}>
@@ -158,7 +155,7 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
         </SidebarMenu>
       </div>
 
-      <div className="mt-auto border-t border-sidebar-border/55 p-2">
+      <div className="mt-auto p-2">
         <SidebarMenu className="gap-1.5">
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -195,6 +192,99 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
   )
 }
 
+function SidebarExpandedNavigation({
+  items,
+  pathname,
+  user,
+  onToggleNavigation,
+  queueCounts,
+  customInboxes,
+  activeView,
+  onCreateInbox,
+  onConfigureInbox,
+  onConfigureNotifications,
+}) {
+  const expandedItems = [
+    {
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: LayoutDashboardIcon,
+    },
+    {
+      title: "New Ticket",
+      url: "/inbox?new=1",
+      icon: SquarePenIcon,
+    },
+    ...items.filter((item) => item.url !== "/dashboard"),
+  ]
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
+      <div className="flex h-12 shrink-0 items-center px-4 pt-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="Close navigation"
+              tooltipAlways
+              className="justify-start px-2"
+            >
+              <button
+                type="button"
+                onClick={onToggleNavigation}
+                aria-label="Close navigation"
+                aria-expanded="true"
+                className="flex items-center gap-2"
+              >
+                <SonaLogo size={20} className="h-5 w-5 shrink-0" />
+                <span className="truncate text-sm font-semibold">Sona AI</span>
+              </button>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </div>
+
+      <SidebarContent className="gap-0">
+        <NavMain items={expandedItems} />
+        <div className="px-4 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
+          Tickets
+        </div>
+        <NavQueue
+          contextual
+          counts={queueCounts}
+          inboxes={customInboxes}
+          activeView={activeView}
+          onCreateInbox={onCreateInbox}
+          onConfigureInbox={onConfigureInbox}
+          onConfigureNotifications={onConfigureNotifications}
+        />
+      </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="Sona Academy"
+              className={cn(
+                "justify-start text-foreground",
+                pathname.startsWith("/guides") &&
+                  "bg-accent text-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
+                <CirclePlayIcon className="h-4 w-4" />
+                <span>Sona Academy</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <NavUser user={user} />
+      </SidebarFooter>
+    </div>
+  )
+}
+
 export function AppSidebar({
   user,
   className,
@@ -212,11 +302,21 @@ export function AppSidebar({
   // otherwise be indistinguishable from "on /inbox with no ?view=" and mark
   // "Inbox" active everywhere.
   const isInboxRoute = pathname.startsWith("/inbox")
+  const [desktopNavOverride, setDesktopNavOverride] = useState(null)
+  const desktopNavOpen = desktopNavOverride ?? isInboxRoute
   const activeView = isInboxRoute
     ? pathname === "/inbox/tickets"
       ? "all"
       : searchParams.get("view") || ""
     : null
+
+  useEffect(() => {
+    setDesktopNavOverride(null)
+  }, [isInboxRoute])
+
+  const toggleDesktopNavigation = () => {
+    setDesktopNavOverride((current) => !(current ?? isInboxRoute))
+  }
 
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
@@ -563,40 +663,45 @@ export function AppSidebar({
       {...props}
       style={
         !isMobile
-          ? { "--sidebar-width": isInboxRoute ? "21rem" : "68px" }
+          ? {
+              "--sidebar-width": desktopNavOpen
+                ? isInboxRoute
+                  ? "calc(68px + 15rem)"
+                  : "16rem"
+                : "68px",
+            }
           : undefined
       }
     >
-      {isInboxRoute && !isMobile ? (
+      {isInboxRoute && !isMobile && desktopNavOpen ? (
         <div className="flex h-full w-full min-w-0">
-          <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
-          <div className="flex min-w-0 flex-1 flex-col bg-sidebar">
-            <div className="border-b border-sidebar-border/55 px-3 py-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">Inbox</p>
-                  <p className="truncate text-[11px] text-sidebar-foreground/55">Customer conversations</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <button
-                    type="button"
-                    aria-label="Search inbox"
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-foreground active:scale-[0.97]"
-                    onClick={() => {
-                      document.querySelector('[aria-label="Search tickets"]')?.focus()
-                    }}
+          <SidebarWorkspaceRail
+            items={data.navMain}
+            pathname={pathname}
+            user={data.user}
+            navigationOpen={desktopNavOpen}
+            onToggleNavigation={toggleDesktopNavigation}
+          />
+          <div className="flex min-w-0 flex-1 flex-col bg-background">
+            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4 pt-2">
+              <p className="shrink-0 text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">
+                Inbox
+              </p>
+              <SidebarMenu className="w-auto shrink-0">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip="New ticket"
+                    tooltipAlways
+                    className="size-8 justify-center px-0"
                   >
-                    <SearchIcon className="h-3.5 w-3.5" />
-                  </button>
-                  <Link
-                    href="/inbox/tickets"
-                    aria-label="All tickets"
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-foreground active:scale-[0.97]"
-                  >
-                    <ListIcon className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </div>
+                    <Link href="/inbox?new=1" aria-label="New ticket">
+                      <SquarePenIcon className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">New ticket</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
             </div>
             <SidebarContent className="gap-0">
               <NavQueue
@@ -612,7 +717,28 @@ export function AppSidebar({
           </div>
         </div>
       ) : !isMobile ? (
-        <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
+        desktopNavOpen ? (
+          <SidebarExpandedNavigation
+            items={data.navMain}
+            pathname={pathname}
+            user={data.user}
+            onToggleNavigation={toggleDesktopNavigation}
+            queueCounts={queueCounts}
+            customInboxes={customInboxes}
+            activeView={activeView}
+            onCreateInbox={handleOpenCreateInbox}
+            onConfigureInbox={handleConfigureInbox}
+            onConfigureNotifications={handleConfigureNotifications}
+          />
+        ) : (
+          <SidebarWorkspaceRail
+            items={data.navMain}
+            pathname={pathname}
+            user={data.user}
+            navigationOpen={desktopNavOpen}
+            onToggleNavigation={toggleDesktopNavigation}
+          />
+        )
       ) : (
         <>
           <SidebarHeader>
