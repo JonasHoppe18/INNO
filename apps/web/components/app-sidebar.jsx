@@ -293,7 +293,7 @@ export function AppSidebar({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isMobile } = useSidebar()
+  const { isMobile, open: sidebarOpen, toggleSidebar } = useSidebar()
   // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
   // literal param value, "" meaning the needs-attention default. NavQueue
   // compares this directly against each row's target view. Only meaningful
@@ -302,21 +302,17 @@ export function AppSidebar({
   // otherwise be indistinguishable from "on /inbox with no ?view=" and mark
   // "Inbox" active everywhere.
   const isInboxRoute = pathname.startsWith("/inbox")
-  const [desktopNavOverride, setDesktopNavOverride] = useState(null)
-  const desktopNavOpen = desktopNavOverride ?? isInboxRoute
+  // The sidebar mode is global rather than route-derived. This keeps a
+  // collapsed sidebar collapsed when navigating into Inbox, while the
+  // SidebarProvider persists the user's choice in the sidebar_state cookie.
+  const desktopNavOpen = sidebarOpen
   const activeView = isInboxRoute
     ? pathname === "/inbox/tickets"
       ? "all"
       : searchParams.get("view") || ""
     : null
 
-  useEffect(() => {
-    setDesktopNavOverride(null)
-  }, [isInboxRoute])
-
-  const toggleDesktopNavigation = () => {
-    setDesktopNavOverride((current) => !(current ?? isInboxRoute))
-  }
+  const toggleDesktopNavigation = toggleSidebar
 
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
@@ -665,58 +661,15 @@ export function AppSidebar({
         !isMobile
           ? {
               "--sidebar-width": desktopNavOpen
-                ? isInboxRoute
+                ? "16rem"
+                : isInboxRoute
                   ? "calc(68px + 15rem)"
-                  : "16rem"
-                : "68px",
+                  : "68px",
             }
           : undefined
       }
     >
-      {isInboxRoute && !isMobile && desktopNavOpen ? (
-        <div className="flex h-full w-full min-w-0">
-          <SidebarWorkspaceRail
-            items={data.navMain}
-            pathname={pathname}
-            user={data.user}
-            navigationOpen={desktopNavOpen}
-            onToggleNavigation={toggleDesktopNavigation}
-          />
-          <div className="flex min-w-0 flex-1 flex-col bg-background">
-            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4 pt-2">
-              <p className="shrink-0 text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">
-                Inbox
-              </p>
-              <SidebarMenu className="w-auto shrink-0">
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    tooltip="New ticket"
-                    tooltipAlways
-                    className="size-8 justify-center px-0"
-                  >
-                    <Link href="/inbox?new=1" aria-label="New ticket">
-                      <SquarePenIcon className="h-4 w-4" aria-hidden="true" />
-                      <span className="sr-only">New ticket</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </div>
-            <SidebarContent className="gap-0">
-              <NavQueue
-                contextual
-                counts={queueCounts}
-                inboxes={customInboxes}
-                activeView={activeView}
-                onCreateInbox={handleOpenCreateInbox}
-                onConfigureInbox={handleConfigureInbox}
-                onConfigureNotifications={handleConfigureNotifications}
-              />
-            </SidebarContent>
-          </div>
-        </div>
-      ) : !isMobile ? (
+      {!isMobile ? (
         desktopNavOpen ? (
           <SidebarExpandedNavigation
             items={data.navMain}
@@ -730,6 +683,49 @@ export function AppSidebar({
             onConfigureInbox={handleConfigureInbox}
             onConfigureNotifications={handleConfigureNotifications}
           />
+        ) : isInboxRoute ? (
+          <div className="flex h-full w-full min-w-0">
+            <SidebarWorkspaceRail
+              items={data.navMain}
+              pathname={pathname}
+              user={data.user}
+              navigationOpen={desktopNavOpen}
+              onToggleNavigation={toggleDesktopNavigation}
+            />
+            <div className="flex min-w-0 flex-1 flex-col bg-background">
+              <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4 pt-2">
+                <p className="shrink-0 text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">
+                  Inbox
+                </p>
+                <SidebarMenu className="w-auto shrink-0">
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip="New ticket"
+                      tooltipAlways
+                      className="size-8 justify-center px-0"
+                    >
+                      <Link href="/inbox?new=1" aria-label="New ticket">
+                        <SquarePenIcon className="h-4 w-4" aria-hidden="true" />
+                        <span className="sr-only">New ticket</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </div>
+              <SidebarContent className="gap-0">
+                <NavQueue
+                  contextual
+                  counts={queueCounts}
+                  inboxes={customInboxes}
+                  activeView={activeView}
+                  onCreateInbox={handleOpenCreateInbox}
+                  onConfigureInbox={handleConfigureInbox}
+                  onConfigureNotifications={handleConfigureNotifications}
+                />
+              </SidebarContent>
+            </div>
+          </div>
         ) : (
           <SidebarWorkspaceRail
             items={data.navMain}
