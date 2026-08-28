@@ -91,15 +91,6 @@ const baseData = {
 }
 
 function SidebarWorkspaceRail({ items, pathname, user }) {
-  const railItems = [
-    {
-      title: "Inbox",
-      url: "/inbox",
-      icon: InboxIcon,
-    },
-    ...items,
-  ]
-
   const isActive = (url) => {
     if (url === "/inbox") return pathname.startsWith("/inbox")
     return pathname === url || pathname.startsWith(`${url}/`)
@@ -127,7 +118,24 @@ function SidebarWorkspaceRail({ items, pathname, user }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         <SidebarMenu className="gap-1">
-          {railItems.map((item) => {
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={isActive("/inbox")}
+              tooltip="Inbox"
+              tooltipAlways
+              className="size-8 justify-center px-0"
+            >
+              <Link href="/inbox" aria-label="Inbox">
+                <InboxIcon className="h-4 w-4" />
+                <span className="sr-only">Inbox</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div className="mx-2 my-2 h-px bg-sidebar-border/70" />
+        <SidebarMenu className="gap-1">
+          {items.map((item) => {
             const Icon = item.icon
             return (
               <SidebarMenuItem key={item.title}>
