@@ -563,7 +563,7 @@ export function AppSidebar({
       {...props}
       style={
         !isMobile
-          ? { "--sidebar-width": isInboxRoute ? "23rem" : "68px" }
+          ? { "--sidebar-width": isInboxRoute ? "21rem" : "68px" }
           : undefined
       }
     >

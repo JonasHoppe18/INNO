@@ -342,7 +342,7 @@ export function TicketList({
 
   return (
     <aside className={`animate-view-enter flex w-full flex-col bg-background lg:w-[clamp(16rem,18vw,21rem)] lg:min-w-[clamp(16rem,18vw,21rem)] lg:max-w-[clamp(16rem,18vw,21rem)] lg:flex-none ${className}`}>
-      <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-muted/[0.18] px-3">
+      <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background px-3">
         <div className="flex min-w-0 items-center gap-1">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />

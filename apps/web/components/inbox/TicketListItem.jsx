@@ -71,11 +71,14 @@ function TicketListItemComponent({
   const classificationLabel = getTicketTypeLabel(thread, classificationKey);
   const ticketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketRef = ticketRef !== "No ticket ID";
+  const ticketNumberLabel = hasTicketRef
+    ? `#${ticketRef.replace(/^T-/, "")}`
+    : null;
   const statusLabel = status === "Solved" ? "Resolved" : status;
 
-  // Keep queue context in the existing two-line rhythm. Type and ticket ID are
-  // visible because they help agents scan the queue; the rest remains in the
-  // hover title so the list does not become a dense data table.
+  // Keep the compact two-line mail rhythm: sender/time first, subject and
+  // quiet context second. Type and ticket ID remain visible without competing
+  // with the sender for horizontal space.
   const metadataTitle = [
     ticketRef,
     hasAiDraft ? "Draft ready" : null,
@@ -151,7 +154,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 px-3.5 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
@@ -185,7 +188,7 @@ function TicketListItemComponent({
       aria-pressed={isActive}
       aria-current={isActive ? "page" : undefined}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-2">
         {isUnread ? (
           <span
             aria-label="Unread"
@@ -195,22 +198,12 @@ function TicketListItemComponent({
         <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
-        {classificationLabel ? (
-          <span className="hidden max-w-[94px] shrink-0 truncate rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 sm:inline-flex">
-            {classificationLabel}
-          </span>
-        ) : null}
-        {hasTicketRef ? (
-          <span className="shrink-0 rounded-full border border-border/70 bg-muted/45 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground">
-            {ticketRef}
-          </span>
-        ) : null}
         <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
           {formatMessageTime(timestamp)}
         </span>
       </div>
       <div
-        className="flex min-w-0 items-center justify-between gap-2"
+        className="flex min-w-0 items-center gap-2"
         title={metadataTitle || undefined}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -223,11 +216,21 @@ function TicketListItemComponent({
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/75">
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
+          {classificationLabel ? (
+            <span className="max-w-[72px] truncate rounded-full bg-violet-50/80 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+              {classificationLabel}
+            </span>
+          ) : null}
+          {ticketNumberLabel ? (
+            <span className="shrink-0 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground/70">
+              {ticketNumberLabel}
+            </span>
+          ) : null}
           {reason && reason.key !== "new" ? (
             <span
               className={
-                "max-w-[150px] truncate whitespace-nowrap text-[11px] " +
+                "max-w-[96px] truncate whitespace-nowrap text-[11px] " +
                 (reason.key === "customer_replied"
                   ? "text-amber-700 dark:text-amber-500"
                   : reason.key === "approve_close"
