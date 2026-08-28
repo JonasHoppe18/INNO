@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { cn } from "@/lib/utils"
 import {
   Check,
   CreditCardIcon,
@@ -55,7 +56,8 @@ function organizationInitials(name) {
 }
 
 export function NavUser({
-  user
+  user,
+  compact = false,
 }) {
   const router = useRouter()
   const { isMobile } = useSidebar()
@@ -107,18 +109,23 @@ export function NavUser({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+              tooltip={compact ? user.name : undefined}
+              aria-label={compact ? user.name : undefined}
+              className={cn(
+                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground",
+                compact && "size-8 justify-center px-0"
+              )}>
               <Avatar className="h-8 w-8 rounded-lg grayscale">
                 <AvatarImage src={user.avatar} alt={user.name} />
                 <AvatarFallback className="rounded-lg">CN</AvatarFallback>
               </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
+              <div className={cn("grid flex-1 text-left text-sm leading-tight", compact && "sr-only")}>
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {user.email}
                 </span>
               </div>
-              <MoreVerticalIcon className="ml-auto size-4" />
+              <MoreVerticalIcon className={cn("ml-auto size-4", compact && "sr-only")} />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent

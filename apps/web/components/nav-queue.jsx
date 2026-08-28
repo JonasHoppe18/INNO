@@ -92,6 +92,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
 }
 
 export function NavQueue({
+  contextual = false,
   counts = {},
   inboxes = [],
   activeView = "",
@@ -190,7 +191,7 @@ export function NavQueue({
 
   return (
     <>
-      <SidebarGroup className="pt-0">
+      <SidebarGroup className={cn("pt-0", contextual && "pt-3")}>
         <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Tickets
@@ -331,6 +332,13 @@ export function NavQueue({
                     kind: "status",
                     status: "resolved",
                   })}
+                />
+                <QueueRow
+                  hideIcon
+                  pl="pl-8"
+                  label="All tickets"
+                  href="/inbox/tickets"
+                  active={isViewActive("all")}
                 />
               </>
             )}

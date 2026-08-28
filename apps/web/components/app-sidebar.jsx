@@ -13,8 +13,11 @@ import {
   BookOpenIcon,
   CableIcon,
   CirclePlayIcon,
+  InboxIcon,
   LayoutDashboardIcon,
+  ListIcon,
   MailIcon,
+  SettingsIcon,
   SquarePenIcon,
   Trash2,
 } from "lucide-react"
@@ -43,6 +46,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 import { SonaLogo } from "@/components/ui/SonaLogo"
@@ -86,6 +90,98 @@ const baseData = {
   ],
 }
 
+function SidebarWorkspaceRail({ items, pathname, user }) {
+  const railItems = [
+    {
+      title: "Inbox",
+      url: "/inbox",
+      icon: InboxIcon,
+    },
+    ...items,
+  ]
+
+  const isActive = (url) => {
+    if (url === "/inbox") return pathname.startsWith("/inbox")
+    return pathname === url || pathname.startsWith(`${url}/`)
+  }
+
+  return (
+    <div className="flex w-[52px] shrink-0 flex-col border-r border-sidebar-border/70 bg-sidebar">
+      <div className="flex items-center justify-center px-2 py-3">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="Sona AI"
+              className="size-8 justify-center px-0"
+            >
+              <Link href="/dashboard" aria-label="Sona AI">
+                <SonaLogo size={20} className="h-5 w-5 shrink-0" />
+                <span className="sr-only">Sona AI</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+        <SidebarMenu className="gap-1">
+          {railItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isActive(item.url)}
+                  tooltip={item.title}
+                  className="size-8 justify-center px-0"
+                >
+                  <Link href={item.url} aria-label={item.title}>
+                    {Icon ? <Icon className="h-4 w-4" /> : null}
+                    <span className="sr-only">{item.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
+      </div>
+
+      <div className="space-y-1 p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith("/guides")}
+              tooltip="Sona Academy"
+              className="size-8 justify-center px-0"
+            >
+              <Link href="/guides" aria-label="Sona Academy">
+                <CirclePlayIcon className="h-4 w-4" />
+                <span className="sr-only">Sona Academy</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith("/settings")}
+              tooltip="Settings"
+              className="size-8 justify-center px-0"
+            >
+              <Link href="/settings" aria-label="Settings">
+                <SettingsIcon className="h-4 w-4" />
+                <span className="sr-only">Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <NavUser user={user} compact />
+      </div>
+    </div>
+  )
+}
+
 export function AppSidebar({
   user,
   className,
@@ -94,6 +190,7 @@ export function AppSidebar({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { isMobile, state } = useSidebar()
   // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
   // literal param value, "" meaning the needs-attention default. NavQueue
   // compares this directly against each row's target view. Only meaningful
@@ -102,7 +199,11 @@ export function AppSidebar({
   // otherwise be indistinguishable from "on /inbox with no ?view=" and mark
   // "Inbox" active everywhere.
   const isInboxRoute = pathname.startsWith("/inbox")
-  const activeView = isInboxRoute ? searchParams.get("view") || "" : null
+  const activeView = isInboxRoute
+    ? pathname === "/inbox/tickets"
+      ? "all"
+      : searchParams.get("view") || ""
+    : null
 
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
@@ -447,55 +548,98 @@ export function AppSidebar({
       collapsible="icon"
       className={cn("[&_a]:text-inherit [&_a]:no-underline", className)}
       {...props}
+      style={
+        !isMobile && state === "expanded" && !isInboxRoute
+          ? { "--sidebar-width": "68px" }
+          : undefined
+      }
     >
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              tooltip="Sona AI"
-              className="data-[slot=sidebar-menu-button]:!p-1.5 group-data-[collapsible=icon]:justify-center"
-            >
-              <a href="#" className="flex items-center gap-2 text-inherit no-underline">
-                <SonaLogo size={22} className="h-[22px] w-[22px] shrink-0" />
-                <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">Sona AI</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavQueue
-          counts={queueCounts}
-          inboxes={customInboxes}
-          activeView={activeView}
-          onCreateInbox={handleOpenCreateInbox}
-          onConfigureInbox={handleConfigureInbox}
-          onConfigureNotifications={handleConfigureNotifications}
-        />
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              tooltip="Sona Academy"
-              className={cn(
-                "justify-start text-foreground",
-                pathname.startsWith("/guides") &&
-                  "bg-accent text-foreground hover:bg-accent hover:text-foreground"
-              )}
-            >
-              <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
-                <CirclePlayIcon className="h-4 w-4" />
-                <span>Sona Academy</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <NavUser user={data.user} />
-      </SidebarFooter>
+      {isInboxRoute && state === "expanded" && !isMobile ? (
+        <div className="flex h-full w-full min-w-0">
+          <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
+          <div className="flex min-w-0 flex-1 flex-col bg-sidebar">
+            <div className="border-b border-sidebar-border/70 px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-sidebar-foreground">Inbox</p>
+                  <p className="truncate text-xs text-sidebar-foreground/60">Customer conversations</p>
+                </div>
+                <Link
+                  href="/inbox/tickets"
+                  aria-label="All tickets"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                >
+                  <ListIcon className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+            <SidebarContent className="gap-0">
+              <NavQueue
+                contextual
+                counts={queueCounts}
+                inboxes={customInboxes}
+                activeView={activeView}
+                onCreateInbox={handleOpenCreateInbox}
+                onConfigureInbox={handleConfigureInbox}
+                onConfigureNotifications={handleConfigureNotifications}
+              />
+            </SidebarContent>
+          </div>
+        </div>
+      ) : !isMobile && state === "expanded" ? (
+        <SidebarWorkspaceRail items={data.navMain} pathname={pathname} user={data.user} />
+      ) : (
+        <>
+          <SidebarHeader>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Sona AI"
+                  className="data-[slot=sidebar-menu-button]:!p-1.5 group-data-[collapsible=icon]:justify-center"
+                >
+                  <Link href="/dashboard" className="flex items-center gap-2 text-inherit no-underline">
+                    <SonaLogo size={22} className="h-[22px] w-[22px] shrink-0" />
+                    <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">Sona AI</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarHeader>
+          <SidebarContent>
+            <NavMain items={data.navMain} />
+            <NavQueue
+              counts={queueCounts}
+              inboxes={customInboxes}
+              activeView={activeView}
+              onCreateInbox={handleOpenCreateInbox}
+              onConfigureInbox={handleConfigureInbox}
+              onConfigureNotifications={handleConfigureNotifications}
+            />
+          </SidebarContent>
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Sona Academy"
+                  className={cn(
+                    "justify-start text-foreground",
+                    pathname.startsWith("/guides") &&
+                      "bg-accent text-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
+                    <CirclePlayIcon className="h-4 w-4" />
+                    <span>Sona Academy</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            <NavUser user={data.user} />
+          </SidebarFooter>
+        </>
+      )}
       <Dialog open={createInboxOpen} onOpenChange={setCreateInboxOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
