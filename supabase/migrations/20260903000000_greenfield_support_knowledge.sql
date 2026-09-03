@@ -2,8 +2,6 @@
 -- This schema is intentionally separate from agent_knowledge, ticket_examples,
 -- and the V2/V3 retrieval tables. Do not apply to a production project yet.
 
-create extension if not exists vector;
-
 create table if not exists public.greenfield_knowledge_records (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
@@ -39,25 +37,9 @@ create table if not exists public.greenfield_knowledge_chunks (
   search_document tsvector generated always as (
     to_tsvector('simple'::regconfig, content)
   ) stored,
-  embedding vector(1536),
   created_at timestamptz not null default now(),
   unique (record_id, chunk_index),
   check (workspace_id is not null)
-);
-
-create table if not exists public.greenfield_knowledge_ingestion_jobs (
-  id uuid primary key default gen_random_uuid(),
-  workspace_id uuid not null references public.workspaces(id) on delete cascade,
-  source_kind text not null,
-  source_id text not null,
-  status text not null check (status in ('queued', 'running', 'completed', 'failed')),
-  records_seen integer not null default 0,
-  records_written integer not null default 0,
-  chunks_written integer not null default 0,
-  error_message text,
-  started_at timestamptz,
-  finished_at timestamptz,
-  created_at timestamptz not null default now()
 );
 
 create index if not exists greenfield_knowledge_records_workspace_type_idx
@@ -68,13 +50,10 @@ create index if not exists greenfield_knowledge_chunks_search_idx
   on public.greenfield_knowledge_chunks using gin (search_document);
 create index if not exists greenfield_knowledge_chunks_workspace_idx
   on public.greenfield_knowledge_chunks (workspace_id, record_id);
-create index if not exists greenfield_knowledge_chunks_embedding_idx
-  on public.greenfield_knowledge_chunks using ivfflat (embedding vector_cosine_ops)
-  with (lists = 100)
-  where embedding is not null;
 create or replace function public.greenfield_knowledge_updated_at()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 begin
   new.updated_at = now();
@@ -90,7 +69,6 @@ for each row execute function public.greenfield_knowledge_updated_at();
 
 alter table public.greenfield_knowledge_records enable row level security;
 alter table public.greenfield_knowledge_chunks enable row level security;
-alter table public.greenfield_knowledge_ingestion_jobs enable row level security;
 
 drop policy if exists greenfield_records_service_role on public.greenfield_knowledge_records;
 create policy greenfield_records_service_role on public.greenfield_knowledge_records
@@ -117,13 +95,6 @@ create policy greenfield_chunks_scoped_read on public.greenfield_knowledge_chunk
         and wm.clerk_user_id = coalesce(auth.jwt() ->> 'sub', '')
     )
   );
-
-drop policy if exists greenfield_jobs_service_role on public.greenfield_knowledge_ingestion_jobs;
-create policy greenfield_jobs_service_role on public.greenfield_knowledge_ingestion_jobs
-  for all to service_role using (true) with check (workspace_id is not null);
-
-comment on column public.greenfield_knowledge_chunks.embedding is
-  'Optional semantic retrieval vector; text retrieval remains the default experiment path.';
 
 create or replace function public.greenfield_search_knowledge(
   p_workspace_id uuid,
@@ -155,6 +126,7 @@ returns table (
 language sql
 stable
 security invoker
+set search_path = public, pg_temp
 as $$
   with ranked as (
     select

@@ -51,6 +51,140 @@ function cleanText(value: unknown): string {
     .trim();
 }
 
+const CONTENT_ROOTS = ["main", "article", "body"] as const;
+const NON_CONTENT_TAGS = [
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "svg",
+  "canvas",
+  "iframe",
+  "object",
+  "embed",
+  "portal",
+  "dialog",
+  "base",
+  "link",
+  "meta",
+] as const;
+const CHROME_TAGS = [
+  "nav",
+  "footer",
+  "aside",
+  "form",
+  "button",
+  "select",
+  "textarea",
+] as const;
+const HTML_ENTITY_MAP: Record<string, string> = {
+  amp: "&",
+  apos: "'",
+  bull: "•",
+  copy: "©",
+  hellip: "…",
+  ldquo: "“",
+  lt: "<",
+  mdash: "—",
+  nbsp: " ",
+  ndash: "–",
+  quot: '"',
+  rdquo: "”",
+  reg: "®",
+  rsquo: "’",
+  trade: "™",
+  gt: ">",
+};
+
+function stripElementBlocks(value: string, tags: readonly string[]): string {
+  const pattern = new RegExp(
+    `<(${tags.join("|")})\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>`,
+    "gi",
+  );
+  return value.replace(pattern, " ");
+}
+
+function stripMarkedNoise(value: string): string {
+  const marker =
+    "cookie|consent|gdpr|newsletter|subscribe|popup|modal|overlay|site[-_ ]?nav|main[-_ ]?nav|breadcrumb|announcement[-_ ]?bar";
+  const marked = new RegExp(
+    `<([a-z][\\w:-]*)\\b(?=[^>]*(?:id|class|role|aria-label|data-[\\w:-]+)\\s*=\\s*[\"'][^\"']*(?:${marker})[^\"']*[\"'])[^>]*>[\\s\\S]*?<\\/\\1\\s*>`,
+    "gi",
+  );
+  const hidden = /<([a-z][\w:-]*)\b(?=[^>]*(?:\bhidden\b|aria-hidden\s*=\s*[\"']true[\"']|style\s*=\s*[\"'][^\"']*display\s*:\s*none))[^>]*>[\s\S]*?<\/\1\s*>/gi;
+  return value.replace(marked, " ").replace(hidden, " ");
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_, digits: string) => {
+      const codePoint = Number(digits);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : _;
+    })
+    .replace(/&#x([\da-f]+);/gi, (_, digits: string) => {
+      const codePoint = Number.parseInt(digits, 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : _;
+    })
+    .replace(/&([a-z]+);/gi, (full, name: string) => HTML_ENTITY_MAP[name.toLowerCase()] ?? full);
+}
+
+function extractContentRoot(value: string): { content: string; tag: (typeof CONTENT_ROOTS)[number] | null } {
+  for (const tag of CONTENT_ROOTS) {
+    const match = value.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, "i"));
+    if (match?.[1]?.trim()) return { content: match[1], tag };
+  }
+  return { content: value, tag: null };
+}
+
+function extractMetaSummary(value: string): string {
+  const descriptions: string[] = [];
+  for (const match of value.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0];
+    const name = tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    const content = tag.match(/\bcontent\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (content && (name === "description" || name === "og:description" || name === "twitter:description")) {
+      descriptions.push(decodeHtmlEntities(content));
+    }
+  }
+  const uniqueDescriptions = Array.from(new Set(descriptions));
+  if (uniqueDescriptions.length) return uniqueDescriptions[0];
+  const title = value.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1];
+  return title ? decodeHtmlEntities(title) : "";
+}
+
+function normalizeVisibleHtml(value: string): string {
+  const withStructure = value
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(/<h[1-6]\b[^>]*>/gi, "\n\n")
+    .replace(/<t[dh]\b[^>]*>/gi, " ")
+    .replace(/<\/(?:t[dh])\s*>/gi, " | ")
+    .replace(/<\/(?:p|div|section|article|main|ul|ol|table|tr|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  const lines = decodeHtmlEntities(withStructure)
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+  const deduplicated: string[] = [];
+  for (const line of lines) {
+    if (line === deduplicated[deduplicated.length - 1]) continue;
+    deduplicated.push(line);
+  }
+  return deduplicated.join("\n\n");
+}
+
+/** Convert raw HTML to conservative visible source text without merchant-specific rules. */
+export function cleanRawContent(value: unknown): string {
+  const raw = String(value ?? "");
+  if (!/<\/?[a-z][^>]*>/i.test(raw)) return cleanText(raw);
+  const withoutBlocks = stripElementBlocks(raw.replace(/<!--[\s\S]*?-->/g, " "), NON_CONTENT_TAGS);
+  const root = extractContentRoot(withoutBlocks);
+  const chromeTags = root.tag === "main" || root.tag === "article" ? CHROME_TAGS : ["header", ...CHROME_TAGS];
+  const visible = normalizeVisibleHtml(stripMarkedNoise(stripElementBlocks(root.content, chromeTags)));
+  if (visible.length >= 80) return cleanText(visible);
+  return cleanText([visible, extractMetaSummary(withoutBlocks)].filter(Boolean).join("\n"));
+}
+
 function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 }
@@ -128,7 +262,7 @@ export async function normalizeKnowledgeSource(
 ): Promise<KnowledgeRecord> {
   const normalizedWorkspaceId = cleanText(workspaceId);
   if (!normalizedWorkspaceId) throw new Error("workspaceId is required for knowledge ingestion.");
-  const content = cleanText(source.content);
+  const content = cleanRawContent(source.content);
   if (!content) throw new Error("Knowledge content is required.");
   if (!cleanText(source.sourceKind) || !cleanText(source.sourceId)) {
     throw new Error("Knowledge provenance requires sourceKind and sourceId.");
@@ -208,6 +342,25 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     return record;
   }
 
+  async replaceSource(workspaceId: string, sourceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
+    const normalizedWorkspaceId = cleanText(workspaceId);
+    const normalizedSourceId = cleanText(sourceId);
+    if (!normalizedWorkspaceId || !normalizedSourceId || cleanText(source.sourceId) !== normalizedSourceId) {
+      throw new Error("Source replacement requires matching workspace and source identity.");
+    }
+    const replacement = await this.ingest(normalizedWorkspaceId, source);
+    for (const [key, record] of this.records) {
+      if (
+        record.workspaceId === normalizedWorkspaceId &&
+        record.sourceId === normalizedSourceId &&
+        record.id !== replacement.id
+      ) {
+        this.records.delete(key);
+      }
+    }
+    return replacement;
+  }
+
   async search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]> {
     const workspaceId = cleanText(request.workspaceId);
     if (!workspaceId) throw new Error("workspaceId is required for knowledge search.");
@@ -226,6 +379,28 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
 /** Production adapter. The RPC is tenant-filtered again in SQL, not just here. */
 export class SupabaseKnowledgeStore implements KnowledgeStore {
   constructor(private readonly serviceClient: any) {}
+
+  private async embedQuery(query: string): Promise<number[]> {
+    const apiKey = process.env.OPENAI_API_KEY ?? "";
+    if (!apiKey) throw new Error("OPENAI_API_KEY is missing.");
+    const model = process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model, input: query, encoding_format: "float" }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload?.error?.message;
+      throw new Error(message ? `Embedding request failed: ${message}` : `Embedding request failed (${response.status}).`);
+    }
+    const embedding = payload?.data?.[0]?.embedding;
+    if (!Array.isArray(embedding)) throw new Error("Embedding response did not contain a query vector.");
+    return embedding;
+  }
 
   async ingest(workspaceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
     const record = await normalizeKnowledgeSource(workspaceId, source);
@@ -264,15 +439,34 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     return { ...record, id: String(data.id) };
   }
 
+  /** Ingest first, then remove only older copies of this tenant/source pair. */
+  async replaceSource(workspaceId: string, sourceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
+    const normalizedWorkspaceId = cleanText(workspaceId);
+    const normalizedSourceId = cleanText(sourceId);
+    if (!normalizedWorkspaceId || !normalizedSourceId || cleanText(source.sourceId) !== normalizedSourceId) {
+      throw new Error("Source replacement requires matching workspace and source identity.");
+    }
+    const record = await this.ingest(normalizedWorkspaceId, source);
+    const { error } = await this.serviceClient
+      .from("greenfield_knowledge_records")
+      .delete()
+      .eq("workspace_id", normalizedWorkspaceId)
+      .eq("source_id", normalizedSourceId)
+      .neq("content_hash", record.contentHash);
+    if (error) throw new Error(error.message);
+    return record;
+  }
+
   async search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]> {
-    const { data, error } = await this.serviceClient.rpc("greenfield_search_knowledge", {
+    const queryEmbedding = await this.embedQuery(request.query);
+    const { data, error } = await this.serviceClient.rpc("greenfield_search_knowledge_semantic", {
       p_workspace_id: request.workspaceId,
-      p_query: request.query,
+      p_query_embedding: queryEmbedding,
       p_knowledge_types: request.knowledgeTypes ?? null,
       p_limit: request.limit ?? 5,
     });
     if (error) throw new Error(error.message);
-    return (Array.isArray(data) ? data : []).map((row: any) => ({
+    return (Array.isArray(data) ? data : []).map((row: any, index: number) => ({
       record: {
         id: String(row.id),
         workspaceId: String(row.workspace_id),
@@ -293,7 +487,15 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         chunks: Array.isArray(row.chunks) ? row.chunks : [row.content],
       },
       score: Number(row.score ?? 0),
-      matchReason: row.match_reason ?? "lexical",
+      rank: index + 1,
+      evidence: row.chunk_id
+        ? {
+            chunkId: String(row.chunk_id),
+            chunkIndex: Number(row.chunk_index ?? 0),
+            content: String(row.chunk_content ?? ""),
+          }
+        : undefined,
+      matchReason: row.match_reason ?? "semantic",
     }));
   }
 }

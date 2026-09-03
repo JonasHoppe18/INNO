@@ -79,7 +79,13 @@ export interface KnowledgeSearchRequest {
 export interface KnowledgeHit {
   record: KnowledgeRecord;
   score: number;
-  matchReason: "lexical" | "title" | "structured";
+  matchReason: "lexical" | "title" | "structured" | "semantic";
+  rank?: number;
+  evidence?: {
+    chunkId: string;
+    chunkIndex: number;
+    content: string;
+  };
 }
 
 export interface KnowledgeStore {

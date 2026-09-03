@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryKnowledgeStore } from "../knowledge";
+import { cleanRawContent, InMemoryKnowledgeStore } from "../knowledge";
 
 describe("greenfield knowledge store", () => {
+  it("conservatively converts generic HTML into visible source text", () => {
+    const cleaned = cleanRawContent(`
+      <html><body>
+        <header>Store navigation</header>
+        <nav>Home Products Cart</nav>
+        <main>
+          <h1>Returns</h1>
+          <p>Unused products may be returned within 30 days.</p>
+          <ul><li>Contact support first.</li><li>Keep the original packaging.</li></ul>
+          <table><tr><th>Region</th><th>Warranty</th></tr><tr><td>EU</td><td>2 years</td></tr></table>
+          <div class="cookie-banner">Accept all cookies</div>
+          <script>window.dataLayer = window.dataLayer || []; </script>
+          <footer>Unrelated footer links</footer>
+        </main>
+      </body></html>
+    `);
+
+    expect(cleaned).toContain("Returns");
+    expect(cleaned).toContain("Unused products may be returned within 30 days.");
+    expect(cleaned).toContain("- Contact support first.");
+    expect(cleaned).toContain("EU | 2 years");
+    expect(cleaned).not.toContain("Store navigation");
+    expect(cleaned).not.toContain("dataLayer");
+    expect(cleaned).not.toContain("Accept all cookies");
+    expect(cleaned).not.toContain("Unrelated footer links");
+  });
+
   it("keeps tenant retrieval deterministic and isolated", async () => {
     const store = new InMemoryKnowledgeStore();
     await store.ingest("tenant-a", {

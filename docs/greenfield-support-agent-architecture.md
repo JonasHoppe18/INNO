@@ -78,11 +78,16 @@ The ingestion path is:
 `raw source → normalize → classify → structured extraction → hash/deduplicate → attach trusted workspace → retain provenance/timestamps → chunk → store/index`.
 
 The first implementation has deterministic lexical/structured retrieval in
-memory and a Supabase RPC adapter using PostgreSQL full-text ranking. The SQL
-schema has an optional nullable embedding column and HNSW index so semantic
-ranking can be added behind the same store contract without putting embeddings
-into every model call. Retrieval is always filtered by workspace before ranking,
-and expired records are excluded. Authority and freshness affect ranking.
+memory and a Supabase RPC adapter using PostgreSQL full-text ranking. Retrieval
+is always filtered by workspace before ranking, and expired records are
+excluded. Authority and freshness affect ranking.
+
+The retrieval bake-off added a nullable `embedding` column, a greenfield-only
+HNSW index, and a greenfield-only semantic RPC in a follow-up migration. This
+was added because real-data lexical retrieval failed natural-language support
+queries. The support-agent response path now uses that semantic RPC directly
+for the existing cleaned greenfield chunks. The lexical RPC remains available
+as a baseline; hybrid ranking is not part of the runtime path.
 
 ## Agent loop
 
