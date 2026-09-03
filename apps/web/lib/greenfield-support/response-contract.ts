@@ -7,10 +7,24 @@ const BasisSchema = z.object({
   field_paths: z.array(z.string()).max(32),
 }).strict();
 
+const FactKindSchema = z.enum([
+  "order_reference",
+  "order_item",
+  "order_financial_status",
+  "order_fulfillment_status",
+  "shipment_carrier",
+  "shipment_tracking_number",
+  "shipment_status",
+  "shipment_event",
+  "shipment_timestamp",
+  "shipment_location",
+  "shipment_eta",
+]);
+
 const FactSchema = z.object({
   type: z.literal("fact"),
-  text: z.string().min(1),
-  basis: BasisSchema,
+  fact_kind: FactKindSchema,
+  evidence: z.array(BasisSchema).min(1).max(8),
 }).strict();
 
 const QuestionSchema = z.object({
@@ -54,6 +68,7 @@ export const StructuredResponseSchema = z.object({
 
 export type ResponseSegment = z.infer<typeof ResponseSegmentSchema>;
 export type StructuredResponse = z.infer<typeof StructuredResponseSchema>;
+type FactKind = Extract<ResponseSegment, { type: "fact" }>["fact_kind"];
 
 export interface ResponseEvidenceRecord {
   resultId: string;
@@ -186,6 +201,109 @@ function validateKnowledgeBasis(
   return [];
 }
 
+function normalizedDataPath(path: string): string {
+  return path.startsWith("data.") ? path.slice("data.".length) : path;
+}
+
+function pathHasSuffix(path: string, suffix: string): boolean {
+  const normalized = normalizedDataPath(path);
+  return normalized === suffix || normalized.endsWith(`.${suffix}`);
+}
+
+function pathHasAnySuffix(path: string, suffixes: string[]): boolean {
+  return suffixes.some((suffix) => pathHasSuffix(path, suffix));
+}
+
+function pathHasIndexedProperty(path: string, collectionPath: string, property: string): boolean {
+  const normalized = normalizedDataPath(path);
+  return normalized.includes(`${collectionPath}[`) && normalized.endsWith(`.${property}`);
+}
+
+function indexedCollectionProperty(path: string, collection: string, property: string): { index: string; property: string } | null {
+  const normalized = normalizedDataPath(path);
+  const marker = `${collection}[`;
+  const start = normalized.indexOf(marker);
+  if (start < 0 || !normalized.endsWith(`.${property}`)) return null;
+  const indexStart = start + marker.length;
+  const indexEnd = normalized.indexOf("]", indexStart);
+  if (indexEnd < 0) return null;
+  return { index: normalized.slice(indexStart, indexEnd), property };
+}
+
+function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
+  switch (factKind) {
+    case "order_reference":
+      return pathHasAnySuffix(path, ["orderNumber", "order_number"]);
+    case "order_financial_status":
+      return pathHasAnySuffix(path, ["financialStatus", "financial_status"]);
+    case "order_fulfillment_status":
+      return pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]);
+    case "shipment_carrier":
+      return pathHasAnySuffix(path, ["carrier"]);
+    case "shipment_tracking_number":
+      return pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]);
+    case "shipment_status":
+      return pathHasAnySuffix(path, ["live_tracking.status"]);
+    case "shipment_event":
+      return pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]);
+    case "shipment_timestamp":
+      return pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"])
+        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp");
+    case "shipment_location":
+      return pathHasAnySuffix(path, ["live_tracking.latestEvent.location"])
+        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location");
+    case "shipment_eta":
+      return pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]);
+    case "order_item":
+      return Boolean(
+        pathHasAnySuffix(path, ["items"])
+        ||
+        indexedCollectionProperty(path, "items", "title")
+        || indexedCollectionProperty(path, "items", "quantity"),
+      );
+    default:
+      return false;
+  }
+}
+
+function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext, index: number) {
+  const issues = segment.evidence.flatMap((basis) => validateBasis(
+    basis,
+    context,
+    { requireOk: true, requireMeaningfulFields: true, scope: "data" },
+    index,
+  ));
+  if (issues.length) return issues;
+
+  const paths = segment.evidence.flatMap((basis) => basis.field_paths);
+  const matchingPaths = paths.filter((path) => fieldPathMatchesFactKind(segment.fact_kind, path));
+  if (!matchingPaths.length) {
+    return [{
+      index,
+      code: "fact_field_kind_mismatch",
+      message: `The cited fields cannot support a ${segment.fact_kind} fact.`,
+    }];
+  }
+
+  if (segment.fact_kind === "order_item") {
+    if (matchingPaths.some((path) => pathHasAnySuffix(path, ["items"]))) return [];
+    const itemFields = matchingPaths
+      .map((path) => indexedCollectionProperty(path, "items", path.endsWith(".title") ? "title" : "quantity"))
+      .filter((field): field is { index: string; property: string } => Boolean(field));
+    const itemIndexes = new Set(itemFields.map((field) => field.index));
+    const hasTitle = itemFields.some((field) => field.property === "title");
+    const hasQuantity = itemFields.some((field) => field.property === "quantity");
+    if (!hasTitle || !hasQuantity || itemIndexes.size !== 1) {
+      return [{
+        index,
+        code: "order_item_fields_required",
+        message: "An order item fact must cite the title and quantity of one returned item.",
+      }];
+    }
+  }
+  return [];
+}
+
 function definitionFor(capability: string, context: ResponseValidationContext) {
   return context.definitions.find((definition) => definition.name === capability);
 }
@@ -241,7 +359,7 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
 function validateSegment(segment: ResponseSegment, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
   switch (segment.type) {
     case "fact":
-      return validateBasis(segment.basis, context, { requireOk: true, requireMeaningfulFields: true, scope: "data" }, index);
+      return validateFact(segment, context, index);
     case "knowledge_guidance":
       return validateKnowledgeBasis(segment.basis, context, index);
     case "limitation": {
@@ -342,9 +460,91 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
     : proposal;
 }
 
+function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
+  return segment.evidence.flatMap((basis) => {
+    const evidence = resultFor(basis, context);
+    if (!evidence) return [];
+    return basis.field_paths.flatMap((path) => {
+      const field = dataFieldValue(evidence.result, path);
+      if (!field.exists || !meaningful(field.value)) return [];
+      return [{ path, value: field.value }];
+    });
+  });
+}
+
+function renderFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
+  const values = factEvidenceValues(segment, context);
+  const scalarValueFor = (predicate: (path: string) => boolean) => {
+    const value = values.find((item) => predicate(item.path))?.value;
+    return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : undefined;
+  };
+  switch (segment.fact_kind) {
+    case "order_reference": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["orderNumber", "order_number"]));
+      return value ? `Order reference: #${value.replace(/^#/, "")}.` : "";
+    }
+    case "order_item": {
+      const items = values.find((item) => pathHasAnySuffix(item.path, ["items"]))?.value;
+      if (Array.isArray(items)) {
+        const renderedItems = items.flatMap((item) => {
+          const record = objectValue(item);
+          const title = record?.title;
+          const quantity = record?.quantity;
+          return meaningful(title) && meaningful(quantity) ? [`${String(quantity)} × ${String(title)}`] : [];
+        });
+        return renderedItems.length ? `Order items: ${renderedItems.join(", ")}.` : "";
+      }
+      const title = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "title")));
+      const quantity = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "quantity")));
+      return title && quantity ? `Order item: ${quantity} × ${title}.` : "";
+    }
+    case "order_financial_status": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));
+      return value ? `Financial status: ${value}.` : "";
+    }
+    case "order_fulfillment_status": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]));
+      return value ? `Fulfillment status: ${value}.` : "";
+    }
+    case "shipment_carrier": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["carrier"]));
+      return value ? `Carrier: ${value}.` : "";
+    }
+    case "shipment_tracking_number": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
+      return value ? `Tracking number: ${value}.` : "";
+    }
+    case "shipment_status": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.status"]));
+      return value ? `Tracking status: ${value}.` : "";
+    }
+    case "shipment_event": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]));
+      return value ? `Latest tracking event: ${value}.` : "";
+    }
+    case "shipment_timestamp": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"])
+        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp"));
+      return value ? `Tracking timestamp: ${value}.` : "";
+    }
+    case "shipment_location": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.location"])
+        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location"));
+      return value ? `Tracking location: ${value}.` : "";
+    }
+    case "shipment_eta": {
+      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]));
+      return value ? `Estimated delivery: ${value}.` : "";
+    }
+    default:
+      return "";
+  }
+}
+
 /** Renders only segments accepted by the deterministic validator. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   return segments.map((segment) => {
+    if (segment.type === "fact") return renderFact(segment, context);
     if (segment.type === "action_offer") return renderActionOffer(segment, context);
     if (segment.type === "question" && segment.purpose === "enable_capability") return renderCapabilityQuestion(segment, context);
     return segment.text?.trim() ?? "";

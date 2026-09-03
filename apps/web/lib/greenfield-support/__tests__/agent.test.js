@@ -56,14 +56,14 @@ describe("greenfield model/tool loop", () => {
         toolCall("get_order", { order_id: "10231" }, "call-order"),
         toolCall("get_tracking", { tracking_number: "PC10231" }, "call-tracking"),
         structured(
-          { type: "fact", text: "Order #10231 is paid and fulfilled.", basis: { result_id: "tool_result_1", field_paths: ["fulfillmentStatus"] } },
-          { type: "fact", text: "The shipment is in transit with ParcelCo.", basis: { result_id: "tool_result_2", field_paths: ["live_tracking.status"] } },
+          { type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: "tool_result_1", field_paths: ["fulfillmentStatus"] }] },
+          { type: "fact", fact_kind: "shipment_status", evidence: [{ result_id: "tool_result_2", field_paths: ["live_tracking.status"] }] },
         ),
       ]),
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("in transit");
+    expect(result.response).toContain("in_transit");
     const calls = result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name);
     expect(calls).toEqual(["get_order", "get_tracking"]);
     expect(JSON.stringify(result.trace.events)).toContain("PC10231");
@@ -102,8 +102,8 @@ describe("greenfield model/tool loop", () => {
         toolCall("get_order_history", {}, "call-latest-history"),
         structured({
           type: "fact",
-          text: "Your latest order is #10231 and it is in transit.",
-          basis: { result_id: "tool_result_1", field_paths: ["orders"] },
+          fact_kind: "order_reference",
+          evidence: [{ result_id: "tool_result_1", field_paths: ["orders[0].orderNumber"] }],
         }),
       ]),
       capabilities: dependencies,

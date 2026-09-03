@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { StructuredResponseSchema, validateStructuredResponse } from "../response-contract";
+import { StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
 }
 
-function deliveredTrackingProvider() {
+function deliveredTrackingProvider(options = {}) {
+  const { location = "Copenhagen", estimatedDelivery = null } = options;
   return {
     providerName: "test_ship24",
     lookup: async (input) => ({
@@ -20,11 +21,11 @@ function deliveredTrackingProvider() {
         latestEvent: {
           description: "The parcel has been delivered.",
           timestamp: "2026-09-03T12:00:00.000Z",
-          location: "Copenhagen",
+          location,
           status: "delivered",
           subStatus: "delivered",
         },
-        estimatedDelivery: null,
+        estimatedDelivery,
         checkpoints: [],
         exception: null,
         observedAt: "2026-09-03T12:00:00.000Z",
@@ -43,12 +44,43 @@ describe("structured response contract", () => {
 
     const result = validate(registry, {
       type: "fact",
-      text: "Order 10231 is fulfilled.",
-      basis: { result_id: order.resultId, field_paths: ["fulfillmentStatus"] },
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus", "status"] }],
     });
 
     expect(result.allValid).toBe(true);
     expect(result.approvedSegments).toHaveLength(1);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("fulfilled");
+    expect(rendered).not.toContain("delivered");
+  });
+
+  it("renders the verified financial status value", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry, {
+      type: "fact",
+      fact_kind: "order_financial_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["financialStatus"] }],
+    });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("paid");
+  });
+
+  it("renders the verified carrier value", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry, {
+      type: "fact",
+      fact_kind: "shipment_carrier",
+      evidence: [{ result_id: order.resultId, field_paths: ["fulfillments[0].carrier"] }],
+    });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("ParcelCo");
   });
 
   it("rejects a field path that the tool did not return", async () => {
@@ -58,8 +90,8 @@ describe("structured response contract", () => {
 
     const result = validate(registry, {
       type: "fact",
-      text: "The order ships to this address.",
-      basis: { result_id: order.resultId, field_paths: ["delivery_address"] },
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["delivery_address"] }],
     });
 
     expect(result.allValid).toBe(false);
@@ -75,12 +107,13 @@ describe("structured response contract", () => {
 
     const result = validate(registry, {
       type: "fact",
-      text: "The carrier has provided an ETA.",
-      basis: { result_id: tracking.resultId, field_paths: ["live_tracking.estimatedDelivery"] },
+      fact_kind: "shipment_eta",
+      evidence: [{ result_id: tracking.resultId, field_paths: ["live_tracking.estimatedDelivery"] }],
     });
 
     expect(result.allValid).toBe(false);
     expect(result.issues[0].code).toBe("empty_field");
+    expect(renderResponseSegments(result.approvedSegments, registry)).not.toContain("Estimated delivery");
   });
 
   it("accepts a proposal mode but fails closed for an executed mode", async () => {
@@ -161,8 +194,8 @@ describe("structured response contract", () => {
     });
     const unsupportedCause = validate(registry, {
       type: "fact",
-      text: "The carrier has not scanned the label yet.",
-      basis: { result_id: tracking.resultId, field_paths: ["cause"] },
+      fact_kind: "shipment_event",
+      evidence: [{ result_id: tracking.resultId, field_paths: ["cause"] }],
     });
 
     expect(limitation.allValid).toBe(true);
@@ -177,11 +210,80 @@ describe("structured response contract", () => {
     const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
     const result = validate(registry, {
       type: "fact",
-      text: "The parcel has been delivered.",
-      basis: { result_id: tracking.resultId, field_paths: ["live_tracking.status", "live_tracking.latestEvent.description"] },
+      fact_kind: "shipment_status",
+      evidence: [{ result_id: tracking.resultId, field_paths: ["live_tracking.status"] }],
     });
 
     expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("delivered");
+  });
+
+  it("does not render a location fact when the verified location is null", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: deliveredTrackingProvider({ location: null }) });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry, {
+      type: "fact",
+      fact_kind: "shipment_location",
+      evidence: [{ result_id: tracking.resultId, field_paths: ["live_tracking.latestEvent.location"] }],
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("empty_field");
+    expect(renderResponseSegments(result.approvedSegments, registry)).not.toContain("Tracking location");
+  });
+
+  it("renders an order item from the verified title and quantity", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry, {
+      type: "fact",
+      fact_kind: "order_item",
+      evidence: [{ result_id: order.resultId, field_paths: ["items[0].title", "items[0].quantity"] }],
+    });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("1 × Orion Wireless");
+  });
+
+  it("fails closed for an unknown operational field", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry, {
+      type: "fact",
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["inventedFulfillmentStatus"] }],
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.approvedSegments).toEqual([]);
+    expect(result.issues[0].code).toBe("unknown_field_path");
+  });
+
+  it("never lets a model value replace the returned operational value", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const inventedValue = validateStructuredResponse({
+      segments: [{
+        type: "fact",
+        fact_kind: "order_fulfillment_status",
+        evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus"] }],
+        value: "delivered",
+      }],
+    }, registry);
+    const verified = validate(registry, {
+      type: "fact",
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus"] }],
+    });
+
+    expect(inventedValue.schemaValid).toBe(false);
+    expect(renderResponseSegments(verified.approvedSegments, registry)).toContain("fulfilled");
+    expect(renderResponseSegments(verified.approvedSegments, registry)).not.toContain("delivered");
   });
 
   it("validates capability-enabling questions against the existing tool schema", async () => {
@@ -281,8 +383,8 @@ describe("structured response contract", () => {
     const registry = createCapabilityRegistry(dependencies);
     const evidence = validate(registry, {
       type: "fact",
-      text: "This is verified.",
-      basis: { result_id: "tool_result_999", field_paths: ["status"] },
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: "tool_result_999", field_paths: ["fulfillmentStatus"] }],
     });
     expect(evidence.allValid).toBe(false);
     expect(evidence.issues[0].code).toBe("unknown_result_id");
