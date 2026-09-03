@@ -3,12 +3,20 @@ import { ScriptedModel, assistantMessage, functionCall, modelResponse } from "@o
 import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
 import { createDemoDependencies } from "../demo-fixtures";
 
+function structured(...segments) {
+  return JSON.stringify({ segments });
+}
+
 describe("greenfield OpenAI Agents SDK runtime", () => {
   it("uses one SDK agent for the knowledge/tool continuation", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
       modelResponse([functionCall("search_policy", { query: "return window" }, { callId: "sdk-policy" })]),
-      modelResponse([assistantMessage("Returns are accepted within 30 days of delivery.")]),
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "Returns are accepted within 30 days of delivery.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
+      }))]),
     ]);
 
     const result = await runGreenfieldAgentWithAgentsSdk({
@@ -31,7 +39,12 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
       modelResponse([functionCall("cancel_order", { order_id: "10232", reason: "Customer request" }, { callId: "sdk-cancel" })]),
-      modelResponse([assistantMessage("I can prepare the cancellation request for order #10232.")]),
+      modelResponse([assistantMessage(structured({
+        type: "action_offer",
+        text: "I can prepare the cancellation request for order #10232. This is only a proposal and has not been completed.",
+        capability: "cancel_order",
+        mode: "proposal",
+      }))]),
     ]);
 
     const result = await runGreenfieldAgentWithAgentsSdk({

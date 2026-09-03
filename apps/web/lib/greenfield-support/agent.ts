@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+import { renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -51,6 +52,7 @@ function inputMessage(role: "user" | "assistant", content: string) {
 
 function serializeToolResult(result: ToolExecutionResult): string {
   return JSON.stringify({
+    result_id: result.resultId ?? null,
     status: result.status,
     data: result.data ?? null,
     proposed_action: result.proposedAction ?? null,
@@ -130,8 +132,16 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
 
       if (response.type === "text") {
         const rawText = String(response.text ?? "").trim();
-        const finalResponse = keepActionStatusHonest(rawText || fallbackResponse(), proposedActions);
-        pushEvent(trace, "final_response", { response: finalResponse, proposed_actions: proposedActions }, now());
+        const validation = validateStructuredResponse(rawText, registry);
+        const finalResponse = validation.approvedSegments.length
+          ? renderResponseSegments(validation.approvedSegments)
+          : fallbackResponse();
+        pushEvent(trace, "final_response", {
+          response: finalResponse,
+          proposed_actions: proposedActions,
+          structured_response: validation.parsed,
+          validation: summarizeResponseValidation(validation),
+        }, now());
         trace.finishedAt = now();
         return { response: finalResponse, proposedActions, trace };
       }

@@ -220,17 +220,29 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     ? { requestedOrderId: initialOrderReferences[0], state: "unresolved", order: null }
     : null;
   const manifest = buildCapabilityManifest(context);
+  let resultSequence = 0;
+  const resultRecords = new Map<string, { resultId: string; toolName: string; result: ToolExecutionResult }>();
+  const recordResult = (toolName: string, result: ToolExecutionResult): ToolExecutionResult => {
+    const resultId = `tool_result_${++resultSequence}`;
+    const recorded = { ...result, resultId };
+    resultRecords.set(resultId, { resultId, toolName, result: recorded });
+    return recorded;
+  };
 
   return {
     definitions: GREENFIELD_TOOL_DEFINITIONS,
     manifest,
+    getResult(resultId: string) {
+      return resultRecords.get(resultId);
+    },
     async execute(toolName: string, rawArguments: string): Promise<ToolExecutionResult> {
       const parsed = parseToolArguments(toolName, rawArguments);
-      if (parsed.ok === false) return parsed.result;
+      if (parsed.ok === false) return recordResult(toolName, parsed.result);
       const args = parsed.value;
       const query = stringArg(args, "query");
       try {
-        switch (toolName) {
+        const result = await (async (): Promise<ToolExecutionResult> => {
+          switch (toolName) {
           case "search_policy":
             return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["policy"], limit: 5 }), query);
           case "search_product_knowledge":
@@ -380,15 +392,17 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return proposedAction("send_replacement", args, stringArg(args, "reason"));
           default:
             return { status: "invalid_arguments", error: { code: "unknown_tool", message: `Unknown capability: ${toolName}` } };
-        }
+          }
+        })();
+        return recordResult(toolName, result);
       } catch (error) {
-        return {
+        return recordResult(toolName, {
           status: "error",
           error: {
             code: "capability_failed",
             message: error instanceof Error ? error.message : "Capability failed.",
           },
-        };
+        });
       }
     },
   };

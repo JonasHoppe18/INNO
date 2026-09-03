@@ -16,6 +16,10 @@ function toolCall(name, argumentsObject, callId = `call-${name}`) {
   return { type: "tool_call", toolCall: { name, callId, arguments: JSON.stringify(argumentsObject) } };
 }
 
+function structured(...segments) {
+  return { type: "text", text: JSON.stringify({ segments }) };
+}
+
 describe("greenfield model/tool loop", () => {
   it("completes a knowledge-only case and records provenance", async () => {
     const dependencies = await createDemoDependencies();
@@ -24,7 +28,11 @@ describe("greenfield model/tool loop", () => {
       message: "What is your return window?",
       model: scriptedModel([
         toolCall("search_policy", { query: "return window" }),
-        { type: "text", text: "Returns are accepted within 30 days of delivery." },
+        structured({
+          type: "knowledge_guidance",
+          text: "Returns are accepted within 30 days of delivery.",
+          basis: { result_id: "tool_result_1", field_paths: ["results"] },
+        }),
       ]),
       capabilities: dependencies,
     });
@@ -47,7 +55,10 @@ describe("greenfield model/tool loop", () => {
       model: scriptedModel([
         toolCall("get_order", { order_id: "10231" }, "call-order"),
         toolCall("get_tracking", { tracking_number: "PC10231" }, "call-tracking"),
-        { type: "text", text: "Order #10231 is in transit with ParcelCo. Track it with PC10231." },
+        structured(
+          { type: "fact", text: "Order #10231 is paid and fulfilled.", basis: { result_id: "tool_result_1", field_paths: ["fulfillmentStatus"] } },
+          { type: "fact", text: "The shipment is in transit with ParcelCo.", basis: { result_id: "tool_result_2", field_paths: ["live_tracking.status"] } },
+        ),
       ]),
       capabilities: dependencies,
     });
@@ -67,7 +78,10 @@ describe("greenfield model/tool loop", () => {
       model: scriptedModel([
         toolCall("get_order", { order_id: "9999" }, "call-missing-order"),
         toolCall("get_order_history", {}, "call-history"),
-        { type: "text", text: "I could not find order #9999. Please confirm the order number or the email used at checkout." },
+        structured(
+          { type: "limitation", text: "I could not find order #9999.", basis: { result_id: "tool_result_1", field_paths: [] } },
+          { type: "question", text: "Please confirm the order number or the email used at checkout.", follow_up_capability: "get_order", follow_up_fields: ["order"] },
+        ),
       ]),
       capabilities: dependencies,
     });
@@ -86,7 +100,11 @@ describe("greenfield model/tool loop", () => {
       message: "Where is my latest order?",
       model: scriptedModel([
         toolCall("get_order_history", {}, "call-latest-history"),
-        { type: "text", text: "Your latest order is #10231 and it is in transit." },
+        structured({
+          type: "fact",
+          text: "Your latest order is #10231 and it is in transit.",
+          basis: { result_id: "tool_result_1", field_paths: ["orders"] },
+        }),
       ]),
       capabilities: dependencies,
     });
@@ -104,7 +122,12 @@ describe("greenfield model/tool loop", () => {
       message: "Please cancel order #10232.",
       model: scriptedModel([
         toolCall("cancel_order", { order_id: "10232", reason: "Customer request" }),
-        { type: "text", text: "I can prepare the cancellation request for order #10232." },
+        structured({
+          type: "action_offer",
+          text: "I can prepare the cancellation request for order #10232. This is only a proposal and has not been completed.",
+          capability: "cancel_order",
+          mode: "proposal",
+        }),
       ]),
       capabilities: dependencies,
     });

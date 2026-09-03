@@ -277,6 +277,8 @@ export interface AgentTrace {
 
 export interface ToolExecutionResult {
   status: "ok" | "not_found" | "missing_context" | "invalid_arguments" | "invalid_request" | "unavailable" | "unauthorized" | "error" | "proposed";
+  /** Assigned by the per-run capability registry and never supplied by the model. */
+  resultId?: string;
   data?: JsonValue;
   proposedAction?: ProposedAction;
   error?: { code: string; message: string };

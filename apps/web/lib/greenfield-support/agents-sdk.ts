@@ -1,9 +1,10 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
-import { fallbackResponse, keepActionStatusHonest } from "./agent";
+import { fallbackResponse } from "./agent";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+import { renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import type {
   AgentRunResult,
   AgentTrace,
@@ -52,6 +53,7 @@ function pushEvent(trace: AgentTrace, type: TraceEvent["type"], data: unknown, a
 
 function serializeToolResult(result: ToolExecutionResult): string {
   return JSON.stringify({
+    result_id: result.resultId ?? null,
     status: result.status,
     data: result.data ?? null,
     proposed_action: result.proposedAction ?? null,
@@ -159,10 +161,11 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
   const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));
   const model = options.model ?? process.env.OPENAI_MODEL ?? "gpt-5.2";
-  const agent = new Agent<SonaAgentContext>({
+  const agent = new Agent<SonaAgentContext, typeof StructuredResponseSchema>({
     name: "Sona Support Agent",
     instructions,
     model,
+    outputType: StructuredResponseSchema,
     modelSettings: { parallelToolCalls: false },
     tools: createSdkTools(context),
   });
@@ -216,9 +219,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       return { response, proposedActions, trace };
     }
 
-    const rawText = String(result?.finalOutput ?? "").trim();
-    const response = keepActionStatusHonest(rawText || fallbackResponse(), proposedActions);
-    pushEvent(trace, "final_response", { response, proposed_actions: proposedActions }, now());
+    const validation = validateStructuredResponse(result?.finalOutput, registry);
+    const response = validation.approvedSegments.length
+      ? renderResponseSegments(validation.approvedSegments)
+      : fallbackResponse();
+    pushEvent(trace, "final_response", {
+      response,
+      proposed_actions: proposedActions,
+      structured_response: validation.parsed,
+      validation: summarizeResponseValidation(validation),
+    }, now());
     trace.finishedAt = now();
     return { response, proposedActions, trace };
   } catch (error) {

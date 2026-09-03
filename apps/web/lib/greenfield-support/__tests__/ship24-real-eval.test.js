@@ -167,6 +167,14 @@ function summarizeTrace(trace, trackingNumbers) {
     });
 }
 
+function structuredResponseSummary(trace, trackingNumbers) {
+  const finalEvent = trace.events.find((event) => event.type === "final_response");
+  return {
+    rawSegments: safeResult(finalEvent?.data?.structured_response ?? null, trackingNumbers),
+    validation: safeResult(finalEvent?.data?.validation ?? null, trackingNumbers),
+  };
+}
+
 function capabilityManifest(trace) {
   const started = trace.events.find((event) => event.type === "agent_started");
   return started?.data?.capability_manifest ?? null;
@@ -292,11 +300,14 @@ describe("greenfield Ship24 real DEV evaluation", () => {
         maxTurns: 8,
       });
       const referencedOrder = orderNumber ? await context.commerce.getOrder(orderNumber) : null;
+      const structured = structuredResponseSummary(run.trace, trackingNumbers);
       cases.push({
         customerMessage: maskMessage(message, trackingNumbers),
         availableCapabilities: capabilityManifest(run.trace),
         verifiedShopifyOrder: orderSummary(referencedOrder),
         trace: summarizeTrace(run.trace, trackingNumbers),
+        rawStructuredSegments: structured.rawSegments,
+        responseValidation: structured.validation,
         finalResponse: maskMessage(run.response, trackingNumbers),
       });
     }
