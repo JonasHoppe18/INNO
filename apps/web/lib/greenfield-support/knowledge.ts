@@ -1,6 +1,7 @@
 import type {
   AuthorityLevel,
   KnowledgeHit,
+  KnowledgeEvidence,
   KnowledgeRecord,
   KnowledgeSearchRequest,
   KnowledgeSourceInput,
@@ -380,6 +381,57 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
 export class SupabaseKnowledgeStore implements KnowledgeStore {
   constructor(private readonly serviceClient: any) {}
 
+  private async loadEvidenceWindows(workspaceId: string, rows: any[]): Promise<Map<string, KnowledgeEvidence[]>> {
+    const recordIds = Array.from(new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean)));
+    if (!recordIds.length) return new Map();
+
+    const { data, error } = await this.serviceClient
+      .from("greenfield_knowledge_chunks")
+      .select("id,record_id,chunk_index,content")
+      .eq("workspace_id", workspaceId)
+      .in("record_id", recordIds);
+    if (error) throw new Error(error.message);
+
+    const chunksByRecord = new Map<string, Array<{ id: string; index: number; content: string }>>();
+    for (const row of Array.isArray(data) ? data : []) {
+      const recordId = String(row.record_id ?? "");
+      if (!recordId) continue;
+      const chunks = chunksByRecord.get(recordId) ?? [];
+      chunks.push({
+        id: String(row.id),
+        index: Number(row.chunk_index ?? 0),
+        content: String(row.content ?? ""),
+      });
+      chunksByRecord.set(recordId, chunks);
+    }
+
+    const windows = new Map<string, KnowledgeEvidence[]>();
+    for (const row of rows) {
+      const recordId = String(row.id ?? "");
+      const selectedIndex = Number(row.chunk_index ?? 0);
+      const chunks = chunksByRecord.get(recordId) ?? [];
+      if (!chunks.some((chunk) => chunk.id === String(row.chunk_id ?? ""))) {
+        chunks.push({
+          id: String(row.chunk_id ?? ""),
+          index: selectedIndex,
+          content: String(row.chunk_content ?? ""),
+        });
+      }
+      windows.set(
+        recordId,
+        chunks
+          .filter((chunk) => Math.abs(chunk.index - selectedIndex) <= 1)
+          .sort((left, right) => left.index - right.index)
+          .map((chunk) => ({
+            chunkId: chunk.id,
+            chunkIndex: chunk.index,
+            content: chunk.content,
+          })),
+      );
+    }
+    return windows;
+  }
+
   private async embedQuery(query: string): Promise<number[]> {
     const apiKey = process.env.OPENAI_API_KEY ?? "";
     if (!apiKey) throw new Error("OPENAI_API_KEY is missing.");
@@ -466,7 +518,9 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       p_limit: request.limit ?? 5,
     });
     if (error) throw new Error(error.message);
-    return (Array.isArray(data) ? data : []).map((row: any, index: number) => ({
+    const rows = Array.isArray(data) ? data : [];
+    const evidenceWindows = await this.loadEvidenceWindows(request.workspaceId, rows);
+    return rows.map((row: any, index: number) => ({
       record: {
         id: String(row.id),
         workspaceId: String(row.workspace_id),
@@ -488,13 +542,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       },
       score: Number(row.score ?? 0),
       rank: index + 1,
-      evidence: row.chunk_id
-        ? {
-            chunkId: String(row.chunk_id),
-            chunkIndex: Number(row.chunk_index ?? 0),
-            content: String(row.chunk_content ?? ""),
-          }
-        : undefined,
+      evidenceWindow: evidenceWindows.get(String(row.id)) ?? [],
       matchReason: row.match_reason ?? "semantic",
     }));
   }

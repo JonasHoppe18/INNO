@@ -76,16 +76,18 @@ export interface KnowledgeSearchRequest {
   limit?: number;
 }
 
+export interface KnowledgeEvidence {
+  chunkId: string;
+  chunkIndex: number;
+  content: string;
+}
+
 export interface KnowledgeHit {
   record: KnowledgeRecord;
   score: number;
   matchReason: "lexical" | "title" | "structured" | "semantic";
   rank?: number;
-  evidence?: {
-    chunkId: string;
-    chunkIndex: number;
-    content: string;
-  };
+  evidenceWindow?: KnowledgeEvidence[];
 }
 
 export interface KnowledgeStore {

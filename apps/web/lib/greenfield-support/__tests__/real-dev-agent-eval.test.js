@@ -94,15 +94,11 @@ function safeTrace(trace) {
                 score: item.score,
                 rank: item.rank,
                 match_reason: item.match_reason,
-                evidence: TOP_EVIDENCE_ONLY && item.evidence && item !== knowledgeResults[0]
-                  ? {
-                      chunk_id: item.evidence.chunk_id,
-                      chunk_index: item.evidence.chunk_index,
-                    }
+                evidence: TOP_EVIDENCE_ONLY && Array.isArray(item.evidence) && item !== knowledgeResults[0]
+                  ? item.evidence.map(({ chunk_id, chunk_index }) => ({ chunk_id, chunk_index }))
                   : item.evidence,
                 provenance: item.provenance,
                 structured_data: item.structured_data,
-                ...(COMPACT_TRACE ? {} : { record_content: item.content }),
               })),
             },
           },
