@@ -1,0 +1,155 @@
+import { GREENFIELD_DEVELOPER_INSTRUCTIONS } from "./instructions";
+import type {
+  AgentRunResult,
+  AgentTrace,
+  GreenfieldModel,
+  JsonValue,
+  ModelResponse,
+  ProposedAction,
+  TenantContext,
+  ToolExecutionResult,
+  TraceEvent,
+} from "./types";
+import { createCapabilityRegistry } from "./capabilities";
+import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface GreenfieldAgentOptions {
+  tenant: TenantContext;
+  message: string;
+  history?: ConversationMessage[];
+  model: GreenfieldModel;
+  capabilities: Parameters<typeof createCapabilityRegistry>[0];
+  maxTurns?: number;
+  now?: () => string;
+}
+
+function traceValue(value: unknown): JsonValue {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? null : (JSON.parse(serialized) as JsonValue);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function traceId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `trace_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function pushEvent(trace: AgentTrace, type: TraceEvent["type"], data: unknown, at: string) {
+  trace.events.push({ at, type, data: traceValue(data) });
+}
+
+function inputMessage(role: "user" | "assistant", content: string) {
+  return { role, content };
+}
+
+function serializeToolResult(result: ToolExecutionResult): string {
+  return JSON.stringify({
+    status: result.status,
+    data: result.data ?? null,
+    proposed_action: result.proposedAction ?? null,
+    error: result.error ?? null,
+  });
+}
+
+export function keepActionStatusHonest(response: string, actions: ProposedAction[]): string {
+  if (!actions.length) return response;
+  const completionWords = /\b(cancelled|canceled|refunded|updated|created|sent|issued|processed|completed|done)\b/gi;
+  const hasUnqualifiedCompletionClaim = Array.from(response.matchAll(completionWords)).some((match) => {
+    const before = response.slice(Math.max(0, (match.index ?? 0) - 36), match.index ?? 0);
+    return !/(not|never|cannot|can't|hasn't|haven't|pending|proposed|awaiting|would)\s*$/i.test(before);
+  });
+  const safeResponse = hasUnqualifiedCompletionClaim
+    ? response.replace(completionWords, "requested")
+    : response;
+  const reminder = "This is only a proposal and has not been completed. Would you like me to submit it for confirmation?";
+  return safeResponse.toLowerCase().includes("proposal") || safeResponse.toLowerCase().includes("not been completed")
+    ? safeResponse
+    : `${safeResponse}\n\n${reminder}`;
+}
+
+export function fallbackResponse() {
+  return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
+}
+
+function responseUsage(response: ModelResponse) {
+  return response.usage && typeof response.usage === "object" ? response.usage : null;
+}
+
+export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promise<AgentRunResult> {
+  const started = new Date().toISOString();
+  const trace: AgentTrace = {
+    traceId: traceId(),
+    workspaceId: options.tenant.workspaceId,
+    startedAt: started,
+    finishedAt: null,
+    events: [],
+    developerInstructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
+    tools: GREENFIELD_TOOL_DEFINITIONS,
+    usage: [],
+  };
+  const registry = createCapabilityRegistry(options.capabilities);
+  const input: unknown[] = [
+    ...(options.history ?? []).map((message) => inputMessage(message.role, message.content)),
+    inputMessage("user", options.message),
+  ];
+  const proposedActions: ProposedAction[] = [];
+  const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));
+  const now = options.now ?? (() => new Date().toISOString());
+
+  pushEvent(trace, "agent_started", {
+    message: options.message,
+    history: options.history ?? [],
+    capabilities: registry.definitions.map((tool) => ({ name: tool.name, sensitivity: tool.sensitivity })),
+  }, now());
+
+  try {
+    for (let turn = 0; turn < maxTurns; turn += 1) {
+      const modelStarted = Date.now();
+      pushEvent(trace, "model_request", { turn, input }, now());
+      const response = await options.model.complete({
+        instructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
+        input,
+        tools: registry.definitions,
+      });
+      const durationMs = Date.now() - modelStarted;
+      if (responseUsage(response)) trace.usage.push(traceValue(responseUsage(response)) as Record<string, JsonValue>);
+      pushEvent(trace, "model_response", { turn, duration_ms: durationMs, response }, now());
+
+      if (response.type === "text") {
+        const rawText = String(response.text ?? "").trim();
+        const finalResponse = keepActionStatusHonest(rawText || fallbackResponse(), proposedActions);
+        pushEvent(trace, "final_response", { response: finalResponse, proposed_actions: proposedActions }, now());
+        trace.finishedAt = now();
+        return { response: finalResponse, proposedActions, trace };
+      }
+
+      const toolCall = response.toolCall;
+      pushEvent(trace, "tool_call", { turn, call_id: toolCall.callId, name: toolCall.name, arguments: toolCall.arguments }, now());
+      const toolStarted = Date.now();
+      const result = await registry.execute(toolCall.name, toolCall.arguments);
+      const resultDurationMs = Date.now() - toolStarted;
+      if (result.proposedAction && !proposedActions.some((action) => JSON.stringify(action) === JSON.stringify(result.proposedAction))) {
+        proposedActions.push(result.proposedAction);
+      }
+      pushEvent(trace, "tool_result", { turn, call_id: toolCall.callId, name: toolCall.name, duration_ms: resultDurationMs, result }, now());
+      input.push({ type: "function_call", call_id: toolCall.callId, name: toolCall.name, arguments: toolCall.arguments });
+      input.push({ type: "function_call_output", call_id: toolCall.callId, output: serializeToolResult(result) });
+    }
+
+    pushEvent(trace, "error", { code: "max_turns", message: "The agent reached its maximum tool turns." }, now());
+  } catch (error) {
+    pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
+  }
+
+  const response = fallbackResponse();
+  pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, fallback: true }, now());
+  trace.finishedAt = now();
+  return { response, proposedActions, trace };
+}
