@@ -46,7 +46,7 @@ describe("greenfield model/tool loop", () => {
       message: "Where is order #10231?",
       model: scriptedModel([
         toolCall("get_order", { order_id: "10231" }, "call-order"),
-        toolCall("get_tracking", { order_id: "10231" }, "call-tracking"),
+        toolCall("get_tracking", { tracking_number: "PC10231" }, "call-tracking"),
         { type: "text", text: "Order #10231 is in transit with ParcelCo. Track it with PC10231." },
       ]),
       capabilities: dependencies,

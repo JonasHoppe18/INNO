@@ -18,9 +18,13 @@ describe("greenfield representative contract baseline", () => {
         observedTools.push({ toolName, result });
       }
       for (const toolName of expected.live_capabilities || []) {
-        const result = toolName === "get_order"
-          ? await registry.execute(toolName, JSON.stringify({ order_id: testCase.order_number }))
-          : await registry.execute(toolName, JSON.stringify({ order_id: testCase.order_number }));
+        let argumentsObject = { order_id: testCase.order_number };
+        if (toolName === "get_tracking") {
+          const order = await dependencies.commerce.getOrder(testCase.order_number);
+          const trackingNumber = order?.fulfillments?.find((fulfillment) => fulfillment.trackingNumber)?.trackingNumber ?? "";
+          argumentsObject = { tracking_number: trackingNumber };
+        }
+        const result = await registry.execute(toolName, JSON.stringify(argumentsObject));
         observedTools.push({ toolName, result });
       }
       if (expected.proposed_action) {

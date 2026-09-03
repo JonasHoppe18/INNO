@@ -3,6 +3,7 @@ import type {
   CommerceReadProvider,
   JsonObject,
   JsonValue,
+  LiveTrackingProvider,
   KnowledgeStore,
   ProposedAction,
   TenantContext,
@@ -13,6 +14,7 @@ export interface CapabilityContext {
   tenant: TenantContext;
   knowledge: KnowledgeStore;
   commerce: CommerceReadProvider;
+  tracking?: LiveTrackingProvider;
   now?: () => string;
 }
 
@@ -59,6 +61,28 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
       })),
     },
   };
+}
+
+function normalizeTrackingNumber(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function verifiedTrackingSource(orders: Awaited<ReturnType<CommerceReadProvider["getOrderHistory"]>>, trackingNumber: string) {
+  const wanted = normalizeTrackingNumber(trackingNumber);
+  for (const order of orders) {
+    for (const fulfillment of order.fulfillments ?? []) {
+      if (normalizeTrackingNumber(fulfillment.trackingNumber) !== wanted) continue;
+      return {
+        source: "shopify_order_fulfillment" as const,
+        order_id: order.id,
+        order_number: order.orderNumber,
+        fulfillment_id: fulfillment.id,
+        carrier: fulfillment.carrier ?? null,
+        tracking_url: fulfillment.trackingUrl ?? null,
+      };
+    }
+  }
+  return null;
 }
 
 function proposedAction(name: ProposedAction["action"], args: JsonObject, reason: string): ToolExecutionResult {
@@ -128,8 +152,38 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             if (!context.tenant.customerEmail) {
               return { status: "missing_context", error: { code: "customer_identity_missing", message: "A verified customer identity is required before reading tracking data." } };
             }
-            const tracking = await context.commerce.getTracking(stringArg(args, "order_id"));
-            return { status: tracking.length ? "ok" : "not_found", data: jsonValue({ tracking }) };
+            const trackingNumber = stringArg(args, "tracking_number");
+            if (!trackingNumber) {
+              return { status: "invalid_request", error: { code: "tracking_number_required", message: "A tracking number is required." } };
+            }
+            if (!context.tracking) {
+              return { status: "unavailable", error: { code: "tracking_provider_unavailable", message: "Live tracking is not configured for this runtime." } };
+            }
+            const orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
+            const source = verifiedTrackingSource(orders, trackingNumber);
+            if (!source) {
+              return {
+                status: "not_found",
+                data: jsonValue({ tracking_number: trackingNumber, tracking_verification: "not_found" }),
+              };
+            }
+            const liveResult = await context.tracking.lookup({
+              trackingNumber,
+              carrierHint: source.carrier,
+              trackingUrl: source.tracking_url,
+              provenance: {
+                source: "shopify_order_fulfillment",
+                workspaceId: context.tenant.workspaceId,
+                orderId: source.order_id,
+                orderNumber: source.order_number,
+                fulfillmentId: source.fulfillment_id,
+              },
+            });
+            const verified = { tracking_identifier: source };
+            if (liveResult.status !== "ok") {
+              return { status: liveResult.status, data: jsonValue(verified), error: liveResult.error };
+            }
+            return { status: "ok", data: jsonValue({ ...verified, live_tracking: liveResult.data }) };
           }
           case "cancel_order":
             return proposedAction("cancel_order", args, stringArg(args, "reason"));

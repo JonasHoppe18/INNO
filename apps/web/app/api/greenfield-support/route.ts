@@ -5,6 +5,7 @@ import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/wo
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 import {
   runGreenfieldAgentWithAgentsSdk,
+  Ship24ReadOnlyProvider,
   ShopifyReadOnlyProvider,
   SupabaseKnowledgeStore,
 } from "@/lib/greenfield-support";
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
           accessToken: credentials.access_token,
           customer: { email: customer.email, name: customer.name },
         }),
+        tracking: new Ship24ReadOnlyProvider(),
       },
     });
     return NextResponse.json({

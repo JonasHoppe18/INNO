@@ -128,6 +128,54 @@ export interface TrackingSnapshot {
   observedAt: string;
 }
 
+export interface TrackingEvent {
+  description: string | null;
+  timestamp: string | null;
+  location: string | null;
+  status: string | null;
+  subStatus: string | null;
+}
+
+export interface TrackingCheckpoint extends TrackingEvent {}
+
+export interface TrackingIdentifierProvenance {
+  source: "shopify_order_fulfillment" | "customer_message";
+  workspaceId: string;
+  orderId?: string | null;
+  orderNumber?: string | null;
+  fulfillmentId?: string | null;
+}
+
+export interface LiveTrackingSnapshot {
+  trackingNumber: string;
+  carrier: string | null;
+  status: string | null;
+  subStatus: string | null;
+  latestEvent: TrackingEvent | null;
+  estimatedDelivery: string | null;
+  checkpoints: TrackingCheckpoint[];
+  exception: string | null;
+  observedAt: string;
+  provider: string;
+  source: string;
+}
+
+export type TrackingProviderFailure = "not_found" | "invalid_request" | "unavailable" | "unauthorized";
+
+export type TrackingProviderResult =
+  | { status: "ok"; data: LiveTrackingSnapshot }
+  | { status: TrackingProviderFailure; trackingNumber: string; provider: string; observedAt: string; error?: { code: string; message: string } };
+
+export interface LiveTrackingProvider {
+  readonly providerName: string;
+  lookup(input: {
+    trackingNumber: string;
+    carrierHint?: string | null;
+    trackingUrl?: string | null;
+    provenance: TrackingIdentifierProvenance;
+  }): Promise<TrackingProviderResult>;
+}
+
 export interface CustomerSnapshot {
   name?: string | null;
   email?: string | null;
@@ -140,7 +188,6 @@ export interface CommerceReadProvider {
   getOrderHistory(customerEmail: string | null | undefined): Promise<OrderSnapshot[]>;
   getCustomer(): Promise<CustomerSnapshot | null>;
   getProduct(query: string): Promise<JsonValue>;
-  getTracking(orderId: string): Promise<TrackingSnapshot[]>;
   inspectFulfillment(orderId: string): Promise<JsonValue>;
 }
 
@@ -218,7 +265,7 @@ export interface AgentTrace {
 }
 
 export interface ToolExecutionResult {
-  status: "ok" | "not_found" | "missing_context" | "invalid_arguments" | "error" | "proposed";
+  status: "ok" | "not_found" | "missing_context" | "invalid_arguments" | "invalid_request" | "unavailable" | "unauthorized" | "error" | "proposed";
   data?: JsonValue;
   proposedAction?: ProposedAction;
   error?: { code: string; message: string };

@@ -1,4 +1,4 @@
-import { InMemoryCommerceProvider } from "./providers";
+import { InMemoryCommerceProvider, InMemoryTrackingProvider } from "./providers";
 import { InMemoryKnowledgeStore } from "./knowledge";
 
 export const DEMO_TENANT = {
@@ -100,15 +100,16 @@ export async function createDemoDependencies() {
     { id: "shopify-10233", orderNumber: "10233", status: "fulfilled", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "149.00", currency: "EUR", items: [{ id: "line-10233", title: "Orion Wireless", quantity: 1 }], fulfillments: [{ id: "fulfillment-10233", status: "exception", carrier: "ParcelCo", trackingNumber: "PC10233", trackingUrl: "https://tracking.example.test/PC10233", shipmentStatus: "exception" }] },
     { id: "shopify-10234", orderNumber: "10234", status: "delivered", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "49.00", currency: "EUR", items: [{ id: "line-10234", title: "Orion replacement ear pads", quantity: 1 }], fulfillments: [{ id: "fulfillment-10234", status: "delivered", carrier: "ParcelCo", trackingNumber: "PC10234", trackingUrl: "https://tracking.example.test/PC10234", shipmentStatus: "delivered" }] },
   ];
+  const tracking = orders.filter((order) => order.fulfillments.length).map((order) => ({ orderId: order.id, carrier: order.fulfillments[0].carrier, trackingNumber: order.fulfillments[0].trackingNumber, trackingUrl: order.fulfillments[0].trackingUrl, status: order.fulfillments[0].shipmentStatus, statusText: order.fulfillments[0].shipmentStatus, observedAt: "2026-09-03T08:00:00.000Z" }));
   const commerce = new InMemoryCommerceProvider({
     customer: { name: DEMO_TENANT.customerName, email: DEMO_TENANT.customerEmail },
     orders,
-    tracking: orders.filter((order) => order.fulfillments.length).map((order) => ({ orderId: order.id, carrier: order.fulfillments[0].carrier, trackingNumber: order.fulfillments[0].trackingNumber, trackingUrl: order.fulfillments[0].trackingUrl, status: order.fulfillments[0].shipmentStatus, statusText: order.fulfillments[0].shipmentStatus, observedAt: "2026-09-03T08:00:00.000Z" })),
+    tracking,
     products: [
       { query: "Orion Wireless", value: { product: "Orion Wireless", compatibility: "Bluetooth and included USB receiver; USB-C adapter supported", status: "active" } },
       { query: "Orion Wired", value: { product: "Orion Wired", compatibility: "Wired USB connection", status: "active" } },
       { query: "Orion replacement ear pads", value: { product: "Orion replacement ear pads", compatibility: "Orion Wireless and Orion Wired", status: "active" } },
     ],
   });
-  return { tenant: DEMO_TENANT, knowledge, commerce };
+  return { tenant: DEMO_TENANT, knowledge, commerce, tracking: new InMemoryTrackingProvider(tracking) };
 }

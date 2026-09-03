@@ -3,7 +3,6 @@ import type {
   CustomerSnapshot,
   JsonValue,
   OrderSnapshot,
-  TrackingSnapshot,
 } from "./types";
 
 function clean(value: unknown): string {
@@ -147,22 +146,6 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
       status: products.length ? "ok" : "not_found",
       products: products.map((product: any) => ({ id: product?.id ?? null, title: product?.title ?? null, handle: product?.handle ?? null, variants: product?.variants ?? [] })),
     };
-  }
-
-  async getTracking(orderId: string): Promise<TrackingSnapshot[]> {
-    const order = await this.getOrder(orderId);
-    const observedAt = new Date().toISOString();
-    return (order?.fulfillments ?? []).filter((fulfillment) => fulfillment.trackingNumber || fulfillment.trackingUrl).map((fulfillment) => ({
-      orderId: order?.id ?? clean(orderId),
-      carrier: fulfillment.carrier ?? null,
-      trackingNumber: fulfillment.trackingNumber ?? null,
-      trackingUrl: fulfillment.trackingUrl ?? null,
-      status: fulfillment.shipmentStatus ?? fulfillment.status ?? null,
-      statusText: fulfillment.shipmentStatus ?? fulfillment.status ?? null,
-      estimatedDelivery: null,
-      lastEvent: null,
-      observedAt,
-    }));
   }
 
   async inspectFulfillment(orderId: string): Promise<JsonValue> {
