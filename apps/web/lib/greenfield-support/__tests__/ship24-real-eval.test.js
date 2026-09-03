@@ -159,9 +159,7 @@ function summarizeTrace(trace, trackingNumbers) {
         status: result.status,
         orderCount: Array.isArray(resultData.orders) ? resultData.orders.length : 0,
         candidateOnly: resultData.candidate_only ?? false,
-        candidateOrderNumbers: resultData.candidate_only && Array.isArray(resultData.orders)
-          ? resultData.orders.map((order) => order.order_number).filter(Boolean)
-          : [],
+        hasOrderHistory: resultData.has_order_history ?? null,
         error: result.error ?? null,
       };
       if (data.name === "inspect_fulfillment") return { type: event.type, name: data.name, status: result.status, data: safeResult(resultData, trackingNumbers), error: result.error ?? null };

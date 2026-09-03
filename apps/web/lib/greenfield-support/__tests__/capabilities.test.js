@@ -108,13 +108,13 @@ describe("greenfield capabilities", () => {
     expect(missing).toMatchObject({ status: "not_found", data: { order_focus: { state: "unresolved", requested_order_id: "9999" } } });
 
     const history = await registry.execute("get_order_history", "{}");
-    expect(history).toMatchObject({ status: "ok", data: { candidate_only: true, order_focus: { state: "unresolved" } } });
-    expect(history.data.orders).toEqual([
-      { order_number: "10231" },
-      { order_number: "10232" },
-      { order_number: "10233" },
-      { order_number: "10234" },
-    ]);
+    expect(history).toMatchObject({
+      status: "ok",
+      data: { candidate_only: true, has_order_history: true, order_focus: { state: "unresolved" } },
+    });
+    expect(history.data).not.toHaveProperty("orders");
+    expect(JSON.stringify(history.data)).not.toContain("10231");
+    expect(JSON.stringify(history.data)).not.toContain("PC10231");
 
     const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
     expect(tracking).toMatchObject({ status: "invalid_request", error: { code: "tracking_order_unresolved" } });

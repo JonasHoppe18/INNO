@@ -9,12 +9,12 @@
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    🛡️ DETERMINISTIC SAFETY BOUNDARY                        │
+│                    🛡️ DETERMINISTIC SAFETY BOUNDARY                         │
 │                                                                             │
 │  • Tenant Isolation                 • Authorization                         │
 │  • Prompt Injection Protection      • Tool Input Validation                 │
 │  • PII / Sensitive Data Handling    • Read vs Write Enforcement             │
-│  • Trusted Context Injection        • Explicit Tool Failure States           │
+│  • Trusted Context Injection        • Explicit Tool Failure States          │
 │                                                                             │
 │            Security is enforced in code — not by the LLM prompt             │
 └──────────────────────────────────────┬──────────────────────────────────────┘
@@ -39,7 +39,7 @@
                          │                           │
                          ▼                           ▼
 ┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
-│      📚 NEW KNOWLEDGE SYSTEM         │   │       🔧 OPERATIONAL TOOLS        │
+│      📚 NEW KNOWLEDGE SYSTEM          │   │       🔧 OPERATIONAL TOOLS        │
 │                                       │   │          Tenant-Safe              │
 │  AUTHORITATIVE KNOWLEDGE              │   │                                   │
 │                                       │   │  READ-ONLY TOOLS                  │
@@ -112,7 +112,7 @@
                          ▼                         ▼
                ┌──────────────────┐     ┌─────────────────────────┐
                │    NO ACTION     │     │   MUTATING ACTION       │
-               │                  │     │      PROPOSAL ONLY       │
+               │                  │     │      PROPOSAL ONLY      │
                │ Generate reply   │     │                         │
                └────────┬─────────┘     │ • cancel_order          │
                         │               │ • update_address        │
@@ -144,21 +144,21 @@
 │  • Proposed action(s)                                                       │
 │  • Resolution status                                                        │
 │                                                                             │
-│       RESOLVED  /  NEEDS INFORMATION  /  NEEDS HUMAN                       │
+│       RESOLVED  /  NEEDS INFORMATION  /  NEEDS HUMAN                        │
 │                                                                             │
-│  • Evidence / source references where useful                               │
+│  • Evidence / source references where useful                                │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    📊 TRACING & OFFLINE EVALUATION                          │
 │                                                                             │
-│  • Tool Calls                       • Retrieved Knowledge                    │
-│  • Tool Results                     • Source / Provenance                    │
-│  • Token Usage                      • Latency                                │
-│  • Errors / Failures                • Proposed Actions                       │
+│  • Tool Calls                       • Retrieved Knowledge                   │
+│  • Tool Results                     • Source / Provenance                   │
+│  • Token Usage                      • Latency                               │
+│  • Errors / Failures                • Proposed Actions                      │
 │                                                                             │
-│  Evaluation:                                                               │
+│  Evaluation:                                                                │
 │                                                                             │
 │  • Golden / Historical Cases        • LLM-as-a-Judge                        │
 │  • Deterministic Safety Checks      • Regression Tests                      │

@@ -247,8 +247,8 @@ export function createCapabilityRegistry(context: CapabilityContext) {
               return {
                 status: orders.length ? "ok" : "not_found",
                 data: jsonValue({
-                  orders: orders.map((order) => ({ order_number: order.orderNumber })),
                   candidate_only: true,
+                  has_order_history: orders.length > 0,
                   order_focus: orderFocusData(orderFocus),
                 }),
               };

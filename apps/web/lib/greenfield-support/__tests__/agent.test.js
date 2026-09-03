@@ -56,6 +56,45 @@ describe("greenfield model/tool loop", () => {
     const calls = result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name);
     expect(calls).toEqual(["get_order", "get_tracking"]);
     expect(JSON.stringify(result.trace.events)).toContain("PC10231");
+    expect(JSON.stringify(result.trace.events)).toContain("verified_order_number");
+  });
+
+  it("can ask for clarification after an unresolved order without receiving history candidates", async () => {
+    const dependencies = await createDemoDependencies();
+    const result = await runGreenfieldAgent({
+      ...dependencies,
+      message: "Where is my order #9999?",
+      model: scriptedModel([
+        toolCall("get_order", { order_id: "9999" }, "call-missing-order"),
+        toolCall("get_order_history", {}, "call-history"),
+        { type: "text", text: "I could not find order #9999. Please confirm the order number or the email used at checkout." },
+      ]),
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toContain("confirm the order number");
+    const historyResult = result.trace.events.find((event) => event.type === "tool_result" && event.data.name === "get_order_history");
+    expect(historyResult.data.result.data).toMatchObject({ candidate_only: true, has_order_history: true });
+    expect(historyResult.data.result.data).not.toHaveProperty("orders");
+    expect(JSON.stringify(historyResult.data.result.data)).not.toContain("10231");
+  });
+
+  it("keeps full history available when the customer asks for a latest order without an order reference", async () => {
+    const dependencies = await createDemoDependencies();
+    const result = await runGreenfieldAgent({
+      ...dependencies,
+      message: "Where is my latest order?",
+      model: scriptedModel([
+        toolCall("get_order_history", {}, "call-latest-history"),
+        { type: "text", text: "Your latest order is #10231 and it is in transit." },
+      ]),
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toContain("#10231");
+    const historyResult = result.trace.events.find((event) => event.type === "tool_result" && event.data.name === "get_order_history");
+    expect(historyResult.data.result.data.orders).toHaveLength(4);
+    expect(historyResult.data.result.data.candidate_only).toBeUndefined();
   });
 
   it("keeps a sensitive request proposal-only and honest", async () => {
