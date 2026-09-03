@@ -88,16 +88,16 @@ describe("structured response contract", () => {
     const registry = createCapabilityRegistry(dependencies);
     const proposal = validate(registry, {
       type: "action_offer",
-      text: "I can prepare a cancellation request for your confirmation.",
       capability: "cancel_order",
       mode: "proposal",
+      missing_arguments: [],
     });
     const executed = validateStructuredResponse({
       segments: [{
         type: "action_offer",
-        text: "The order was cancelled.",
         capability: "cancel_order",
         mode: "executed",
+        missing_arguments: [],
       }],
     }, registry);
 
@@ -111,9 +111,9 @@ describe("structured response contract", () => {
     const registry = createCapabilityRegistry(dependencies);
     const result = validate(registry, {
       type: "action_offer",
-      text: "I can open a carrier case.",
       capability: "open_carrier_case",
       mode: "proposal",
+      missing_arguments: [],
     });
 
     expect(result.allValid).toBe(false);
@@ -130,7 +130,7 @@ describe("structured response contract", () => {
       basis: { result_id: knowledge.resultId, field_paths: ["results"] },
     });
     const executed = validateStructuredResponse({
-      segments: [{ type: "action_offer", text: "The refund was executed.", capability: "create_refund", mode: "executed" }],
+      segments: [{ type: "action_offer", capability: "create_refund", mode: "executed", missing_arguments: [] }],
     }, registry);
 
     expect(guidance.allValid).toBe(true);
@@ -184,7 +184,99 @@ describe("structured response contract", () => {
     expect(result.allValid).toBe(true);
   });
 
-  it("fails closed for invented evidence and follow-up capabilities", async () => {
+  it("validates capability-enabling questions against the existing tool schema", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const valid = validate(registry, {
+      type: "question",
+      purpose: "enable_capability",
+      text: "Send the order number.",
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    });
+    const unknownCapability = validate(registry, {
+      type: "question",
+      purpose: "enable_capability",
+      text: "Send the details.",
+      capability: "get_order/get_order_history",
+      missing_arguments: ["order_id"],
+    });
+    const unknownArgument = validate(registry, {
+      type: "question",
+      purpose: "enable_capability",
+      text: "Send the address.",
+      capability: "get_order",
+      missing_arguments: ["delivery_address"],
+    });
+
+    expect(valid.allValid).toBe(true);
+    expect(unknownCapability.allValid).toBe(false);
+    expect(unknownCapability.issues[0].code).toBe("unknown_question_capability");
+    expect(unknownArgument.allValid).toBe(false);
+    expect(unknownArgument.issues[0].code).toBe("question_argument_not_in_schema");
+  });
+
+  it("keeps pure clarification separate from capability commitments", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const pure = validate(registry, {
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Do you mean the wireless or wired version?",
+      capability: null,
+      missing_arguments: [],
+    });
+    const smuggled = validate(registry, {
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Send your address and I will change it.",
+      capability: "update_address",
+      missing_arguments: ["address"],
+    });
+
+    expect(pure.allValid).toBe(true);
+    expect(smuggled.allValid).toBe(false);
+    expect(smuggled.issues[0].code).toBe("pure_question_has_capability");
+  });
+
+  it("renders action wording from the validated capability, not model prose", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const action = validate(registry, {
+      type: "action_offer",
+      capability: "update_address",
+      mode: "proposal",
+      missing_arguments: ["order_id", "address", "reason"],
+    });
+
+    expect(action.allValid).toBe(true);
+    const { renderResponseSegments } = await import("../response-contract");
+    const rendered = renderResponseSegments(action.approvedSegments, registry);
+    expect(rendered).toContain("propose an address update");
+    expect(rendered).toContain("not been completed");
+    expect(rendered).not.toContain("hold");
+    expect(rendered).not.toContain("carrier");
+  });
+
+  it("renders a valid read follow-up from the capability schema", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const question = validate(registry, {
+      type: "question",
+      purpose: "enable_capability",
+      text: "This text is not used to authorize the next operation.",
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    });
+
+    const { renderResponseSegments } = await import("../response-contract");
+    const rendered = renderResponseSegments(question.approvedSegments, registry);
+    expect(rendered).toContain("order ID");
+    expect(rendered).toContain("look up");
+    expect(rendered).not.toContain("not used to authorize");
+  });
+
+  it("fails closed for invented evidence", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
     const evidence = validate(registry, {
@@ -192,16 +284,7 @@ describe("structured response contract", () => {
       text: "This is verified.",
       basis: { result_id: "tool_result_999", field_paths: ["status"] },
     });
-    const capability = validate(registry, {
-      type: "question",
-      text: "Can you provide the missing information?",
-      follow_up_capability: "invented_lookup",
-      follow_up_fields: ["anything"],
-    });
-
     expect(evidence.allValid).toBe(false);
     expect(evidence.issues[0].code).toBe("unknown_result_id");
-    expect(capability.allValid).toBe(false);
-    expect(capability.issues[0].code).toBe("unknown_follow_up_capability");
   });
 });

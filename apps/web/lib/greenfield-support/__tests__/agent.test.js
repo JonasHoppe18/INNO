@@ -80,13 +80,13 @@ describe("greenfield model/tool loop", () => {
         toolCall("get_order_history", {}, "call-history"),
         structured(
           { type: "limitation", text: "I could not find order #9999.", basis: { result_id: "tool_result_1", field_paths: [] } },
-          { type: "question", text: "Please confirm the order number or the email used at checkout.", follow_up_capability: "get_order", follow_up_fields: ["order"] },
+          { type: "question", purpose: "enable_capability", text: "Please confirm the order number or the email used at checkout.", capability: "get_order", missing_arguments: ["order_id"] },
         ),
       ]),
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("confirm the order number");
+    expect(result.response).toContain("Please provide order ID");
     const historyResult = result.trace.events.find((event) => event.type === "tool_result" && event.data.name === "get_order_history");
     expect(historyResult.data.result.data).toMatchObject({ candidate_only: true, has_order_history: true });
     expect(historyResult.data.result.data).not.toHaveProperty("orders");
@@ -124,9 +124,9 @@ describe("greenfield model/tool loop", () => {
         toolCall("cancel_order", { order_id: "10232", reason: "Customer request" }),
         structured({
           type: "action_offer",
-          text: "I can prepare the cancellation request for order #10232. This is only a proposal and has not been completed.",
           capability: "cancel_order",
           mode: "proposal",
+          missing_arguments: [],
         }),
       ]),
       capabilities: dependencies,

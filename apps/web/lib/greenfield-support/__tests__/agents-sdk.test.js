@@ -41,9 +41,9 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
       modelResponse([functionCall("cancel_order", { order_id: "10232", reason: "Customer request" }, { callId: "sdk-cancel" })]),
       modelResponse([assistantMessage(structured({
         type: "action_offer",
-        text: "I can prepare the cancellation request for order #10232. This is only a proposal and has not been completed.",
         capability: "cancel_order",
         mode: "proposal",
+        missing_arguments: [],
       }))]),
     ]);
 

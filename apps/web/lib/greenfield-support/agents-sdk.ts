@@ -221,7 +221,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
 
     const validation = validateStructuredResponse(result?.finalOutput, registry);
     const response = validation.approvedSegments.length
-      ? renderResponseSegments(validation.approvedSegments)
+      ? renderResponseSegments(validation.approvedSegments, registry)
       : fallbackResponse();
     pushEvent(trace, "final_response", {
       response,

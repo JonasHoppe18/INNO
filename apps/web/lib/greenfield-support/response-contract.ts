@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CapabilityManifest, JsonObject, ToolExecutionResult } from "./types";
+import type { StrictToolDefinition } from "./tool-contracts";
 
 const BasisSchema = z.object({
   result_id: z.string().min(1),
@@ -14,9 +15,10 @@ const FactSchema = z.object({
 
 const QuestionSchema = z.object({
   type: z.literal("question"),
-  text: z.string().min(1),
-  follow_up_capability: z.string().nullable(),
-  follow_up_fields: z.array(z.string()),
+  purpose: z.enum(["pure_clarification", "enable_capability"]),
+  text: z.string().nullable(),
+  capability: z.string().nullable(),
+  missing_arguments: z.array(z.string()).max(32),
 }).strict();
 
 const LimitationSchema = z.object({
@@ -27,9 +29,9 @@ const LimitationSchema = z.object({
 
 const ActionOfferSchema = z.object({
   type: z.literal("action_offer"),
-  text: z.string().min(1),
   capability: z.string().min(1),
   mode: z.literal("proposal"),
+  missing_arguments: z.array(z.string()).max(32),
 }).strict();
 
 const KnowledgeGuidanceSchema = z.object({
@@ -77,6 +79,7 @@ export interface ResponseValidationResult {
 export interface ResponseValidationContext {
   manifest: CapabilityManifest;
   getResult: (resultId: string) => ResponseEvidenceRecord | undefined;
+  definitions: StrictToolDefinition[];
 }
 
 function parseInput(input: unknown): unknown {
@@ -183,12 +186,56 @@ function validateKnowledgeBasis(
   return [];
 }
 
+function definitionFor(capability: string, context: ResponseValidationContext) {
+  return context.definitions.find((definition) => definition.name === capability);
+}
+
+function availableCapability(capability: string, context: ResponseValidationContext) {
+  return [...context.manifest.readTools, ...context.manifest.proposalOnlyTools].includes(capability);
+}
+
+function validateCapabilityArguments(
+  capability: string,
+  missingArguments: string[],
+  context: ResponseValidationContext,
+  index: number,
+  codePrefix: "question" | "action",
+) {
+  const definition = definitionFor(capability, context);
+  if (!definition) return [{ index, code: `unknown_${codePrefix}_capability`, message: "The referenced capability is not part of the current tool registry." }];
+  const properties = Object.keys(definition.parameters.properties);
+  const required = new Set(definition.parameters.required);
+  const issues: ResponseValidationIssue[] = [];
+  for (const argument of missingArguments) {
+    if (!properties.includes(argument)) {
+      issues.push({ index, code: `${codePrefix}_argument_not_in_schema`, message: `The requested argument is not accepted by ${capability}.` });
+    } else if (!required.has(argument)) {
+      issues.push({ index, code: `${codePrefix}_argument_not_required`, message: `The requested information is not required to call ${capability}.` });
+    }
+  }
+  return issues;
+}
+
 function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext, index: number) {
-  if (!segment.follow_up_capability) return [];
-  const known = [...context.manifest.readTools, ...context.manifest.proposalOnlyTools].includes(segment.follow_up_capability);
-  return known
-    ? []
-    : [{ index, code: "unknown_follow_up_capability", message: "The question promises a follow-up capability that is not available in this run." }];
+  if (segment.purpose === "pure_clarification") {
+    if (segment.capability !== null || segment.missing_arguments.length) {
+      return [{ index, code: "pure_question_has_capability", message: "A pure clarification cannot carry a capability commitment." }];
+    }
+    return segment.text?.trim()
+      ? []
+      : [{ index, code: "pure_question_text_required", message: "A pure clarification needs customer-facing question text." }];
+  }
+
+  if (!segment.capability) {
+    return [{ index, code: "question_capability_required", message: "A capability-enabling question must name one capability." }];
+  }
+  if (!availableCapability(segment.capability, context)) {
+    return [{ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." }];
+  }
+  if (!segment.missing_arguments.length) {
+    return [{ index, code: "question_argument_required", message: "A capability-enabling question must identify missing required arguments." }];
+  }
+  return validateCapabilityArguments(segment.capability, segment.missing_arguments, context, index, "question");
 }
 
 function validateSegment(segment: ResponseSegment, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
@@ -202,10 +249,13 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       if (!evidence) return [{ index, code: "unknown_result_id", message: "The limitation references a tool result from outside this run." }];
       return validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
     }
-    case "action_offer":
-      return context.manifest.proposalOnlyTools.includes(segment.capability)
-        ? []
-        : [{ index, code: "unknown_action_capability", message: "The offered action is not a current proposal-only capability." }];
+    case "action_offer": {
+      const definition = definitionFor(segment.capability, context);
+      if (!context.manifest.proposalOnlyTools.includes(segment.capability) || definition?.sensitivity !== "proposed_action") {
+        return [{ index, code: "unknown_action_capability", message: "The offered action is not a current proposal-only capability." }];
+      }
+      return validateCapabilityArguments(segment.capability, segment.missing_arguments, context, index, "action");
+    }
     case "question":
       return validateQuestion(segment, context, index);
     default:
@@ -251,7 +301,52 @@ export function summarizeResponseValidation(result: ResponseValidationResult) {
   };
 }
 
+function humanArgumentName(argument: string) {
+  return argument
+    .replace(/_ids$/i, " IDs")
+    .replace(/_id$/i, " ID")
+    .replace(/_/g, " ");
+}
+
+function firstSentence(value: string) {
+  return value.split(".", 1)[0].trim();
+}
+
+function lowerFirst(value: string) {
+  return value ? value[0].toLowerCase() + value.slice(1) : value;
+}
+
+function listArguments(argumentsList: string[]) {
+  const labels = argumentsList.map(humanArgumentName);
+  if (labels.length < 2) return labels[0] ?? "the missing information";
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
+}
+
+function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext) {
+  const definition = definitionFor(segment.capability ?? "", context);
+  if (!definition) return "Please provide the missing information so I can continue.";
+  const operation = firstSentence(definition.description)
+    .replace(/^Read\s+/i, "look up ")
+    .replace(/^Propose\s+/i, "prepare a proposal for ");
+  return `Please provide ${listArguments(segment.missing_arguments)} so I can ${lowerFirst(operation)}.`;
+}
+
+function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_offer" }>, context: ResponseValidationContext) {
+  const definition = definitionFor(segment.capability, context);
+  if (!definition) return "I can prepare a proposal once the required information is available.";
+  const operation = firstSentence(definition.description).replace(/^Propose\s+/i, "");
+  const proposal = `I can propose ${lowerFirst(operation)}. This is only a proposal and has not been completed.`;
+  return segment.missing_arguments.length
+    ? `Please provide ${listArguments(segment.missing_arguments)} first. ${proposal}`
+    : proposal;
+}
+
 /** Renders only segments accepted by the deterministic validator. */
-export function renderResponseSegments(segments: ResponseSegment[]): string {
-  return segments.map((segment) => segment.text.trim()).filter(Boolean).join("\n\n");
+export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
+  return segments.map((segment) => {
+    if (segment.type === "action_offer") return renderActionOffer(segment, context);
+    if (segment.type === "question" && segment.purpose === "enable_capability") return renderCapabilityQuestion(segment, context);
+    return segment.text?.trim() ?? "";
+  }).filter(Boolean).join("\n\n");
 }
