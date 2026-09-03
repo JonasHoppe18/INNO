@@ -2,7 +2,7 @@ import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
 import { fallbackResponse, keepActionStatusHonest } from "./agent";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS } from "./instructions";
-import { createCapabilityRegistry } from "./capabilities";
+import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import type {
   AgentRunResult,
@@ -149,7 +149,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     tools: GREENFIELD_TOOL_DEFINITIONS,
     usage: [],
   };
-  const registry = createCapabilityRegistry(options.capabilities);
+  const registry = createCapabilityRegistry({
+    ...options.capabilities,
+    orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+  });
   const proposedActions: ProposedAction[] = [];
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
   const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));

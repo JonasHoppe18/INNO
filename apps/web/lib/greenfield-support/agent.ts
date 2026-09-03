@@ -10,7 +10,7 @@ import type {
   ToolExecutionResult,
   TraceEvent,
 } from "./types";
-import { createCapabilityRegistry } from "./capabilities";
+import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 
 export interface ConversationMessage {
@@ -94,7 +94,10 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     tools: GREENFIELD_TOOL_DEFINITIONS,
     usage: [],
   };
-  const registry = createCapabilityRegistry(options.capabilities);
+  const registry = createCapabilityRegistry({
+    ...options.capabilities,
+    orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+  });
   const input: unknown[] = [
     ...(options.history ?? []).map((message) => inputMessage(message.role, message.content)),
     inputMessage("user", options.message),

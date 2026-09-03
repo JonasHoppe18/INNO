@@ -130,7 +130,7 @@ function summarizeTrace(trace, trackingNumbers) {
       if (event.type === "error") return { type: event.type, data: safeResult(data, trackingNumbers) };
       const result = data.result ?? {};
       const resultData = result.data ?? {};
-      if (data.name === "get_order") return { type: event.type, name: data.name, status: result.status, data: orderSummary(resultData) };
+      if (data.name === "get_order") return { type: event.type, name: data.name, status: result.status, data: orderSummary(resultData), error: result.error ?? null };
       if (data.name === "get_tracking") {
         const live = resultData.live_tracking;
         return {
@@ -150,10 +150,21 @@ function summarizeTrace(trace, trackingNumbers) {
             exception: live.exception,
             observedAt: live.observedAt,
           } : null,
+          error: result.error ?? null,
         };
       }
-      if (data.name === "get_order_history") return { type: event.type, name: data.name, status: result.status, orderCount: Array.isArray(resultData.orders) ? resultData.orders.length : 0 };
-      if (data.name === "inspect_fulfillment") return { type: event.type, name: data.name, status: result.status, data: safeResult(resultData, trackingNumbers) };
+      if (data.name === "get_order_history") return {
+        type: event.type,
+        name: data.name,
+        status: result.status,
+        orderCount: Array.isArray(resultData.orders) ? resultData.orders.length : 0,
+        candidateOnly: resultData.candidate_only ?? false,
+        candidateOrderNumbers: resultData.candidate_only && Array.isArray(resultData.orders)
+          ? resultData.orders.map((order) => order.order_number).filter(Boolean)
+          : [],
+        error: result.error ?? null,
+      };
+      if (data.name === "inspect_fulfillment") return { type: event.type, name: data.name, status: result.status, data: safeResult(resultData, trackingNumbers), error: result.error ?? null };
       return { type: event.type, name: data.name, status: result.status, data: safeResult(resultData, trackingNumbers) };
     });
 }

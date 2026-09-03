@@ -5,6 +5,7 @@ import type {
   JsonValue,
   LiveTrackingProvider,
   KnowledgeStore,
+  OrderSnapshot,
   ProposedAction,
   TenantContext,
   ToolExecutionResult,
@@ -15,11 +16,47 @@ export interface CapabilityContext {
   knowledge: KnowledgeStore;
   commerce: CommerceReadProvider;
   tracking?: LiveTrackingProvider;
+  /** Explicit order references extracted from the current customer request. */
+  orderReferences?: string[];
   now?: () => string;
+}
+
+interface RequestOrderFocus {
+  requestedOrderId: string;
+  state: "unresolved" | "verified";
+  order: OrderSnapshot | null;
 }
 
 function stringArg(args: JsonObject, key: string): string {
   return String(args[key] ?? "").trim();
+}
+
+function normalizeOrderReference(value: unknown): string {
+  return String(value ?? "").trim().replace(/^#/, "").toLowerCase();
+}
+
+function sameOrderReference(left: unknown, right: unknown): boolean {
+  const normalizedLeft = normalizeOrderReference(left);
+  const normalizedRight = normalizeOrderReference(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+/** Extracts generic explicit order references from the current customer message. */
+export function extractOrderReferences(message: string): string[] {
+  const references = new Set<string>();
+  const source = String(message ?? "");
+  const patterns = [
+    /\b(?:order|ordre)\s*(?:number|no\.?|nr\.?)?\s*#\s*([a-z0-9][a-z0-9_-]{0,79})\b/gi,
+    /\b(?:order|ordre)\s+(?:number|no\.?|nr\.?)?\s+([0-9][a-z0-9_-]{0,79})\b/gi,
+    /#([a-z0-9][a-z0-9_-]{0,79})\b/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of Array.from(source.matchAll(pattern))) {
+      const reference = normalizeOrderReference(match[1]);
+      if (reference) references.add(reference);
+    }
+  }
+  return Array.from(references);
 }
 
 function jsonValue(value: unknown): JsonValue {
@@ -85,6 +122,66 @@ function verifiedTrackingSource(orders: Awaited<ReturnType<CommerceReadProvider[
   return null;
 }
 
+function orderFocusData(focus: RequestOrderFocus | null) {
+  if (!focus) return { state: "unbound" as const };
+  return {
+    state: focus.state,
+    requested_order_id: focus.requestedOrderId,
+    verified_order_id: focus.order?.id ?? null,
+    verified_order_number: focus.order?.orderNumber ?? null,
+  };
+}
+
+function orderFocusConflict(context: CapabilityContext, focus: RequestOrderFocus | null, orderId: string): ToolExecutionResult | null {
+  if (!focus || sameOrderReference(focus.requestedOrderId, orderId)) return null;
+  const explicitlyRequested = (context.orderReferences ?? []).some((reference) => sameOrderReference(reference, orderId));
+  if (explicitlyRequested) return null;
+  return {
+    status: "invalid_request",
+    data: jsonValue({
+      requested_order_id: orderId,
+      order_focus: orderFocusData(focus),
+    }),
+    error: {
+      code: "order_focus_conflict",
+      message: "This order is outside the current customer request and cannot be read without an explicit customer reference.",
+    },
+  };
+}
+
+function orderFromFulfillmentResult(value: JsonValue, fallbackOrderId: string): OrderSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const orderId = String(value.order_id ?? value.orderId ?? fallbackOrderId).trim();
+  const orderNumber = String(value.order_number ?? value.orderNumber ?? fallbackOrderId).trim();
+  if (!orderId || !orderNumber || !Array.isArray(value.fulfillments)) return null;
+  const fulfillments = value.fulfillments
+    .filter((item): item is JsonObject => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+    .map((item) => ({
+      id: String(item.id ?? "").trim(),
+      status: item.status == null ? null : String(item.status),
+      carrier: item.carrier == null ? null : String(item.carrier),
+      trackingNumber: item.tracking_number == null && item.trackingNumber == null
+        ? null
+        : String(item.tracking_number ?? item.trackingNumber),
+      trackingUrl: item.tracking_url == null && item.trackingUrl == null
+        ? null
+        : String(item.tracking_url ?? item.trackingUrl),
+      shipmentStatus: item.shipment_status == null && item.shipmentStatus == null
+        ? null
+        : String(item.shipment_status ?? item.shipmentStatus),
+    }))
+    .filter((item) => item.id);
+  return {
+    id: orderId,
+    orderNumber,
+    status: "unknown",
+    fulfillmentStatus: value.fulfillment_status == null && value.fulfillmentStatus == null
+      ? null
+      : String(value.fulfillment_status ?? value.fulfillmentStatus),
+    fulfillments,
+  };
+}
+
 function proposedAction(name: ProposedAction["action"], args: JsonObject, reason: string): ToolExecutionResult {
   return {
     status: "proposed",
@@ -100,6 +197,11 @@ function proposedAction(name: ProposedAction["action"], args: JsonObject, reason
 
 export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
+
+  const initialOrderReferences = context.orderReferences ?? [];
+  let orderFocus: RequestOrderFocus | null = initialOrderReferences.length === 1
+    ? { requestedOrderId: initialOrderReferences[0], state: "unresolved", order: null }
+    : null;
 
   return {
     definitions: GREENFIELD_TOOL_DEFINITIONS,
@@ -124,12 +226,33 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             if (!context.tenant.customerEmail) {
               return { status: "missing_context", error: { code: "customer_identity_missing", message: "A verified customer identity is required before reading order data." } };
             }
-            const order = await context.commerce.getOrder(stringArg(args, "order_id"));
-            return order ? { status: "ok", data: jsonValue(order) } : { status: "not_found", data: { order_id: stringArg(args, "order_id") } };
+            const orderId = stringArg(args, "order_id");
+            const conflict = orderFocusConflict(context, orderFocus, orderId);
+            if (conflict) return conflict;
+            if (!orderFocus || !sameOrderReference(orderFocus.requestedOrderId, orderId)) {
+              orderFocus = { requestedOrderId: orderId, state: "unresolved", order: null };
+            }
+            const order = await context.commerce.getOrder(orderId);
+            if (!order) {
+              orderFocus = { ...orderFocus, state: "unresolved", order: null };
+              return { status: "not_found", data: jsonValue({ order_id: orderId, order_focus: orderFocusData(orderFocus) }) };
+            }
+            orderFocus = { requestedOrderId: orderId, state: "verified", order };
+            return { status: "ok", data: jsonValue({ ...order, order_focus: orderFocusData(orderFocus) }) };
           }
           case "get_order_history": {
             if (!context.tenant.customerEmail) return { status: "missing_context", error: { code: "customer_identity_missing", message: "The current customer's verified email is not available." } };
             const orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
+            if (orderFocus?.state === "unresolved") {
+              return {
+                status: orders.length ? "ok" : "not_found",
+                data: jsonValue({
+                  orders: orders.map((order) => ({ order_number: order.orderNumber })),
+                  candidate_only: true,
+                  order_focus: orderFocusData(orderFocus),
+                }),
+              };
+            }
             return { status: orders.length ? "ok" : "not_found", data: jsonValue({ orders }) };
           }
           case "get_customer": {
@@ -145,7 +268,19 @@ export function createCapabilityRegistry(context: CapabilityContext) {
               return { status: "missing_context", error: { code: "customer_identity_missing", message: "A verified customer identity is required before reading fulfillment data." } };
             }
             {
-              const fulfillment = jsonValue(await context.commerce.inspectFulfillment(stringArg(args, "order_id")));
+              const orderId = stringArg(args, "order_id");
+              const conflict = orderFocusConflict(context, orderFocus, orderId);
+              if (conflict) return conflict;
+              if (!orderFocus || !sameOrderReference(orderFocus.requestedOrderId, orderId)) {
+                orderFocus = { requestedOrderId: orderId, state: "unresolved", order: null };
+              }
+              const fulfillment = jsonValue(await context.commerce.inspectFulfillment(orderId));
+              const inspectedOrder = orderFromFulfillmentResult(fulfillment, orderId);
+              orderFocus = {
+                ...orderFocus,
+                state: inspectedOrder ? "verified" : "unresolved",
+                order: inspectedOrder,
+              };
               return { status: providerStatus(fulfillment), data: fulfillment };
             }
           case "get_tracking": {
@@ -156,16 +291,45 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             if (!trackingNumber) {
               return { status: "invalid_request", error: { code: "tracking_number_required", message: "A tracking number is required." } };
             }
-            if (!context.tracking) {
-              return { status: "unavailable", error: { code: "tracking_provider_unavailable", message: "Live tracking is not configured for this runtime." } };
+            if (orderFocus?.state === "unresolved") {
+              return {
+                status: "invalid_request",
+                data: jsonValue({ tracking_number: trackingNumber, order_focus: orderFocusData(orderFocus) }),
+                error: {
+                  code: "tracking_order_unresolved",
+                  message: "Tracking cannot be read until the requested order is verified.",
+                },
+              };
             }
-            const orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
+            let orders: OrderSnapshot[];
+            if (orderFocus?.state === "verified") {
+              if (!orderFocus.order) {
+                return {
+                  status: "invalid_request",
+                  data: jsonValue({ tracking_number: trackingNumber, order_focus: orderFocusData(orderFocus) }),
+                  error: {
+                    code: "tracking_order_details_required",
+                    message: "Read the verified order details before reading its tracking.",
+                  },
+                };
+              }
+              orders = [orderFocus.order];
+            } else {
+              orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
+            }
             const source = verifiedTrackingSource(orders, trackingNumber);
             if (!source) {
               return {
                 status: "not_found",
-                data: jsonValue({ tracking_number: trackingNumber, tracking_verification: "not_found" }),
+                data: jsonValue({ tracking_number: trackingNumber, tracking_verification: "not_found", order_focus: orderFocusData(orderFocus) }),
               };
+            }
+            const sourceOrder = orders.find((order) => order.id === source.order_id) ?? null;
+            if (!orderFocus) {
+              orderFocus = { requestedOrderId: source.order_number, state: "verified", order: sourceOrder };
+            }
+            if (!context.tracking) {
+              return { status: "unavailable", error: { code: "tracking_provider_unavailable", message: "Live tracking is not configured for this runtime." } };
             }
             const liveResult = await context.tracking.lookup({
               trackingNumber,
@@ -179,7 +343,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
                 fulfillmentId: source.fulfillment_id,
               },
             });
-            const verified = { tracking_identifier: source };
+            const verified = { tracking_identifier: source, order_focus: orderFocusData(orderFocus) };
             if (liveResult.status !== "ok") {
               return { status: liveResult.status, data: jsonValue(verified), error: liveResult.error };
             }

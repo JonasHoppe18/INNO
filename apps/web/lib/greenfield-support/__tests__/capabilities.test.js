@@ -3,6 +3,31 @@ import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
 import { GREENFIELD_TOOL_DEFINITIONS } from "../tool-contracts";
 
+function trackingProvider(calls) {
+  return {
+    providerName: "test_tracking",
+    lookup: async (input) => {
+      calls.push(input);
+      return {
+        status: "ok",
+        data: {
+          trackingNumber: input.trackingNumber,
+          carrier: "ParcelCo",
+          status: "in_transit",
+          subStatus: null,
+          latestEvent: null,
+          estimatedDelivery: null,
+          checkpoints: [],
+          exception: null,
+          observedAt: "2026-09-04T12:00:00.000Z",
+          provider: "test_tracking",
+          source: "test",
+        },
+      };
+    },
+  };
+}
+
 describe("greenfield capabilities", () => {
   it("exposes strict schemas without model-controlled tenant scope", () => {
     for (const tool of GREENFIELD_TOOL_DEFINITIONS) {
@@ -45,28 +70,7 @@ describe("greenfield capabilities", () => {
     const calls = [];
     const registry = createCapabilityRegistry({
       ...dependencies,
-      tracking: {
-        providerName: "test_tracking",
-        lookup: async (input) => {
-          calls.push(input);
-          return {
-            status: "ok",
-            data: {
-              trackingNumber: input.trackingNumber,
-              carrier: "ParcelCo",
-              status: "in_transit",
-              subStatus: null,
-              latestEvent: null,
-              estimatedDelivery: null,
-              checkpoints: [],
-              exception: null,
-              observedAt: "2026-09-04T12:00:00.000Z",
-              provider: "test_tracking",
-              source: "test",
-            },
-          };
-        },
-      },
+      tracking: trackingProvider(calls),
     });
 
     const result = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
@@ -79,5 +83,100 @@ describe("greenfield capabilities", () => {
     const unverified = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "OTHER-CUSTOMER" }));
     expect(unverified.status).toBe("not_found");
     expect(calls).toHaveLength(1);
+  });
+
+  it("pins a successful exact order and permits tracking for that order", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "#10231" }));
+    expect(order).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10231" } } });
+
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    expect(tracking).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10231" } } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].provenance.orderNumber).toBe("10231");
+  });
+
+  it("keeps a failed exact order unresolved and exposes history only as confirmation candidates", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+
+    const missing = await registry.execute("get_order", JSON.stringify({ order_id: "9999" }));
+    expect(missing).toMatchObject({ status: "not_found", data: { order_focus: { state: "unresolved", requested_order_id: "9999" } } });
+
+    const history = await registry.execute("get_order_history", "{}");
+    expect(history).toMatchObject({ status: "ok", data: { candidate_only: true, order_focus: { state: "unresolved" } } });
+    expect(history.data.orders).toEqual([
+      { order_number: "10231" },
+      { order_number: "10232" },
+      { order_number: "10233" },
+      { order_number: "10234" },
+    ]);
+
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    expect(tracking).toMatchObject({ status: "invalid_request", error: { code: "tracking_order_unresolved" } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not let a different history order replace an unresolved exact order", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider([]) });
+
+    await registry.execute("get_order", JSON.stringify({ order_id: "9999" }));
+    const differentOrder = await registry.execute("get_order", JSON.stringify({ order_id: "10234" }));
+    const differentFulfillment = await registry.execute("inspect_fulfillment", JSON.stringify({ order_id: "10234" }));
+
+    expect(differentOrder).toMatchObject({ status: "invalid_request", error: { code: "order_focus_conflict" } });
+    expect(differentFulfillment).toMatchObject({ status: "invalid_request", error: { code: "order_focus_conflict" } });
+  });
+
+  it("allows history-backed lookup when the customer did not specify an order", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+
+    const history = await registry.execute("get_order_history", "{}");
+    expect(history.status).toBe("ok");
+    expect(history.data.candidate_only).toBeUndefined();
+    expect(history.data.orders).toHaveLength(4);
+
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    expect(tracking.status).toBe("ok");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rejects a tracking number that is not in the current customer's verified history", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+
+    const result = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "OTHER-CUSTOMER" }));
+    expect(result).toMatchObject({ status: "not_found", data: { tracking_verification: "not_found" } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a same-customer history tracking number when another order is verified", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const registry = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10233" }));
+
+    expect(result).toMatchObject({ status: "not_found", data: { tracking_verification: "not_found", order_focus: { verified_order_number: "10231" } } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("allows an explicitly referenced second order to become the new request focus", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, orderReferences: ["10231", "10233"] });
+
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = await registry.execute("get_order", JSON.stringify({ order_id: "10233" }));
+
+    expect(result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10233" } } });
   });
 });
