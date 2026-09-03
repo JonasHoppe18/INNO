@@ -76,10 +76,10 @@ export interface KnowledgeSearchRequest {
   limit?: number;
 }
 
-export interface KnowledgeEvidence {
-  chunkId: string;
-  chunkIndex: number;
+export interface KnowledgeEvidenceSection {
+  heading: string;
   content: string;
+  chunkIds: string[];
 }
 
 export interface KnowledgeHit {
@@ -87,7 +87,7 @@ export interface KnowledgeHit {
   score: number;
   matchReason: "lexical" | "title" | "structured" | "semantic";
   rank?: number;
-  evidenceWindow?: KnowledgeEvidence[];
+  evidenceSections?: KnowledgeEvidenceSection[];
 }
 
 export interface KnowledgeStore {

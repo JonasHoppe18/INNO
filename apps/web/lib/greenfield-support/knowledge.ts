@@ -1,7 +1,7 @@
 import type {
   AuthorityLevel,
   KnowledgeHit,
-  KnowledgeEvidence,
+  KnowledgeEvidenceSection,
   KnowledgeRecord,
   KnowledgeSearchRequest,
   KnowledgeSourceInput,
@@ -234,6 +234,183 @@ function splitIntoChunks(content: string, maxLength = 900): string[] {
   return chunks.length ? chunks : [content];
 }
 
+const MAX_EVIDENCE_CHARS = 3_600;
+const MAX_EVIDENCE_SECTIONS = 4;
+
+export interface KnowledgeEvidenceChunk {
+  chunkId: string;
+  chunkIndex: number;
+  content: string;
+}
+
+interface EvidenceBlock extends KnowledgeEvidenceChunk {
+  isHeading: boolean;
+  order: number;
+}
+
+interface EvidenceSectionCandidate {
+  heading: string;
+  blocks: EvidenceBlock[];
+  order: number;
+}
+
+function isGenericHeading(value: string): boolean {
+  const heading = cleanText(value);
+  if (!heading || heading.length < 2 || heading.length > 120) return false;
+  if (/^(?:[-*•]|\d+[.)])\s*/.test(heading)) return false;
+  if (/^(?:https?:\/\/|www\.|mailto:)/i.test(heading)) return false;
+  if (/^\d/.test(heading) || /[@|]/.test(heading)) return false;
+  if (/[.!?;,:]$/.test(heading)) return false;
+  return heading.split(/\s+/).length <= 10;
+}
+
+function buildEvidenceSections(chunks: KnowledgeEvidenceChunk[]): EvidenceSectionCandidate[] {
+  const orderedChunks = [...chunks].sort((left, right) => left.chunkIndex - right.chunkIndex);
+  const sections: EvidenceSectionCandidate[] = [];
+  let current: EvidenceSectionCandidate = { heading: "Source context", blocks: [], order: 0 };
+  let order = 0;
+
+  for (const chunk of orderedChunks) {
+    const blocks = chunk.content.split(/\n\s*\n/).map(cleanText).filter(Boolean);
+    for (const content of blocks) {
+      const isHeading = isGenericHeading(content);
+      if (isHeading && current.blocks.some((block) => !block.isHeading)) {
+        sections.push(current);
+        current = { heading: content, blocks: [], order: sections.length };
+      } else if (isHeading && current.blocks.length && current.heading !== "Source context") {
+        current.heading = `${current.heading} / ${content}`;
+      } else if (isHeading && !current.blocks.length) {
+        current.heading = content;
+      }
+      current.blocks.push({
+        chunkId: chunk.chunkId,
+        chunkIndex: chunk.chunkIndex,
+        content,
+        isHeading,
+        order: order++,
+      });
+    }
+  }
+  if (current.blocks.length) sections.push(current);
+
+  // A run of labels such as "Compatibility / All" is one structured region.
+  // Merge heading-only regions into the following content-bearing region.
+  const merged: EvidenceSectionCandidate[] = [];
+  for (const section of sections) {
+    const hasBody = section.blocks.some((block) => !block.isHeading);
+    if (!hasBody && merged.length === 0) {
+      merged.push(section);
+      continue;
+    }
+    if (!hasBody && merged.length) {
+      const previous = merged[merged.length - 1];
+      if (!previous.blocks.some((block) => !block.isHeading)) {
+        previous.heading = `${previous.heading} / ${section.heading}`;
+        previous.blocks.push(...section.blocks);
+      } else {
+        merged.push(section);
+      }
+      continue;
+    }
+    if (merged.length && !merged[merged.length - 1].blocks.some((block) => !block.isHeading)) {
+      const prefix = merged.pop() as EvidenceSectionCandidate;
+      section.heading = `${prefix.heading} / ${section.heading}`;
+      section.blocks = [...prefix.blocks, ...section.blocks];
+    }
+    merged.push(section);
+  }
+  return merged.map((section, index) => ({ ...section, order: index }));
+}
+
+function compatibleToken(left: string, right: string): boolean {
+  return left === right || (left.length >= 5 && right.length >= 5 && (left.startsWith(right) || right.startsWith(left)));
+}
+
+function queryOverlap(queryTokens: Set<string>, value: string): number {
+  const candidateTokens = Array.from(new Set(tokens(value)));
+  return Array.from(queryTokens).filter((queryToken) => candidateTokens.some((candidate) => compatibleToken(queryToken, candidate))).length;
+}
+
+function sectionDistance(section: EvidenceSectionCandidate, selectedIndex: number): number {
+  return Math.min(...section.blocks.map((block) => Math.abs(block.chunkIndex - selectedIndex)));
+}
+
+function renderEvidenceSection(
+  section: EvidenceSectionCandidate,
+  queryTokens: Set<string>,
+  selectedIndex: number,
+  budget: number,
+): KnowledgeEvidenceSection | null {
+  if (budget < 1) return null;
+  const allContent = section.blocks.map((block) => block.content).join("\n\n");
+  let selectedBlocks = section.blocks;
+  if (allContent.length > budget) {
+    const rankedBlocks = section.blocks
+      .map((block) => ({
+        block,
+        score: queryOverlap(queryTokens, block.content) + (block.chunkIndex === selectedIndex ? 0.05 : 0),
+        distance: Math.abs(block.chunkIndex - selectedIndex),
+      }))
+      .sort((left, right) => right.score - left.score || left.distance - right.distance || left.block.order - right.block.order);
+    const chosen: EvidenceBlock[] = [];
+    let length = 0;
+    for (const item of rankedBlocks) {
+      const addition = item.block.content.length + (chosen.length ? 2 : 0);
+      if (length + addition > budget) continue;
+      chosen.push(item.block);
+      length += addition;
+    }
+    selectedBlocks = chosen.sort((left, right) => left.order - right.order);
+  }
+  if (!selectedBlocks.length) return null;
+  const content = selectedBlocks.map((block) => block.content).join("\n\n");
+  if (!content) return null;
+  return {
+    heading: section.heading,
+    content,
+    chunkIds: Array.from(new Set(selectedBlocks.map((block) => block.chunkId))),
+  };
+}
+
+/** Select bounded raw evidence sections from chunks already returned for one semantic record. */
+export function selectEvidenceSections(
+  chunks: KnowledgeEvidenceChunk[],
+  selectedIndex: number,
+  query: string,
+  maxChars = MAX_EVIDENCE_CHARS,
+): KnowledgeEvidenceSection[] {
+  const sections = buildEvidenceSections(chunks);
+  if (!sections.length || maxChars <= 0) return [];
+  const queryTokens = new Set(tokens(query));
+  const scored = sections.map((section) => {
+    const overlap = queryOverlap(queryTokens, `${section.heading}\n${section.blocks.map((block) => block.content).join("\n")}`);
+    const distance = sectionDistance(section, selectedIndex);
+    const containsSelected = section.blocks.some((block) => block.chunkIndex === selectedIndex);
+    return {
+      section,
+      overlap,
+      distance,
+      containsSelected,
+      score: overlap + (containsSelected ? 0.05 : 0) + (overlap ? 0.02 / (distance + 1) : 0),
+    };
+  });
+  const eligible = scored.filter((item) => item.overlap > 0 || item.containsSelected);
+  const ranked = (eligible.length ? eligible : scored.filter((item) => item.containsSelected)).sort(
+    (left, right) => right.score - left.score || right.overlap - left.overlap || left.distance - right.distance || left.section.order - right.section.order,
+  );
+
+  const selected: KnowledgeEvidenceSection[] = [];
+  let remaining = maxChars;
+  for (const item of ranked.slice(0, MAX_EVIDENCE_SECTIONS)) {
+    const evidence = renderEvidenceSection(item.section, queryTokens, selectedIndex, remaining);
+    if (!evidence) continue;
+    selected.push(evidence);
+    remaining -= evidence.content.length + 2;
+    if (remaining <= 0) break;
+  }
+  return selected;
+}
+
 function classify(source: KnowledgeSourceInput) {
   const explicitType = source.knowledgeType;
   const sourceKind = cleanText(source.sourceKind).toLowerCase();
@@ -381,7 +558,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
 export class SupabaseKnowledgeStore implements KnowledgeStore {
   constructor(private readonly serviceClient: any) {}
 
-  private async loadEvidenceWindows(workspaceId: string, rows: any[]): Promise<Map<string, KnowledgeEvidence[]>> {
+  private async loadEvidenceSections(workspaceId: string, rows: any[], query: string): Promise<Map<string, KnowledgeEvidenceSection[]>> {
     const recordIds = Array.from(new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean)));
     if (!recordIds.length) return new Map();
 
@@ -405,7 +582,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       chunksByRecord.set(recordId, chunks);
     }
 
-    const windows = new Map<string, KnowledgeEvidence[]>();
+    const sections = new Map<string, KnowledgeEvidenceSection[]>();
     for (const row of rows) {
       const recordId = String(row.id ?? "");
       const selectedIndex = Number(row.chunk_index ?? 0);
@@ -417,19 +594,13 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           content: String(row.chunk_content ?? ""),
         });
       }
-      windows.set(
-        recordId,
-        chunks
-          .filter((chunk) => Math.abs(chunk.index - selectedIndex) <= 1)
-          .sort((left, right) => left.index - right.index)
-          .map((chunk) => ({
-            chunkId: chunk.id,
-            chunkIndex: chunk.index,
-            content: chunk.content,
-          })),
-      );
+      sections.set(recordId, selectEvidenceSections(
+        chunks.map((chunk) => ({ chunkId: chunk.id, chunkIndex: chunk.index, content: chunk.content })),
+        selectedIndex,
+        query,
+      ));
     }
-    return windows;
+    return sections;
   }
 
   private async embedQuery(query: string): Promise<number[]> {
@@ -519,7 +690,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     });
     if (error) throw new Error(error.message);
     const rows = Array.isArray(data) ? data : [];
-    const evidenceWindows = await this.loadEvidenceWindows(request.workspaceId, rows);
+    const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows.map((row: any, index: number) => ({
       record: {
         id: String(row.id),
@@ -542,7 +713,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       },
       score: Number(row.score ?? 0),
       rank: index + 1,
-      evidenceWindow: evidenceWindows.get(String(row.id)) ?? [],
+      evidenceSections: evidenceSections.get(String(row.id)) ?? [],
       matchReason: row.match_reason ?? "semantic",
     }));
   }

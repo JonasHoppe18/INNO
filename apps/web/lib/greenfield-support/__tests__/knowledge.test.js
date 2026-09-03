@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanRawContent, InMemoryKnowledgeStore } from "../knowledge";
+import { cleanRawContent, InMemoryKnowledgeStore, selectEvidenceSections } from "../knowledge";
 
 describe("greenfield knowledge store", () => {
   it("conservatively converts generic HTML into visible source text", () => {
@@ -79,5 +79,17 @@ describe("greenfield knowledge store", () => {
       content: "Order 1 is delivered.",
     });
     expect(await store.search({ workspaceId: "tenant-a", query: "order delivered" })).toEqual([]);
+  });
+
+  it("selects a bounded relevant section instead of widening an adjacent chunk window", () => {
+    const sections = selectEvidenceSections([
+      { chunkId: "chunk-0", chunkIndex: 0, content: "Overview\n\nA wireless headset for everyday gaming." },
+      { chunkId: "chunk-1", chunkIndex: 1, content: "Compatibility\n\nPC, PlayStation 5, Xbox and Switch." },
+      { chunkId: "chunk-2", chunkIndex: 2, content: "Reviews\n\nIndependent reviews from gaming press." },
+    ], 0, "Is the headset compatible with PlayStation 5", 160);
+
+    expect(sections.some((section) => section.content.includes("PlayStation 5"))).toBe(true);
+    expect(sections.reduce((total, section) => total + section.content.length, 0)).toBeLessThanOrEqual(160);
+    expect(sections.flatMap((section) => section.chunkIds)).not.toContain("chunk-2");
   });
 });

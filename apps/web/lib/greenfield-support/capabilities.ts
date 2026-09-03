@@ -34,17 +34,17 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
     status: result.length ? "ok" : "not_found",
     data: {
       query,
-      results: result.map(({ record, score, matchReason, rank, evidenceWindow }, index) => ({
+      results: result.map(({ record, score, matchReason, rank, evidenceSections }, index) => ({
         title: record.title,
         knowledge_type: record.knowledgeType,
         authority: record.authority,
         score: Number(score.toFixed(4)),
         rank: rank ?? index + 1,
         match_reason: matchReason,
-        evidence: (evidenceWindow ?? []).map((evidence) => ({
-          chunk_id: evidence.chunkId,
-          chunk_index: evidence.chunkIndex,
-          content: evidence.content,
+        evidence_sections: (evidenceSections ?? []).map((section) => ({
+          heading: section.heading,
+          content: section.content,
+          chunk_ids: section.chunkIds,
         })),
         provenance: {
           source_kind: record.sourceKind,
