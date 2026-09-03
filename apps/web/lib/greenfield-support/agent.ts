@@ -1,4 +1,4 @@
-import { GREENFIELD_DEVELOPER_INSTRUCTIONS } from "./instructions";
+import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import type {
   AgentRunResult,
   AgentTrace,
@@ -98,6 +98,8 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     ...options.capabilities,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
+  const instructions = instructionsForCapabilities(registry.manifest);
+  trace.developerInstructions = instructions;
   const input: unknown[] = [
     ...(options.history ?? []).map((message) => inputMessage(message.role, message.content)),
     inputMessage("user", options.message),
@@ -110,6 +112,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     message: options.message,
     history: options.history ?? [],
     capabilities: registry.definitions.map((tool) => ({ name: tool.name, sensitivity: tool.sensitivity })),
+    capability_manifest: registry.manifest,
   }, now());
 
   try {
@@ -117,7 +120,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
       const modelStarted = Date.now();
       pushEvent(trace, "model_request", { turn, input }, now());
       const response = await options.model.complete({
-        instructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
+        instructions,
         input,
         tools: registry.definitions,
       });

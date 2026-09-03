@@ -1,5 +1,6 @@
 import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contracts";
 import type {
+  CapabilityManifest,
   CommerceReadProvider,
   JsonObject,
   JsonValue,
@@ -195,6 +196,22 @@ function proposedAction(name: ProposedAction["action"], args: JsonObject, reason
   };
 }
 
+function buildCapabilityManifest(context: CapabilityContext): CapabilityManifest {
+  return {
+    readTools: GREENFIELD_TOOL_DEFINITIONS
+      .filter((definition) => definition.sensitivity === "read_only")
+      .map((definition) => definition.name),
+    proposalOnlyTools: GREENFIELD_TOOL_DEFINITIONS
+      .filter((definition) => definition.sensitivity === "proposed_action")
+      .map((definition) => definition.name),
+    configured: {
+      knowledge: Boolean(context.knowledge),
+      commerce: Boolean(context.commerce),
+      tracking: Boolean(context.tracking),
+    },
+  };
+}
+
 export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
 
@@ -202,9 +219,11 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   let orderFocus: RequestOrderFocus | null = initialOrderReferences.length === 1
     ? { requestedOrderId: initialOrderReferences[0], state: "unresolved", order: null }
     : null;
+  const manifest = buildCapabilityManifest(context);
 
   return {
     definitions: GREENFIELD_TOOL_DEFINITIONS,
+    manifest,
     async execute(toolName: string, rawArguments: string): Promise<ToolExecutionResult> {
       const parsed = parseToolArguments(toolName, rawArguments);
       if (parsed.ok === false) return parsed.result;

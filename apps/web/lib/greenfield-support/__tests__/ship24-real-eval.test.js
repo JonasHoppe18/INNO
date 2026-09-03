@@ -167,6 +167,11 @@ function summarizeTrace(trace, trackingNumbers) {
     });
 }
 
+function capabilityManifest(trace) {
+  const started = trace.events.find((event) => event.type === "agent_started");
+  return started?.data?.capability_manifest ?? null;
+}
+
 describe("greenfield Ship24 real DEV evaluation", () => {
   const test = RUN_REAL_EVAL ? it : it.skip;
 
@@ -238,6 +243,10 @@ describe("greenfield Ship24 real DEV evaluation", () => {
 
     const caseDefinitions = [
       {
+        subject: "Ordre 1051",
+        fallback: "Hej\n\nHvor er min ordre 1051?\n\nMvh Jonas",
+      },
+      {
         subject: "Hvor er min pakke?",
         fallback: "Hej\n\nJeg bestilte et headset i sidste uge, ordre #1054. Kan I sige mig hvor den er henne?\n\nMvh Jonas",
       },
@@ -262,8 +271,9 @@ describe("greenfield Ship24 real DEV evaluation", () => {
     const knowledge = new SupabaseKnowledgeStore(supabase);
     const cases = [];
     for (const definition of caseDefinitions) {
-      const orderNumber = definition.subject === "Hvor er min pakke?" ? "1054"
-        : definition.subject === "Kan I vente med at sende resten" ? "1055"
+      const orderNumber = definition.subject === "Ordre 1051" ? "1051"
+        : definition.subject === "Hvor er min pakke?" ? "1054"
+          : definition.subject === "Kan I vente med at sende resten" ? "1055"
           : definition.subject === "Hvor er min ordre #1063?" ? "1063"
             : definition.subject === "Ordre 1058" ? "1058"
               : null;
@@ -284,6 +294,7 @@ describe("greenfield Ship24 real DEV evaluation", () => {
       const referencedOrder = orderNumber ? await context.commerce.getOrder(orderNumber) : null;
       cases.push({
         customerMessage: maskMessage(message, trackingNumbers),
+        availableCapabilities: capabilityManifest(run.trace),
         verifiedShopifyOrder: orderSummary(referencedOrder),
         trace: summarizeTrace(run.trace, trackingNumbers),
         finalResponse: maskMessage(run.response, trackingNumbers),

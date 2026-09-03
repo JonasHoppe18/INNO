@@ -39,6 +39,21 @@ describe("greenfield capabilities", () => {
     }
   });
 
+  it("derives the current capability manifest from exposed tools and providers", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
+
+    expect(registry.manifest.readTools).toContain("get_order");
+    expect(registry.manifest.readTools).toContain("get_tracking");
+    expect(registry.manifest.proposalOnlyTools).toContain("cancel_order");
+    expect(registry.manifest.proposalOnlyTools).not.toContain("hold_shipment");
+    expect(registry.manifest.proposalOnlyTools).not.toContain("open_carrier_case");
+    expect(registry.manifest.configured).toEqual({ knowledge: true, commerce: true, tracking: true });
+
+    const withoutTracking = createCapabilityRegistry({ ...dependencies, tracking: undefined });
+    expect(withoutTracking.manifest.configured.tracking).toBe(false);
+  });
+
   it("rejects tenant escape arguments", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
@@ -92,11 +107,13 @@ describe("greenfield capabilities", () => {
 
     const order = await registry.execute("get_order", JSON.stringify({ order_id: "#10231" }));
     expect(order).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10231" } } });
+    expect(order.data).not.toHaveProperty("delivery_address");
 
     const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
     expect(tracking).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10231" } } });
     expect(calls).toHaveLength(1);
     expect(calls[0].provenance.orderNumber).toBe("10231");
+    expect(tracking.data.live_tracking.estimatedDelivery).toBeNull();
   });
 
   it("keeps a failed exact order unresolved and exposes history only as confirmation candidates", async () => {
@@ -168,6 +185,29 @@ describe("greenfield capabilities", () => {
 
     expect(result).toMatchObject({ status: "not_found", data: { tracking_verification: "not_found", order_focus: { verified_order_number: "10231" } } });
     expect(calls).toHaveLength(0);
+  });
+
+  it("does not create a carrier cause when live tracking is not found", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tracking: {
+        providerName: "test_tracking",
+        lookup: async (input) => ({
+          status: "not_found",
+          trackingNumber: input.trackingNumber,
+          provider: "test_tracking",
+          observedAt: "2026-09-04T12:00:00.000Z",
+          error: { code: "tracking_not_found", message: "No tracking record was returned." },
+        }),
+      },
+    });
+
+    const result = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    expect(result.status).toBe("not_found");
+    expect(result.data.live_tracking).toBeUndefined();
+    expect(result.data).not.toHaveProperty("cause");
+    expect(result.error).toMatchObject({ code: "tracking_not_found" });
   });
 
   it("allows an explicitly referenced second order to become the new request focus", async () => {

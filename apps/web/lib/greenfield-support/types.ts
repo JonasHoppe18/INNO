@@ -95,6 +95,17 @@ export interface KnowledgeStore {
   search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]>;
 }
 
+/** Per-run capability truth derived from the existing tool registry and providers. */
+export interface CapabilityManifest {
+  readTools: string[];
+  proposalOnlyTools: string[];
+  configured: {
+    knowledge: boolean;
+    commerce: boolean;
+    tracking: boolean;
+  };
+}
+
 export interface OrderSnapshot {
   id: string;
   orderNumber: string;

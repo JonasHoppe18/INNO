@@ -1,7 +1,7 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
 import { fallbackResponse, keepActionStatusHonest } from "./agent";
-import { GREENFIELD_DEVELOPER_INSTRUCTIONS } from "./instructions";
+import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import type {
@@ -153,13 +153,15 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     ...options.capabilities,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
+  const instructions = instructionsForCapabilities(registry.manifest);
+  trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
   const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));
   const model = options.model ?? process.env.OPENAI_MODEL ?? "gpt-5.2";
   const agent = new Agent<SonaAgentContext>({
     name: "Sona Support Agent",
-    instructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
+    instructions,
     model,
     modelSettings: { parallelToolCalls: false },
     tools: createSdkTools(context),
@@ -180,6 +182,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         name: definition.name,
         sensitivity: definition.sensitivity,
       })),
+      capability_manifest: registry.manifest,
     },
     now(),
   );
