@@ -54,6 +54,23 @@ describe("greenfield capabilities", () => {
     expect(withoutTracking.manifest.configured.tracking).toBe(false);
   });
 
+  it("keeps product reference and procedure search semantically distinct", async () => {
+    const product = GREENFIELD_TOOL_DEFINITIONS.find((tool) => tool.name === "search_product_knowledge");
+    const procedures = GREENFIELD_TOOL_DEFINITIONS.filter((tool) => tool.name === "search_procedures");
+
+    expect(product?.description).toContain("Do not use this for troubleshooting");
+    expect(product?.parameters.properties.query.description).toContain("exclude troubleshooting");
+    expect(procedures).toHaveLength(1);
+    expect(procedures[0].description).toContain("step-by-step procedures");
+    expect(procedures[0].parameters.properties.query.description).toContain("troubleshooting");
+
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "damaged item procedure" }));
+    expect(result.status).toBe("ok");
+    expect(result.data.results[0].knowledge_type).toBe("procedural");
+  });
+
   it("rejects tenant escape arguments", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });

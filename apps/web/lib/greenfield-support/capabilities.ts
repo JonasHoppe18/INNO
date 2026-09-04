@@ -251,7 +251,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["historic_support"], limit: 3 }), query);
           case "get_brand_guidance":
             return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["brand"], limit: 3 }), query);
-          case "get_procedure":
+          case "search_procedures":
             return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["procedural"], limit: 5 }), query);
           case "get_order": {
             if (!context.tenant.customerEmail) {

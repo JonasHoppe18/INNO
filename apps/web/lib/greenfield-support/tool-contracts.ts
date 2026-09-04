@@ -37,10 +37,10 @@ const stringProperty = (description: string): Property => ({ type: "string", des
 
 export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   readOnly("search_policy", "Find authoritative tenant policy relevant to the customer question.", { query: stringProperty("The policy question in customer language.") }),
-  readOnly("search_product_knowledge", "Find product specifications, compatibility, usage, manual, and troubleshooting knowledge.", { query: stringProperty("The product question in customer language.") }),
+  readOnly("search_product_knowledge", "Search product and reference knowledge: specifications, features, compatibility, usage, manuals, and descriptive facts. Do not use this for troubleshooting, setup, pairing, reset, or other step-by-step support procedures; use search_procedures instead.", { query: stringProperty("The product fact, specification, compatibility, or descriptive question in customer language; exclude troubleshooting and how-to procedures.") }),
   readOnly("search_historical_cases", "Find solved support cases as examples. Results are not business policy.", { query: stringProperty("The support situation to use for examples.") }),
   readOnly("get_brand_guidance", "Find tenant-specific communication guidance for the reply.", { query: stringProperty("The communication decision needing guidance.") }),
-  readOnly("get_procedure", "Find the operational procedure for handling a support request.", { query: stringProperty("The procedure or required information to find.") }),
+  readOnly("search_procedures", "Search merchant-authored step-by-step procedures for troubleshooting, setup, pairing, reset, configuration, and support handling. Use this when the customer asks how to fix, configure, perform, or handle something; include the product or model when known.", { query: stringProperty("The troubleshooting, setup, how-to, or support-procedure request in customer language, including known product or model context when available.") }),
   readOnly("get_order", "Read one current order by customer-provided order number or platform order ID.", { order_id: stringProperty("The order number or order ID supplied by the customer.") }),
   readOnly("get_order_history", "Read the current customer's recent order history. Customer identity comes from trusted server context.", {}),
   readOnly("get_customer", "Read the current customer's limited support identity. Identity comes from trusted server context.", {}),
