@@ -127,6 +127,21 @@ export interface OrderSnapshot {
   }>;
 }
 
+/**
+ * Small server-owned continuity state passed between separate agent runs.
+ * Customer messages and replies remain in `history`; this only carries state
+ * that the tool boundary cannot safely reconstruct from prose alone.
+ */
+export interface ConversationContext {
+  turn: number;
+  activeOrder: {
+    requestedOrderId: string;
+    state: "unresolved" | "verified";
+    order: OrderSnapshot | null;
+  } | null;
+  customerSignal: "resolution" | null;
+}
+
 export interface TrackingSnapshot {
   orderId: string;
   carrier?: string | null;
@@ -288,4 +303,5 @@ export interface AgentRunResult {
   response: string;
   proposedActions: ProposedAction[];
   trace: AgentTrace;
+  conversationContext: ConversationContext;
 }

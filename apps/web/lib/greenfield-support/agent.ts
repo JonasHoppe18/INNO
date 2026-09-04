@@ -2,6 +2,7 @@ import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "
 import type {
   AgentRunResult,
   AgentTrace,
+  ConversationContext,
   GreenfieldModel,
   JsonValue,
   ModelResponse,
@@ -13,6 +14,7 @@ import type {
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { modelConversationContext, nextConversationContext } from "./conversation-context";
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -23,6 +25,7 @@ export interface GreenfieldAgentOptions {
   tenant: TenantContext;
   message: string;
   history?: ConversationMessage[];
+  conversationContext?: ConversationContext;
   model: GreenfieldModel;
   capabilities: Parameters<typeof createCapabilityRegistry>[0];
   maxTurns?: number;
@@ -96,15 +99,18 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     tools: GREENFIELD_TOOL_DEFINITIONS,
     usage: [],
   };
+  const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
   const registry = createCapabilityRegistry({
     ...options.capabilities,
+    conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
+  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message);
   const instructions = instructionsForCapabilities(registry.manifest);
   trace.developerInstructions = instructions;
   const input: unknown[] = [
     ...(options.history ?? []).map((message) => inputMessage(message.role, message.content)),
-    inputMessage("user", options.message),
+    inputMessage("user", continuityInput),
   ];
   const proposedActions: ProposedAction[] = [];
   const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));
@@ -113,6 +119,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
   pushEvent(trace, "agent_started", {
     message: options.message,
     history: options.history ?? [],
+    conversation_context: continuityInput,
     capabilities: registry.definitions.map((tool) => ({ name: tool.name, sensitivity: tool.sensitivity })),
     capability_manifest: registry.manifest,
   }, now());
@@ -143,7 +150,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           validation: summarizeResponseValidation(validation),
         }, now());
         trace.finishedAt = now();
-        return { response: finalResponse, proposedActions, trace };
+        return {
+          response: finalResponse,
+          proposedActions,
+          trace,
+          conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+        };
       }
 
       const toolCall = response.toolCall;
@@ -167,5 +179,10 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
   const response = fallbackResponse();
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, fallback: true }, now());
   trace.finishedAt = now();
-  return { response, proposedActions, trace };
+  return {
+    response,
+    proposedActions,
+    trace,
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+  };
 }

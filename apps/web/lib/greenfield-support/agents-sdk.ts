@@ -5,9 +5,11 @@ import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { modelConversationContext, nextConversationContext } from "./conversation-context";
 import type {
   AgentRunResult,
   AgentTrace,
+  ConversationContext,
   JsonValue,
   ProposedAction,
   TenantContext,
@@ -28,6 +30,7 @@ export interface GreenfieldAgentsSdkOptions {
   tenant: TenantContext;
   message: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+  conversationContext?: ConversationContext;
   capabilities: Parameters<typeof createCapabilityRegistry>[0];
   maxTurns?: number;
   now?: () => string;
@@ -118,7 +121,7 @@ function createSdkTools(context: SonaAgentContext) {
   );
 }
 
-function inputItems(options: GreenfieldAgentsSdkOptions) {
+function inputItems(options: GreenfieldAgentsSdkOptions, continuityInput: string) {
   return [
     ...(options.history ?? []).map((message) =>
       message.role === "user"
@@ -129,7 +132,7 @@ function inputItems(options: GreenfieldAgentsSdkOptions) {
             content: [{ type: "output_text" as const, text: message.content }],
           },
     ),
-    { role: "user" as const, content: options.message },
+    { role: "user" as const, content: continuityInput },
   ] as AgentInputItem[];
 }
 
@@ -151,10 +154,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     tools: GREENFIELD_TOOL_DEFINITIONS,
     usage: [],
   };
+  const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
   const registry = createCapabilityRegistry({
     ...options.capabilities,
+    conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
+  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message);
   const instructions = instructionsForCapabilities(registry.manifest);
   trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
@@ -180,6 +186,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     {
       message: options.message,
       history: options.history ?? [],
+      conversation_context: continuityInput,
       runtime: "@openai/agents",
       capabilities: GREENFIELD_TOOL_DEFINITIONS.map((definition) => ({
         name: definition.name,
@@ -193,7 +200,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   try {
     let result: any;
     await withTrace("Sona support agent", async () => {
-      result = await runner.run(agent, inputItems(options), { context, maxTurns });
+      result = await runner.run(agent, inputItems(options, continuityInput), { context, maxTurns });
     });
 
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {
@@ -216,7 +223,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       const response = "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.";
       pushEvent(trace, "final_response", { response, proposed_actions: proposedActions }, now());
       trace.finishedAt = now();
-      return { response, proposedActions, trace };
+      return {
+        response,
+        proposedActions,
+        trace,
+        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+      };
     }
 
     const validation = validateStructuredResponse(result?.finalOutput, registry);
@@ -230,7 +242,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       validation: summarizeResponseValidation(validation),
     }, now());
     trace.finishedAt = now();
-    return { response, proposedActions, trace };
+    return {
+      response,
+      proposedActions,
+      trace,
+      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+    };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
@@ -238,5 +255,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const response = fallbackResponse();
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, fallback: true }, now());
   trace.finishedAt = now();
-  return { response, proposedActions, trace };
+  return {
+    response,
+    proposedActions,
+    trace,
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+  };
 }

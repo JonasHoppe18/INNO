@@ -2,6 +2,7 @@ import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contract
 import type {
   CapabilityManifest,
   CommerceReadProvider,
+  ConversationContext,
   JsonObject,
   JsonValue,
   LiveTrackingProvider,
@@ -19,6 +20,8 @@ export interface CapabilityContext {
   tracking?: LiveTrackingProvider;
   /** Explicit order references extracted from the current customer request. */
   orderReferences?: string[];
+  /** Trusted server-owned continuity state; never supplied by the model. */
+  conversationContext?: ConversationContext;
   now?: () => string;
 }
 
@@ -230,9 +233,17 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
 
   const initialOrderReferences = context.orderReferences ?? [];
+  const persistedOrder = context.conversationContext?.activeOrder ?? null;
+  const persistedMatchesCurrent = persistedOrder && initialOrderReferences.length === 1
+    ? sameOrderReference(persistedOrder.requestedOrderId, initialOrderReferences[0])
+    : false;
   let orderFocus: RequestOrderFocus | null = initialOrderReferences.length === 1
-    ? { requestedOrderId: initialOrderReferences[0], state: "unresolved", order: null }
-    : null;
+    ? persistedMatchesCurrent && persistedOrder.state === "verified"
+      ? { requestedOrderId: initialOrderReferences[0], state: "verified", order: persistedOrder.order }
+      : { requestedOrderId: initialOrderReferences[0], state: "unresolved", order: null }
+    : persistedOrder
+      ? { requestedOrderId: persistedOrder.requestedOrderId, state: persistedOrder.state, order: persistedOrder.order }
+      : null;
   const manifest = buildCapabilityManifest(context);
   let resultSequence = 0;
   const resultRecords = new Map<string, { resultId: string; toolName: string; result: ToolExecutionResult }>();
@@ -248,6 +259,14 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     manifest,
     getResult(resultId: string) {
       return resultRecords.get(resultId);
+    },
+    getActiveOrderFocus() {
+      if (!orderFocus) return null;
+      return {
+        requestedOrderId: orderFocus.requestedOrderId,
+        state: orderFocus.state,
+        order: orderFocus.order,
+      } satisfies ConversationContext["activeOrder"];
     },
     async execute(toolName: string, rawArguments: string): Promise<ToolExecutionResult> {
       const parsed = parseToolArguments(toolName, rawArguments);

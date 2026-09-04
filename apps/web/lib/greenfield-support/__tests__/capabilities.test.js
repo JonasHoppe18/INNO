@@ -133,6 +133,42 @@ describe("greenfield capabilities", () => {
     expect(tracking.data.live_tracking.estimatedDelivery).toBeNull();
   });
 
+  it("carries a verified exact order across runs without bypassing tracking verification", async () => {
+    const dependencies = await createDemoDependencies();
+    const calls = [];
+    const firstRun = createCapabilityRegistry({ ...dependencies, tracking: trackingProvider(calls) });
+    const order = await firstRun.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    expect(order.status).toBe("ok");
+
+    const secondRun = createCapabilityRegistry({
+      ...dependencies,
+      tracking: trackingProvider(calls),
+      conversationContext: { turn: 1, activeOrder: firstRun.getActiveOrderFocus(), customerSignal: null },
+    });
+    const tracking = await secondRun.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+
+    expect(tracking.status).toBe("ok");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].provenance.orderNumber).toBe("10231");
+  });
+
+  it("carries an unresolved exact order across runs without exposing history or guessing", async () => {
+    const dependencies = await createDemoDependencies();
+    const firstRun = createCapabilityRegistry({ ...dependencies });
+    await firstRun.execute("get_order", JSON.stringify({ order_id: "9999" }));
+
+    const secondRun = createCapabilityRegistry({
+      ...dependencies,
+      conversationContext: { turn: 1, activeOrder: firstRun.getActiveOrderFocus(), customerSignal: null },
+    });
+    const history = await secondRun.execute("get_order_history", "{}");
+    const differentOrder = await secondRun.execute("get_order", JSON.stringify({ order_id: "10234" }));
+
+    expect(history.data).toMatchObject({ candidate_only: true, has_order_history: true });
+    expect(history.data).not.toHaveProperty("orders");
+    expect(differentOrder).toMatchObject({ status: "invalid_request", error: { code: "order_focus_conflict" } });
+  });
+
   it("keeps a failed exact order unresolved and exposes history only as confirmation candidates", async () => {
     const dependencies = await createDemoDependencies();
     const calls = [];

@@ -5,6 +5,7 @@ export * from "./providers";
 export * from "./tool-contracts";
 export * from "./capabilities";
 export * from "./agent";
+export * from "./conversation-context";
 export * from "./agents-sdk";
 export * from "./responses-model";
 export * from "./shopify-read-only";

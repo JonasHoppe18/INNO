@@ -338,6 +338,71 @@ const MULTI_TURN_CASES = [
   },
 ];
 
+// Additional general conversations use the same real DEV knowledge/Test Store
+// providers. They expand coverage without changing the five frozen controls.
+const ADDITIONAL_MULTI_TURN_CASES = [
+  {
+    id: "conversation_tracking_followup",
+    category: "MULTI-TURN",
+    tenant: "test",
+    contextSubject: "Hvor er min pakke?",
+    orderNumber: "1054",
+    turns: [
+      "Where is order #1054?",
+      "The tracking page shows nothing. Can you check the shipment?",
+      "I meant the package from order #1054, not another order.",
+      "Thanks, that is all for now.",
+    ],
+  },
+  {
+    id: "conversation_return_correction",
+    category: "MULTI-TURN",
+    tenant: "sona",
+    turns: [
+      "Can I return my headset?",
+      "I received it 20 days ago and it is still sealed.",
+      "Correction: I opened it, but the headset and packaging are complete.",
+      "What information should I send to start the return?",
+    ],
+  },
+  {
+    id: "conversation_product_correction",
+    category: "MULTI-TURN",
+    tenant: "sona",
+    turns: [
+      "Does my headset work with PlayStation 5?",
+      "Correction: it is the A-Rise, not the A-Blaze.",
+      "Can I use Bluetooth for competitive gaming?",
+      "That answers it, thanks.",
+    ],
+  },
+  {
+    id: "conversation_latest_order_followup",
+    category: "MULTI-TURN",
+    tenant: "test",
+    contextSubject: "Ordre 1051",
+    turns: [
+      "What is my latest order?",
+      "What items are in that order?",
+      "Where is it now?",
+      "Never mind, I will check again later.",
+    ],
+  },
+  {
+    id: "conversation_troubleshooting_resolution_then_new_question",
+    category: "MULTI-TURN",
+    tenant: "sona",
+    turns: [
+      "How do I factory reset the A-Spire Wireless headset?",
+      "I reset it and it works now, thanks.",
+      "How do I update the headset and dongle firmware?",
+      "I only needed the firmware steps. Thanks.",
+    ],
+  },
+];
+
+const ALL_MULTI_TURN_CASES = [...MULTI_TURN_CASES, ...ADDITIONAL_MULTI_TURN_CASES];
+
 async function findThreadContext(supabase, accessToken, subject, orderNumber, shopId) {
   const { data, error } = await supabase
     .from("mail_threads")
@@ -559,15 +624,17 @@ describe("broad greenfield ecommerce support quality baseline", () => {
     }
 
     const multiTurnResults = [];
-    for (const conversation of MULTI_TURN_CASES) {
+    for (const conversation of ALL_MULTI_TURN_CASES) {
       const context = await contextFor(conversation);
       const historyItems = [];
+      let conversationContext;
       const turns = [];
       for (const customerMessage of conversation.turns) {
         const run = await runGreenfieldAgentWithAgentsSdk({
           tenant: context.tenant,
           message: customerMessage,
           history: historyItems,
+          conversationContext,
           capabilities: context,
           maxTurns: 8,
         });
@@ -578,10 +645,22 @@ describe("broad greenfield ecommerce support quality baseline", () => {
           tool_results: tools,
           final_response: maskString(run.response, sensitiveValues),
           response_flags: responseFlags(run.response, tools),
+          conversation_context: {
+            turn: run.conversationContext.turn,
+            active_order: run.conversationContext.activeOrder
+              ? {
+                  requested_order_id: run.conversationContext.activeOrder.requestedOrderId,
+                  state: run.conversationContext.activeOrder.state,
+                  verified_order_number: run.conversationContext.activeOrder.order?.orderNumber ?? null,
+                }
+              : { state: "unbound" },
+            customer_signal: run.conversationContext.customerSignal,
+          },
           trace_id: run.trace.traceId,
           trace: safeTrace(run.trace, sensitiveValues),
         });
         historyItems.push({ role: "user", content: customerMessage }, { role: "assistant", content: run.response });
+        conversationContext = run.conversationContext;
       }
       multiTurnResults.push({
         id: conversation.id,
