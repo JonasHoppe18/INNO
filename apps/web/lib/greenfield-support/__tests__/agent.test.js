@@ -63,7 +63,7 @@ describe("greenfield model/tool loop", () => {
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("in_transit");
+    expect(result.response).toContain("in transit");
     const calls = result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name);
     expect(calls).toEqual(["get_order", "get_tracking"]);
     expect(JSON.stringify(result.trace.events)).toContain("PC10231");
@@ -86,7 +86,8 @@ describe("greenfield model/tool loop", () => {
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("Please provide order ID");
+    expect(result.response).toContain("order number from your order confirmation");
+    expect(result.response).not.toContain("Please provide order ID");
     const historyResult = result.trace.events.find((event) => event.type === "tool_result" && event.data.name === "get_order_history");
     expect(historyResult.data.result.data).toMatchObject({ candidate_only: true, has_order_history: true });
     expect(historyResult.data.result.data).not.toHaveProperty("orders");
@@ -134,7 +135,7 @@ describe("greenfield model/tool loop", () => {
 
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
-    expect(result.response).toContain("not been completed");
+    expect(result.response).toContain("will not be completed");
     expect(result.response).not.toMatch(/order #10232 (?:was|has been) cancelled/i);
     expect(JSON.stringify(result.trace.events)).toContain('"status":"proposed"');
   });

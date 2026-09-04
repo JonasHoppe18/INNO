@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { inferResponseLocale, renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -134,7 +134,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
         const rawText = String(response.text ?? "").trim();
         const validation = validateStructuredResponse(rawText, registry);
         const finalResponse = validation.approvedSegments.length
-          ? renderResponseSegments(validation.approvedSegments, registry)
+          ? renderResponseSegments(validation.approvedSegments, { ...registry, locale: inferResponseLocale(options.message) })
           : fallbackResponse();
         pushEvent(trace, "final_response", {
           response: finalResponse,

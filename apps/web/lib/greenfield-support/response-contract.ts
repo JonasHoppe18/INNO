@@ -96,7 +96,11 @@ export interface ResponseValidationContext {
   manifest: CapabilityManifest;
   getResult: (resultId: string) => ResponseEvidenceRecord | undefined;
   definitions: StrictToolDefinition[];
+  /** The locale inferred from the current customer request, if it is clear. */
+  locale?: ResponseLocale;
 }
+
+export type ResponseLocale = "da" | "en";
 
 function parseInput(input: unknown): unknown {
   if (typeof input !== "string") return input;
@@ -494,11 +498,22 @@ export function summarizeResponseValidation(result: ResponseValidationResult) {
   };
 }
 
-function humanArgumentName(argument: string) {
-  return argument
-    .replace(/_ids$/i, " IDs")
-    .replace(/_id$/i, " ID")
-    .replace(/_/g, " ");
+const DANISH_MARKERS = [
+  "jeg", "min", "mit", "mine", "ordre", "ordren", "pakke", "pakken", "hvor", "hvornår",
+  "kan", "gerne", "ikke", "har", "leveret", "kommer", "købt", "returnere", "refusion",
+  "betaling", "hvilken", "hvad", "fortælle", "vil", "venter", "modtage", "med", "fra",
+];
+
+/** Uses only clear lexical signals; otherwise the existing English default remains in place. */
+export function inferResponseLocale(input: string): ResponseLocale {
+  const source = String(input ?? "").toLowerCase();
+  if (/[æøå]/.test(source)) return "da";
+  const markerCount = DANISH_MARKERS.filter((marker) => new RegExp(`\\b${marker}\\b`, "i").test(source)).length;
+  return markerCount >= 2 ? "da" : "en";
+}
+
+function localeFor(context: ResponseValidationContext): ResponseLocale {
+  return context.locale ?? "en";
 }
 
 function firstSentence(value: string) {
@@ -509,30 +524,88 @@ function lowerFirst(value: string) {
   return value ? value[0].toLowerCase() + value.slice(1) : value;
 }
 
-function listArguments(argumentsList: string[]) {
-  const labels = argumentsList.map(humanArgumentName);
-  if (labels.length < 2) return labels[0] ?? "the missing information";
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
+function humanArgumentName(argument: string, locale: ResponseLocale = "en") {
+  const names: Record<ResponseLocale, Record<string, string>> = {
+    en: {
+      order_id: "the order number",
+      item_id: "the item ID",
+      item_ids: "the item IDs",
+      address: "the new address",
+      amount: "the amount",
+      reason: "the reason",
+      tracking_number: "the tracking number",
+      query: "the product name or SKU",
+    },
+    da: {
+      order_id: "ordrenummeret",
+      item_id: "vare-ID'et",
+      item_ids: "vare-ID'erne",
+      address: "den nye adresse",
+      amount: "beløbet",
+      reason: "årsagen",
+      tracking_number: "trackingnummeret",
+      query: "produktnavnet eller SKU'en",
+    },
+  };
+  return names[locale][argument] ?? argument
+    .replace(/_ids$/i, locale === "da" ? "-ID'er" : " IDs")
+    .replace(/_id$/i, locale === "da" ? "-ID" : " ID")
+    .replace(/_/g, " ");
+}
+
+function listArguments(argumentsList: string[], locale: ResponseLocale = "en") {
+  const labels = argumentsList.map((argument) => humanArgumentName(argument, locale));
+  if (labels.length < 2) return labels[0] ?? (locale === "da" ? "de manglende oplysninger" : "the missing information");
+  if (labels.length === 2) return locale === "da" ? `${labels[0]} og ${labels[1]}` : `${labels[0]} and ${labels[1]}`;
+  const conjunction = locale === "da" ? " og " : ", and ";
+  return `${labels.slice(0, -1).join(", ")}${conjunction}${labels.at(-1)}`;
 }
 
 function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext) {
   const definition = definitionFor(segment.capability ?? "", context);
-  if (!definition) return "Please provide the missing information so I can continue.";
+  const locale = localeFor(context);
+  if (!definition) return locale === "da" ? "Kan du sende de manglende oplysninger, så jeg kan fortsætte?" : "Could you share the missing information so I can continue?";
+
+  if (segment.capability === "get_order" && segment.missing_arguments.includes("order_id")) {
+    return locale === "da"
+      ? "Kan du sende ordrenummeret fra din ordrebekræftelse?"
+      : "Could you send the order number from your order confirmation?";
+  }
+  if (segment.capability === "get_tracking" && segment.missing_arguments.includes("tracking_number")) {
+    return locale === "da"
+      ? "Kan du sende trackingnummeret, du vil have mig til at tjekke?"
+      : "Could you send the tracking number you would like me to check?";
+  }
+  if (segment.capability === "get_product" && segment.missing_arguments.includes("query")) {
+    return locale === "da"
+      ? "Hvilket produktnavn eller SKU skal jeg tjekke?"
+      : "Which product name or SKU should I check?";
+  }
+
   const operation = firstSentence(definition.description)
-    .replace(/^Read\s+/i, "look up ")
-    .replace(/^Propose\s+/i, "prepare a proposal for ");
-  return `Please provide ${listArguments(segment.missing_arguments)} so I can ${lowerFirst(operation)}.`;
+    .replace(/^Read\s+/i, locale === "da" ? "slå op i " : "look up ")
+    .replace(/^Propose\s+/i, locale === "da" ? "forberede et forslag om " : "prepare a proposal for ");
+  const information = listArguments(segment.missing_arguments, locale);
+  return locale === "da"
+    ? `Kan du sende ${information}, så jeg kan ${lowerFirst(operation)}?`
+    : `Could you share ${information} so I can ${lowerFirst(operation)}?`;
 }
 
 function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_offer" }>, context: ResponseValidationContext) {
   const definition = definitionFor(segment.capability, context);
-  if (!definition) return "I can prepare a proposal once the required information is available.";
+  const locale = localeFor(context);
+  if (!definition) {
+    return locale === "da"
+      ? "Jeg kan forberede et forslag, når de nødvendige oplysninger er på plads."
+      : "I can prepare a proposal once the required information is available.";
+  }
   const operation = firstSentence(definition.description).replace(/^Propose\s+/i, "");
-  const proposal = `I can propose ${lowerFirst(operation)}. This is only a proposal and has not been completed.`;
-  return segment.missing_arguments.length
-    ? `Please provide ${listArguments(segment.missing_arguments)} first. ${proposal}`
-    : proposal;
+  if (locale === "da") {
+    const missing = segment.missing_arguments.length ? `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? ` : "";
+    return `${missing}Jeg kan forberede et forslag om ${lowerFirst(operation)}. Det bliver ikke gennemført uden din bekræftelse.`;
+  }
+  const missing = segment.missing_arguments.length ? `Could you share ${listArguments(segment.missing_arguments, locale)} first? ` : "";
+  return `${missing}I can prepare a proposal for ${lowerFirst(operation)}. It will not be completed without your confirmation.`;
 }
 
 function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
@@ -547,93 +620,249 @@ function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>,
   });
 }
 
-function renderFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
-  const values = factEvidenceValues(segment, context);
-  const scalarValueFor = (predicate: (path: string) => boolean) => {
-    const value = values.find((item) => predicate(item.path))?.value;
-    return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : undefined;
-  };
-  switch (segment.fact_kind) {
-    case "order_reference": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["orderNumber", "order_number"]));
-      return value ? `Order reference: #${value.replace(/^#/, "")}.` : "";
-    }
-    case "order_item": {
-      const items = values.find((item) => pathHasAnySuffix(item.path, ["items"]))?.value;
-      if (Array.isArray(items)) {
-        const renderedItems = items.flatMap((item) => {
+function scalarFactValue(
+  facts: Extract<ResponseSegment, { type: "fact" }>[],
+  context: ResponseValidationContext,
+  predicate: (path: string) => boolean,
+) {
+  for (const fact of facts) {
+    const value = factEvidenceValues(fact, context).find((item) => predicate(item.path))?.value;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  }
+  return undefined;
+}
+
+function sentence(value: string) {
+  const trimmed = value.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function joinList(values: string[], locale: ResponseLocale) {
+  if (values.length < 2) return values[0] ?? "";
+  if (values.length === 2) return locale === "da" ? `${values[0]} og ${values[1]}` : `${values[0]} and ${values[1]}`;
+  return locale === "da"
+    ? `${values.slice(0, -1).join(", ")} og ${values.at(-1)}`
+    : `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
+function orderItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const items = new Map<string, { title?: string; quantity?: string }>();
+  const rendered = new Set<string>();
+  for (const fact of facts) {
+    for (const { path, value } of factEvidenceValues(fact, context)) {
+      if (pathHasAnySuffix(path, ["items"]) && Array.isArray(value)) {
+        for (const item of value) {
           const record = objectValue(item);
-          const title = record?.title;
-          const quantity = record?.quantity;
-          return meaningful(title) && meaningful(quantity) ? [`${String(quantity)} × ${String(title)}`] : [];
-        });
-        return renderedItems.length ? `Order items: ${renderedItems.join(", ")}.` : "";
+          if (!meaningful(record?.title) || !meaningful(record?.quantity)) continue;
+          rendered.add(`${String(record.quantity)} × ${String(record.title)}`);
+        }
+        continue;
       }
-      const title = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "title")));
-      const quantity = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "quantity")));
-      return title && quantity ? `Order item: ${quantity} × ${title}.` : "";
+      const title = indexedCollectionProperty(path, "items", "title");
+      const quantity = indexedCollectionProperty(path, "items", "quantity");
+      const indexed = title ?? quantity;
+      if (!indexed || !meaningful(value)) continue;
+      const item = items.get(indexed.index) ?? {};
+      if (indexed.property === "title") item.title = String(value);
+      if (indexed.property === "quantity") item.quantity = String(value);
+      items.set(indexed.index, item);
     }
+  }
+  items.forEach((item) => {
+    if (item.title && item.quantity) rendered.add(`${item.quantity} × ${item.title}`);
+  });
+  return Array.from(rendered);
+}
+
+function orderStateClause(kind: "financial" | "fulfillment", value: string, locale: ResponseLocale) {
+  const key = value.trim().toLowerCase().replace(/[-\s]+/g, "_");
+  if (kind === "financial") {
+    if (key === "paid") return locale === "da" ? "er betalt" : "is paid";
+    if (key === "pending") return locale === "da" ? "har en afventende betaling" : "has a pending payment";
+    if (key === "refunded") return locale === "da" ? "er refunderet" : "has been refunded";
+    return locale === "da" ? `har betalingsstatus ${value}` : `has payment status ${value}`;
+  }
+  if (key === "fulfilled") return locale === "da" ? "er afsendt" : "has shipped";
+  if (key === "partial" || key === "partially_fulfilled") return locale === "da" ? "er delvist afsendt" : "is partially shipped";
+  if (key === "unfulfilled" || key === "pending") return locale === "da" ? "er endnu ikke afsendt" : "has not shipped yet";
+  return locale === "da" ? `har leveringsstatus ${value}` : `has fulfillment status ${value}`;
+}
+
+function renderOrderFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  const reference = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["orderNumber", "order_number"]));
+  const financial = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));
+  const fulfillment = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]));
+  const items = orderItems(facts.filter((fact) => fact.fact_kind === "order_item"), context);
+  const paragraphs: string[] = [];
+  if (reference) paragraphs.push(locale === "da" ? `Jeg har fundet ordre #${reference.replace(/^#/, "")}.` : `I found order #${reference.replace(/^#/, "")}.`);
+  if (items.length) paragraphs.push(locale === "da" ? `Du har bestilt ${joinList(items, locale)}.` : `You ordered ${joinList(items, locale)}.`);
+  const states = [
+    financial ? orderStateClause("financial", financial, locale) : null,
+    fulfillment ? orderStateClause("fulfillment", fulfillment, locale) : null,
+  ].filter((value): value is string => Boolean(value));
+  if (states.length) paragraphs.push(locale === "da" ? `Ordren ${joinList(states, locale)}.` : `The order ${joinList(states, locale)}.`);
+  return paragraphs.join(" ");
+}
+
+function shipmentStatusClause(value: string, locale: ResponseLocale) {
+  const key = value.trim().toLowerCase().replace(/[-\s]+/g, "_");
+  if (key === "delivered") return locale === "da" ? "er leveret" : "was delivered";
+  if (key === "in_transit" || key === "transit") return locale === "da" ? "er undervejs" : "is in transit";
+  if (key === "out_for_delivery") return locale === "da" ? "er på vej til levering" : "is out for delivery";
+  if (key === "pending" || key === "pre_transit") return locale === "da" ? "afventer afsendelse" : "is awaiting shipment";
+  return locale === "da" ? `har status ${value}` : `has status ${value}`;
+}
+
+function formatTimestamp(value: string, locale: ResponseLocale) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    const language = locale === "da" ? "da-DK" : "en-GB";
+    return `${new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date)} UTC`;
+  } catch {
+    return value;
+  }
+}
+
+function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  const carrier = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["carrier"]));
+  const tracking = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
+  const status = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.status"]));
+  const event = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]));
+  const timestamp = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp"));
+  const location = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.location"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location"));
+  const eta = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]));
+  const paragraphs: string[] = [];
+  const statusClause = status ? shipmentStatusClause(status, locale) : null;
+  if (carrier && tracking) {
+    paragraphs.push(locale === "da"
+      ? statusClause
+        ? `Din forsendelse med ${carrier} (trackingnummer ${tracking}) ${statusClause}.`
+        : `Din forsendelse med ${carrier} har trackingnummeret ${tracking}.`
+      : statusClause
+        ? `Your ${carrier} shipment (tracking number ${tracking}) ${statusClause}.`
+        : `Your ${carrier} shipment has tracking number ${tracking}.`);
+  } else if (carrier) {
+    paragraphs.push(locale === "da" ? `Din pakke sendes med ${carrier}.` : `Your package is being handled by ${carrier}.`);
+  } else if (tracking) {
+    paragraphs.push(locale === "da" ? `Trackingnummeret er ${tracking}.` : `The tracking number is ${tracking}.`);
+  } else if (statusClause) {
+    paragraphs.push(locale === "da" ? `Pakken ${statusClause}.` : `The package ${statusClause}.`);
+  }
+
+  const normalizedEvent = event?.toLowerCase().replace(/[.!?]+$/g, "");
+  const normalizedStatus = status?.toLowerCase().replace(/[_\s-]+/g, " ");
+  const duplicateEvent = Boolean(normalizedEvent && normalizedStatus && normalizedEvent.includes(normalizedStatus));
+  if (event && !duplicateEvent && !(carrier && tracking && !status)) {
+    paragraphs.push(locale === "da" ? `Den seneste opdatering siger: ${sentence(event)}` : `The latest update says: ${sentence(event)}`);
+  }
+  if (timestamp || location) {
+    const details = [
+      timestamp ? (locale === "da" ? `den ${formatTimestamp(timestamp, locale)}` : `on ${formatTimestamp(timestamp, locale)}`) : null,
+      location ? (locale === "da" ? `i ${location}` : `in ${location}`) : null,
+    ].filter((value): value is string => Boolean(value));
+    paragraphs.push(locale === "da"
+      ? `Den seneste opdatering blev registreret ${details.join(" ")}.`
+      : `The latest update was recorded ${details.join(" ")}.`);
+  }
+  if (eta) paragraphs.push(locale === "da" ? `Den forventede levering er ${eta}.` : `Estimated delivery is ${eta}.`);
+  return paragraphs.join(" ");
+}
+
+function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
+  const values = factEvidenceValues(segment, context);
+  switch (segment.fact_kind) {
     case "product_value": {
       const item = values.find((candidate) => safeLiveProductFieldPath(candidate.path));
       if (!item) return "";
       const label = /\.variants\[\d+\]\.title$/i.test(item.path)
-        ? "Product variant"
+        ? localeFor(context) === "da" ? "Produktvariant"
+          : "Product variant"
         : /\.variants\[\d+\]\.sku$/i.test(item.path)
-          ? "Product SKU"
+          ? localeFor(context) === "da" ? "Produktets SKU"
+            : "Product SKU"
           : /\.title$/i.test(item.path)
-            ? "Product"
-            : "Product value";
+            ? localeFor(context) === "da" ? "Produkt"
+              : "Product"
+            : localeFor(context) === "da" ? "Produktværdi" : "Product value";
       return `${label}: ${String(item.value)}.`;
-    }
-    case "order_financial_status": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));
-      return value ? `Financial status: ${value}.` : "";
-    }
-    case "order_fulfillment_status": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]));
-      return value ? `Fulfillment status: ${value}.` : "";
-    }
-    case "shipment_carrier": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["carrier"]));
-      return value ? `Carrier: ${value}.` : "";
-    }
-    case "shipment_tracking_number": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
-      return value ? `Tracking number: ${value}.` : "";
-    }
-    case "shipment_status": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.status"]));
-      return value ? `Tracking status: ${value}.` : "";
-    }
-    case "shipment_event": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]));
-      return value ? `Latest tracking event: ${value}.` : "";
-    }
-    case "shipment_timestamp": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"])
-        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp"));
-      return value ? `Tracking timestamp: ${value}.` : "";
-    }
-    case "shipment_location": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.location"])
-        || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location"));
-      return value ? `Tracking location: ${value}.` : "";
-    }
-    case "shipment_eta": {
-      const value = scalarValueFor((path) => pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]));
-      return value ? `Estimated delivery: ${value}.` : "";
     }
     default:
       return "";
   }
 }
 
-/** Renders only segments accepted by the deterministic validator. */
+const ORDER_FACT_KINDS = new Set<FactKind>([
+  "order_reference", "order_item", "order_financial_status", "order_fulfillment_status",
+]);
+const SHIPMENT_FACT_KINDS = new Set<FactKind>([
+  "shipment_carrier", "shipment_tracking_number", "shipment_status", "shipment_event",
+  "shipment_timestamp", "shipment_location", "shipment_eta",
+]);
+
+function renderTextSegment(value: string | null) {
+  return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
+}
+
+function renderLimitation(segment: Extract<ResponseSegment, { type: "limitation" }>, context: ResponseValidationContext) {
+  const evidence = resultFor(segment.basis, context);
+  const locale = localeFor(context);
+  if (evidence?.toolName === "get_tracking" && evidence.result.status === "not_found") {
+    return locale === "da"
+      ? "Jeg kan ikke se en live trackingstatus på pakken lige nu."
+      : "I can’t see a live tracking update for this shipment right now.";
+  }
+  if (evidence?.toolName === "get_order" && evidence.result.status === "not_found") {
+    const orderId = resultFieldValue(evidence.result, "data.order_id").value
+      ?? resultFieldValue(evidence.result, "data.order_focus.requested_order_id").value;
+    const reference = meaningful(orderId) ? ` #${String(orderId).replace(/^#/, "")}` : "";
+    return locale === "da"
+      ? `Jeg kunne ikke finde en ordre med nummer${reference}.`
+      : `I couldn’t find an order with number${reference}.`;
+  }
+  return renderTextSegment(segment.text);
+}
+
+function sameArguments(left: string[], right: string[]) {
+  return left.length === right.length && left.every((argument, index) => argument === right[index]);
+}
+
+/** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
-  return segments.map((segment) => {
-    if (segment.type === "fact") return renderFact(segment, context);
-    if (segment.type === "action_offer") return renderActionOffer(segment, context);
-    if (segment.type === "question" && segment.purpose === "enable_capability") return renderCapabilityQuestion(segment, context);
-    return segment.text?.trim() ?? "";
-  }).filter(Boolean).join("\n\n");
+  const rendered: string[] = [];
+  const consumed = new Set<number>();
+  const factSegments = segments.filter((segment): segment is Extract<ResponseSegment, { type: "fact" }> => segment.type === "fact");
+  const orderFacts = factSegments.filter((segment) => ORDER_FACT_KINDS.has(segment.fact_kind));
+  const shipmentFacts = factSegments.filter((segment) => SHIPMENT_FACT_KINDS.has(segment.fact_kind));
+
+  segments.forEach((segment, index) => {
+    if (consumed.has(index)) return;
+    if (segment.type === "fact" && ORDER_FACT_KINDS.has(segment.fact_kind)) {
+      rendered.push(renderOrderFacts(orderFacts, context));
+      segments.forEach((candidate, candidateIndex) => {
+        if (candidate.type === "fact" && ORDER_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
+      });
+      return;
+    }
+    if (segment.type === "fact" && SHIPMENT_FACT_KINDS.has(segment.fact_kind)) {
+      rendered.push(renderShipmentFacts(shipmentFacts, context));
+      segments.forEach((candidate, candidateIndex) => {
+        if (candidate.type === "fact" && SHIPMENT_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
+      });
+      return;
+    }
+    if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
+    else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
+    else if (segment.type === "question" && segment.purpose === "enable_capability") {
+      const repeatedByAction = segments.some((candidate) => candidate.type === "action_offer"
+        && candidate.capability === segment.capability
+        && sameArguments(candidate.missing_arguments, segment.missing_arguments));
+      if (!repeatedByAction) rendered.push(renderCapabilityQuestion(segment, context));
+    }
+    else if (segment.type === "limitation") rendered.push(renderLimitation(segment, context));
+    else rendered.push(renderTextSegment(segment.text));
+  });
+  return rendered.filter(Boolean).join("\n\n");
 }

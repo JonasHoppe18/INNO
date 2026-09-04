@@ -73,9 +73,9 @@ function removeUnsupportedProductFields(value: unknown): JsonValue {
         .map(([key, child]) => [key, removeUnsupportedProductFields(child)]),
     );
   }
-  return value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-    ? value
-    : null;
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  return null;
 }
 
 function providerStatus(value: JsonValue): "ok" | "not_found" {

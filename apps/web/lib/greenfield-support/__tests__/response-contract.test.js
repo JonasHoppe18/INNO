@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
+import { inferResponseLocale, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
@@ -51,7 +51,7 @@ describe("structured response contract", () => {
     expect(result.allValid).toBe(true);
     expect(result.approvedSegments).toHaveLength(1);
     const rendered = renderResponseSegments(result.approvedSegments, registry);
-    expect(rendered).toContain("fulfilled");
+    expect(rendered).toContain("has shipped");
     expect(rendered).not.toContain("delivered");
   });
 
@@ -400,7 +400,7 @@ describe("structured response contract", () => {
     });
 
     expect(inventedValue.schemaValid).toBe(false);
-    expect(renderResponseSegments(verified.approvedSegments, registry)).toContain("fulfilled");
+    expect(renderResponseSegments(verified.approvedSegments, registry)).toContain("has shipped");
     expect(renderResponseSegments(verified.approvedSegments, registry)).not.toContain("delivered");
   });
 
@@ -472,8 +472,8 @@ describe("structured response contract", () => {
     expect(action.allValid).toBe(true);
     const { renderResponseSegments } = await import("../response-contract");
     const rendered = renderResponseSegments(action.approvedSegments, registry);
-    expect(rendered).toContain("propose an address update");
-    expect(rendered).toContain("not been completed");
+    expect(rendered).toContain("prepare a proposal for an address update");
+    expect(rendered).toContain("will not be completed");
     expect(rendered).not.toContain("hold");
     expect(rendered).not.toContain("carrier");
   });
@@ -491,9 +491,138 @@ describe("structured response contract", () => {
 
     const { renderResponseSegments } = await import("../response-contract");
     const rendered = renderResponseSegments(question.approvedSegments, registry);
-    expect(rendered).toContain("order ID");
-    expect(rendered).toContain("look up");
+    expect(rendered).toContain("order number from your order confirmation");
+    expect(rendered).not.toContain("Please provide");
     expect(rendered).not.toContain("not used to authorize");
+  });
+
+  it("composes related order facts into a concise customer sentence", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry,
+      { type: "fact", fact_kind: "order_reference", evidence: [{ result_id: order.resultId, field_paths: ["orderNumber"] }] },
+      { type: "fact", fact_kind: "order_item", evidence: [{ result_id: order.resultId, field_paths: ["items"] }] },
+      { type: "fact", fact_kind: "order_financial_status", evidence: [{ result_id: order.resultId, field_paths: ["financialStatus"] }] },
+      { type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus"] }] },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
+      "I found order #10231. You ordered 1 × Orion Wireless. The order is paid and has shipped.",
+    );
+  });
+
+  it("keeps fulfillment distinct from a delivered tracking status", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const fulfilled = validate(registry, {
+      type: "fact",
+      fact_kind: "order_fulfillment_status",
+      evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus"] }],
+    });
+    const deliveredRegistry = createCapabilityRegistry({ ...dependencies, tracking: deliveredTrackingProvider() });
+    const deliveredOrder = await deliveredRegistry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await deliveredRegistry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const delivered = validate(deliveredRegistry, {
+      type: "fact",
+      fact_kind: "shipment_status",
+      evidence: [{ result_id: tracking.resultId, field_paths: ["live_tracking.status"] }],
+    });
+
+    expect(renderResponseSegments(fulfilled.approvedSegments, registry)).toContain("has shipped");
+    expect(renderResponseSegments(fulfilled.approvedSegments, registry)).not.toContain("delivered");
+    expect(renderResponseSegments(delivered.approvedSegments, deliveredRegistry)).toContain("was delivered");
+    expect(deliveredOrder.status).toBe("ok");
+  });
+
+  it("combines carrier and tracking number without provider labels", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry,
+      { type: "fact", fact_kind: "shipment_carrier", evidence: [{ result_id: order.resultId, field_paths: ["fulfillments[0].carrier"] }] },
+      { type: "fact", fact_kind: "shipment_tracking_number", evidence: [{ result_id: order.resultId, field_paths: ["fulfillments[0].trackingNumber"] }] },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
+      "Your ParcelCo shipment has tracking number PC10231.",
+    );
+    expect(renderResponseSegments(result.approvedSegments, registry)).not.toMatch(/^(Carrier|Tracking number):/m);
+  });
+
+  it("renders a natural localized order-ID question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry, {
+      type: "question",
+      purpose: "enable_capability",
+      text: "ignored",
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    });
+
+    expect(inferResponseLocale("Hvor er min ordre #10231?")).toBe("da");
+    expect(renderResponseSegments(result.approvedSegments, { ...registry, locale: "da" })).toBe(
+      "Kan du sende ordrenummeret fra din ordrebekræftelse?",
+    );
+  });
+
+  it("renders a helpful limitation without inventing a tracking cause", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tracking: {
+        providerName: "test_ship24",
+        lookup: async (input) => ({
+          status: "not_found",
+          trackingNumber: input.trackingNumber,
+          provider: "test_ship24",
+          observedAt: "2026-09-03T12:00:00.000Z",
+          error: { code: "tracking_not_found", message: "No live record was returned." },
+        }),
+      },
+    });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry, {
+      type: "limitation",
+      text: "No active tracking record was returned from the tracking provider.",
+      basis: { result_id: tracking.resultId, field_paths: [] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, { ...registry, locale: "da" });
+    expect(rendered).toBe("Jeg kan ikke se en live trackingstatus på pakken lige nu.");
+    expect(rendered).not.toMatch(/fordi|because|provider|årsag/i);
+  });
+
+  it("keeps proposal safety intact while composing action wording", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry,
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: "ignored",
+        capability: "create_refund",
+        missing_arguments: ["order_id", "amount", "reason"],
+      },
+      {
+        type: "action_offer",
+        capability: "create_refund",
+        mode: "proposal",
+        missing_arguments: ["order_id", "amount", "reason"],
+      },
+    );
+
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("proposal");
+    expect(rendered).toContain("will not be completed without your confirmation");
+    expect(rendered).not.toMatch(/has been refunded|was refunded/i);
+    expect(rendered.match(/Could you share/g)).toHaveLength(1);
   });
 
   it("fails closed for invented evidence", async () => {

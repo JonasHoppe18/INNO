@@ -4,7 +4,7 @@ import { fallbackResponse } from "./agent";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import type {
   AgentRunResult,
   AgentTrace,
@@ -221,7 +221,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
 
     const validation = validateStructuredResponse(result?.finalOutput, registry);
     const response = validation.approvedSegments.length
-      ? renderResponseSegments(validation.approvedSegments, registry)
+      ? renderResponseSegments(validation.approvedSegments, { ...registry, locale: inferResponseLocale(options.message) })
       : fallbackResponse();
     pushEvent(trace, "final_response", {
       response,

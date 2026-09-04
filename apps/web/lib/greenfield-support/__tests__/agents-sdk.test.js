@@ -57,7 +57,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     model.assertComplete();
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
-    expect(result.response).toContain("not been completed");
+    expect(result.response).toContain("will not be completed");
     expect(result.trace.events.filter((event) => event.type === "tool_result")).toHaveLength(1);
   });
 });
