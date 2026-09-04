@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanRawContent, InMemoryKnowledgeStore, selectEvidenceSections } from "../knowledge";
+import { cleanRawContent, InMemoryKnowledgeStore, normalizeKnowledgeSource, selectEvidenceSections } from "../knowledge";
 
 describe("greenfield knowledge store", () => {
   it("conservatively converts generic HTML into visible source text", () => {
@@ -68,6 +68,33 @@ describe("greenfield knowledge store", () => {
     expect(first.structuredData.return_window_days).toBe(30);
     expect(first.sourceUri).toContain("merchant.example.test");
     expect(first.chunks.length).toBeGreaterThan(0);
+  });
+
+  it("represents merchant-authored applicability as generic data", async () => {
+    const record = await normalizeKnowledgeSource("tenant-a", {
+      sourceKind: "merchant_authored",
+      sourceId: "merchant-guide-1",
+      title: "Wireless connection guide",
+      content: "Disconnect the dongle, power on the headset, and pair the devices again.",
+      sourceUri: "https://merchant.example.test/support/wireless",
+      sourceLabel: "Merchant support guide",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      publishedAt: "2026-09-01T00:00:00.000Z",
+      metadata: {
+        status: "published",
+        authored_by: "merchant",
+        origin: "merchant_authored",
+        applies_to: { product_models: ["Example Wireless"] },
+      },
+    });
+
+    expect(record.sourceKind).toBe("merchant_authored");
+    expect(record.knowledgeType).toBe("procedural");
+    expect(record.authority).toBe("authoritative");
+    expect(record.metadata.applies_to).toEqual({ product_models: ["Example Wireless"] });
+    expect(record.metadata.status).toBe("published");
+    expect(record.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("does not use live operational snapshots as stale knowledge", async () => {

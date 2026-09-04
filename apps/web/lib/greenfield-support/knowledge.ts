@@ -625,6 +625,26 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     return embedding;
   }
 
+  private async ensureChunkEmbeddings(workspaceId: string, recordId: string): Promise<void> {
+    const { data, error } = await this.serviceClient
+      .from("greenfield_knowledge_chunks")
+      .select("id,content,embedding")
+      .eq("workspace_id", workspaceId)
+      .eq("record_id", recordId)
+      .order("chunk_index");
+    if (error) throw new Error(error.message);
+    for (const chunk of Array.isArray(data) ? data : []) {
+      if (chunk.embedding) continue;
+      const embedding = await this.embedQuery(String(chunk.content ?? ""));
+      const result = await this.serviceClient
+        .from("greenfield_knowledge_chunks")
+        .update({ embedding: `[${embedding.join(",")}]` })
+        .eq("id", chunk.id)
+        .eq("workspace_id", workspaceId);
+      if (result.error) throw new Error(result.error.message);
+    }
+  }
+
   async ingest(workspaceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
     const record = await normalizeKnowledgeSource(workspaceId, source);
     const { data, error } = await this.serviceClient
@@ -659,6 +679,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       .from("greenfield_knowledge_chunks")
       .upsert(chunks, { onConflict: "record_id,chunk_index" });
     if (chunkResult.error) throw new Error(chunkResult.error.message);
+    await this.ensureChunkEmbeddings(record.workspaceId, String(data.id));
     return { ...record, id: String(data.id) };
   }
 
