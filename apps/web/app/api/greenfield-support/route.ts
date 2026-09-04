@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 import {
   runGreenfieldAgentWithAgentsSdk,
@@ -9,6 +9,10 @@ import {
   ShopifyReadOnlyProvider,
   SupabaseKnowledgeStore,
 } from "@/lib/greenfield-support";
+import {
+  createGreenfieldConversationContextStore,
+  loadGreenfieldThreadState,
+} from "@/lib/server/greenfield-thread-context";
 
 export const runtime = "nodejs";
 
@@ -30,23 +34,6 @@ function normalizeHistory(value: unknown) {
     .map((item: any) => ({ role: item.role, content: String(item.content).slice(0, 12_000) }));
 }
 
-async function resolveCustomerFromThread(serviceClient: any, scope: any, threadId: string) {
-  if (!threadId) return { email: null, name: null };
-  const { data: thread } = await applyScope(
-    serviceClient.from("mail_threads").select("id, customer_email, customer_name").eq("id", threadId).maybeSingle(),
-    scope,
-  );
-  if (thread?.customer_email) return { email: thread.customer_email, name: thread.customer_name ?? null };
-  const { data: inbound } = await applyScope(
-    serviceClient.from("mail_messages").select("from_email, from_name, extracted_customer_email, extracted_customer_name, received_at, created_at").eq("thread_id", threadId).eq("from_me", false).order("received_at", { ascending: false, nullsLast: true }).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    scope,
-  );
-  return {
-    email: inbound?.extracted_customer_email || inbound?.from_email || null,
-    name: inbound?.extracted_customer_name || inbound?.from_name || null,
-  };
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
@@ -62,6 +49,16 @@ export async function POST(request: Request) {
     const scope = await resolveAuthScope(serviceClient, { clerkUserId: authState.userId, orgId: authState.orgId });
     if (!scope?.workspaceId) return NextResponse.json({ error: "A single active workspace is required." }, { status: 404 });
 
+    const threadId = String(body?.thread_id || "").trim();
+    const threadState = threadId
+      ? await loadGreenfieldThreadState(serviceClient, scope, threadId)
+      : null;
+    if (threadId && !threadState) {
+      return NextResponse.json({ error: "Thread not found in the current workspace." }, { status: 404 });
+    }
+    const contextStore = threadState ? createGreenfieldConversationContextStore(serviceClient) : null;
+    const customer = threadState?.customer || { email: null, name: null };
+
     // Shop selection is server-side and only allows one unambiguous shop in scope.
     // The client/model cannot provide a shop ID or credentials.
     const shop = await resolveScopedShop(serviceClient, scope, undefined, {
@@ -74,12 +71,12 @@ export async function POST(request: Request) {
       requestedShopId: shop.id,
       reason: "greenfield_support_read_only",
     });
-    const customer = await resolveCustomerFromThread(serviceClient, scope, String(body?.thread_id || "").trim());
 
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: customer.name },
       message,
-      history: normalizeHistory(body?.history),
+      history: threadState?.history || normalizeHistory(body?.history),
+      conversationContext: threadState?.conversationContext,
       capabilities: {
         tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: customer.name },
         knowledge: new SupabaseKnowledgeStore(serviceClient),
@@ -91,10 +88,14 @@ export async function POST(request: Request) {
         tracking: new Ship24ReadOnlyProvider(),
       },
     });
+    if (contextStore && threadId) {
+      await contextStore.save({ workspaceId: scope.workspaceId, threadId, context: result.conversationContext });
+    }
     return NextResponse.json({
       response: result.response,
       proposed_actions: result.proposedActions,
       trace: result.trace,
+      conversation_context_persisted: Boolean(contextStore && threadId),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Greenfield support agent failed." }, { status: 500 });
