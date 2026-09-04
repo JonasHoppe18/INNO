@@ -12,6 +12,7 @@ const FactKindSchema = z.enum([
   "order_item",
   "order_financial_status",
   "order_fulfillment_status",
+  "product_value",
   "shipment_carrier",
   "shipment_tracking_number",
   "shipment_status",
@@ -191,14 +192,33 @@ function validateKnowledgeBasis(
   if (!Array.isArray(results) || !results.length) {
     return [{ index, code: "knowledge_evidence_missing", message: "The referenced result does not contain retrieved knowledge evidence." }];
   }
-  const authoritative = results.some((item) => {
+  const citedRecords = citedKnowledgeRecords(results, basis.field_paths);
+  const supported = citedRecords.length > 0 && citedRecords.every((item) => {
     const record = objectValue(item);
-    return record && ["authoritative", "operational", "guidance"].includes(String(record.authority ?? ""));
+    if (!record) return false;
+    const authority = String(record.authority ?? "");
+    if (["authoritative", "operational", "guidance"].includes(authority)) return true;
+    return evidence?.toolName === "search_product_knowledge"
+      && record.knowledge_type === "product"
+      && authority === "reference";
   });
-  if (!authoritative) {
-    return [{ index, code: "knowledge_authority_insufficient", message: "Historical/example knowledge cannot authorize guidance." }];
+  if (!supported) {
+    return [{ index, code: "knowledge_authority_insufficient", message: "The cited knowledge source cannot support this guidance." }];
   }
   return [];
+}
+
+function citedKnowledgeRecords(results: unknown[], fieldPaths: string[]) {
+  const normalizedPaths = fieldPaths.map(normalizedDataPath);
+  const indexed = new Set<number>();
+  let citesWholeCollection = false;
+  for (const path of normalizedPaths) {
+    const match = path.match(/^results\[(\d+)\](?:\.|$)/);
+    if (match) indexed.add(Number(match[1]));
+    else if (path === "results" || path.startsWith("results.")) citesWholeCollection = true;
+  }
+  if (citesWholeCollection) return results;
+  return Array.from(indexed).map((index) => results[index]).filter((item) => item !== undefined);
 }
 
 function normalizedDataPath(path: string): string {
@@ -212,6 +232,41 @@ function pathHasSuffix(path: string, suffix: string): boolean {
 
 function pathHasAnySuffix(path: string, suffixes: string[]): boolean {
   return suffixes.some((suffix) => pathHasSuffix(path, suffix));
+}
+
+const SAFE_LIVE_PRODUCT_FIELDS = new Set([
+  "title",
+  "handle",
+  "sku",
+  "price",
+  "compare_at_price",
+  "option1",
+  "option2",
+  "option3",
+  "weight",
+  "weight_unit",
+  "requires_shipping",
+]);
+
+const UNSUPPORTED_PRODUCT_FIELDS = new Set([
+  "inventory_quantity",
+  "old_inventory_quantity",
+  "inventory_management",
+  "inventory_policy",
+]);
+
+function safeLiveProductFieldPath(path: string): boolean {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^products\[\d+\](?:\.variants\[\d+\])?\.([a-z0-9_]+)$/i);
+  if (!match) return false;
+  const field = match[1].toLowerCase();
+  return !UNSUPPORTED_PRODUCT_FIELDS.has(field) && SAFE_LIVE_PRODUCT_FIELDS.has(field);
+}
+
+function unsupportedLiveProductFieldPath(path: string): boolean {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^products\[\d+\](?:\.variants\[\d+\])?\.([a-z0-9_]+)$/i);
+  return Boolean(match && UNSUPPORTED_PRODUCT_FIELDS.has(match[1].toLowerCase()));
 }
 
 function pathHasIndexedProperty(path: string, collectionPath: string, property: string): boolean {
@@ -261,6 +316,8 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
         indexedCollectionProperty(path, "items", "title")
         || indexedCollectionProperty(path, "items", "quantity"),
       );
+    case "product_value":
+      return safeLiveProductFieldPath(path);
     default:
       return false;
   }
@@ -276,6 +333,13 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
   if (issues.length) return issues;
 
   const paths = segment.evidence.flatMap((basis) => basis.field_paths);
+  if (segment.fact_kind === "product_value" && paths.some(unsupportedLiveProductFieldPath)) {
+    return [{
+      index,
+      code: "product_inventory_unsupported",
+      message: "Inventory fields are not a supported product capability.",
+    }];
+  }
   const matchingPaths = paths.filter((path) => fieldPathMatchesFactKind(segment.fact_kind, path));
   if (!matchingPaths.length) {
     return [{
@@ -283,6 +347,17 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
       code: "fact_field_kind_mismatch",
       message: `The cited fields cannot support a ${segment.fact_kind} fact.`,
     }];
+  }
+
+  if (segment.fact_kind === "product_value") {
+    const productSource = segment.evidence.every((basis) => resultFor(basis, context)?.toolName === "get_product");
+    if (!productSource) {
+      return [{
+        index,
+        code: "product_source_required",
+        message: "A product value fact must cite a successful get_product result.",
+      }];
+    }
   }
 
   if (segment.fact_kind === "order_item") {
@@ -497,6 +572,18 @@ function renderFact(segment: Extract<ResponseSegment, { type: "fact" }>, context
       const title = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "title")));
       const quantity = scalarValueFor((path) => Boolean(indexedCollectionProperty(path, "items", "quantity")));
       return title && quantity ? `Order item: ${quantity} × ${title}.` : "";
+    }
+    case "product_value": {
+      const item = values.find((candidate) => safeLiveProductFieldPath(candidate.path));
+      if (!item) return "";
+      const label = /\.variants\[\d+\]\.title$/i.test(item.path)
+        ? "Product variant"
+        : /\.variants\[\d+\]\.sku$/i.test(item.path)
+          ? "Product SKU"
+          : /\.title$/i.test(item.path)
+            ? "Product"
+            : "Product value";
+      return `${label}: ${String(item.value)}.`;
     }
     case "order_financial_status": {
       const value = scalarValueFor((path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));

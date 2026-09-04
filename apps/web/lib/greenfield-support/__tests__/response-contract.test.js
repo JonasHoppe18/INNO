@@ -170,6 +170,124 @@ describe("structured response contract", () => {
     expect(executed.schemaValid).toBe(false);
   });
 
+  it("accepts reference product knowledge as product guidance", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_product_knowledge", JSON.stringify({ query: "wireless receiver" }));
+    const guidance = validate(registry, {
+      type: "knowledge_guidance",
+      text: "The Orion Wireless uses Bluetooth and the included USB receiver.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(guidance.allValid).toBe(true);
+  });
+
+  it("does not let reference product knowledge authorize policy or procedure guidance", async () => {
+    const dependencies = await createDemoDependencies();
+    const productOnlyKnowledge = {
+      ingest: (...args) => dependencies.knowledge.ingest(...args),
+      search: async (request) => dependencies.knowledge.search({ ...request, knowledgeTypes: ["product"] }),
+    };
+    const registry = createCapabilityRegistry({ ...dependencies, knowledge: productOnlyKnowledge });
+    const policyResult = await registry.execute("search_policy", JSON.stringify({ query: "wireless" }));
+    const procedureResult = await registry.execute("search_procedures", JSON.stringify({ query: "wireless" }));
+    const policyGuidance = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days.",
+      basis: { result_id: policyResult.resultId, field_paths: ["results"] },
+    });
+    const procedureGuidance = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Reset the headset and pair it again.",
+      basis: { result_id: procedureResult.resultId, field_paths: ["results"] },
+    });
+
+    expect(policyGuidance.allValid).toBe(false);
+    expect(policyGuidance.issues[0].code).toBe("knowledge_authority_insufficient");
+    expect(procedureGuidance.allValid).toBe(false);
+    expect(procedureGuidance.issues[0].code).toBe("knowledge_authority_insufficient");
+  });
+
+  it("represents live product values without using order-item semantics", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getProduct() {
+          return {
+            status: "ok",
+            products: [{ title: "Aurora Headset", handle: "aurora-headset", variants: [{ title: "Black", sku: "AUR-BLK" }] }],
+          };
+        },
+      },
+    });
+    const product = await registry.execute("get_product", JSON.stringify({ query: "Aurora Headset" }));
+    const title = validate(registry, {
+      type: "fact",
+      fact_kind: "product_value",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].title"] }],
+    });
+    const orderItem = validate(registry, {
+      type: "fact",
+      fact_kind: "order_item",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].title"] }],
+    });
+    const sku = validate(registry, {
+      type: "fact",
+      fact_kind: "product_value",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].variants[0].sku"] }],
+    });
+
+    expect(title.allValid).toBe(true);
+    expect(renderResponseSegments(title.approvedSegments, registry)).toBe("Product: Aurora Headset.");
+    expect(orderItem.allValid).toBe(false);
+    expect(orderItem.issues[0].code).toBe("fact_field_kind_mismatch");
+    expect(sku.allValid).toBe(true);
+    expect(renderResponseSegments(sku.approvedSegments, registry)).toBe("Product SKU: AUR-BLK.");
+  });
+
+  it("fails closed for inventory, unknown, and null product fields", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getProduct() {
+          return {
+            status: "ok",
+            products: [{ title: "Aurora Headset", variants: [{ title: "Black", sku: null, inventory_quantity: 7 }] }],
+          };
+        },
+      },
+    });
+    const product = await registry.execute("get_product", JSON.stringify({ query: "Aurora Headset" }));
+    expect(product.data.products[0].variants[0]).not.toHaveProperty("inventory_quantity");
+    const inventory = validate(registry, {
+      type: "fact",
+      fact_kind: "product_value",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].variants[0].inventory_quantity"] }],
+    });
+    const unknown = validate(registry, {
+      type: "fact",
+      fact_kind: "product_value",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].variants[0].made_up_field"] }],
+    });
+    const nullSku = validate(registry, {
+      type: "fact",
+      fact_kind: "product_value",
+      evidence: [{ result_id: product.resultId, field_paths: ["products[0].variants[0].sku"] }],
+    });
+
+    expect(inventory.allValid).toBe(false);
+    expect(inventory.issues[0].code).toBe("unknown_field_path");
+    expect(unknown.allValid).toBe(false);
+    expect(unknown.issues[0].code).toBe("unknown_field_path");
+    expect(nullSku.allValid).toBe(false);
+    expect(nullSku.issues[0].code).toBe("empty_field");
+  });
+
   it("allows a limitation for Ship24 not_found but rejects an unsupported cause fact", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({

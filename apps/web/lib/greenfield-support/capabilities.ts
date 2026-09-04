@@ -64,6 +64,20 @@ function jsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
 }
 
+function removeUnsupportedProductFields(value: unknown): JsonValue {
+  if (Array.isArray(value)) return value.map(removeUnsupportedProductFields);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !/(?:inventory|stock|available)/i.test(key))
+        .map(([key, child]) => [key, removeUnsupportedProductFields(child)]),
+    );
+  }
+  return value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : null;
+}
+
 function providerStatus(value: JsonValue): "ok" | "not_found" {
   if (value && typeof value === "object" && !Array.isArray(value) && value.status === "not_found") return "not_found";
   return "ok";
@@ -291,7 +305,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return customer ? { status: "ok", data: jsonValue(customer) } : { status: "not_found" };
           }
           case "get_product": {
-            const product = jsonValue(await context.commerce.getProduct(query));
+            const product = removeUnsupportedProductFields(await context.commerce.getProduct(query));
             return { status: providerStatus(product), data: product };
           }
           case "inspect_fulfillment":
