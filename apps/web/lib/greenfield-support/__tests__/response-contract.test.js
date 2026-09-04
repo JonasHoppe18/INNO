@@ -37,6 +37,67 @@ function deliveredTrackingProvider(options = {}) {
 }
 
 describe("structured response contract", () => {
+  it("accepts a pure acknowledgement without tool evidence", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry, { type: "acknowledgement", kind: "resolution" });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toBe("Glad to hear that’s sorted.");
+  });
+
+  it("keeps acknowledgement structurally unable to carry claims or promises", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const operationalClaim = validateStructuredResponse({
+      segments: [{
+        type: "acknowledgement",
+        kind: "resolution",
+        text: "The carrier delivered it correctly.",
+        evidence: [{ result_id: "tool_result_1", field_paths: ["status"] }],
+      }],
+    }, registry);
+    const actionPromise = validateStructuredResponse({
+      segments: [{
+        type: "acknowledgement",
+        kind: "closure",
+        capability: "create_refund",
+        promise: "I will refund it now.",
+      }],
+    }, registry);
+
+    expect(operationalClaim.schemaValid).toBe(false);
+    expect(actionPromise.schemaValid).toBe(false);
+  });
+
+  it("combines an acknowledgement with evidence-backed knowledge without weakening the factual segment", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry,
+      { type: "acknowledgement", kind: "transition" },
+      {
+        type: "knowledge_guidance",
+        text: "Returns are accepted within 30 days of delivery.",
+        basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+      },
+    );
+    const unsupportedFact = validate(registry,
+      { type: "acknowledgement", kind: "transition" },
+      {
+        type: "knowledge_guidance",
+        text: "This is not supported by a current tool result.",
+        basis: { result_id: "outside-run", field_paths: ["results"] },
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("Got it.");
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("30 days");
+    expect(unsupportedFact.approvedSegments).toEqual([{ type: "acknowledgement", kind: "transition" }]);
+    expect(unsupportedFact.issues[0].code).toBe("unknown_result_id");
+  });
+
   it("accepts a verified fact that cites a returned field", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

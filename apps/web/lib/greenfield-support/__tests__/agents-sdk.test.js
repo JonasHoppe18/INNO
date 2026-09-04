@@ -8,6 +8,25 @@ function structured(...segments) {
 }
 
 describe("greenfield OpenAI Agents SDK runtime", () => {
+  it("uses one model response for a pure acknowledgement", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(model.calls).toHaveLength(1);
+    expect(result.response).toBe("You’re welcome.");
+    expect(result.trace.events.filter((event) => event.type === "tool_call")).toHaveLength(0);
+  });
+
   it("uses one SDK agent for the knowledge/tool continuation", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

@@ -55,12 +55,18 @@ const KnowledgeGuidanceSchema = z.object({
   basis: BasisSchema,
 }).strict();
 
+const AcknowledgementSchema = z.object({
+  type: z.literal("acknowledgement"),
+  kind: z.enum(["resolution", "thanks", "correction", "closure", "transition"]),
+}).strict();
+
 export const ResponseSegmentSchema = z.discriminatedUnion("type", [
   FactSchema,
   QuestionSchema,
   LimitationSchema,
   ActionOfferSchema,
   KnowledgeGuidanceSchema,
+  AcknowledgementSchema,
 ]);
 
 export const StructuredResponseSchema = z.object({
@@ -455,6 +461,8 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
     }
     case "question":
       return validateQuestion(segment, context, index);
+    case "acknowledgement":
+      return [];
     default:
       return [{ index, code: "unknown_segment_type", message: "The response segment type is not supported." }];
   }
@@ -825,6 +833,27 @@ function renderLimitation(segment: Extract<ResponseSegment, { type: "limitation"
   return renderTextSegment(segment.text);
 }
 
+function renderAcknowledgement(kind: Extract<ResponseSegment, { type: "acknowledgement" }>["kind"], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  const copy = {
+    en: {
+      resolution: "Glad to hear that’s sorted.",
+      thanks: "You’re welcome.",
+      correction: "Thanks for clarifying.",
+      closure: "Understood.",
+      transition: "Got it.",
+    },
+    da: {
+      resolution: "Godt at høre, at det er løst.",
+      thanks: "Det var så lidt.",
+      correction: "Tak for afklaringen.",
+      closure: "Det er noteret.",
+      transition: "Det er noteret.",
+    },
+  } as const;
+  return copy[locale][kind];
+}
+
 function sameArguments(left: string[], right: string[]) {
   return left.length === right.length && left.every((argument, index) => argument === right[index]);
 }
@@ -855,6 +884,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
+    else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && segment.purpose === "enable_capability") {
       const repeatedByAction = segments.some((candidate) => candidate.type === "action_offer"
         && candidate.capability === segment.capability

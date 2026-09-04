@@ -21,6 +21,32 @@ function structured(...segments) {
 }
 
 describe("greenfield model/tool loop", () => {
+  it("renders a no-tool resolution acknowledgement instead of the generic fallback", async () => {
+    const dependencies = await createDemoDependencies();
+    const result = await runGreenfieldAgent({
+      ...dependencies,
+      message: "Never mind, I found it. Thanks.",
+      model: scriptedModel([structured({ type: "acknowledgement", kind: "resolution" })]),
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("Glad to hear that’s sorted.");
+    expect(result.trace.events.some((event) => event.type === "tool_call")).toBe(false);
+  });
+
+  it("answers pure thanks without a tool call or extra offer", async () => {
+    const dependencies = await createDemoDependencies();
+    const result = await runGreenfieldAgent({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      model: scriptedModel([structured({ type: "acknowledgement", kind: "thanks" })]),
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.");
+    expect(result.trace.events.some((event) => event.type === "tool_call")).toBe(false);
+  });
+
   it("completes a knowledge-only case and records provenance", async () => {
     const dependencies = await createDemoDependencies();
     const result = await runGreenfieldAgent({
