@@ -21,9 +21,34 @@ const SUPABASE_URL = String(
 ).replace(/\/$/, "");
 const SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 function createServiceClient() {
   return SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY) : null;
+}
+
+function createGreenfieldTrackingProvider() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return new Ship24ReadOnlyProvider();
+  return new Ship24ReadOnlyProvider({
+    requestImpl: async (trackingNumber: string, carrierHint?: string | null) => {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/fetch-tracking`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trackingNumber, company: carrierHint || "" }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(`DEV tracking function returned ${response.status}`) as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+      return body;
+    },
+  });
 }
 
 function normalizeHistory(value: unknown) {
@@ -85,7 +110,7 @@ export async function POST(request: Request) {
           accessToken: credentials.access_token,
           customer: { email: customer.email, name: customer.name },
         }),
-        tracking: new Ship24ReadOnlyProvider(),
+        tracking: createGreenfieldTrackingProvider(),
       },
     });
     if (contextStore && threadId) {
