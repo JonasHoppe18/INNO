@@ -34,6 +34,10 @@ vi.mock("@/lib/server/greenfield-playground", () => ({
   isOwnedPlaygroundSession: (session, scope) => session?.workspace_id === scope.workspaceId && session?.owner_clerk_user_id === scope.clerkUserId,
   normalizePlaygroundContext: (value) => value || null,
   normalizePlaygroundCustomerEmail: (value) => ({ value: value ? String(value).trim().toLowerCase() : null, error: null }),
+  normalizePlaygroundCustomerName: (value) => {
+    const firstName = String(value || "").trim().split(/\s+/)[0] || "";
+    return /^[A-Za-z][A-Za-z'-]{0,39}$/.test(firstName) ? firstName : null;
+  },
   normalizePlaygroundMessage: (value) => ({ value: String(value || "").trim(), error: String(value || "").trim() ? null : "message is required." }),
   historyFromPlaygroundRows: (rows) => rows || [],
   publicPlaygroundSession: (row) => ({ id: row.id, title: row.title, customer_email: row.customer_email || null }),
@@ -121,6 +125,7 @@ describe("greenfield agent playground API", () => {
       subject: "Where is my order?",
       mailbox_id: "mailbox-a",
       customer_email: "customer@example.test",
+      customer_name: "Jonas Hoppe",
     }, error: null } });
     const mailbox = chain({ maybeSingleResult: { data: { shop_id: "shop-a" }, error: null } });
     const rawMessages = chain({ awaitResult: { data: [
@@ -167,10 +172,13 @@ describe("greenfield agent playground API", () => {
       expect.objectContaining({ role: "user", content: "Where is order 1055?", trace_json: null }),
       expect.objectContaining({ role: "assistant", content: "I will check that for you.", trace_json: null }),
     ]));
+    expect(session.insert).toHaveBeenCalledWith(expect.objectContaining({
+      conversation_context_json: expect.objectContaining({ customerFirstName: "Jonas" }),
+    }));
   });
 
   it("E/G/H/I: runs the existing read-only providers with server credentials and stores a sanitized trace", async () => {
-    const session = { id: "session-a", workspace_id: "workspace-a", owner_clerk_user_id: "clerk-user-a", title: "New conversation", customer_email: "customer@example.test", conversation_context_json: null };
+    const session = { id: "session-a", workspace_id: "workspace-a", owner_clerk_user_id: "clerk-user-a", title: "New conversation", customer_email: "customer@example.test", conversation_context_json: { customerFirstName: "Jonas" } };
     const oldMessages = chain({ awaitResult: { data: [], error: null } });
     const loaded = chain({ maybeSingleResult: { data: session, error: null } });
     const inserted = chain({ orderResult: { data: [
@@ -205,9 +213,12 @@ describe("greenfield agent playground API", () => {
     }));
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
-      tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test" }),
+      tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: "Jonas" }),
     }));
-    expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "server-only-token" }));
+    expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({
+      accessToken: "server-only-token",
+      customer: { email: "customer@example.test", name: "Jonas" },
+    }));
     expect(mocks.Ship24ReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({ requestImpl: expect.any(Function) }));
     expect(client.from.mock.calls.map(([table]) => table)).toEqual([
       "greenfield_playground_sessions",

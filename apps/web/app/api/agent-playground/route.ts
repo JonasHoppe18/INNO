@@ -16,6 +16,7 @@ import {
   isOwnedPlaygroundSession,
   normalizePlaygroundContext,
   normalizePlaygroundCustomerEmail,
+  normalizePlaygroundCustomerName,
   normalizePlaygroundMessage,
   publicPlaygroundMessage,
   publicPlaygroundSession,
@@ -163,7 +164,7 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
 
   const { data: thread, error: threadError } = await serviceClient
     .from("mail_threads")
-    .select("id, subject, mailbox_id, customer_email")
+    .select("id, subject, mailbox_id, customer_email, customer_name")
     .eq("id", threadId)
     .maybeSingle();
   if (threadError) throw new Error(threadError.message);
@@ -180,7 +181,7 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
 
   const { data: rows, error: messagesError } = await serviceClient
     .from("mail_messages")
-    .select("from_me, clean_body_text, body_text, snippet, created_at")
+    .select("from_me, clean_body_text, body_text, snippet, from_name, extracted_customer_name, from_email, extracted_customer_email, created_at")
     .eq("thread_id", threadId)
     .order("created_at", { ascending: true })
     .limit(50);
@@ -197,10 +198,15 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
     .filter((message: any) => message.content.length > 0);
 
   let customerEmail = String(thread.customer_email || "").trim().toLowerCase() || null;
+  let customerFirstName = normalizePlaygroundCustomerName(thread.customer_name);
+  if (!customerFirstName) {
+    const latestInboundRow = [...(rows || [])].reverse().find((row: any) => row.from_me === false);
+    customerFirstName = normalizePlaygroundCustomerName(latestInboundRow?.extracted_customer_name || latestInboundRow?.from_name);
+  }
   if (!customerEmail) {
     const { data: latestInbound, error: inboundError } = await serviceClient
       .from("mail_messages")
-      .select("from_email, extracted_customer_email")
+      .select("from_email, extracted_customer_email, from_name, extracted_customer_name")
       .eq("thread_id", threadId)
       .eq("from_me", false)
       .order("created_at", { ascending: false })
@@ -208,12 +214,14 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
       .maybeSingle();
     if (inboundError) throw new Error(inboundError.message);
     customerEmail = String(latestInbound?.extracted_customer_email || latestInbound?.from_email || "").trim().toLowerCase() || null;
+    if (!customerFirstName) customerFirstName = normalizePlaygroundCustomerName(latestInbound?.extracted_customer_name || latestInbound?.from_name);
   }
 
   return {
     threadId,
     subject: String(thread.subject || "").trim() || "Imported ticket",
     customerEmail,
+    customerFirstName,
     messages,
   };
 }
@@ -283,6 +291,12 @@ export async function POST(request: Request) {
           owner_clerk_user_id: authState.userId,
           customer_email: customer.value,
           title: ticket.subject.slice(0, 72),
+          conversation_context_json: {
+            turn: 0,
+            activeOrder: null,
+            customerSignal: null,
+            customerFirstName: ticket.customerFirstName,
+          },
         })
         .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
         .single();
@@ -325,13 +339,14 @@ export async function POST(request: Request) {
     if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const messages = await loadMessages(serviceClient, scope, authState.userId, session.id);
     const { shop, credentials } = await requireShopAndCredentials(serviceClient, scope);
+    const customerFirstName = normalizePlaygroundCustomerName(session.conversation_context_json?.customerFirstName);
     const contextBefore = normalizePlaygroundContext(session.conversation_context_json);
     const history = historyFromPlaygroundRows(messages);
     const tenant = {
       workspaceId: scope.workspaceId,
       shopId: shop.id,
       customerEmail: session.customer_email,
-      customerName: null,
+      customerName: customerFirstName,
     };
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
@@ -344,12 +359,15 @@ export async function POST(request: Request) {
         commerce: new ShopifyReadOnlyProvider({
           shopDomain: credentials.shop_domain,
           accessToken: credentials.access_token,
-          customer: { email: session.customer_email, name: null },
+          customer: { email: session.customer_email, name: customerFirstName },
         }),
         tracking: createGreenfieldTrackingProvider(),
       },
     });
     const contextAfter = normalizePlaygroundContext(result.conversationContext);
+    const contextToPersist = contextAfter
+      ? { ...contextAfter, customerFirstName }
+      : contextAfter;
     const trace = sanitizeGreenfieldTrace(result.trace, { contextBefore, contextAfter });
     const nextTitle = session.title === "New conversation" ? messageInput.value.slice(0, 72) : session.title;
     const userMessage = {
@@ -376,7 +394,7 @@ export async function POST(request: Request) {
     if (messageError) throw new Error(messageError.message);
     const { data: updatedSession, error: updateError } = await serviceClient
       .from(SESSIONS_TABLE)
-      .update({ conversation_context_json: contextAfter, title: nextTitle })
+      .update({ conversation_context_json: contextToPersist, title: nextTitle })
       .eq("id", session.id)
       .eq("workspace_id", scope.workspaceId)
       .eq("owner_clerk_user_id", authState.userId)

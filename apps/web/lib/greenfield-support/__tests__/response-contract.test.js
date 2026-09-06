@@ -46,6 +46,28 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe("Glad to hear that’s sorted.");
   });
 
+  it("uses a trusted first-name greeting only on the first substantive response", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "ignored",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerName: "Jonas Hoppe",
+      firstResponse: true,
+    })).toMatch(/^Hi Jonas!\n\n/);
+    expect(renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerName: "Jonas Hoppe",
+      firstResponse: false,
+    })).not.toContain("Hi Jonas!");
+  });
+
   it("keeps acknowledgement structurally unable to carry claims or promises", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -302,11 +324,11 @@ describe("structured response contract", () => {
     });
 
     expect(title.allValid).toBe(true);
-    expect(renderResponseSegments(title.approvedSegments, registry)).toBe("Product: Aurora Headset.");
+    expect(renderResponseSegments(title.approvedSegments, registry)).toBe("The product is Aurora Headset.");
     expect(orderItem.allValid).toBe(false);
     expect(orderItem.issues[0].code).toBe("fact_field_kind_mismatch");
     expect(sku.allValid).toBe(true);
-    expect(renderResponseSegments(sku.approvedSegments, registry)).toBe("Product SKU: AUR-BLK.");
+    expect(renderResponseSegments(sku.approvedSegments, registry)).toBe("The product SKU is AUR-BLK.");
   });
 
   it("fails closed for inventory, unknown, and null product fields", async () => {
@@ -570,7 +592,7 @@ describe("structured response contract", () => {
 
     expect(result.allValid).toBe(true);
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
-      "I found order #10231. You ordered 1 × Orion Wireless. The order is paid and has shipped.",
+      "I’ve checked order #10231, and it is paid, has shipped, and includes 1 × Orion Wireless.",
     );
   });
 
@@ -594,7 +616,7 @@ describe("structured response contract", () => {
 
     expect(renderResponseSegments(fulfilled.approvedSegments, registry)).toContain("has shipped");
     expect(renderResponseSegments(fulfilled.approvedSegments, registry)).not.toContain("delivered");
-    expect(renderResponseSegments(delivered.approvedSegments, deliveredRegistry)).toContain("was delivered");
+    expect(renderResponseSegments(delivered.approvedSegments, deliveredRegistry)).toContain("has been delivered");
     expect(deliveredOrder.status).toBe("ok");
   });
 
@@ -609,7 +631,7 @@ describe("structured response contract", () => {
 
     expect(result.allValid).toBe(true);
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
-      "Your ParcelCo shipment has tracking number PC10231.",
+      "Your package is being handled by ParcelCo. Track your package here: https://tracking.example.test/PC10231",
     );
     expect(renderResponseSegments(result.approvedSegments, registry)).not.toMatch(/^(Carrier|Tracking number):/m);
   });

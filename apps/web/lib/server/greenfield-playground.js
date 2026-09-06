@@ -26,6 +26,11 @@ export function normalizePlaygroundCustomerEmail(value) {
   return { value: email, error: null };
 }
 
+export function normalizePlaygroundCustomerName(value) {
+  const firstName = String(value ?? "").trim().replace(/\s+/g, " ").split(" ")[0] ?? "";
+  return /^[\p{L}][\p{L}'’-]{0,39}$/u.test(firstName) ? firstName : null;
+}
+
 export function isOwnedPlaygroundSession(session, { workspaceId, clerkUserId } = {}) {
   return Boolean(
     session &&

@@ -233,7 +233,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
 
     const validation = validateStructuredResponse(result?.finalOutput, registry);
     const response = validation.approvedSegments.length
-      ? renderResponseSegments(validation.approvedSegments, { ...registry, locale: inferResponseLocale(options.message) })
+      ? renderResponseSegments(validation.approvedSegments, {
+          ...registry,
+          locale: inferResponseLocale(options.message),
+          customerName: options.tenant.customerName,
+          firstResponse: !(options.history?.length) && !(conversationContext?.turn),
+        })
       : fallbackResponse();
     pushEvent(trace, "final_response", {
       response,

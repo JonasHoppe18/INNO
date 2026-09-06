@@ -141,7 +141,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
         const rawText = String(response.text ?? "").trim();
         const validation = validateStructuredResponse(rawText, registry);
         const finalResponse = validation.approvedSegments.length
-          ? renderResponseSegments(validation.approvedSegments, { ...registry, locale: inferResponseLocale(options.message) })
+          ? renderResponseSegments(validation.approvedSegments, {
+              ...registry,
+              locale: inferResponseLocale(options.message),
+              customerName: options.tenant.customerName,
+              firstResponse: !(options.history?.length) && !(conversationContext?.turn),
+            })
           : fallbackResponse();
         pushEvent(trace, "final_response", {
           response: finalResponse,

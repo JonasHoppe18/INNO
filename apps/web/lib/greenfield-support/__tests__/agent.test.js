@@ -89,7 +89,8 @@ describe("greenfield model/tool loop", () => {
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("in transit");
+    expect(result.response).toContain("on the way");
+    expect(result.response).toContain("Track your package here: https://tracking.example.test/PC10231");
     const calls = result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name);
     expect(calls).toEqual(["get_order", "get_tracking"]);
     expect(JSON.stringify(result.trace.events)).toContain("PC10231");

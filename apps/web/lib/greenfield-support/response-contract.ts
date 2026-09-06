@@ -106,6 +106,10 @@ export interface ResponseValidationContext {
   definitions: StrictToolDefinition[];
   /** The locale inferred from the current customer request, if it is clear. */
   locale?: ResponseLocale;
+  /** Trusted server-side customer identity used only for first-response personalization. */
+  customerName?: string | null;
+  /** True only when this is the first substantive response in the conversation. */
+  firstResponse?: boolean;
 }
 
 export type ResponseLocale = "da" | "en";
@@ -556,6 +560,18 @@ function localeFor(context: ResponseValidationContext): ResponseLocale {
   return context.locale ?? "en";
 }
 
+function safeCustomerFirstName(value: unknown): string | null {
+  const firstName = String(value ?? "").trim().replace(/\s+/g, " ").split(" ")[0] ?? "";
+  return /^[\p{L}][\p{L}'’-]{0,39}$/u.test(firstName) ? firstName : null;
+}
+
+function greetingFor(context: ResponseValidationContext): string | null {
+  if (!context.firstResponse) return null;
+  const firstName = safeCustomerFirstName(context.customerName);
+  if (!firstName) return null;
+  return localeFor(context) === "da" ? `Hej ${firstName}!` : `Hi ${firstName}!`;
+}
+
 function firstSentence(value: string) {
   return value.split(".", 1)[0].trim();
 }
@@ -739,24 +755,34 @@ function renderOrderFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], c
   const financial = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));
   const fulfillment = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]));
   const items = orderItems(facts.filter((fact) => fact.fact_kind === "order_item"), context);
-  const paragraphs: string[] = [];
-  if (reference) paragraphs.push(locale === "da" ? `Jeg har fundet ordre #${reference.replace(/^#/, "")}.` : `I found order #${reference.replace(/^#/, "")}.`);
-  if (items.length) paragraphs.push(locale === "da" ? `Du har bestilt ${joinList(items, locale)}.` : `You ordered ${joinList(items, locale)}.`);
-  const states = [
+  const details = [
     financial ? orderStateClause("financial", financial, locale) : null,
     fulfillment ? orderStateClause("fulfillment", fulfillment, locale) : null,
+    items.length ? (locale === "da" ? `indeholder ${joinList(items, locale)}` : `includes ${joinList(items, locale)}`) : null,
   ].filter((value): value is string => Boolean(value));
-  if (states.length) paragraphs.push(locale === "da" ? `Ordren ${joinList(states, locale)}.` : `The order ${joinList(states, locale)}.`);
-  return paragraphs.join(" ");
+  if (reference && details.length) {
+    return locale === "da"
+      ? `Jeg har tjekket ordre #${reference.replace(/^#/, "")}, og den ${joinList(details, locale)}.`
+      : `I’ve checked order #${reference.replace(/^#/, "")}, and it ${joinList(details, locale)}.`;
+  }
+  if (reference) {
+    return locale === "da"
+      ? `Jeg har tjekket ordre #${reference.replace(/^#/, "")}.`
+      : `I’ve checked order #${reference.replace(/^#/, "")}.`;
+  }
+  if (details.length) {
+    return locale === "da" ? `Din ordre ${joinList(details, locale)}.` : `Your order ${joinList(details, locale)}.`;
+  }
+  return "";
 }
 
 function shipmentStatusClause(value: string, locale: ResponseLocale) {
   const key = value.trim().toLowerCase().replace(/[-\s]+/g, "_");
-  if (key === "delivered") return locale === "da" ? "er leveret" : "was delivered";
-  if (key === "in_transit" || key === "transit") return locale === "da" ? "er undervejs" : "is in transit";
-  if (key === "out_for_delivery") return locale === "da" ? "er på vej til levering" : "is out for delivery";
-  if (key === "pending" || key === "pre_transit") return locale === "da" ? "afventer afsendelse" : "is awaiting shipment";
-  return locale === "da" ? `har status ${value}` : `has status ${value}`;
+  if (key === "delivered") return "delivered";
+  if (key === "in_transit" || key === "transit") return "in_transit";
+  if (key === "out_for_delivery") return "out_for_delivery";
+  if (key === "pending" || key === "pre_transit") return "pending";
+  return null;
 }
 
 function formatTimestamp(value: string, locale: ResponseLocale) {
@@ -770,6 +796,52 @@ function formatTimestamp(value: string, locale: ResponseLocale) {
   }
 }
 
+function formatEta(value: string, locale: ResponseLocale) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    const language = locale === "da" ? "da-DK" : "en-GB";
+    const hasTime = /T\d{2}:\d{2}/.test(value) && !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(value);
+    return new Intl.DateTimeFormat(language, hasTime
+      ? { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }
+      : { dateStyle: "medium", timeZone: "UTC" }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function safeTrackingUrl(value: unknown): string | null {
+  const candidate = String(value ?? "").trim();
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function verifiedTrackingUrl(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  for (const fact of facts) {
+    for (const basis of fact.evidence) {
+      const evidence = resultFor(basis, context);
+      if (!evidence || !["get_tracking", "get_order", "inspect_fulfillment"].includes(evidence.toolName) || evidence.result.status !== "ok") continue;
+      for (const path of [
+        "tracking_identifier.tracking_url",
+        "tracking_identifier.trackingUrl",
+        "fulfillments[0].trackingUrl",
+        "fulfillments[0].tracking_url",
+        "tracking_url",
+      ]) {
+        const field = dataFieldValue(evidence.result, path);
+        const url = safeTrackingUrl(field.value);
+        if (field.exists && url) return url;
+      }
+    }
+  }
+  return null;
+}
+
 function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
   const locale = localeFor(context);
   const carrier = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["carrier"]));
@@ -779,29 +851,34 @@ function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[]
   const timestamp = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp"));
   const location = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.location"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location"));
   const eta = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]));
+  const trackingUrl = verifiedTrackingUrl(facts, context);
   const paragraphs: string[] = [];
   const statusClause = status ? shipmentStatusClause(status, locale) : null;
-  if (carrier && tracking) {
+  if (statusClause === "delivered") {
     paragraphs.push(locale === "da"
-      ? statusClause
-        ? `Din forsendelse med ${carrier} (trackingnummer ${tracking}) ${statusClause}.`
-        : `Din forsendelse med ${carrier} har trackingnummeret ${tracking}.`
-      : statusClause
-        ? `Your ${carrier} shipment (tracking number ${tracking}) ${statusClause}.`
-        : `Your ${carrier} shipment has tracking number ${tracking}.`);
+      ? carrier ? `${carrier} viser, at pakken er leveret.` : "Pakken er leveret."
+      : carrier ? `${carrier} shows that your package has been delivered.` : "Your package has been delivered.");
+  } else if (statusClause === "out_for_delivery") {
+    paragraphs.push(locale === "da"
+      ? `Godt nyt — pakken er på vej til levering i dag${carrier ? ` med ${carrier}` : ""}.`
+      : `Great news — your package is out for delivery today${carrier ? ` with ${carrier}` : ""}.`);
+  } else if (statusClause === "in_transit") {
+    paragraphs.push(locale === "da"
+      ? carrier ? `${carrier} viser, at pakken er på vej.` : "Pakken er på vej."
+      : carrier ? `${carrier} shows that your package is on the way.` : "Your package is currently on the way.");
+  } else if (statusClause === "pending") {
+    paragraphs.push(locale === "da" ? "Pakken afventer afsendelse." : "Your package is awaiting shipment.");
   } else if (carrier) {
-    paragraphs.push(locale === "da" ? `Din pakke sendes med ${carrier}.` : `Your package is being handled by ${carrier}.`);
-  } else if (tracking) {
-    paragraphs.push(locale === "da" ? `Trackingnummeret er ${tracking}.` : `The tracking number is ${tracking}.`);
-  } else if (statusClause) {
-    paragraphs.push(locale === "da" ? `Pakken ${statusClause}.` : `The package ${statusClause}.`);
+    paragraphs.push(locale === "da" ? `Pakken sendes med ${carrier}.` : `Your package is being handled by ${carrier}.`);
+  } else if (tracking && !trackingUrl) {
+    paragraphs.push(locale === "da" ? `Trackingnummeret er ${tracking}.` : `Your tracking number is ${tracking}.`);
   }
 
   const normalizedEvent = event?.toLowerCase().replace(/[.!?]+$/g, "");
   const normalizedStatus = status?.toLowerCase().replace(/[_\s-]+/g, " ");
   const duplicateEvent = Boolean(normalizedEvent && normalizedStatus && normalizedEvent.includes(normalizedStatus));
   if (event && !duplicateEvent && !(carrier && tracking && !status)) {
-    paragraphs.push(locale === "da" ? `Den seneste opdatering siger: ${sentence(event)}` : `The latest update says: ${sentence(event)}`);
+    paragraphs.push(locale === "da" ? `Den seneste opdatering er: ${sentence(event)}` : `The latest update is: ${sentence(event)}`);
   }
   if (timestamp || location) {
     const details = [
@@ -809,10 +886,16 @@ function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[]
       location ? (locale === "da" ? `i ${location}` : `in ${location}`) : null,
     ].filter((value): value is string => Boolean(value));
     paragraphs.push(locale === "da"
-      ? `Den seneste opdatering blev registreret ${details.join(" ")}.`
-      : `The latest update was recorded ${details.join(" ")}.`);
+      ? `Den seneste scanning var ${details.join(" ")}.`
+      : `The latest scan was ${details.join(" ")}.`);
   }
-  if (eta) paragraphs.push(locale === "da" ? `Den forventede levering er ${eta}.` : `Estimated delivery is ${eta}.`);
+  if (eta) paragraphs.push(locale === "da" ? `Pakken forventes leveret ${formatEta(eta, locale)}.` : `It’s expected to arrive by ${formatEta(eta, locale)}.`);
+  if (trackingUrl) paragraphs.push(locale === "da" ? `Du kan følge pakken her: ${trackingUrl}` : `Track your package here: ${trackingUrl}`);
+  if (statusClause === "delivered") {
+    paragraphs.push(locale === "da"
+      ? "Hvis pakken ikke er kommet, selvom tracking viser, at den er leveret, så sig endelig til, så hjælper jeg med næste skridt."
+      : "If you haven’t received it even though tracking shows delivered, let me know and I’ll help with the next step.");
+  }
   return paragraphs.join(" ");
 }
 
@@ -822,17 +905,17 @@ function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, c
     case "product_value": {
       const item = values.find((candidate) => safeLiveProductFieldPath(candidate.path));
       if (!item) return "";
-      const label = /\.variants\[\d+\]\.title$/i.test(item.path)
-        ? localeFor(context) === "da" ? "Produktvariant"
-          : "Product variant"
+      const locale = localeFor(context);
+      const phrase = /\.variants\[\d+\]\.title$/i.test(item.path)
+        ? locale === "da" ? "Varianten er" : "The variant is"
         : /\.variants\[\d+\]\.sku$/i.test(item.path)
-          ? localeFor(context) === "da" ? "Produktets SKU"
-            : "Product SKU"
+          ? locale === "da" ? "Produktets SKU er" : "The product SKU is"
           : /\.title$/i.test(item.path)
-            ? localeFor(context) === "da" ? "Produkt"
-              : "Product"
-            : localeFor(context) === "da" ? "Produktværdi" : "Product value";
-      return `${label}: ${String(item.value)}.`;
+            ? locale === "da" ? "Produktet er" : "The product is"
+            : /\.price$/i.test(item.path)
+              ? locale === "da" ? "Prisen er" : "The price is"
+              : locale === "da" ? "Produktinformationen er" : "The product information is";
+      return `${phrase} ${String(item.value)}.`;
     }
     case "product_availability": {
       const item = values.find((candidate) => safeLiveProductAvailabilityFieldPath(candidate.path));
@@ -968,5 +1051,8 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "limitation") rendered.push(renderLimitation(segment, context));
     else rendered.push(renderTextSegment(segment.text));
   });
-  return rendered.filter(Boolean).join("\n\n");
+  const response = rendered.filter(Boolean).join("\n\n");
+  const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
+  const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
+  return greeting && response ? `${greeting}\n\n${response}` : response;
 }
