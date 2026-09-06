@@ -1,6 +1,7 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
 import { fallbackResponse } from "./agent";
+import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
@@ -8,6 +9,7 @@ import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, 
 import { modelConversationContext, nextConversationContext } from "./conversation-context";
 import type {
   AgentRunResult,
+  ActionExecutor,
   AgentTrace,
   ConversationContext,
   JsonValue,
@@ -35,6 +37,7 @@ export interface GreenfieldAgentsSdkOptions {
   maxTurns?: number;
   now?: () => string;
   model?: string | Model;
+  actionExecutor?: ActionExecutor;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -221,28 +224,43 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     if (Array.isArray(result?.interruptions) && result.interruptions.length) {
       pushEvent(trace, "error", { code: "approval_required", message: "The SDK paused for tool approval; no action was executed." }, now());
       const response = "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.";
-      pushEvent(trace, "final_response", { response, proposed_actions: proposedActions }, now());
+      pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [] }, now());
       trace.finishedAt = now();
       return {
         response,
         proposedActions,
+        actionExecutions: [],
         trace,
         conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
       };
     }
 
-    const validation = validateStructuredResponse(result?.finalOutput, registry);
+    const validation = validateStructuredResponse(result?.finalOutput, { ...registry, proposedActions });
+    const actionExecutions = await executeActionProposals({
+      executor: options.actionExecutor,
+      proposals: proposedActions,
+      approvedSegments: validation.approvedSegments,
+      context: {
+        tenant: options.tenant,
+        manifest: registry.manifest,
+        activeOrder: registry.getActiveOrderFocus(),
+        verifiedWorkspaceId: options.tenant.workspaceId,
+      },
+    });
+    for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
     const response = validation.approvedSegments.length
       ? renderResponseSegments(validation.approvedSegments, {
           ...registry,
           locale: inferResponseLocale(options.message),
           customerName: options.tenant.customerName,
           firstResponse: !(options.history?.length) && !(conversationContext?.turn),
+          proposedActions,
         })
       : fallbackResponse();
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
+      action_executions: actionExecutions,
       structured_response: validation.parsed,
       validation: summarizeResponseValidation(validation),
     }, now());
@@ -250,6 +268,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     return {
       response,
       proposedActions,
+      actionExecutions,
       trace,
       conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
     };
@@ -258,11 +277,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   }
 
   const response = fallbackResponse();
-  pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, fallback: true }, now());
+  pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {
     response,
     proposedActions,
+    actionExecutions: [],
     trace,
     conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
   };

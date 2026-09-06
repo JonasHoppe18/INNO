@@ -246,6 +246,28 @@ function traceEventSummary(event) {
       item_types: Array.isArray(data.item_types) ? data.item_types.slice(0, 12).map((item) => text(item, 80)) : [],
     };
   }
+  if (event?.type === "action_execution") {
+    const checks = Array.isArray(data.validation_checks) ? data.validation_checks : [];
+    return {
+      at: event.at,
+      type: event.type,
+      mode: "dry_run",
+      action: text(data.action, 80),
+      target: { order_id: text(data.target?.order_id, 80) || null },
+      arguments: safeToolArguments(data.arguments),
+      proposal_status: "proposed",
+      validation_status: data.validation_status === "validated" ? "validated" : "blocked",
+      execution_status: data.execution_status === "dry_run_success" ? "dry_run_success" : "blocked",
+      would_execute: data.would_execute === true,
+      executed: false,
+      validation_checks: checks.slice(0, 12).map((item) => ({
+        name: text(item?.name, 80),
+        status: item?.status === "passed" ? "passed" : "failed",
+        detail: redactedText(item?.detail),
+      })),
+      reason: redactedText(data.reason),
+    };
+  }
   if (event?.type === "final_response") {
     const validation = isRecord(data.validation) ? data.validation : null;
     return {
@@ -289,6 +311,9 @@ export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAf
     }))
     .filter((item) => item.tool);
   const after = safeContext(contextAfter);
+  const simulatedActions = events
+    .filter((event) => event.type === "action_execution")
+    .slice(0, 8);
   const availabilityState = resultEvents
     .flatMap((event) => event.result?.data?.products || [])
     .flatMap((product) => product.variants || [])
@@ -318,6 +343,7 @@ export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAf
           .map((event) => ({ action: text(event.data.result.proposedAction.action, 80), status: "proposed", executed: false }))
           .slice(0, 8)
       : [],
+    simulated_actions: simulatedActions,
   };
 }
 

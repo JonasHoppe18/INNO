@@ -114,6 +114,7 @@ describe("greenfield capabilities", () => {
   it("returns proposal-only results for sensitive actions", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10232" }));
     const result = await registry.execute("cancel_order", JSON.stringify({ order_id: "10232", reason: "Customer changed their mind" }));
     expect(result.status).toBe("proposed");
     expect(result.proposedAction).toMatchObject({ action: "cancel_order", requiresConfirmation: true, status: "proposed" });

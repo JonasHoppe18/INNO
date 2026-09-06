@@ -1,6 +1,8 @@
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
+import { executeActionProposals } from "./action-executor";
 import type {
   AgentRunResult,
+  ActionExecutor,
   AgentTrace,
   ConversationContext,
   GreenfieldModel,
@@ -30,6 +32,7 @@ export interface GreenfieldAgentOptions {
   capabilities: Parameters<typeof createCapabilityRegistry>[0];
   maxTurns?: number;
   now?: () => string;
+  actionExecutor?: ActionExecutor;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -139,18 +142,32 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
 
       if (response.type === "text") {
         const rawText = String(response.text ?? "").trim();
-        const validation = validateStructuredResponse(rawText, registry);
+        const validation = validateStructuredResponse(rawText, { ...registry, proposedActions });
+        const actionExecutions = await executeActionProposals({
+          executor: options.actionExecutor,
+          proposals: proposedActions,
+          approvedSegments: validation.approvedSegments,
+          context: {
+            tenant: options.tenant,
+            manifest: registry.manifest,
+            activeOrder: registry.getActiveOrderFocus(),
+            verifiedWorkspaceId: options.tenant.workspaceId,
+          },
+        });
+        for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
         const finalResponse = validation.approvedSegments.length
           ? renderResponseSegments(validation.approvedSegments, {
               ...registry,
               locale: inferResponseLocale(options.message),
               customerName: options.tenant.customerName,
               firstResponse: !(options.history?.length) && !(conversationContext?.turn),
+              proposedActions,
             })
           : fallbackResponse();
         pushEvent(trace, "final_response", {
           response: finalResponse,
           proposed_actions: proposedActions,
+          action_executions: actionExecutions,
           structured_response: validation.parsed,
           validation: summarizeResponseValidation(validation),
         }, now());
@@ -158,6 +175,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
         return {
           response: finalResponse,
           proposedActions,
+          actionExecutions,
           trace,
           conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
         };
@@ -182,11 +200,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
   }
 
   const response = fallbackResponse();
-  pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, fallback: true }, now());
+  pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {
     response,
     proposedActions,
+    actionExecutions: [],
     trace,
     conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
   };

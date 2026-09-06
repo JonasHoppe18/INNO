@@ -1,4 +1,5 @@
 import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contracts";
+import { validateActionProposal } from "./action-executor";
 import type {
   CapabilityManifest,
   CommerceReadProvider,
@@ -222,6 +223,37 @@ function proposedAction(name: ProposedAction["action"], args: JsonObject, reason
   };
 }
 
+function validatedProposedAction(
+  name: ProposedAction["action"],
+  args: JsonObject,
+  reason: string,
+  context: CapabilityContext,
+  manifest: CapabilityManifest,
+  orderFocus: RequestOrderFocus | null,
+): ToolExecutionResult {
+  const proposal = {
+    action: name,
+    arguments: args,
+    reason,
+    requiresConfirmation: true as const,
+    status: "proposed" as const,
+  } satisfies ProposedAction;
+  const validation = validateActionProposal(proposal, {
+    tenant: context.tenant,
+    manifest,
+    activeOrder: orderFocus,
+    verifiedWorkspaceId: context.tenant.workspaceId,
+  });
+  if (!validation.valid) {
+    return {
+      status: "invalid_request",
+      data: jsonValue({ action_validation: validation }),
+      error: { code: "action_not_validated", message: validation.reason },
+    };
+  }
+  return proposedAction(name, args, reason);
+}
+
 function buildCapabilityManifest(context: CapabilityContext): CapabilityManifest {
   return {
     readTools: GREENFIELD_TOOL_DEFINITIONS
@@ -427,15 +459,15 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return { status: "ok", data: jsonValue({ ...verified, live_tracking: liveResult.data }) };
           }
           case "cancel_order":
-            return proposedAction("cancel_order", args, stringArg(args, "reason"));
+            return validatedProposedAction("cancel_order", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "update_address":
-            return proposedAction("update_address", args, stringArg(args, "reason"));
+            return validatedProposedAction("update_address", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "create_return":
-            return proposedAction("create_return", args, stringArg(args, "reason"));
+            return validatedProposedAction("create_return", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "create_refund":
-            return proposedAction("create_refund", args, stringArg(args, "reason"));
+            return validatedProposedAction("create_refund", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "send_replacement":
-            return proposedAction("send_replacement", args, stringArg(args, "reason"));
+            return validatedProposedAction("send_replacement", args, stringArg(args, "reason"), context, manifest, orderFocus);
           default:
             return { status: "invalid_arguments", error: { code: "unknown_tool", message: `Unknown capability: ${toolName}` } };
           }

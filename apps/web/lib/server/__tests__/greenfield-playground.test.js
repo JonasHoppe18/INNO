@@ -95,7 +95,39 @@ describe("greenfield playground boundary", () => {
     expect(sanitized.tools).toEqual([{ name: "update_address", sensitivity: "proposed_action" }]);
   });
 
-  it("J: preserves explicit order correction extraction used by the one-agent runtime", async () => {
+  it("J: exposes dry-run action details without exposing execution or credentials", () => {
+    const sanitized = sanitizeGreenfieldTrace({
+      traceId: "trace-action",
+      tools: [{ name: "cancel_order", sensitivity: "proposed_action" }],
+      events: [{
+        type: "action_execution",
+        at: "now",
+        data: {
+          action: "cancel_order",
+          target: { order_id: "1055" },
+          arguments: { order_id: "1055", reason: "Customer request", access_token: "secret-token" },
+          validation_status: "validated",
+          execution_status: "dry_run_success",
+          would_execute: true,
+          executed: false,
+          validation_checks: [{ name: "verified_order", status: "passed", detail: "The order is verified." }],
+          reason: "Playground simulation only.",
+        },
+      }],
+    });
+
+    expect(sanitized.simulated_actions).toHaveLength(1);
+    expect(sanitized.simulated_actions[0]).toMatchObject({
+      mode: "dry_run",
+      action: "cancel_order",
+      execution_status: "dry_run_success",
+      would_execute: true,
+      executed: false,
+    });
+    expect(JSON.stringify(sanitized)).not.toContain("secret-token");
+  });
+
+  it("K: preserves explicit order correction extraction used by the one-agent runtime", async () => {
     const { extractOrderReferences } = await import("../../greenfield-support/capabilities.ts");
     expect(extractOrderReferences("Sorry, I meant order 1055.")).toEqual(["1055"]);
   });

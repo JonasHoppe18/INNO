@@ -236,6 +236,104 @@ describe("structured response contract", () => {
     expect(result.issues[0].code).toBe("unknown_action_capability");
   });
 
+  it("requires an action offer to be backed by a proposal tool result", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{ type: "action_offer", capability: "cancel_order", mode: "proposal", missing_arguments: [] }],
+    }, { ...registry, proposedActions: [] });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("action_not_proposed");
+  });
+
+  it("rejects unsupported operational commitments in free-form segments", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "shipping" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "I can get the team to put the order on hold while you are away.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
+  it("rejects free-form proposal language when no action offer exists", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "shipping" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "I can prepare a proposal for cancellation.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
+  it("does not let a free-form question smuggle an unsupported action offer", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry, {
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Do you want us to cancel the order instead?",
+      capability: null,
+      missing_arguments: [],
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
+  it("rejects operational alternatives hidden inside a clarification question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry, {
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Do you mean delay the unshipped items, or cancel them and reorder on Friday?",
+      capability: null,
+      missing_arguments: [],
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
+  it("rejects preference questions that smuggle unsupported operational alternatives", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validate(registry, {
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Which option do you prefer: cancel and re-order on Friday, or keep it as-is?",
+      capability: null,
+      missing_arguments: [],
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
+  it("rejects a future proposal promise separated from its setup by supporting context", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "shipping" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "I cannot verify the carrier from here. Could you share the new address so I can prepare a proposal for an address update?",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(false);
+    expect(result.issues[0].code).toBe("unsupported_operational_commitment");
+  });
+
   it("allows authoritative knowledge guidance but does not turn it into execution", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

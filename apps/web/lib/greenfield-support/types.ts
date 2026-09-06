@@ -243,6 +243,41 @@ export interface ProposedAction {
   status: "proposed";
 }
 
+export type ActionValidationStatus = "validated" | "blocked";
+export type ActionExecutionStatus = "dry_run_success" | "blocked" | "executed";
+
+export interface ActionValidationCheck {
+  name: string;
+  status: "passed" | "failed";
+  detail: string;
+}
+
+export interface ActionExecutionResult {
+  mode: "dry_run";
+  action: SensitiveAction;
+  target: { order_id: string | null };
+  arguments: JsonObject;
+  proposal_status: "proposed";
+  validation_status: ActionValidationStatus;
+  execution_status: ActionExecutionStatus;
+  would_execute: boolean;
+  executed: false;
+  validation_checks: ActionValidationCheck[];
+  reason: string;
+}
+
+export interface ActionExecutorContext {
+  tenant: TenantContext;
+  manifest: CapabilityManifest;
+  activeOrder: ConversationContext["activeOrder"];
+  /** Server-owned scope binding; never supplied by the model or client. */
+  verifiedWorkspaceId: string;
+}
+
+export interface ActionExecutor {
+  execute(proposal: ProposedAction, context: ActionExecutorContext): Promise<ActionExecutionResult>;
+}
+
 export interface ToolCall {
   callId: string;
   name: string;
@@ -281,6 +316,7 @@ export type TraceEventType =
   | "model_response"
   | "tool_call"
   | "tool_result"
+  | "action_execution"
   | "final_response"
   | "error";
 
@@ -313,6 +349,7 @@ export interface ToolExecutionResult {
 export interface AgentRunResult {
   response: string;
   proposedActions: ProposedAction[];
+  actionExecutions?: ActionExecutionResult[];
   trace: AgentTrace;
   conversationContext: ConversationContext;
 }

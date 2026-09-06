@@ -149,6 +149,7 @@ describe("greenfield model/tool loop", () => {
       ...dependencies,
       message: "Please cancel order #10232.",
       model: scriptedModel([
+        toolCall("get_order", { order_id: "10232" }),
         toolCall("cancel_order", { order_id: "10232", reason: "Customer request" }),
         structured({
           type: "action_offer",

@@ -4,6 +4,7 @@ export * from "./knowledge";
 export * from "./providers";
 export * from "./tool-contracts";
 export * from "./capabilities";
+export * from "./action-executor";
 export * from "./agent";
 export * from "./conversation-context";
 export * from "./agents-sdk";

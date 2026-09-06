@@ -5,6 +5,7 @@ import { listScopedShops, resolveAuthScope, resolveScopedShop } from "@/lib/serv
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 import {
   runGreenfieldAgentWithAgentsSdk,
+  PlaygroundDryRunExecutor,
   Ship24ReadOnlyProvider,
   ShopifyReadOnlyProvider,
   SupabaseKnowledgeStore,
@@ -363,6 +364,7 @@ export async function POST(request: Request) {
         }),
         tracking: createGreenfieldTrackingProvider(),
       },
+      actionExecutor: new PlaygroundDryRunExecutor(),
     });
     const contextAfter = normalizePlaygroundContext(result.conversationContext);
     const contextToPersist = contextAfter

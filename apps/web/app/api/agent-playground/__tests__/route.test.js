@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
+  PlaygroundDryRunExecutor: class PlaygroundDryRunExecutor {},
   ShopifyReadOnlyProvider: vi.fn(),
   Ship24ReadOnlyProvider: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock("@/lib/server/shopify-credentials", () => ({
 }));
 vi.mock("@/lib/greenfield-support", () => ({
   runGreenfieldAgentWithAgentsSdk: mocks.runGreenfieldAgentWithAgentsSdk,
+  PlaygroundDryRunExecutor: mocks.PlaygroundDryRunExecutor,
   SupabaseKnowledgeStore: class {},
   ShopifyReadOnlyProvider: mocks.ShopifyReadOnlyProvider,
   Ship24ReadOnlyProvider: mocks.Ship24ReadOnlyProvider,
@@ -209,11 +211,12 @@ describe("greenfield agent playground API", () => {
     const response = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "send", session_id: "session-a", message: "Where is my order?", access_token: "browser-must-not-win" }),
+      body: JSON.stringify({ action: "send", session_id: "session-a", message: "Where is my order?", access_token: "browser-must-not-win", mode: "live" }),
     }));
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: "Jonas" }),
+      actionExecutor: expect.any(Object),
     }));
     expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({
       accessToken: "server-only-token",

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
-import type { CapabilityManifest, JsonObject, ToolExecutionResult } from "./types";
+import type { CapabilityManifest, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
 import type { StrictToolDefinition } from "./tool-contracts";
 
 const BasisSchema = z.object({
@@ -110,6 +110,8 @@ export interface ResponseValidationContext {
   customerName?: string | null;
   /** True only when this is the first substantive response in the conversation. */
   firstResponse?: boolean;
+  /** Server-observed proposal results from the current tool loop. */
+  proposedActions?: ProposedAction[];
 }
 
 export type ResponseLocale = "da" | "en";
@@ -481,27 +483,61 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
   switch (segment.type) {
     case "fact":
       return validateFact(segment, context, index);
-    case "knowledge_guidance":
-      return validateKnowledgeBasis(segment.basis, context, index);
+    case "knowledge_guidance": {
+      const issues = validateKnowledgeBasis(segment.basis, context, index);
+      if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
+        issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+      }
+      return issues;
+    }
     case "limitation": {
       const evidence = resultFor(segment.basis, context);
       if (!evidence) return [{ index, code: "unknown_result_id", message: "The limitation references a tool result from outside this run." }];
-      return validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
+      const issues = validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
+      if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
+        issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+      }
+      return issues;
     }
     case "action_offer": {
       const definition = definitionFor(segment.capability, context);
       if (!context.manifest.proposalOnlyTools.includes(segment.capability) || definition?.sensitivity !== "proposed_action") {
         return [{ index, code: "unknown_action_capability", message: "The offered action is not a current proposal-only capability." }];
       }
-      return validateCapabilityArguments(segment.capability, segment.missing_arguments, context, index, "action");
+      const issues = validateCapabilityArguments(segment.capability, segment.missing_arguments, context, index, "action");
+      if (context.proposedActions && !context.proposedActions.some((action) => action.action === segment.capability)) {
+        issues.push({ index, code: "action_not_proposed", message: "The action must come from a validated proposal tool result in this run." });
+      }
+      return issues;
     }
-    case "question":
-      return validateQuestion(segment, context, index);
+    case "question": {
+      const issues = validateQuestion(segment, context, index);
+      if (!issues.length && segment.text && containsUnvalidatedOperationalCommitment(segment.text)) {
+        issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+      }
+      return issues;
+    }
     case "acknowledgement":
       return [];
     default:
       return [{ index, code: "unknown_segment_type", message: "The response segment type is not supported." }];
   }
+}
+
+/**
+ * Free-form knowledge and question text may explain policy, but cannot make a
+ * future operational commitment. Those commitments must be represented by an
+ * action_offer backed by a proposal-only tool result.
+ */
+function containsUnvalidatedOperationalCommitment(value: string): boolean {
+  const text = String(value ?? "").replace(/[\u2019]/g, "'");
+  if (!text.trim()) return false;
+  const subject = "(?:i|we|our team|support|vi|teamet)";
+  const future = "(?:will|can|shall|going to|kan|vil|skal|kan få)";
+  const operation = "(?:cancel\\w*|refund\\w*|chang\\w*|updat\\w*|hold\\w*|delay\\w*|replac\\w*|send\\w*|contact\\w*|investigat\\w*|look into|look further|open (?:a )?(?:carrier )?trace|carrier trace|trac\\w*|escalat\\w*|reorder\\w*|re-order\\w*|reschedul\\w*|postpon\\w*|add (?:a )?note|prepare (?:a )?proposal for|ændr\\w*|opdater\\w*|hold\\w*|forsink\\w*|erstat\\w*|send\\w*|genbestil\\w*|ombook\\w*|kontakt\\w*|undersøg\\w*|noter\\w*|få teamet)";
+  return new RegExp(`\\b${subject}\\b[\\s\\S]{0,160}\\b${future}\\b[\\s\\S]{0,120}\\b${operation}\\b`, "i").test(text)
+    || new RegExp(`\\b${future}\\b[\\s\\S]{0,12}\\b(?:jeg|vi|os|teamet)\\b[\\s\\S]{0,72}\\b${operation}\\b`, "i").test(text)
+    || new RegExp(`\\b(?:do you mean|do you want us|would you like us|shall we|should we|are you asking(?: us)?|which option do you prefer|what would you prefer|would you rather|let me know whether|vil du have os|skal vi|hvilken mulighed foretrækker du)\\b[\\s\\S]{0,96}\\b${operation}\\b`, "i").test(text);
 }
 
 export function validateStructuredResponse(input: unknown, context: ResponseValidationContext): ResponseValidationResult {

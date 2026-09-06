@@ -42,11 +42,19 @@ function TypingDots() {
   );
 }
 
+function actionLabel(value) {
+  return String(value || "Action")
+    .split("_")
+    .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+    .join(" ");
+}
+
 function TraceDetails({ trace }) {
   const [open, setOpen] = useState(false);
   if (!trace) return null;
   const toolCalls = Array.isArray(trace.events) ? trace.events.filter((event) => event.type === "tool_call") : [];
   const providerResults = Array.isArray(trace.provider_results) ? trace.provider_results : [];
+  const simulatedActions = Array.isArray(trace.simulated_actions) ? trace.simulated_actions : [];
   return (
     <div className="mt-2 rounded-lg border border-gray-100 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)] dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
       <button
@@ -73,6 +81,39 @@ function TraceDetails({ trace }) {
             <TraceMetric label="Order focus" value={trace.order_focus?.verified_order_number || trace.order_focus?.requested_order_id || "Unbound"} />
             <TraceMetric label="Provider" value={providerResults.map((item) => item.provider).filter(Boolean).join(", ") || "Not used"} />
           </div>
+          {simulatedActions.length ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">Simulated action</p>
+                <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:border-amber-800 dark:text-amber-300">DRY RUN</span>
+              </div>
+              {simulatedActions.map((action, index) => (
+                <div key={`${action.action}-${index}`} className="mt-2 space-y-2 border-t border-amber-200 pt-2 text-amber-900 dark:border-amber-900/60 dark:text-amber-200">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <TraceMetric label="Action" value={actionLabel(action.action)} />
+                    <TraceMetric label="Target" value={action.target?.order_id ? `#${action.target.order_id}` : "Not specified"} />
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <TraceMetric label="Validation" value={action.validation_status || "—"} />
+                    <TraceMetric label="Would execute" value={action.would_execute ? "Yes" : "No"} />
+                    <TraceMetric label="Executed" value="NO — PLAYGROUND SIMULATION" />
+                  </div>
+                  <div className="rounded border border-amber-200/70 bg-white/50 p-2 dark:border-amber-900/50 dark:bg-amber-950/10">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em]">Arguments</p>
+                    <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-[11px]">{JSON.stringify(action.arguments || {}, null, 2)}</pre>
+                  </div>
+                  {Array.isArray(action.validation_checks) && action.validation_checks.length ? (
+                    <div className="space-y-1 text-[11px]">
+                      {action.validation_checks.map((check) => (
+                        <p key={`${check.name}-${check.detail}`}><span className="font-medium">{check.status === "passed" ? "✓" : "×"} {check.name}:</span> {check.detail}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="text-[11px] font-medium">{action.reason}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {providerResults.length ? (
             <div className="flex flex-col gap-1">
               <p className="font-medium text-foreground">Provider results</p>
