@@ -1,0 +1,291 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  Archive,
+  BookOpen,
+  Check,
+  ChevronRight,
+  FileText,
+  Globe2,
+  Loader2,
+  Package,
+  Pencil,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  Store,
+  TestTube2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+
+const TYPE_OPTIONS = [
+  { value: "policy", label: "Policy" },
+  { value: "procedure", label: "Troubleshooting / Procedure" },
+  { value: "product", label: "Product information" },
+  { value: "brand", label: "Brand / Company" },
+];
+
+const STATUS_LABELS = {
+  draft: "Draft",
+  published: "Published",
+  unpublished: "Unpublished",
+  archived: "Archived",
+};
+
+const TYPE_ICON = {
+  policy: BookOpen,
+  procedure: Settings2,
+  product: Package,
+  brand: Sparkles,
+  other: FileText,
+};
+
+function formatDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function statusClass(status) {
+  if (status === "published") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "archived") return "border-gray-200 bg-gray-100 text-gray-500";
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function emptyForm() {
+  return { title: "", content: "", type: "policy", status: "draft", applies_to: { kind: "all", product_ids: [] } };
+}
+
+function formFromRecord(record) {
+  return {
+    title: record.title || "",
+    content: record.content || "",
+    type: TYPE_OPTIONS.some((option) => option.value === record.type) ? record.type : "policy",
+    status: ["draft", "published", "unpublished"].includes(record.status) ? record.status : "draft",
+    applies_to: record.applies_to?.kind === "products"
+      ? { kind: "products", product_ids: Array.isArray(record.applies_to.product_ids) ? record.applies_to.product_ids : [] }
+      : { kind: "all", product_ids: [] },
+  };
+}
+
+function ErrorMessage({ children }) {
+  return <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{children}</p>;
+}
+
+function SourceIcon({ source }) {
+  if (source === "Merchant") return <Store className="size-3.5" />;
+  if (source === "Website") return <Globe2 className="size-3.5" />;
+  if (source === "Shopify") return <Package className="size-3.5" />;
+  return <FileText className="size-3.5" />;
+}
+
+function ProductChooser({ products, value, onChange, disabled }) {
+  if (!products.available) {
+    return <p className="rounded-lg bg-muted/45 px-3 py-2.5 text-xs leading-5 text-muted-foreground">Specific product selection is unavailable until a Shopify store is connected. All products remains available.</p>;
+  }
+  return (
+    <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-input p-1.5">
+      {products.items.length ? products.items.map((product) => {
+        const checked = value.includes(product.id);
+        return (
+          <button
+            type="button"
+            key={product.id}
+            disabled={disabled}
+            onClick={() => onChange(checked ? value.filter((id) => id !== product.id) : [...value, product.id])}
+            className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors duration-150 hover:bg-muted/60", checked && "bg-indigo-50 text-indigo-800")}
+          >
+            <span className={cn("flex size-4 items-center justify-center rounded border", checked ? "border-indigo-500 bg-indigo-500 text-white" : "border-gray-300")}>{checked ? <Check className="size-3" /> : null}</span>
+            <span className="min-w-0 flex-1 truncate">{product.title}</span>
+          </button>
+        );
+      }) : <p className="px-2.5 py-3 text-xs text-muted-foreground">No products found in this store.</p>}
+    </div>
+  );
+}
+
+export function GreenfieldKnowledgePageClient() {
+  const [records, setRecords] = useState([]);
+  const [filters, setFilters] = useState({ query: "", type: "all", status: "all", source: "all" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [products, setProducts] = useState({ available: false, items: [] });
+  const [saving, setSaving] = useState(false);
+
+  const loadRecords = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/greenfield-knowledge", { credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load knowledge.");
+      setRecords(Array.isArray(payload.records) ? payload.records : []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load knowledge.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
+
+  const loadProducts = useCallback(async () => {
+    try {
+      const response = await fetch("/api/greenfield-knowledge/products", { credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load products.");
+      setProducts({ available: payload.available === true, items: Array.isArray(payload.products) ? payload.products : [] });
+    } catch {
+      setProducts({ available: false, items: [] });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sheetOpen) loadProducts();
+  }, [loadProducts, sheetOpen]);
+
+  const sourceOptions = useMemo(() => Array.from(new Set(records.map((record) => record.source?.label).filter(Boolean))).sort(), [records]);
+  const visibleRecords = useMemo(() => records.filter((record) => (
+    (!filters.query.trim() || `${record.title} ${record.content}`.toLowerCase().includes(filters.query.trim().toLowerCase()))
+      && (filters.type === "all" || record.type === filters.type)
+      && (filters.status === "all" || record.status === filters.status)
+      && (filters.source === "all" || record.source?.label === filters.source)
+  )), [filters, records]);
+
+  const openCreate = () => {
+    setSelected(null);
+    setForm(emptyForm());
+    setSheetOpen(true);
+  };
+
+  const openRecord = (record) => {
+    setSelected(record);
+    setForm(formFromRecord(record));
+    setSheetOpen(true);
+  };
+
+  const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const save = async (nextStatus = form.status) => {
+    setSaving(true);
+    try {
+      const response = await fetch(selected ? `/api/greenfield-knowledge/${selected.id}` : "/api/greenfield-knowledge", {
+        method: selected ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ...form, status: nextStatus }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not save knowledge.");
+      toast.success(nextStatus === "published" ? "Knowledge published" : nextStatus === "archived" ? "Knowledge archived" : "Knowledge saved");
+      setSheetOpen(false);
+      await loadRecords();
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : "Could not save knowledge.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isEditable = !selected || selected.source?.editable;
+  const Icon = TYPE_ICON[selected?.type || form.type] || FileText;
+  const statusHelp = form.status === "published"
+    ? "Published knowledge can be used in normal Sona retrieval."
+    : form.status === "unpublished"
+      ? "Unpublished knowledge stays saved but is excluded from normal Sona retrieval."
+      : "Draft knowledge is saved but never used in normal Sona retrieval.";
+  const saveLabel = form.status === "published" ? "Publish" : form.status === "unpublished" ? "Unpublish" : "Save draft";
+
+  return (
+    <div className="mx-auto w-full max-w-[1240px]">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-medium text-indigo-600"><BookOpen className="size-3.5" /> Knowledge</div>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Knowledge</h1>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-gray-500">Manage the policies, product guidance and procedures Sona uses when helping customers.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm"><Link href="/playground"><TestTube2 className="size-4" /> Test Sona</Link></Button>
+          <Button size="sm" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button>
+        </div>
+      </div>
+
+      <div className="mt-8 flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm shadow-gray-100/70 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
+          <Input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Search knowledge" className="h-9 border-0 bg-gray-50 pl-9 shadow-none focus-visible:ring-1" />
+        </div>
+        <Select value={filters.type} onValueChange={(value) => setFilters((current) => ({ ...current, type: value }))}>
+          <SelectTrigger className="h-9 w-full sm:w-48"><SelectValue placeholder="All types" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All types</SelectItem>{TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={filters.status} onValueChange={(value) => setFilters((current) => ({ ...current, status: value }))}>
+          <SelectTrigger className="h-9 w-full sm:w-36"><SelectValue placeholder="All status" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All status</SelectItem>{Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={filters.source} onValueChange={(value) => setFilters((current) => ({ ...current, source: value }))}>
+          <SelectTrigger className="h-9 w-full sm:w-36"><SelectValue placeholder="All sources" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All sources</SelectItem>{sourceOptions.map((source) => <SelectItem key={source} value={source}>{source}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+
+      {error ? <div className="mt-4"><ErrorMessage>{error}</ErrorMessage></div> : null}
+      <div className="mt-4 overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm shadow-gray-100/70">
+        <div className="hidden grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] gap-4 border-b border-gray-100 bg-gray-50/70 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 md:grid">
+          <span>Knowledge</span><span>Type</span><span>Applies to</span><span>Source</span><span>Status</span>
+        </div>
+        {loading ? <div className="space-y-3 p-5"><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /></div> : null}
+        {!loading && visibleRecords.length ? visibleRecords.map((record) => {
+          const RowIcon = TYPE_ICON[record.type] || FileText;
+          const appliesTo = record.applies_to?.kind === "products" ? `${record.applies_to.product_ids.length} product${record.applies_to.product_ids.length === 1 ? "" : "s"}` : "All products";
+          return (
+            <button type="button" key={record.id} onClick={() => openRecord(record)} className="group grid w-full gap-3 border-b border-gray-100 px-5 py-4 text-left transition-colors duration-150 last:border-b-0 hover:bg-gray-50/70 md:grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] md:items-center md:gap-4">
+              <span className="flex min-w-0 items-center gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><RowIcon className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium text-gray-800">{record.title}</span><span className="mt-0.5 block truncate text-xs text-gray-400">Updated {formatDate(record.updated_at)}</span></span><ChevronRight className="ml-auto size-4 shrink-0 text-gray-300 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-gray-500 md:hidden" /></span>
+              <span className="text-xs text-gray-600 md:block"><span className="mr-2 text-gray-400 md:hidden">Type</span>{record.type_label}</span>
+              <span className="text-xs text-gray-600 md:block"><span className="mr-2 text-gray-400 md:hidden">Applies to</span>{appliesTo}</span>
+              <span className="flex items-center gap-1.5 text-xs text-gray-600"><SourceIcon source={record.source?.label} />{record.source?.label || "Imported"}</span>
+              <span><Badge variant="outline" className={cn("font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></span>
+            </button>
+          );
+        }) : null}
+        {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-sm font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
+      </div>
+
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
+          <SheetHeader className="border-b border-gray-100 px-6 py-5 text-left">
+            <div className="flex items-center gap-2 text-indigo-600"><Icon className="size-4" /><span className="text-xs font-medium">{selected ? selected.type_label : "New knowledge"}</span></div>
+            <SheetTitle className="mt-1">{selected ? (isEditable ? "Edit knowledge" : "Knowledge details") : "Add knowledge"}</SheetTitle>
+            <SheetDescription>{selected && !isEditable ? "Imported knowledge is shown here as read-only." : "Write the guidance Sona should use. You can publish it when it is ready."}</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 space-y-5 px-6 py-5">
+            {selected && !isEditable ? <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs leading-5 text-blue-800"><FileText className="size-4 shrink-0" />This source is imported from {selected.source?.label || "an external source"}. Create a merchant entry if you need to add a correction.</div> : null}
+            <div className="grid gap-2"><Label htmlFor="greenfield-title">Title</Label><Input id="greenfield-title" value={form.title} onChange={(event) => updateForm("title", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. Return policy" maxLength={180} /></div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-type">Type</Label><Select value={form.type} onValueChange={(value) => updateForm("type", value)} disabled={!isEditable || saving}><SelectTrigger id="greenfield-type"><SelectValue /></SelectTrigger><SelectContent>{TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-applies">Applies to</Label><Select value={form.applies_to.kind} onValueChange={(value) => updateForm("applies_to", { kind: value, product_ids: value === "all" ? [] : form.applies_to.product_ids })} disabled={!isEditable || saving}><SelectTrigger id="greenfield-applies"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All products</SelectItem>{products.available ? <SelectItem value="products">Specific products</SelectItem> : null}</SelectContent></Select>{form.applies_to.kind === "products" ? <ProductChooser products={products} value={form.applies_to.product_ids} onChange={(product_ids) => updateForm("applies_to", { kind: "products", product_ids })} disabled={!isEditable || saving} /> : <p className="text-xs text-muted-foreground">This guidance can be used for any product in the store.</p>}</div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-content">Content</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder="Write the policy, product information or numbered troubleshooting steps here..." className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={!isEditable || saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
+            {selected ? <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-3 text-xs text-gray-500"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-gray-700"><SourceIcon source={selected.source?.label} />{selected.source?.label}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-gray-700">{formatDate(selected.updated_at)}</span></div></div> : null}
+          </div>
+          {isEditable ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" size="sm" onClick={() => save(form.status)} disabled={saving || !form.title.trim() || !form.content.trim()}>{saving ? <Loader2 className="size-4 animate-spin" /> : form.status === "published" ? <Check className="size-4" /> : <Pencil className="size-4" />}{saveLabel}</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}

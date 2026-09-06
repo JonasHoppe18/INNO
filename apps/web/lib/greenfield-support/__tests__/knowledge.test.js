@@ -108,6 +108,64 @@ describe("greenfield knowledge store", () => {
     expect(await store.search({ workspaceId: "tenant-a", query: "order delivered" })).toEqual([]);
   });
 
+  it("excludes draft, unpublished, and archived merchant knowledge from retrieval", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await store.ingest("tenant-a", {
+      sourceKind: "merchant_authored",
+      sourceId: "draft-guide",
+      title: "Draft guide",
+      content: "Draft pairing steps for the wireless receiver.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "draft" },
+    });
+    await store.ingest("tenant-a", {
+      sourceKind: "merchant_authored",
+      sourceId: "unpublished-guide",
+      title: "Unpublished guide",
+      content: "Unpublished pairing steps for the wireless receiver.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "unpublished" },
+    });
+    await store.ingest("tenant-a", {
+      sourceKind: "merchant_authored",
+      sourceId: "archived-guide",
+      title: "Archived guide",
+      content: "Archived pairing steps for the wireless receiver.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "archived" },
+    });
+
+    expect(await store.search({ workspaceId: "tenant-a", query: "pairing wireless receiver" })).toEqual([]);
+  });
+
+  it("makes published edits replace the old searchable content", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await store.ingest("tenant-a", {
+      sourceKind: "merchant_authored",
+      sourceId: "published-guide",
+      title: "Published guide",
+      content: "Step one is to disconnect the old receiver.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "published" },
+    });
+    await store.replaceSource("tenant-a", "published-guide", {
+      sourceKind: "merchant_authored",
+      sourceId: "published-guide",
+      title: "Published guide",
+      content: "Step one is to restart the new receiver.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "published" },
+    });
+
+    expect(await store.search({ workspaceId: "tenant-a", query: "disconnect old" })).toEqual([]);
+    expect((await store.search({ workspaceId: "tenant-a", query: "restart new receiver" }))[0].record.content).toContain("restart the new receiver");
+  });
+
   it("selects a bounded relevant section instead of widening an adjacent chunk window", () => {
     const sections = selectEvidenceSections([
       { chunkId: "chunk-0", chunkIndex: 0, content: "Overview\n\nA wireless headset for everyday gaming." },

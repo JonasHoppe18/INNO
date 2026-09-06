@@ -633,6 +633,7 @@ export function AppSidebar({
     navMain: showGreenfieldPlayground
       ? [
           ...baseData.navMain,
+          { title: "Knowledge (new)", url: "/knowledge/new", icon: BookOpenIcon },
           { title: "Agent Playground", url: "/playground", icon: BotIcon },
         ]
       : baseData.navMain,

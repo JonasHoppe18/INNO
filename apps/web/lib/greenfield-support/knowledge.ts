@@ -478,6 +478,11 @@ function isExpired(record: KnowledgeRecord, now: number): boolean {
   return Number.isFinite(expiry) && expiry <= now;
 }
 
+function isPublished(record: KnowledgeRecord | { metadata?: JsonObject }): boolean {
+  const lifecycle = String(record.metadata?.lifecycle_status ?? "").trim().toLowerCase();
+  return !["draft", "unpublished", "archived"].includes(lifecycle);
+}
+
 function freshnessScore(record: KnowledgeRecord, now: number): number {
   const date = Date.parse(record.observedAt || record.publishedAt || "");
   if (!Number.isFinite(date)) return 0.5;
@@ -487,6 +492,7 @@ function freshnessScore(record: KnowledgeRecord, now: number): number {
 
 function searchRecord(record: KnowledgeRecord, query: string, now: number): KnowledgeHit | null {
   if (record.knowledgeType === "live_operational") return null;
+  if (!isPublished(record)) return null;
   if (isExpired(record, now)) return null;
   const queryTokens = new Set(tokens(query));
   if (!queryTokens.size) return null;
@@ -712,7 +718,9 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     if (error) throw new Error(error.message);
     const rows = Array.isArray(data) ? data : [];
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
-    return rows.map((row: any, index: number) => ({
+    return rows
+      .filter((row: any) => isPublished({ metadata: row.metadata ?? {} }))
+      .map((row: any, index: number) => ({
       record: {
         id: String(row.id),
         workspaceId: String(row.workspace_id),
@@ -736,6 +744,6 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       rank: index + 1,
       evidenceSections: evidenceSections.get(String(row.id)) ?? [],
       matchReason: row.match_reason ?? "semantic",
-    }));
+      }));
   }
 }
