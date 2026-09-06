@@ -1,0 +1,418 @@
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { createClient } from "@supabase/supabase-js";
+import { listScopedShops, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
+import {
+  runGreenfieldAgentWithAgentsSdk,
+  Ship24ReadOnlyProvider,
+  ShopifyReadOnlyProvider,
+  SupabaseKnowledgeStore,
+} from "@/lib/greenfield-support";
+import {
+  GREENFIELD_PLAYGROUND_HISTORY_LIMIT,
+  historyFromPlaygroundRows,
+  isGreenfieldPlaygroundEnabled,
+  isOwnedPlaygroundSession,
+  normalizePlaygroundContext,
+  normalizePlaygroundCustomerEmail,
+  normalizePlaygroundMessage,
+  publicPlaygroundMessage,
+  publicPlaygroundSession,
+  sanitizeGreenfieldTrace,
+} from "@/lib/server/greenfield-playground";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const SESSIONS_TABLE = "greenfield_playground_sessions";
+const MESSAGES_TABLE = "greenfield_playground_messages";
+
+const SUPABASE_URL = String(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "",
+).replace(/\/$/, "");
+const SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+function createServiceClient() {
+  return SUPABASE_URL && SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY) : null;
+}
+
+function createGreenfieldTrackingProvider() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return new Ship24ReadOnlyProvider();
+  return new Ship24ReadOnlyProvider({
+    requestImpl: async (trackingNumber: string, carrierHint?: string | null) => {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/fetch-tracking`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trackingNumber, company: carrierHint || "" }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(`DEV tracking function returned ${response.status}`) as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+      return body;
+    },
+  });
+}
+
+function safeFailureResponse() {
+  return NextResponse.json(
+    { error: "The playground could not complete this read-only request. Try again." },
+    { status: 500 },
+  );
+}
+
+async function requirePlaygroundRequest() {
+  if (!isGreenfieldPlaygroundEnabled()) {
+    return { response: NextResponse.json({ error: "Not found." }, { status: 404 }) };
+  }
+  const authState = await auth();
+  if (!authState?.userId) {
+    return { response: NextResponse.json({ error: "You must be signed in." }, { status: 401 }) };
+  }
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return { response: NextResponse.json({ error: "The development service is not configured." }, { status: 503 }) };
+  }
+  const scope = await resolveAuthScope(serviceClient, {
+    clerkUserId: authState.userId,
+    orgId: authState.orgId,
+    sessionClaims: authState.sessionClaims,
+  });
+  if (!scope?.workspaceId) {
+    return { response: NextResponse.json({ error: "A single active workspace is required." }, { status: 404 }) };
+  }
+  return { authState, serviceClient, scope };
+}
+
+async function loadSession(serviceClient: any, scope: any, clerkUserId: string, sessionId: string) {
+  const { data, error } = await serviceClient
+    .from(SESSIONS_TABLE)
+    .select("id, workspace_id, owner_clerk_user_id, customer_email, title, conversation_context_json, created_at, updated_at")
+    .eq("id", sessionId)
+    .eq("workspace_id", scope.workspaceId)
+    .eq("owner_clerk_user_id", clerkUserId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data && isOwnedPlaygroundSession(data, { workspaceId: scope.workspaceId, clerkUserId }) ? data : null;
+}
+
+async function loadMessages(serviceClient: any, scope: any, clerkUserId: string, sessionId: string) {
+  const { data, error } = await serviceClient
+    .from(MESSAGES_TABLE)
+    .select("id, role, content, trace_json, created_at")
+    .eq("session_id", sessionId)
+    .eq("workspace_id", scope.workspaceId)
+    .eq("owner_clerk_user_id", clerkUserId)
+    .order("created_at", { ascending: false })
+    .limit(GREENFIELD_PLAYGROUND_HISTORY_LIMIT);
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? [...data].reverse() : [];
+}
+
+async function resolveVisibleShop(serviceClient: any, scope: any) {
+  try {
+    return await resolveScopedShop(serviceClient, scope, undefined, {
+      fields: "id, workspace_id, shop_domain",
+      platform: "shopify",
+      allowSingleScopedFallback: true,
+      missingShopMessage: "No active Shopify store is available in this workspace.",
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function requireShopAndCredentials(serviceClient: any, scope: any) {
+  const shop = await resolveScopedShop(serviceClient, scope, undefined, {
+    fields: "id, workspace_id, shop_domain",
+    platform: "shopify",
+    allowSingleScopedFallback: true,
+    missingShopMessage: "Exactly one active Shopify store is required for this read-only test.",
+  });
+  const credentials = await resolveShopifyCredentialsWithDiagnostics(serviceClient, scope, {
+    requestedShopId: shop.id,
+    reason: "greenfield_playground_read_only",
+  });
+  return { shop, credentials };
+}
+
+async function listSessions(serviceClient: any, scope: any, clerkUserId: string) {
+  const { data, error } = await serviceClient
+    .from(SESSIONS_TABLE)
+    .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+    .eq("workspace_id", scope.workspaceId)
+    .eq("owner_clerk_user_id", clerkUserId)
+    .order("updated_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data : [];
+}
+
+async function loadScopedTicket(serviceClient: any, scope: any, threadId: string) {
+  const shops = await listScopedShops(serviceClient, scope, { fields: "id" });
+  const shopIds = new Set((shops || []).map((shop: any) => String(shop.id)));
+
+  const { data: thread, error: threadError } = await serviceClient
+    .from("mail_threads")
+    .select("id, subject, mailbox_id, customer_email")
+    .eq("id", threadId)
+    .maybeSingle();
+  if (threadError) throw new Error(threadError.message);
+  if (!thread) return null;
+
+  const { data: mailbox, error: mailboxError } = await serviceClient
+    .from("mail_accounts")
+    .select("shop_id")
+    .eq("id", thread.mailbox_id)
+    .maybeSingle();
+  if (mailboxError) throw new Error(mailboxError.message);
+  const shopId = String(mailbox?.shop_id || "");
+  if (!shopId || !shopIds.has(shopId)) return null;
+
+  const { data: rows, error: messagesError } = await serviceClient
+    .from("mail_messages")
+    .select("from_me, clean_body_text, body_text, snippet, created_at")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (messagesError) throw new Error(messagesError.message);
+
+  const messages = (rows || [])
+    .map((row: any) => ({
+      role: row.from_me ? "assistant" : "user",
+      content: String(row.clean_body_text || row.body_text || row.snippet || "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      created_at: row.created_at || null,
+    }))
+    .filter((message: any) => message.content.length > 0);
+
+  let customerEmail = String(thread.customer_email || "").trim().toLowerCase() || null;
+  if (!customerEmail) {
+    const { data: latestInbound, error: inboundError } = await serviceClient
+      .from("mail_messages")
+      .select("from_email, extracted_customer_email")
+      .eq("thread_id", threadId)
+      .eq("from_me", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (inboundError) throw new Error(inboundError.message);
+    customerEmail = String(latestInbound?.extracted_customer_email || latestInbound?.from_email || "").trim().toLowerCase() || null;
+  }
+
+  return {
+    threadId,
+    subject: String(thread.subject || "").trim() || "Imported ticket",
+    customerEmail,
+    messages,
+  };
+}
+
+export async function GET(request: Request) {
+  try {
+    const access = await requirePlaygroundRequest();
+    if (access.response) return access.response;
+    const { authState, serviceClient, scope } = access;
+    const url = new URL(request.url);
+    const sessionId = String(url.searchParams.get("session_id") || "").trim();
+    const rows = await listSessions(serviceClient, scope, authState.userId);
+    const selected = sessionId ? await loadSession(serviceClient, scope, authState.userId, sessionId) : null;
+    if (sessionId && !selected) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    const messages = selected ? await loadMessages(serviceClient, scope, authState.userId, selected.id) : [];
+    const shop = await resolveVisibleShop(serviceClient, scope);
+    return NextResponse.json({
+      workspace_id: scope.workspaceId,
+      active_store: shop ? { id: shop.id, domain: shop.shop_domain } : null,
+      sessions: rows.map(publicPlaygroundSession),
+      selected_session: selected ? publicPlaygroundSession(selected) : null,
+      messages: messages.map(publicPlaygroundMessage),
+      context: selected ? normalizePlaygroundContext(selected.conversation_context_json) : null,
+    });
+  } catch {
+    return safeFailureResponse();
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const access = await requirePlaygroundRequest();
+    if (access.response) return access.response;
+    const { authState, serviceClient, scope } = access;
+    const body = await request.json().catch(() => null);
+    const action = String(body?.action || "send").trim().toLowerCase();
+
+    if (action === "create") {
+      const customer = normalizePlaygroundCustomerEmail(body?.customer_email);
+      if (customer.error) return NextResponse.json({ error: customer.error }, { status: 400 });
+      const { data, error } = await serviceClient
+        .from(SESSIONS_TABLE)
+        .insert({
+          workspace_id: scope.workspaceId,
+          owner_clerk_user_id: authState.userId,
+          customer_email: customer.value,
+          title: "New conversation",
+        })
+        .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+        .single();
+      if (error) throw new Error(error.message);
+      return NextResponse.json({ session: publicPlaygroundSession(data), messages: [], context: null });
+    }
+
+    if (action === "import_ticket") {
+      const threadId = String(body?.thread_id || "").trim();
+      if (!threadId) return NextResponse.json({ error: "thread_id is required." }, { status: 400 });
+      const ticket = await loadScopedTicket(serviceClient, scope, threadId);
+      if (!ticket) return NextResponse.json({ error: "Ticket not found." }, { status: 404 });
+      const customer = normalizePlaygroundCustomerEmail(ticket.customerEmail);
+      if (customer.error) return NextResponse.json({ error: "The ticket has no usable customer email." }, { status: 400 });
+
+      const { data: session, error: sessionError } = await serviceClient
+        .from(SESSIONS_TABLE)
+        .insert({
+          workspace_id: scope.workspaceId,
+          owner_clerk_user_id: authState.userId,
+          customer_email: customer.value,
+          title: ticket.subject.slice(0, 72),
+        })
+        .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+        .single();
+      if (sessionError) throw new Error(sessionError.message);
+
+      const importedRows = ticket.messages.map((message: any) => ({
+        session_id: session.id,
+        workspace_id: scope.workspaceId,
+        owner_clerk_user_id: authState.userId,
+        role: message.role,
+        content: message.content,
+        trace_json: null,
+        created_at: message.created_at || undefined,
+      }));
+      let importedMessages: any[] = [];
+      if (importedRows.length) {
+        const { data, error: messagesError } = await serviceClient
+          .from(MESSAGES_TABLE)
+          .insert(importedRows)
+          .select("id, role, content, trace_json, created_at")
+          .order("created_at", { ascending: true });
+        if (messagesError) throw new Error(messagesError.message);
+        importedMessages = Array.isArray(data) ? data : [];
+      }
+
+      return NextResponse.json({
+        session: publicPlaygroundSession(session),
+        messages: importedMessages.map(publicPlaygroundMessage),
+        context: null,
+        imported_ticket: { thread_id: ticket.threadId, message_count: importedMessages.length },
+      });
+    }
+
+    if (action !== "send") return NextResponse.json({ error: "Unsupported playground action." }, { status: 400 });
+    const messageInput = normalizePlaygroundMessage(body?.message);
+    if (messageInput.error) return NextResponse.json({ error: messageInput.error }, { status: 400 });
+    const sessionId = String(body?.session_id || "").trim();
+    if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
+    const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
+    if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    const messages = await loadMessages(serviceClient, scope, authState.userId, session.id);
+    const { shop, credentials } = await requireShopAndCredentials(serviceClient, scope);
+    const contextBefore = normalizePlaygroundContext(session.conversation_context_json);
+    const history = historyFromPlaygroundRows(messages);
+    const tenant = {
+      workspaceId: scope.workspaceId,
+      shopId: shop.id,
+      customerEmail: session.customer_email,
+      customerName: null,
+    };
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      tenant,
+      message: messageInput.value,
+      history,
+      conversationContext: (contextBefore || undefined) as any,
+      capabilities: {
+        tenant,
+        knowledge: new SupabaseKnowledgeStore(serviceClient),
+        commerce: new ShopifyReadOnlyProvider({
+          shopDomain: credentials.shop_domain,
+          accessToken: credentials.access_token,
+          customer: { email: session.customer_email, name: null },
+        }),
+        tracking: createGreenfieldTrackingProvider(),
+      },
+    });
+    const contextAfter = normalizePlaygroundContext(result.conversationContext);
+    const trace = sanitizeGreenfieldTrace(result.trace, { contextBefore, contextAfter });
+    const nextTitle = session.title === "New conversation" ? messageInput.value.slice(0, 72) : session.title;
+    const userMessage = {
+      session_id: session.id,
+      workspace_id: scope.workspaceId,
+      owner_clerk_user_id: authState.userId,
+      role: "user",
+      content: messageInput.value,
+      trace_json: null,
+    };
+    const assistantMessage = {
+      session_id: session.id,
+      workspace_id: scope.workspaceId,
+      owner_clerk_user_id: authState.userId,
+      role: "assistant",
+      content: result.response,
+      trace_json: trace,
+    };
+    const { data: insertedMessages, error: messageError } = await serviceClient
+      .from(MESSAGES_TABLE)
+      .insert([userMessage, assistantMessage])
+      .select("id, role, content, trace_json, created_at")
+      .order("created_at", { ascending: true });
+    if (messageError) throw new Error(messageError.message);
+    const { data: updatedSession, error: updateError } = await serviceClient
+      .from(SESSIONS_TABLE)
+      .update({ conversation_context_json: contextAfter, title: nextTitle })
+      .eq("id", session.id)
+      .eq("workspace_id", scope.workspaceId)
+      .eq("owner_clerk_user_id", authState.userId)
+      .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+      .single();
+    if (updateError) throw new Error(updateError.message);
+    return NextResponse.json({
+      session: publicPlaygroundSession(updatedSession),
+      messages: Array.isArray(insertedMessages) ? insertedMessages.map(publicPlaygroundMessage) : [],
+      context: contextAfter,
+      active_store: { id: shop.id, domain: shop.shop_domain },
+    });
+  } catch {
+    return safeFailureResponse();
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const access = await requirePlaygroundRequest();
+    if (access.response) return access.response;
+    const { authState, serviceClient, scope } = access;
+    const url = new URL(request.url);
+    const sessionId = String(url.searchParams.get("session_id") || "").trim();
+    if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
+    const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
+    if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    const { error } = await serviceClient
+      .from(SESSIONS_TABLE)
+      .delete()
+      .eq("id", session.id)
+      .eq("workspace_id", scope.workspaceId)
+      .eq("owner_clerk_user_id", authState.userId);
+    if (error) throw new Error(error.message);
+    return NextResponse.json({ deleted: true, session_id: session.id });
+  } catch {
+    return safeFailureResponse();
+  }
+}

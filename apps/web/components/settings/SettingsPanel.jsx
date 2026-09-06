@@ -17,7 +17,6 @@ import {
   Lock,
   PenLine,
   Settings,
-  SlidersHorizontal,
   Star,
   Tag,
   Trash2,
@@ -34,8 +33,6 @@ import { TagsSettings } from "@/components/settings/TagsSettings";
 import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
-import { PlaygroundPanel } from "@/components/agent/PlaygroundPanel";
-import { PlaygroundPageHeader } from "@/components/agent/PlaygroundPageHeader";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
@@ -89,7 +86,6 @@ const MENU_SECTIONS = [
     items: [
       { key: "ai", label: "AI instructions", icon: Bot },
       { key: "automation", label: "Actions & automation", icon: Zap },
-      { key: "playground", label: "Test & preview", icon: SlidersHorizontal },
     ],
   },
   {
@@ -4536,12 +4532,6 @@ export function SettingsPanel() {
           <div className="w-full">
             <TagsSettings />
           </div>
-        );
-      case "playground":
-        return (
-          <PlaygroundPanel>
-            <PlaygroundPageHeader />
-          </PlaygroundPanel>
         );
       case "email":
         return (

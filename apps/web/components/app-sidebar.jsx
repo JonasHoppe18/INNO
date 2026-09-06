@@ -11,6 +11,7 @@ import {
 import {
   BarChart2Icon,
   BookOpenIcon,
+  BotIcon,
   CableIcon,
   CirclePlayIcon,
   InboxIcon,
@@ -57,9 +58,8 @@ const baseData = {
     avatar: "/avatars/shadcn.jpg",
   },
   // Top tier — overview/reference surfaces you check often, ahead of the
-  // work-queue sections below. Playground moved into /settings (its own
-  // WORKSPACE menu section, alongside Mailboxes/Automation/Tags) since it
-  // isn't in active use right now, unlike Knowledge/Analytics.
+  // work-queue sections below. The greenfield Agent Playground is appended
+  // server-side only in development; production never receives its nav item.
   navMain: [
     {
       title: "Dashboard",
@@ -287,6 +287,7 @@ function SidebarExpandedNavigation({
 
 export function AppSidebar({
   user,
+  showGreenfieldPlayground = false,
   className,
   ...props
 }) {
@@ -629,6 +630,12 @@ export function AppSidebar({
 
   const data = {
     ...baseData,
+    navMain: showGreenfieldPlayground
+      ? [
+          ...baseData.navMain,
+          { title: "Agent Playground", url: "/playground", icon: BotIcon },
+        ]
+      : baseData.navMain,
     user: user ?? baseData.user,
   }
 

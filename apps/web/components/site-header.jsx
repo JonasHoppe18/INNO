@@ -15,7 +15,7 @@ const TITLE_MAP = {
   "/knowledge/product-questions": "Product Questions",
   "/integrations": "Integrations",
   "/settings": "Settings",
-  "/playground": "Playground",
+  "/playground": "Agent Playground",
 };
 
 function getSiteTitle(pathname) {

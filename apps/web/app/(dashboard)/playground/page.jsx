@@ -1,10 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { PlaygroundPanel } from "@/components/agent/PlaygroundPanel";
-import { PlaygroundPageHeader } from "@/components/agent/PlaygroundPageHeader";
+import { notFound, redirect } from "next/navigation";
+import { GreenfieldPlayground } from "@/components/agent/GreenfieldPlayground";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
+import { isGreenfieldPlaygroundEnabled } from "@/lib/server/greenfield-playground";
 
 export default async function PlaygroundPage() {
+  if (!isGreenfieldPlaygroundEnabled()) notFound();
   const { userId } = await auth();
   if (!userId) {
     redirect("/sign-in?redirect_url=/playground");
@@ -12,9 +13,7 @@ export default async function PlaygroundPage() {
 
   return (
     <DashboardPageShell>
-      <PlaygroundPanel>
-        <PlaygroundPageHeader />
-      </PlaygroundPanel>
+      <GreenfieldPlayground />
     </DashboardPageShell>
   );
 }
