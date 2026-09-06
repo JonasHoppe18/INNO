@@ -45,6 +45,7 @@ export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   readOnly("get_order_history", "Read the current customer's recent order history. Customer identity comes from trusted server context.", {}),
   readOnly("get_customer", "Read the current customer's limited support identity. Identity comes from trusted server context.", {}),
   readOnly("get_product", "Read current product information from the commerce provider.", { query: stringProperty("Product name, handle, SKU, or other customer-provided product reference.") }),
+  readOnly("get_product_availability", "Read the current availability state for a product or an unambiguous variant. This returns only normalized availability, never exact inventory quantities.", { query: stringProperty("Product name, handle, SKU, or a specific variant reference supplied by the customer.") }),
   readOnly("inspect_fulfillment", "Read current fulfillment details for an order.", { order_id: stringProperty("The order number or order ID.") }),
   readOnly("get_tracking", "Read current shipment tracking for a tracking number verified against the current customer's Shopify order.", { tracking_number: stringProperty("The tracking number from a verified current-customer order or an explicitly supplied customer tracking reference.") }),
   proposed("cancel_order", "Propose cancellation of an order. This capability never executes the cancellation.", { order_id: stringProperty("The order number or order ID."), reason: stringProperty("Customer's stated reason for requesting cancellation.") }),

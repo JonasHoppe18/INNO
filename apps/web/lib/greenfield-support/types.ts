@@ -9,6 +9,16 @@ export const KNOWLEDGE_TYPES = [
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 
+export const PRODUCT_AVAILABILITY_STATES = [
+  "AVAILABLE",
+  "OUT_OF_STOCK",
+  "AVAILABLE_TO_ORDER",
+  "NOT_TRACKED",
+  "UNKNOWN",
+] as const;
+
+export type ProductAvailabilityState = (typeof PRODUCT_AVAILABILITY_STATES)[number];
+
 export const AUTHORITY_LEVELS = [
   "authoritative",
   "operational",
@@ -214,6 +224,7 @@ export interface CommerceReadProvider {
   getOrderHistory(customerEmail: string | null | undefined): Promise<OrderSnapshot[]>;
   getCustomer(): Promise<CustomerSnapshot | null>;
   getProduct(query: string): Promise<JsonValue>;
+  getProductAvailability(query: string): Promise<JsonValue>;
   inspectFulfillment(orderId: string): Promise<JsonValue>;
 }
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRODUCT_AVAILABILITY_STATES } from "./types";
 import type { CapabilityManifest, JsonObject, ToolExecutionResult } from "./types";
 import type { StrictToolDefinition } from "./tool-contracts";
 
@@ -13,6 +14,7 @@ const FactKindSchema = z.enum([
   "order_financial_status",
   "order_fulfillment_status",
   "product_value",
+  "product_availability",
   "shipment_carrier",
   "shipment_tracking_number",
   "shipment_status",
@@ -279,6 +281,10 @@ function unsupportedLiveProductFieldPath(path: string): boolean {
   return Boolean(match && UNSUPPORTED_PRODUCT_FIELDS.has(match[1].toLowerCase()));
 }
 
+function safeLiveProductAvailabilityFieldPath(path: string): boolean {
+  return /^products\[\d+\]\.variants\[\d+\]\.availability_state$/i.test(normalizedDataPath(path));
+}
+
 function pathHasIndexedProperty(path: string, collectionPath: string, property: string): boolean {
   const normalized = normalizedDataPath(path);
   return normalized.includes(`${collectionPath}[`) && normalized.endsWith(`.${property}`);
@@ -328,6 +334,8 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
       );
     case "product_value":
       return safeLiveProductFieldPath(path);
+    case "product_availability":
+      return safeLiveProductAvailabilityFieldPath(path);
     default:
       return false;
   }
@@ -366,6 +374,30 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
         index,
         code: "product_source_required",
         message: "A product value fact must cite a successful get_product result.",
+      }];
+    }
+  }
+
+  if (segment.fact_kind === "product_availability") {
+    const productSource = segment.evidence.every((basis) => resultFor(basis, context)?.toolName === "get_product_availability");
+    if (!productSource) {
+      return [{
+        index,
+        code: "product_availability_source_required",
+        message: "A product availability fact must cite a successful get_product_availability result.",
+      }];
+    }
+    const availabilityValues = segment.evidence.flatMap((basis) => {
+      const evidence = resultFor(basis, context);
+      return basis.field_paths
+        .filter(safeLiveProductAvailabilityFieldPath)
+        .map((path) => evidence ? dataFieldValue(evidence.result, path).value : undefined);
+    });
+    if (availabilityValues.some((value) => typeof value !== "string" || !(PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(value))) {
+      return [{
+        index,
+        code: "invalid_product_availability_state",
+        message: "A product availability fact must cite a normalized availability state.",
       }];
     }
   }
@@ -589,6 +621,11 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
       ? "Hvilket produktnavn eller SKU skal jeg tjekke?"
       : "Which product name or SKU should I check?";
   }
+  if (segment.capability === "get_product_availability" && segment.missing_arguments.includes("query")) {
+    return locale === "da"
+      ? "Hvilket produktnavn eller SKU skal jeg tjekke til lagerstatus?"
+      : "Which product name or SKU should I check for availability?";
+  }
 
   const operation = firstSentence(definition.description)
     .replace(/^Read\s+/i, locale === "da" ? "slå op i " : "look up ")
@@ -797,6 +834,26 @@ function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, c
             : localeFor(context) === "da" ? "Produktværdi" : "Product value";
       return `${label}: ${String(item.value)}.`;
     }
+    case "product_availability": {
+      const item = values.find((candidate) => safeLiveProductAvailabilityFieldPath(candidate.path));
+      if (!item) return "";
+      const match = normalizedDataPath(item.path).match(/^(products\[\d+\])\.variants\[(\d+)\]\.availability_state$/i);
+      const evidence = segment.evidence
+        .map((basis) => resultFor(basis, context))
+        .find((candidate) => candidate && dataFieldValue(candidate.result, item.path).exists);
+      const productTitle = match && evidence ? dataFieldValue(evidence.result, `${match[1]}.title`).value : null;
+      const variantTitle = match && evidence ? dataFieldValue(evidence.result, `${match[1]}.variants[${match[2]}].title`).value : null;
+      const subject = meaningful(productTitle)
+        ? `${String(productTitle)}${meaningful(variantTitle) && String(variantTitle) !== "Default Title" ? ` (${String(variantTitle)})` : ""}`
+        : localeFor(context) === "da" ? "Produktet" : "The product";
+      const state = String(item.value);
+      const locale = localeFor(context);
+      if (state === "AVAILABLE") return locale === "da" ? `${subject} er på lager lige nu.` : `${subject} is currently available.`;
+      if (state === "OUT_OF_STOCK") return locale === "da" ? `${subject} er udsolgt lige nu.` : `${subject} is currently out of stock.`;
+      if (state === "AVAILABLE_TO_ORDER") return locale === "da" ? `${subject} kan bestilles, selvom der ikke er registreret lager lige nu.` : `${subject} can be ordered even though no stock is currently recorded.`;
+      if (state === "NOT_TRACKED") return locale === "da" ? `Jeg kan ikke bekræfte lagerstatus for ${subject}, fordi lageret ikke spores.` : `I couldn’t verify current availability for ${subject} because its inventory is not tracked.`;
+      return locale === "da" ? `Jeg kunne ikke bekræfte den aktuelle lagerstatus for ${subject}.` : `I couldn’t verify the current availability for ${subject}.`;
+    }
     default:
       return "";
   }
@@ -809,6 +866,7 @@ const SHIPMENT_FACT_KINDS = new Set<FactKind>([
   "shipment_carrier", "shipment_tracking_number", "shipment_status", "shipment_event",
   "shipment_timestamp", "shipment_location", "shipment_eta",
 ]);
+const PRODUCT_AVAILABILITY_FACT_KINDS = new Set<FactKind>(["product_availability"]);
 
 function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
@@ -817,6 +875,17 @@ function renderTextSegment(value: string | null) {
 function renderLimitation(segment: Extract<ResponseSegment, { type: "limitation" }>, context: ResponseValidationContext) {
   const evidence = resultFor(segment.basis, context);
   const locale = localeFor(context);
+  if (evidence?.toolName === "get_product_availability") {
+    if (evidence.result.status === "not_found") {
+      return locale === "da" ? "Jeg kunne ikke finde det produkt i Shopify." : "I couldn’t find that product in Shopify.";
+    }
+    if (evidence.result.status === "invalid_request") {
+      return locale === "da" ? "Hvilken variant vil du gerne have, at jeg tjekker?" : "Which variant would you like me to check?";
+    }
+    if (evidence.result.status === "unavailable") {
+      return locale === "da" ? "Jeg kan ikke tjekke den aktuelle lagerstatus lige nu." : "I can’t check the current availability right now.";
+    }
+  }
   if (evidence?.toolName === "get_tracking" && evidence.result.status === "not_found") {
     return locale === "da"
       ? "Jeg kan ikke se en live trackingstatus på pakken lige nu."
@@ -880,6 +949,11 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       segments.forEach((candidate, candidateIndex) => {
         if (candidate.type === "fact" && SHIPMENT_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
       });
+      return;
+    }
+    if (segment.type === "fact" && PRODUCT_AVAILABILITY_FACT_KINDS.has(segment.fact_kind)) {
+      rendered.push(renderSingleFact(segment, context));
+      consumed.add(index);
       return;
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));

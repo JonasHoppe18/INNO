@@ -63,6 +63,10 @@ export class InMemoryCommerceProvider implements CommerceReadProvider {
     return { status: "ambiguous", query, matches: matches.map((entry) => entry.value) };
   }
 
+  async getProductAvailability(query: string): Promise<JsonValue> {
+    return { status: "unavailable", query, provider: this.providerName };
+  }
+
   async inspectFulfillment(orderId: string): Promise<JsonValue> {
     const order = await this.getOrder(orderId);
     if (!order) return { status: "not_found", orderId };

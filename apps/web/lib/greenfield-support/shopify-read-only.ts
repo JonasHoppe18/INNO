@@ -3,6 +3,7 @@ import type {
   CustomerSnapshot,
   JsonValue,
   OrderSnapshot,
+  ProductAvailabilityState,
 } from "./types";
 
 function clean(value: unknown): string {
@@ -16,6 +17,139 @@ function normalizedEmail(value: unknown): string {
 function safeLookup(value: unknown): string {
   const result = clean(value);
   return /^[#a-z0-9_-]{1,80}$/i.test(result) ? result : "";
+}
+
+function normalizedProductText(value: unknown): string {
+  return clean(value)
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function hasOwn(value: unknown, key: string): boolean {
+  return Boolean(value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function numeric(value: unknown): number | null {
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
+}
+
+function inventoryPolicy(value: unknown): "deny" | "continue" | null {
+  const result = clean(value).toLowerCase();
+  return result === "deny" || result === "continue" ? result : null;
+}
+
+function trackedSignal(variant: Record<string, unknown>): true | false | null {
+  if (hasOwn(variant, "tracked")) return typeof variant.tracked === "boolean" ? variant.tracked : null;
+  if (hasOwn(variant, "inventory_item_tracked")) {
+    return typeof variant.inventory_item_tracked === "boolean" ? variant.inventory_item_tracked : null;
+  }
+  if (!hasOwn(variant, "inventory_management")) return null;
+  if (variant.inventory_management == null || clean(variant.inventory_management) === "") return false;
+  return clean(variant.inventory_management).toLowerCase() === "shopify" ? true : null;
+}
+
+function sellableQuantity(variant: Record<string, unknown>): number | null {
+  for (const key of ["sellable_online_quantity", "sellableOnlineQuantity", "inventory_quantity", "inventoryQuantity"]) {
+    if (!hasOwn(variant, key)) continue;
+    const value = numeric(variant[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+/**
+ * Maps only explicit Shopify inventory signals to a customer-safe state.
+ * A positive quantity is never enough on its own: tracking and policy must
+ * also be known, and an explicit availableForSale=false prevents a claim.
+ */
+export function shopifyAvailabilityState(
+  rawVariant: Record<string, unknown>,
+  options: { locationScopeResolved?: boolean } = {},
+): ProductAvailabilityState {
+  const tracked = trackedSignal(rawVariant);
+  if (tracked === false) return "NOT_TRACKED";
+  if (tracked === null) return "UNKNOWN";
+
+  const availableForSale = hasOwn(rawVariant, "availableForSale")
+    ? rawVariant.availableForSale
+    : hasOwn(rawVariant, "available_for_sale")
+      ? rawVariant.available_for_sale
+      : undefined;
+  if (availableForSale === false) return "UNKNOWN";
+  if (options.locationScopeResolved === false) return "UNKNOWN";
+
+  const quantity = sellableQuantity(rawVariant);
+  const policy = inventoryPolicy(rawVariant.inventory_policy ?? rawVariant.inventoryPolicy);
+  if (quantity === null || policy === null) return "UNKNOWN";
+  if (quantity > 0) return "AVAILABLE";
+  return policy === "continue" ? "AVAILABLE_TO_ORDER" : "OUT_OF_STOCK";
+}
+
+function variantLookupValues(variant: Record<string, unknown>, product?: Record<string, unknown>): string[] {
+  const productPrefix = product?.title == null ? "" : `${clean(product.title)} `;
+  return [
+    variant.title,
+    variant.sku,
+    variant.option1,
+    variant.option2,
+    variant.option3,
+    `${productPrefix}${clean(variant.title)}`,
+    `${productPrefix}${clean(variant.sku)}`,
+  ]
+    .map(normalizedProductText)
+    .filter(Boolean);
+}
+
+function productIdentityValues(product: Record<string, unknown>): string[] {
+  return [product.title, product.handle].map(normalizedProductText).filter(Boolean);
+}
+
+function selectAvailabilityProducts(query: string, products: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const wanted = normalizedProductText(query);
+  if (!wanted) return [];
+  const exact = products.filter((product) =>
+    productIdentityValues(product).includes(wanted) ||
+    (Array.isArray(product.variants) && product.variants.some((variant) =>
+      variant && typeof variant === "object" && variantLookupValues(variant as Record<string, unknown>, product).includes(wanted),
+    )),
+  );
+  if (exact.length) return exact;
+  return products.filter((product) =>
+    productIdentityValues(product).some((value) => value.includes(wanted)) ||
+    (Array.isArray(product.variants) && product.variants.some((variant) =>
+      variant && typeof variant === "object" && variantLookupValues(variant as Record<string, unknown>, product).some((value) => value.includes(wanted)),
+    )),
+  );
+}
+
+function selectedAvailabilityVariants(query: string, product: Record<string, unknown>): Array<Record<string, unknown>> {
+  const variants = Array.isArray(product.variants)
+    ? product.variants.filter((variant): variant is Record<string, unknown> => Boolean(variant && typeof variant === "object"))
+    : [];
+  const wanted = normalizedProductText(query);
+  if (productIdentityValues(product).includes(wanted) || productIdentityValues(product).some((value) => value.includes(wanted))) return variants;
+  const exact = variants.filter((variant) => variantLookupValues(variant, product).includes(wanted));
+  if (exact.length) return exact;
+  const contains = variants.filter((variant) => variantLookupValues(variant, product).some((value) => value.includes(wanted)));
+  return contains.length ? contains : variants;
+}
+
+function publicAvailabilityVariant(
+  variant: Record<string, unknown>,
+  locationScopeResolved: boolean,
+): Record<string, JsonValue> {
+  const state = shopifyAvailabilityState(variant, { locationScopeResolved });
+  return {
+    id: variant.id == null ? null : clean(variant.id),
+    title: variant.title == null ? null : clean(variant.title),
+    sku: variant.sku == null ? null : clean(variant.sku),
+    availability_state: state,
+  };
 }
 
 function mapOrder(raw: any): OrderSnapshot {
@@ -145,6 +279,77 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
     return {
       status: products.length ? "ok" : "not_found",
       products: products.map((product: any) => ({ id: product?.id ?? null, title: product?.title ?? null, handle: product?.handle ?? null, variants: product?.variants ?? [] })),
+    };
+  }
+
+  async getProductAvailability(query: string): Promise<JsonValue> {
+    const productQuery = clean(query);
+    const observedAt = new Date().toISOString();
+    if (!productQuery) return { status: "unknown", query: productQuery, provider: this.providerName, source: "shopify_live", observed_at: observedAt, products: [] };
+
+    const fields = "id,title,handle,status,published_at,variants";
+    const titlePayload = await this.get("products.json", {
+      status: "active",
+      limit: "10",
+      title: productQuery,
+      fields,
+    });
+    let products = Array.isArray(titlePayload?.products) ? titlePayload.products : [];
+    if (!products.length) {
+      const listingPayload = await this.get("products.json", { status: "active", limit: "250", fields });
+      products = Array.isArray(listingPayload?.products) ? listingPayload.products : [];
+    }
+    const matches = selectAvailabilityProducts(productQuery, products);
+    if (!matches.length) {
+      return {
+        status: "not_found",
+        query: productQuery,
+        provider: this.providerName,
+        source: "shopify_live",
+        observed_at: observedAt,
+        products: [],
+      };
+    }
+
+    let locationScopeResolved = true;
+    let locationScope: "single_active_location" | "multiple_active_locations" | "unknown" = "single_active_location";
+    try {
+      const locationsPayload = await this.get("locations.json", { limit: "250" });
+      const locations = Array.isArray(locationsPayload?.locations) ? locationsPayload.locations : [];
+      const activeLocations = locations.filter((location: any) => location?.active !== false);
+      if (activeLocations.length !== 1) {
+        locationScopeResolved = false;
+        locationScope = activeLocations.length > 1 ? "multiple_active_locations" : "unknown";
+      }
+    } catch {
+      locationScopeResolved = false;
+      locationScope = "unknown";
+    }
+
+    const outputProducts = matches.map((product: any) => {
+      const variants = selectedAvailabilityVariants(productQuery, product);
+      return {
+        id: product?.id == null ? null : clean(product.id),
+        title: product?.title == null ? null : clean(product.title),
+        handle: product?.handle == null ? null : clean(product.handle),
+        variants: variants.map((variant) => publicAvailabilityVariant(variant, locationScopeResolved)),
+      };
+    });
+    const selectedVariantCount = outputProducts.reduce((count, product) => count + product.variants.length, 0);
+    const ambiguous = matches.length !== 1 || selectedVariantCount !== 1;
+    const singleProductIsNamed = matches.length === 1 && (
+      productIdentityValues(matches[0]).includes(normalizedProductText(productQuery)) ||
+      productIdentityValues(matches[0]).some((value) => value.includes(normalizedProductText(productQuery)))
+    );
+    return {
+      status: ambiguous ? "ambiguous" : "ok",
+      selection: ambiguous ? "ambiguous" : singleProductIsNamed ? "product" : "exact_variant",
+      query: productQuery,
+      provider: this.providerName,
+      source: "shopify_live",
+      observed_at: observedAt,
+      location_scope: locationScope,
+      products: outputProducts,
     };
   }
 

@@ -81,8 +81,17 @@ function removeUnsupportedProductFields(value: unknown): JsonValue {
   return null;
 }
 
-function providerStatus(value: JsonValue): "ok" | "not_found" {
+function providerStatus(value: JsonValue): "ok" | "not_found" | "unavailable" {
   if (value && typeof value === "object" && !Array.isArray(value) && value.status === "not_found") return "not_found";
+  if (value && typeof value === "object" && !Array.isArray(value) && value.status === "unavailable") return "unavailable";
+  return "ok";
+}
+
+function availabilityProviderStatus(value: JsonValue): "ok" | "not_found" | "invalid_request" | "unavailable" {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "ok";
+  if (value.status === "not_found") return "not_found";
+  if (value.status === "ambiguous") return "invalid_request";
+  if (value.status === "unavailable") return "unavailable";
   return "ok";
 }
 
@@ -326,6 +335,10 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           case "get_product": {
             const product = removeUnsupportedProductFields(await context.commerce.getProduct(query));
             return { status: providerStatus(product), data: product };
+          }
+          case "get_product_availability": {
+            const availability = jsonValue(await context.commerce.getProductAvailability(query));
+            return { status: availabilityProviderStatus(availability), data: availability };
           }
           case "inspect_fulfillment":
             if (!context.tenant.customerEmail) {
