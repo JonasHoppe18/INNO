@@ -51,7 +51,7 @@ export function extractOrderReferences(message: string): string[] {
   const source = String(message ?? "");
   const patterns = [
     /\b(?:order|ordre)\s*(?:number|no\.?|nr\.?)?\s*#\s*([a-z0-9][a-z0-9_-]{0,79})\b/gi,
-    /\b(?:order|ordre)\s+(?:number|no\.?|nr\.?)?\s+([0-9][a-z0-9_-]{0,79})\b/gi,
+    /\b(?:order|ordre)\s+(?:number|no\.?|nr\.?)?\s*([0-9][a-z0-9_-]{0,79})\b/gi,
     /#([a-z0-9][a-z0-9_-]{0,79})\b/gi,
   ];
   for (const pattern of patterns) {

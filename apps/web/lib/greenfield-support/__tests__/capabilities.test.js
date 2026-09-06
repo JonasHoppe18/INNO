@@ -1,7 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { createCapabilityRegistry } from "../capabilities";
+import { createCapabilityRegistry, extractOrderReferences } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
 import { GREENFIELD_TOOL_DEFINITIONS } from "../tool-contracts";
+import { InMemoryCommerceProvider } from "../providers";
+
+function order(orderNumber) {
+  return {
+    id: `shopify-${orderNumber}`,
+    orderNumber,
+    status: "processing",
+    financialStatus: "paid",
+    fulfillmentStatus: null,
+    items: [{ id: `line-${orderNumber}`, title: "Test item", quantity: 1 }],
+    fulfillments: [],
+  };
+}
+
+async function correctionDependencies(orderNumbers = ["1051", "1055", "1063"]) {
+  const dependencies = await createDemoDependencies();
+  return {
+    ...dependencies,
+    commerce: new InMemoryCommerceProvider({
+      customer: { email: dependencies.tenant.customerEmail, name: dependencies.tenant.customerName },
+      orders: orderNumbers.map(order),
+    }),
+  };
+}
+
+function orderContext(requestedOrderId, state) {
+  return {
+    turn: 1,
+    activeOrder: { requestedOrderId, state, order: null },
+    customerSignal: null,
+  };
+}
 
 function trackingProvider(calls) {
   return {
@@ -271,5 +303,79 @@ describe("greenfield capabilities", () => {
     const result = await registry.execute("get_order", JSON.stringify({ order_id: "10233" }));
 
     expect(result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "10233" } } });
+  });
+
+  it("extracts and verifies an explicit correction after an unresolved order", async () => {
+    const dependencies = await correctionDependencies();
+    const message = "Sorry, I meant order 1055.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      orderReferences: extractOrderReferences(message),
+      conversationContext: orderContext("1058", "unresolved"),
+    });
+
+    expect(extractOrderReferences(message)).toEqual(["1055"]);
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1055", state: "unresolved" });
+
+    const result = await registry.execute("get_order", JSON.stringify({ order_id: "1055" }));
+    expect(result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "1055" } } });
+  });
+
+  it("keeps a failed corrected order as the new unresolved focus", async () => {
+    const dependencies = await correctionDependencies();
+    const message = "The correct order is #9999.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      orderReferences: extractOrderReferences(message),
+      conversationContext: orderContext("1058", "unresolved"),
+    });
+
+    const missing = await registry.execute("get_order", JSON.stringify({ order_id: "9999" }));
+    expect(missing).toMatchObject({ status: "not_found", data: { order_focus: { state: "unresolved", requested_order_id: "9999" } } });
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "9999", state: "unresolved" });
+
+    const oldOrder = await registry.execute("get_order", JSON.stringify({ order_id: "1058" }));
+    expect(oldOrder).toMatchObject({ status: "invalid_request", error: { code: "order_focus_conflict" } });
+  });
+
+  it("independently verifies an explicit replacement of a verified order", async () => {
+    const dependencies = await correctionDependencies();
+    const message = "The correct order is #1051.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      orderReferences: extractOrderReferences(message),
+      conversationContext: orderContext("1063", "verified"),
+    });
+
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1051", state: "unresolved" });
+    const replacement = await registry.execute("get_order", JSON.stringify({ order_id: "1051" }));
+    expect(replacement).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "1051" } } });
+  });
+
+  it("does not replace a verified order from vague other-order language", async () => {
+    const dependencies = await correctionDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      orderReferences: extractOrderReferences("What about my other order?"),
+      conversationContext: orderContext("1063", "verified"),
+    });
+
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1063", state: "verified" });
+    const guessed = await registry.execute("get_order", JSON.stringify({ order_id: "1051" }));
+    expect(guessed).toMatchObject({ status: "invalid_request", error: { code: "order_focus_conflict" } });
+  });
+
+  it("fails safely when an explicit replacement is not in the current customer's data", async () => {
+    const dependencies = await correctionDependencies(["1063"]);
+    const message = "It is actually order 1051.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      orderReferences: extractOrderReferences(message),
+      conversationContext: orderContext("1063", "verified"),
+    });
+
+    const replacement = await registry.execute("get_order", JSON.stringify({ order_id: "1051" }));
+    expect(replacement).toMatchObject({ status: "not_found", data: { order_focus: { state: "unresolved", requested_order_id: "1051" } } });
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1051", state: "unresolved" });
   });
 });
