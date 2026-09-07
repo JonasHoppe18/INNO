@@ -98,15 +98,29 @@ function availabilityProviderStatus(value: JsonValue): "ok" | "not_found" | "inv
 }
 
 function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, query: string): ToolExecutionResult {
+  const procedural = result.some(({ record }) => record.knowledgeType === "procedural");
+  const taskSpecificity = procedural
+    ? result.some(({ record, taskTitleMatches = 0 }) => {
+        const appliesTo = record.metadata?.applies_to;
+        const productScoped = appliesTo && typeof appliesTo === "object" && !Array.isArray(appliesTo)
+          && (Array.isArray(appliesTo.product_models) && appliesTo.product_models.length > 0
+            || Array.isArray(appliesTo.product_ids) && appliesTo.product_ids.length > 0);
+        return taskTitleMatches > 0 || (record.authority === "authoritative" && productScoped);
+      }) ? "matched" : "insufficient"
+    : "not_applicable";
   return {
     status: result.length ? "ok" : "not_found",
     data: {
       query,
-      results: result.map(({ record, score, matchReason, rank, evidenceSections }, index) => ({
+      task_specificity: taskSpecificity,
+      results: result.map(({ record, score, taskRelevance = 0, taskTitleMatches = 0, taskBodyMatches = 0, matchReason, rank, evidenceSections }, index) => ({
         title: record.title,
         knowledge_type: record.knowledgeType,
         authority: record.authority,
         score: Number(score.toFixed(4)),
+        task_relevance_score: Number(taskRelevance.toFixed(4)),
+        task_title_matches: taskTitleMatches,
+        task_body_matches: taskBodyMatches,
         rank: rank ?? index + 1,
         match_reason: matchReason,
         evidence_sections: (evidenceSections ?? []).map((section) => ({

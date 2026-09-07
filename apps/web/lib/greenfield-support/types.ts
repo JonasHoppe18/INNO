@@ -105,6 +105,10 @@ export interface KnowledgeEvidenceSection {
 export interface KnowledgeHit {
   record: KnowledgeRecord;
   score: number;
+  /** Bounded deterministic overlap between the request's task terms and the record title/heading/body. */
+  taskRelevance?: number;
+  taskTitleMatches?: number;
+  taskBodyMatches?: number;
   matchReason: "lexical" | "title" | "structured" | "semantic";
   rank?: number;
   evidenceSections?: KnowledgeEvidenceSection[];

@@ -40,9 +40,16 @@ const AUTHORITY_WEIGHT: Record<AuthorityLevel, number> = {
 };
 
 const STOP_WORDS = new Set(
-  "a an and are as at be can could for from how i in is it me my of on or order our please the this to was we what when where with would you your".split(
+  "a an and are as at be can could did does for from how i in is it me my no not of on or order our please should still the this to was we what when where will with would you your".split(
     " ",
   ),
+);
+
+// Common support/product nouns help establish applicability but do not identify
+// the customer's requested task. They remain in the original semantic and
+// lexical queries; this set is only for the bounded task signal.
+const TASK_CONTEXT_WORDS = new Set(
+  "adapter audio bluetooth computer console device dongle headset headphones pc usb wireless work working problem issue help try tried need".split(" "),
 );
 
 function cleanText(value: unknown): string {
@@ -560,6 +567,141 @@ function applicableProductScore(row: any, query: string): number {
   ), 0);
 }
 
+function rowProductModels(row: any): string[] {
+  const structuredModels = Array.isArray(row?.structured_data?.applies_to?.product_models)
+    ? row.structured_data.applies_to.product_models
+    : [];
+  const metadataModels = Array.isArray(row?.metadata?.applies_to?.product_models)
+    ? row.metadata.applies_to.product_models
+    : [];
+  return [...structuredModels, ...metadataModels].map(normalizedProductText).filter(Boolean);
+}
+
+function rowRelevanceText(row: any): string {
+  const title = cleanText(row?.title);
+  if (title) return title;
+  const chunk = cleanText(row?.chunk_content ?? row?.content ?? "");
+  return chunk.split(/\n\s*\n/)[0] ?? "";
+}
+
+function tokenForms(token: string): Set<string> {
+  const forms = new Set([token]);
+  if (token.length >= 6 && token.endsWith("ing")) forms.add(token.slice(0, -3));
+  if (token.length >= 5 && token.endsWith("ed")) forms.add(token.slice(0, -2));
+  if (token.length >= 5 && token.endsWith("s")) forms.add(token.slice(0, -1));
+  if (token.length >= 7 && token.startsWith("re")) forms.add(token.slice(2));
+  return forms;
+}
+
+function taskTokensMatch(left: string, right: string): boolean {
+  const leftForms = tokenForms(left);
+  const rightForms = tokenForms(right);
+  return Array.from(leftForms).some((leftForm) => Array.from(rightForms).some((rightForm) => compatibleToken(leftForm, rightForm)));
+}
+
+interface TaskRelevanceSignals {
+  score: number;
+  matches: number;
+  titleMatches: number;
+  bodyMatches: number;
+  matchedTerms: string[];
+  queryTerms: number;
+}
+
+function productTokenSet(rows: any[], productContext: KnowledgeProductContext | null): Set<string> {
+  const values = [
+    ...(productContext?.productModels ?? []),
+    ...rows.flatMap((row) => rowProductModels(row)),
+  ];
+  return new Set(values.flatMap((value) => tokens(value)));
+}
+
+function taskRelevanceSignals(rows: any[], query: string, productContext: KnowledgeProductContext | null): Map<string, TaskRelevanceSignals> {
+  const productTokens = productTokenSet(rows, productContext);
+  const queryTokens = Array.from(new Set(tokens(query))).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token));
+  const documentTokens = rows.map((row) => new Set(tokens(rowRelevanceText(row)).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token))));
+  const documentFrequency = new Map<string, number>();
+  for (const queryToken of queryTokens) {
+    const frequency = documentTokens.filter((candidateTokens) => Array.from(candidateTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
+    documentFrequency.set(queryToken, frequency);
+  }
+  // Terms shared by most candidate titles/headings describe the product or
+  // channel, not the customer's specific task. Keep recall broad, but do not
+  // let those terms decide which evidence is primary.
+  const hasExplicitProductSignal = Boolean(productContext)
+    || rows.some((row) => rowProductModels(row).some((model) => normalizedProductText(query).includes(model)));
+  const genericThreshold = rows.length <= 2 && hasExplicitProductSignal
+    ? 3
+    : Math.max(2, Math.ceil(rows.length * 0.4));
+  const taskTerms = queryTokens.filter((token) => (documentFrequency.get(token) ?? 0) < genericThreshold);
+  const signals = new Map<string, TaskRelevanceSignals>();
+  for (const row of rows) {
+    const relevanceText = rowRelevanceText(row);
+    const relevanceTokens = new Set(tokens(relevanceText).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
+    const matchingTerms = taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
+    const bodyTokens = new Set(tokens(cleanText(row?.content ?? row?.chunk_content ?? "")).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
+    const bodyMatches = taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
+    const coverage = matchingTerms.length / Math.max(taskTerms.length, 1);
+    const boundedBodySupport = Math.min(0.2, bodyMatches * 0.05);
+    signals.set(String(row?.id ?? row?.source_id ?? row?.content_hash ?? ""), {
+      score: Math.min(1, coverage + boundedBodySupport),
+      matches: matchingTerms.length,
+      titleMatches: matchingTerms.length,
+      bodyMatches,
+      matchedTerms: matchingTerms,
+      queryTerms: taskTerms.length,
+    });
+  }
+  return signals;
+}
+
+function rowRelevanceKey(row: any): string {
+  return String(row?.id ?? row?.source_id ?? row?.content_hash ?? "");
+}
+
+function sortKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
+  const signals = taskRelevanceSignals(rows, query, productContext);
+  const hasApplicableProduct = rows.some((row) => applicableProductScore(row, query) > 0);
+  const hasTaskSignal = rows.some((row) => (signals.get(rowRelevanceKey(row))?.score ?? 0) > 0);
+  const sorted = [...rows].sort((left, right) => {
+    if (hasApplicableProduct) {
+      const productDifference = applicableProductScore(right, query) - applicableProductScore(left, query);
+      if (productDifference) return productDifference;
+    }
+    if (hasTaskSignal) {
+      const taskDifference = (signals.get(rowRelevanceKey(right))?.score ?? 0) - (signals.get(rowRelevanceKey(left))?.score ?? 0);
+      if (taskDifference) return taskDifference;
+    }
+    return Number(right.score ?? 0) - Number(left.score ?? 0)
+      || String(right.observed_at ?? "").localeCompare(String(left.observed_at ?? ""));
+  });
+  return { rows: sorted, signals };
+}
+
+function selectKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, finalLimit: number, knowledgeTypes?: KnowledgeType[]): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
+  const ranked = sortKnowledgeRows(rows, query, productContext);
+  if (!knowledgeTypes?.includes("procedural") || !ranked.rows.length) {
+    return { rows: ranked.rows.slice(0, finalLimit), signals: ranked.signals };
+  }
+
+  const top = ranked.rows[0];
+  const topSignal = ranked.signals.get(rowRelevanceKey(top))?.score ?? 0;
+  const selected = ranked.rows.filter((row, index) => {
+    if (index === 0) return true;
+    const candidateSignal = ranked.signals.get(rowRelevanceKey(row));
+    const signal = candidateSignal?.score ?? 0;
+    const topMatches = ranked.signals.get(rowRelevanceKey(top))?.matchedTerms ?? [];
+    const candidateMatches = candidateSignal?.matchedTerms ?? [];
+    const separateTask = candidateMatches.some((term) => !topMatches.includes(term));
+    // A second procedure is retained only when it independently matches the
+    // task and is close enough to be complementary evidence.
+    return signal > 0
+      && (candidateSignal?.titleMatches ?? 0) > 0
+      && (signal >= topSignal * 0.75 || separateTask);
+  });
+  return { rows: selected.slice(0, finalLimit), signals: ranked.signals };
+}
+
 function relevantToExplicitQuery(row: any, request: KnowledgeSearchRequest, productContext: KnowledgeProductContext | null): boolean {
   if (isKnowledgeRecordApplicable({
     workspaceId: String(row.workspace_id ?? request.workspaceId),
@@ -678,14 +820,38 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     if (!workspaceId) throw new Error("workspaceId is required for knowledge search.");
     const now = Date.now();
     const allowedTypes = request.knowledgeTypes ? new Set(request.knowledgeTypes) : null;
-    return Array.from(this.records.values())
+    const eligibleRecords = Array.from(this.records.values())
       .filter((record) => record.workspaceId === workspaceId)
       .filter((record) => !allowedTypes || allowedTypes.has(record.knowledgeType))
-      .filter((record) => isKnowledgeRecordApplicable(record, request.productContext))
+      .filter((record) => isKnowledgeRecordApplicable(record, request.productContext));
+    const hits = eligibleRecords
       .map((record) => searchRecord(record, request.query, now))
-      .filter(Boolean)
-      .sort((a, b) => (b as KnowledgeHit).score - (a as KnowledgeHit).score)
-      .slice(0, Math.max(1, Math.min(request.limit ?? 5, 20))) as KnowledgeHit[];
+      .filter(Boolean) as KnowledgeHit[];
+    const rows = hits.map((hit) => ({
+      id: hit.record.id,
+      score: hit.score,
+      observed_at: hit.record.observedAt,
+      structured_data: hit.record.structuredData,
+      metadata: hit.record.metadata,
+      title: hit.record.title,
+      content: hit.record.content,
+      chunk_content: hit.record.chunks[0] ?? hit.record.content,
+      record: hit,
+    }));
+    const selected = selectKnowledgeRows(
+      rows,
+      request.query,
+      request.productContext ?? null,
+      Math.max(1, Math.min(request.limit ?? 5, 20)),
+      request.knowledgeTypes,
+    );
+    return selected.rows.map((row, index) => ({
+      ...row.record,
+      taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,
+      taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
+      taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
+      rank: index + 1,
+    }));
   }
 }
 
@@ -941,17 +1107,16 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       if (!rowsById.has(String(row.id))) rowsById.set(String(row.id), row);
     }
     const mergedRows = Array.from(rowsById.values());
-    const hasApplicableProduct = mergedRows.some((row) => applicableProductScore(row, request.query) > 0);
-    const rows = mergedRows
-      .sort((left, right) => {
-        if (hasApplicableProduct) {
-          const productDifference = applicableProductScore(right, request.query) - applicableProductScore(left, request.query);
-          if (productDifference) return productDifference;
-        }
-        return Number(right.score ?? 0) - Number(left.score ?? 0)
-          || String(right.observed_at ?? "").localeCompare(String(left.observed_at ?? ""));
-      })
-      .slice(0, finalLimit);
+    const explicitProductScores = mergedRows.map((row) => applicableProductScore(row, request.query));
+    const strongestExplicitProduct = Math.max(...explicitProductScores, 0);
+    const productScopedRows = strongestExplicitProduct > 0
+      ? mergedRows.filter((row) => {
+          const score = applicableProductScore(row, request.query);
+          return score === 0 || score === strongestExplicitProduct;
+        })
+      : mergedRows;
+    const selected = selectKnowledgeRows(productScopedRows, request.query, productContext, finalLimit, request.knowledgeTypes);
+    const rows = selected.rows;
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows
       .map((row: any, index: number) => ({
@@ -975,6 +1140,9 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         chunks: Array.isArray(row.chunks) ? row.chunks : [row.content],
       },
       score: Number(row.score ?? 0),
+      taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,
+      taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
+      taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
       rank: index + 1,
       evidenceSections: evidenceSections.get(String(row.id)) ?? [],
       matchReason: row.match_reason ?? "semantic",
