@@ -3,6 +3,7 @@ import type {
   KnowledgeHit,
   KnowledgeEvidenceSection,
   KnowledgeRecord,
+  KnowledgeProductContext,
   KnowledgeSearchRequest,
   KnowledgeSourceInput,
   KnowledgeStore,
@@ -483,6 +484,50 @@ function isPublished(record: KnowledgeRecord | { metadata?: JsonObject }): boole
   return !["draft", "unpublished", "archived"].includes(lifecycle);
 }
 
+function normalizedProductText(value: unknown): string {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => cleanText(item)).filter(Boolean)
+    : [];
+}
+
+/**
+ * Applicability is a deterministic constraint around semantic retrieval.
+ * Product ids are the stronger representation when both representations exist.
+ */
+export function isKnowledgeRecordApplicable(
+  record: Pick<KnowledgeRecord, "workspaceId" | "metadata">,
+  productContext?: KnowledgeProductContext | null,
+): boolean {
+  const appliesTo = record.metadata?.applies_to;
+  if (!appliesTo || typeof appliesTo !== "object" || Array.isArray(appliesTo)) return true;
+
+  const rawProductIds = (appliesTo as JsonObject).product_ids;
+  const productIds = stringList(rawProductIds);
+  const hasProductIdRestriction = rawProductIds != null && (!Array.isArray(rawProductIds) || rawProductIds.length > 0);
+  const productModels = stringList((appliesTo as JsonObject).product_models);
+  if (!hasProductIdRestriction && !productModels.length) return true;
+  if (!productContext || productContext.workspaceId !== record.workspaceId) return false;
+
+  if (hasProductIdRestriction) {
+    return productIds.includes(cleanText(productContext.productId));
+  }
+
+  const contextModels = productContext.productModels.map(normalizedProductText).filter(Boolean);
+  return productModels
+    .map(normalizedProductText)
+    .filter(Boolean)
+    .some((model) => contextModels.includes(model));
+}
+
 function freshnessScore(record: KnowledgeRecord, now: number): number {
   const date = Date.parse(record.observedAt || record.publishedAt || "");
   if (!Number.isFinite(date)) return 0.5;
@@ -553,6 +598,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     return Array.from(this.records.values())
       .filter((record) => record.workspaceId === workspaceId)
       .filter((record) => !allowedTypes || allowedTypes.has(record.knowledgeType))
+      .filter((record) => isKnowledgeRecordApplicable(record, request.productContext))
       .map((record) => searchRecord(record, request.query, now))
       .filter(Boolean)
       .sort((a, b) => (b as KnowledgeHit).score - (a as KnowledgeHit).score)
@@ -563,6 +609,60 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
 /** Production adapter. The RPC is tenant-filtered again in SQL, not just here. */
 export class SupabaseKnowledgeStore implements KnowledgeStore {
   constructor(private readonly serviceClient: any) {}
+
+  private readonly productContextCache = new Map<string, KnowledgeProductContext | null>();
+
+  private async resolveProductContext(request: KnowledgeSearchRequest): Promise<KnowledgeProductContext | null> {
+    const shopId = cleanText(request.trustedShopId);
+    if (!shopId) return null;
+    const cacheKey = `${request.workspaceId}:${shopId}:${normalizedProductText(request.query)}`;
+    if (this.productContextCache.has(cacheKey)) return this.productContextCache.get(cacheKey) ?? null;
+
+    const { data: shop, error: shopError } = await this.serviceClient
+      .from("shops")
+      .select("id")
+      .eq("id", shopId)
+      .eq("workspace_id", request.workspaceId)
+      .eq("platform", "shopify")
+      .is("uninstalled_at", null)
+      .maybeSingle();
+    if (shopError) throw new Error(shopError.message);
+    if (!shop?.id) {
+      this.productContextCache.set(cacheKey, null);
+      return null;
+    }
+
+    const { data, error } = await this.serviceClient
+      .from("shop_products")
+      .select("id,title,handle,external_id")
+      .eq("shop_ref_id", shop.id)
+      .limit(5000);
+    if (error) throw new Error(error.message);
+    const normalizedQuery = normalizedProductText(request.query);
+    const candidates = (Array.isArray(data) ? data : [])
+      .map((product: any) => ({
+        product,
+        identities: [product?.title, product?.handle]
+          .map(normalizedProductText)
+          .filter(Boolean),
+      }))
+      .filter(({ identities }) => identities.some((identity) => normalizedQuery.includes(identity)))
+      .sort((left, right) => Math.max(...right.identities.map((value) => value.length)) - Math.max(...left.identities.map((value) => value.length)));
+
+    const strongestLength = candidates.length
+      ? Math.max(...candidates[0].identities.map((value: string) => value.length))
+      : 0;
+    const strongest = candidates.filter(({ identities }) => identities.some((identity) => identity.length === strongestLength));
+    const context = strongest.length === 1
+      ? {
+          workspaceId: request.workspaceId,
+          productId: cleanText(strongest[0].product?.id),
+          productModels: [strongest[0].product?.title, strongest[0].product?.handle].map(cleanText).filter(Boolean),
+        }
+      : null;
+    this.productContextCache.set(cacheKey, context);
+    return context;
+  }
 
   private async loadEvidenceSections(workspaceId: string, rows: any[], query: string): Promise<Map<string, KnowledgeEvidenceSection[]>> {
     const recordIds = Array.from(new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean)));
@@ -708,18 +808,28 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
   }
 
   async search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]> {
+    const finalLimit = Math.max(1, Math.min(request.limit ?? 5, 20));
+    // The RPC is capped at 20; use the largest bounded pool available before
+    // applicability filtering so an unrelated top hit cannot hide a valid one.
+    const candidateLimit = Math.min(20, Math.max(finalLimit, finalLimit * 4));
     const queryEmbedding = await this.embedQuery(request.query);
+    const productContext = await this.resolveProductContext(request);
     const { data, error } = await this.serviceClient.rpc("greenfield_search_knowledge_semantic", {
       p_workspace_id: request.workspaceId,
       p_query_embedding: queryEmbedding,
       p_knowledge_types: request.knowledgeTypes ?? null,
-      p_limit: request.limit ?? 5,
+      p_limit: candidateLimit,
     });
     if (error) throw new Error(error.message);
-    const rows = Array.isArray(data) ? data : [];
+    const rows = (Array.isArray(data) ? data : [])
+      .filter((row: any) => isPublished({ metadata: row.metadata ?? {} }))
+      .filter((row: any) => isKnowledgeRecordApplicable({
+        workspaceId: String(row.workspace_id ?? request.workspaceId),
+        metadata: row.metadata ?? {},
+      }, productContext))
+      .slice(0, finalLimit);
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows
-      .filter((row: any) => isPublished({ metadata: row.metadata ?? {} }))
       .map((row: any, index: number) => ({
       record: {
         id: String(row.id),

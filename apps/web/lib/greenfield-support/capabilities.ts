@@ -270,6 +270,21 @@ function buildCapabilityManifest(context: CapabilityContext): CapabilityManifest
   };
 }
 
+function searchKnowledge(
+  context: CapabilityContext,
+  query: string,
+  knowledgeTypes: Parameters<KnowledgeStore["search"]>[0]["knowledgeTypes"],
+  limit: number,
+) {
+  return context.knowledge.search({
+    workspaceId: context.tenant.workspaceId,
+    trustedShopId: context.tenant.shopId ?? null,
+    query,
+    knowledgeTypes,
+    limit,
+  });
+}
+
 export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
 
@@ -318,15 +333,15 @@ export function createCapabilityRegistry(context: CapabilityContext) {
         const result = await (async (): Promise<ToolExecutionResult> => {
           switch (toolName) {
           case "search_policy":
-            return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["policy"], limit: 5 }), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["policy"], 5), query);
           case "search_product_knowledge":
-            return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["product"], limit: 5 }), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["product"], 5), query);
           case "search_historical_cases":
-            return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["historic_support"], limit: 3 }), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["historic_support"], 3), query);
           case "get_brand_guidance":
-            return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["brand"], limit: 3 }), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["brand"], 3), query);
           case "search_procedures":
-            return knowledgeResult(await context.knowledge.search({ workspaceId: context.tenant.workspaceId, query, knowledgeTypes: ["procedural"], limit: 5 }), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["procedural"], 5), query);
           case "get_order": {
             if (!context.tenant.customerEmail) {
               return { status: "missing_context", error: { code: "customer_identity_missing", message: "A verified customer identity is required before reading order data." } };

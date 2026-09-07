@@ -1,5 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { cleanRawContent, InMemoryKnowledgeStore, normalizeKnowledgeSource, selectEvidenceSections } from "../knowledge";
+import { cleanRawContent, InMemoryKnowledgeStore, isKnowledgeRecordApplicable, normalizeKnowledgeSource, selectEvidenceSections, SupabaseKnowledgeStore } from "../knowledge";
+
+const PRODUCT_A = { workspaceId: "tenant-a", productId: "product-a", productModels: ["Product A"] };
+const PRODUCT_B = { workspaceId: "tenant-a", productId: "product-b", productModels: ["Product B"] };
+
+async function ingestScopedCorpus(store) {
+  await store.ingest("tenant-a", {
+    sourceKind: "procedure",
+    sourceId: "global-procedure",
+    title: "Global pairing procedure",
+    content: "Shared pairing troubleshooting steps for every product.",
+    authority: "guidance",
+    sourceLabel: "Global help",
+    metadata: { lifecycle_status: "published", applies_to: { kind: "all", product_ids: [] } },
+  });
+  await store.ingest("tenant-a", {
+    sourceKind: "procedure",
+    sourceId: "product-a-procedure",
+    title: "Product A pairing procedure",
+    content: "Shared pairing troubleshooting steps specifically for Product A.",
+    authority: "authoritative",
+    sourceLabel: "Product A manual",
+    metadata: { lifecycle_status: "published", applies_to: { kind: "products", product_ids: ["product-a"] } },
+  });
+  await store.ingest("tenant-a", {
+    sourceKind: "procedure",
+    sourceId: "product-b-procedure",
+    title: "Product B pairing procedure",
+    content: "Shared pairing troubleshooting steps specifically for Product B.",
+    authority: "authoritative",
+    sourceLabel: "Product B manual",
+    metadata: { lifecycle_status: "published", applies_to: { kind: "products", product_ids: ["product-b"] } },
+  });
+  await store.ingest("tenant-a", {
+    sourceKind: "procedure",
+    sourceId: "product-a-draft",
+    title: "Product A draft procedure",
+    content: "Shared pairing troubleshooting steps for Product A draft.",
+    authority: "authoritative",
+    metadata: { lifecycle_status: "draft", applies_to: { kind: "products", product_ids: ["product-a"] } },
+  });
+  await store.ingest("tenant-a", {
+    sourceKind: "procedure",
+    sourceId: "product-a-archived",
+    title: "Product A archived procedure",
+    content: "Shared pairing troubleshooting steps for Product A archived.",
+    authority: "authoritative",
+    metadata: { lifecycle_status: "archived", applies_to: { kind: "products", product_ids: ["product-a"] } },
+  });
+}
+
+function queryBuilder(data, error = null) {
+  const result = { data, error };
+  const builder = {
+    select: () => builder,
+    eq: () => builder,
+    is: () => builder,
+    in: () => builder,
+    limit: () => builder,
+    order: () => builder,
+    maybeSingle: async () => result,
+    then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+  };
+  return builder;
+}
 
 describe("greenfield knowledge store", () => {
   it("conservatively converts generic HTML into visible source text", () => {
@@ -176,5 +240,95 @@ describe("greenfield knowledge store", () => {
     expect(sections.some((section) => section.content.includes("PlayStation 5"))).toBe(true);
     expect(sections.reduce((total, section) => total + section.content.length, 0)).toBeLessThanOrEqual(160);
     expect(sections.flatMap((section) => section.chunkIds)).not.toContain("chunk-2");
+  });
+
+  it("enforces generic applicability while preserving global and matching product knowledge", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestScopedCorpus(store);
+
+    const hits = await store.search({
+      workspaceId: "tenant-a",
+      query: "shared pairing troubleshooting steps",
+      productContext: PRODUCT_A,
+      limit: 10,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["product-a-procedure", "global-procedure"]);
+    expect(hits[0].record.authority).toBe("authoritative");
+    expect(hits[1].record.sourceLabel).toBe("Global help");
+  });
+
+  it("hides product-scoped knowledge when the product is unknown or from another workspace", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestScopedCorpus(store);
+
+    const unknownHits = await store.search({ workspaceId: "tenant-a", query: "shared pairing troubleshooting steps", limit: 10 });
+    const crossWorkspaceHits = await store.search({
+      workspaceId: "tenant-a",
+      query: "shared pairing troubleshooting steps",
+      productContext: { ...PRODUCT_A, workspaceId: "tenant-b" },
+      limit: 10,
+    });
+
+    expect(unknownHits.map((hit) => hit.record.sourceId)).toEqual(["global-procedure"]);
+    expect(crossWorkspaceHits.map((hit) => hit.record.sourceId)).toEqual(["global-procedure"]);
+  });
+
+  it("keeps lifecycle filtering ahead of applicability", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestScopedCorpus(store);
+    const hits = await store.search({ workspaceId: "tenant-a", query: "shared pairing troubleshooting steps", productContext: PRODUCT_A, limit: 10 });
+
+    expect(hits.map((hit) => hit.record.sourceId)).not.toContain("product-a-draft");
+    expect(hits.map((hit) => hit.record.sourceId)).not.toContain("product-a-archived");
+  });
+
+  it("preserves legacy product_models and gives product_ids precedence", async () => {
+    const legacy = await normalizeKnowledgeSource("tenant-a", {
+      sourceKind: "procedure",
+      sourceId: "legacy-a",
+      title: "Legacy Product A procedure",
+      content: "Product A legacy troubleshooting steps.",
+      metadata: { applies_to: { product_models: ["Product A"] } },
+    });
+    const stronger = await normalizeKnowledgeSource("tenant-a", {
+      sourceKind: "procedure",
+      sourceId: "stronger-a",
+      title: "Stronger identifier procedure",
+      content: "Product A identifier troubleshooting steps.",
+      metadata: { applies_to: { product_ids: ["product-b"], product_models: ["Product A"] } },
+    });
+
+    expect(isKnowledgeRecordApplicable(legacy, PRODUCT_A)).toBe(true);
+    expect(isKnowledgeRecordApplicable(legacy, PRODUCT_B)).toBe(false);
+    expect(isKnowledgeRecordApplicable(stronger, PRODUCT_A)).toBe(false);
+  });
+
+  it("uses a bounded larger semantic candidate pool before filtering", async () => {
+    let rpcArguments;
+    const rows = [
+      { id: "b", workspace_id: "tenant-a", title: "Product B", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "b", source_label: "B", metadata: { applies_to: { product_ids: ["product-b"] } }, score: 0.99, chunk_id: "b-chunk", chunk_index: 0, chunk_content: "Product B pairing" },
+      { id: "a", workspace_id: "tenant-a", title: "Product A", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "a", source_label: "A", metadata: { applies_to: { product_ids: ["product-a"] } }, score: 0.80, chunk_id: "a-chunk", chunk_index: 0, chunk_content: "Product A pairing" },
+      { id: "global", workspace_id: "tenant-a", title: "Global", content: "pairing", knowledge_type: "procedural", authority: "guidance", source_kind: "procedure", source_id: "global", source_label: "Global", metadata: {}, score: 0.70, chunk_id: "global-chunk", chunk_index: 0, chunk_content: "Global pairing" },
+    ];
+    const serviceClient = {
+      from(table) {
+        if (table === "shops") return queryBuilder({ id: "shop-a" });
+        if (table === "shop_products") return queryBuilder([{ id: "product-a", title: "Product A", handle: "product-a", external_id: "external-a" }]);
+        if (table === "greenfield_knowledge_chunks") return queryBuilder(rows.map((row) => ({ id: row.chunk_id, record_id: row.id, chunk_index: 0, content: row.chunk_content })));
+        throw new Error(`Unexpected table: ${table}`);
+      },
+      async rpc(_name, args) {
+        rpcArguments = args;
+        return { data: rows, error: null };
+      },
+    };
+    const store = new SupabaseKnowledgeStore(serviceClient);
+    store.embedQuery = async () => [0];
+
+    const hits = await store.search({ workspaceId: "tenant-a", trustedShopId: "shop-a", query: "Product A pairing", knowledgeTypes: ["procedural"], limit: 1 });
+
+    expect(rpcArguments.p_limit).toBe(4);
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["a"]);
   });
 });

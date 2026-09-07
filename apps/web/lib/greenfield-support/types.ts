@@ -84,6 +84,16 @@ export interface KnowledgeSearchRequest {
   query: string;
   knowledgeTypes?: KnowledgeType[];
   limit?: number;
+  /** Server-owned shop binding used to resolve a product from the current catalog. */
+  trustedShopId?: string | null;
+  /** Server-owned product context; never part of a model-facing tool schema. */
+  productContext?: KnowledgeProductContext | null;
+}
+
+export interface KnowledgeProductContext {
+  workspaceId: string;
+  productId: string;
+  productModels: string[];
 }
 
 export interface KnowledgeEvidenceSection {
