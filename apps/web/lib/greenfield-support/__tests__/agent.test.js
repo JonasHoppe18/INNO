@@ -113,7 +113,8 @@ describe("greenfield model/tool loop", () => {
       capabilities: dependencies,
     });
 
-    expect(result.response).toContain("order number from your order confirmation");
+    expect(result.response).toContain("different valid order number or order identifier");
+    expect(result.response).not.toContain("send the order number from your order confirmation");
     expect(result.response).not.toContain("Please provide order ID");
     const historyResult = result.trace.events.find((event) => event.type === "tool_result" && event.data.name === "get_order_history");
     expect(historyResult.data.result.data).toMatchObject({ candidate_only: true, has_order_history: true });

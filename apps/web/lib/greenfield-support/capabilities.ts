@@ -276,13 +276,32 @@ function searchKnowledge(
   knowledgeTypes: Parameters<KnowledgeStore["search"]>[0]["knowledgeTypes"],
   limit: number,
 ) {
+  const customerProvided = context.conversationContext?.customerProvided;
+  const continuityTerms = knowledgeTypes?.includes("product")
+    ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform]
+    : knowledgeTypes?.includes("procedural")
+      ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform, customerProvided?.issue, ...(customerProvided?.attemptedSteps ?? [])]
+      : [];
+  const normalizedQuery = query.toLowerCase();
+  const contextualQuery = [query, ...continuityTerms.filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))]
+    .filter(Boolean)
+    .join(" ");
   return context.knowledge.search({
     workspaceId: context.tenant.workspaceId,
     trustedShopId: context.tenant.shopId ?? null,
-    query,
+    query: contextualQuery,
     knowledgeTypes,
     limit,
   });
+}
+
+function productLookupQuery(context: CapabilityContext, query: string): string {
+  const product = context.conversationContext?.customerProvided?.product;
+  const variant = context.conversationContext?.customerProvided?.variant;
+  const normalizedQuery = query.toLowerCase();
+  return [query, product, variant]
+    .filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))
+    .join(" ");
 }
 
 export function createCapabilityRegistry(context: CapabilityContext) {
@@ -380,11 +399,11 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return customer ? { status: "ok", data: jsonValue(customer) } : { status: "not_found" };
           }
           case "get_product": {
-            const product = removeUnsupportedProductFields(await context.commerce.getProduct(query));
+            const product = removeUnsupportedProductFields(await context.commerce.getProduct(productLookupQuery(context, query)));
             return { status: providerStatus(product), data: product };
           }
           case "get_product_availability": {
-            const availability = jsonValue(await context.commerce.getProductAvailability(query));
+            const availability = jsonValue(await context.commerce.getProductAvailability(productLookupQuery(context, query)));
             return { status: availabilityProviderStatus(availability), data: availability };
           }
           case "inspect_fulfillment":

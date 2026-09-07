@@ -148,6 +148,19 @@ export interface OrderSnapshot {
 }
 
 /**
+ * Small, customer-supplied continuity hints. These are not verified commerce
+ * facts and must never be used as authorization or live operational evidence.
+ */
+export interface CustomerProvidedContext {
+  product?: string;
+  variant?: string;
+  platform?: string;
+  issue?: string;
+  returnDetails?: string;
+  attemptedSteps?: string[];
+}
+
+/**
  * Small server-owned continuity state passed between separate agent runs.
  * Customer messages and replies remain in `history`; this only carries state
  * that the tool boundary cannot safely reconstruct from prose alone.
@@ -160,6 +173,7 @@ export interface ConversationContext {
     order: OrderSnapshot | null;
   } | null;
   customerSignal: "resolution" | null;
+  customerProvided?: CustomerProvidedContext;
 }
 
 export interface TrackingSnapshot {

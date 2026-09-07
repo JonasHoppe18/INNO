@@ -103,6 +103,35 @@ describe("greenfield capabilities", () => {
     expect(result.data.results[0].knowledge_type).toBe("procedural");
   });
 
+  it("uses customer-provided product continuity only to enrich follow-up lookup queries", async () => {
+    const dependencies = await createDemoDependencies();
+    const requests = [];
+    const knowledge = {
+      ingest: (...args) => dependencies.knowledge.ingest(...args),
+      search: async (request) => {
+        requests.push(request);
+        return dependencies.knowledge.search(request);
+      },
+    };
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      knowledge,
+      tenant: dependencies.tenant,
+      conversationContext: {
+        turn: 1,
+        activeOrder: null,
+        customerSignal: null,
+        customerProvided: { product: "A-Spire Wireless", platform: "PC" },
+      },
+    });
+
+    await registry.execute("search_product_knowledge", JSON.stringify({ query: "Is it wireless?" }));
+    expect(requests[0].query).toContain("Is it wireless?");
+    expect(requests[0].query).toContain("A-Spire Wireless");
+    expect(requests[0].query).toContain("PC");
+    expect(requests[0].productContext).toBeUndefined();
+  });
+
   it("rejects tenant escape arguments", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });

@@ -1,3 +1,5 @@
+import { normalizeCustomerProvidedContext } from "../greenfield-support/conversation-context";
+
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TRACE_STRING_LENGTH = 420;
@@ -58,6 +60,7 @@ function safeContext(value) {
   if (!isRecord(value)) return null;
   const activeOrder = isRecord(value.activeOrder) ? value.activeOrder : null;
   const order = activeOrder && isRecord(activeOrder.order) ? activeOrder.order : null;
+  const customerProvided = normalizeCustomerProvidedContext(value.customerProvided);
   return {
     turn: Number.isSafeInteger(value.turn) ? value.turn : 0,
     active_order: activeOrder
@@ -68,6 +71,7 @@ function safeContext(value) {
         }
       : null,
     customer_signal: value.customerSignal === "resolution" ? "resolution" : null,
+    customer_provided: customerProvided ?? null,
   };
 }
 
@@ -84,6 +88,7 @@ export function normalizePlaygroundContext(value) {
         }
       : null,
     customerSignal: context.customer_signal,
+    ...(context.customer_provided ? { customerProvided: context.customer_provided } : {}),
   };
 }
 

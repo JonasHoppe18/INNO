@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
-import type { CapabilityManifest, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
+import type { CapabilityManifest, ConversationContext, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
 import type { StrictToolDefinition } from "./tool-contracts";
 
 const BasisSchema = z.object({
@@ -112,6 +112,8 @@ export interface ResponseValidationContext {
   firstResponse?: boolean;
   /** Server-observed proposal results from the current tool loop. */
   proposedActions?: ProposedAction[];
+  /** Server-owned active order focus used to avoid re-asking a known order id. */
+  activeOrder?: ConversationContext["activeOrder"];
 }
 
 export type ResponseLocale = "da" | "en";
@@ -659,6 +661,12 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
   if (!definition) return locale === "da" ? "Kan du sende de manglende oplysninger, så jeg kan fortsætte?" : "Could you share the missing information so I can continue?";
 
   if (segment.capability === "get_order" && segment.missing_arguments.includes("order_id")) {
+    if (context.activeOrder?.requestedOrderId) {
+      const reference = ` #${context.activeOrder.requestedOrderId.replace(/^#/, "")}`;
+      return locale === "da"
+        ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
+        : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
+    }
     return locale === "da"
       ? "Kan du sende ordrenummeret fra din ordrebekræftelse?"
       : "Could you send the order number from your order confirmation?";
@@ -1050,6 +1058,11 @@ function sameArguments(left: string[], right: string[]) {
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const rendered: string[] = [];
   const consumed = new Set<number>();
+  const hasOrderRecoveryQuestion = context.activeOrder?.state === "unresolved"
+    && segments.some((segment) => segment.type === "question"
+      && segment.purpose === "enable_capability"
+      && segment.capability === "get_order"
+      && segment.missing_arguments.includes("order_id"));
   const factSegments = segments.filter((segment): segment is Extract<ResponseSegment, { type: "fact" }> => segment.type === "fact");
   const orderFacts = factSegments.filter((segment) => ORDER_FACT_KINDS.has(segment.fact_kind));
   const shipmentFacts = factSegments.filter((segment) => SHIPMENT_FACT_KINDS.has(segment.fact_kind));
@@ -1084,7 +1097,12 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
         && sameArguments(candidate.missing_arguments, segment.missing_arguments));
       if (!repeatedByAction) rendered.push(renderCapabilityQuestion(segment, context));
     }
-    else if (segment.type === "limitation") rendered.push(renderLimitation(segment, context));
+    else if (segment.type === "limitation") {
+      const evidence = resultFor(segment.basis, context);
+      if (!(hasOrderRecoveryQuestion && evidence?.toolName === "get_order" && evidence.result.status === "not_found")) {
+        rendered.push(renderLimitation(segment, context));
+      }
+    }
     else rendered.push(renderTextSegment(segment.text));
   });
   const response = rendered.filter(Boolean).join("\n\n");

@@ -163,7 +163,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
-  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message);
+  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []);
   const instructions = instructionsForCapabilities(registry.manifest);
   trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
@@ -231,11 +231,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         proposedActions,
         actionExecutions: [],
         trace,
-        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
       };
     }
 
-    const validation = validateStructuredResponse(result?.finalOutput, { ...registry, proposedActions });
+    const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus() };
+    const validation = validateStructuredResponse(result?.finalOutput, responseContext);
     const actionExecutions = await executeActionProposals({
       executor: options.actionExecutor,
       proposals: proposedActions,
@@ -250,13 +251,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
     const response = validation.approvedSegments.length
       ? renderResponseSegments(validation.approvedSegments, {
-          ...registry,
+          ...responseContext,
           locale: inferResponseLocale(options.message),
           customerName: options.tenant.customerName,
           firstResponse: !(options.history?.length) && !(conversationContext?.turn),
           proposedActions,
         })
-      : fallbackResponse();
+      : fallbackResponse({ activeOrder: responseContext.activeOrder, locale: inferResponseLocale(options.message) });
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
@@ -270,13 +271,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       actionExecutions,
       trace,
-      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse();
+  const response = fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {
@@ -284,6 +285,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     proposedActions,
     actionExecutions: [],
     trace,
-    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message),
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
   };
 }

@@ -46,6 +46,25 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe("Glad to hear that’s sorted.");
   });
 
+  it("does not re-ask an explicit unresolved order number", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({ ...dependencies, orderReferences: ["9999"] });
+    const lookup = await registry.execute("get_order", JSON.stringify({ order_id: "9999" }));
+    expect(lookup.status).toBe("not_found");
+
+    const responseContext = { ...registry, activeOrder: registry.getActiveOrderFocus() };
+    const result = validateStructuredResponse({
+      segments: [{ type: "question", purpose: "enable_capability", text: null, capability: "get_order", missing_arguments: ["order_id"] }],
+    }, responseContext);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, responseContext);
+    expect(rendered).toContain("couldn’t verify order #9999");
+    expect(rendered).toContain("different valid order number or order identifier");
+    expect(rendered).not.toContain("couldn’t find an order with number #9999");
+    expect(rendered).not.toContain("send the order number from your order confirmation");
+  });
+
   it("uses a trusted first-name greeting only on the first substantive response", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

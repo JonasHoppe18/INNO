@@ -82,7 +82,14 @@ export function keepActionStatusHonest(response: string, actions: ProposedAction
     : `${safeResponse}\n\n${reminder}`;
 }
 
-export function fallbackResponse() {
+export function fallbackResponse(context?: { activeOrder?: ConversationContext["activeOrder"]; locale?: "da" | "en" }) {
+  const requestedOrderId = context?.activeOrder?.requestedOrderId;
+  if (context?.activeOrder?.state === "unresolved" && requestedOrderId) {
+    const reference = ` #${requestedOrderId.replace(/^#/, "")}`;
+    return context.locale === "da"
+      ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
+      : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
+  }
   return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
 }
 
@@ -142,7 +149,8 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
 
       if (response.type === "text") {
         const rawText = String(response.text ?? "").trim();
-        const validation = validateStructuredResponse(rawText, { ...registry, proposedActions });
+        const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus() };
+        const validation = validateStructuredResponse(rawText, responseContext);
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,
           proposals: proposedActions,
@@ -157,13 +165,13 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
         for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
         const finalResponse = validation.approvedSegments.length
           ? renderResponseSegments(validation.approvedSegments, {
-              ...registry,
+              ...responseContext,
               locale: inferResponseLocale(options.message),
               customerName: options.tenant.customerName,
               firstResponse: !(options.history?.length) && !(conversationContext?.turn),
               proposedActions,
             })
-          : fallbackResponse();
+          : fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
         pushEvent(trace, "final_response", {
           response: finalResponse,
           proposed_actions: proposedActions,
@@ -199,7 +207,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse();
+  const response = fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {

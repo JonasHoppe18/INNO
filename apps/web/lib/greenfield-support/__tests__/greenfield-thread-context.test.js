@@ -245,6 +245,37 @@ describe("greenfield persisted thread context", () => {
     expect(await store.load({ workspaceId: "workspace-b", threadId: "thread-a" })).toBeUndefined();
   });
 
+  it("persists only the bounded customer-provided continuity fields", async () => {
+    const rows = createThreadRows();
+    const store = createGreenfieldConversationContextStore(createFakeSupabase(rows));
+    await store.save({
+      workspaceId: "workspace-a",
+      threadId: "thread-a",
+      context: {
+        turn: 2,
+        activeOrder: null,
+        customerSignal: null,
+        customerProvided: {
+          product: "A-Spire Wireless",
+          platform: "PC",
+          attemptedSteps: ["I already reset it."],
+        },
+      },
+    });
+
+    expect(await store.load({ workspaceId: "workspace-a", threadId: "thread-a" })).toEqual({
+      turn: 2,
+      activeOrder: null,
+      customerSignal: null,
+      customerProvided: {
+        product: "A-Spire Wireless",
+        platform: "PC",
+        attemptedSteps: ["I already reset it."],
+      },
+    });
+    expect(JSON.stringify(rows.get("workspace-a:thread-a"))).not.toContain("trackingNumber");
+  });
+
   it("survives a second independent request for the same thread and refreshes live order facts", async () => {
     const dependencies = await createDemoDependencies();
     const rows = createThreadRows();

@@ -1,4 +1,5 @@
 import { applyScope } from "./workspace-auth";
+import { normalizeCustomerProvidedContext } from "../greenfield-support/conversation-context";
 import type { ConversationContext } from "../greenfield-support/types";
 
 export const GREENFIELD_CONTEXT_COLUMN = "greenfield_conversation_context_json";
@@ -67,7 +68,13 @@ export function normalizeStoredConversationContext(value: unknown): Conversation
   }
 
   const customerSignal = source.customerSignal === "resolution" ? "resolution" : null;
-  return { turn: Number(turn), activeOrder, customerSignal };
+  const customerProvided = normalizeCustomerProvidedContext(source.customerProvided);
+  return {
+    turn: Number(turn),
+    activeOrder,
+    customerSignal,
+    ...(customerProvided ? { customerProvided } : {}),
+  };
 }
 
 /** Converts a run result into the only form allowed in persistent storage. */
