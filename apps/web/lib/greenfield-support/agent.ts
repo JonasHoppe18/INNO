@@ -149,7 +149,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
 
       if (response.type === "text") {
         const rawText = String(response.text ?? "").trim();
-        const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus() };
+        const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus(), customerMessage: options.message };
         const validation = validateStructuredResponse(rawText, responseContext);
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,

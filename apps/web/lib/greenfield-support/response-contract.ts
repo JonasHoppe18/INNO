@@ -114,6 +114,8 @@ export interface ResponseValidationContext {
   proposedActions?: ProposedAction[];
   /** Server-owned active order focus used to avoid re-asking a known order id. */
   activeOrder?: ConversationContext["activeOrder"];
+  /** Current customer message used only to avoid repeating a supplied lookup reference. */
+  customerMessage?: string;
 }
 
 export type ResponseLocale = "da" | "en";
@@ -169,6 +171,17 @@ function meaningful(value: unknown): boolean {
 
 function resultFor(basis: { result_id: string }, context: ResponseValidationContext) {
   return context.getResult(basis.result_id);
+}
+
+function effectiveResultStatus(evidence: ResponseEvidenceRecord | undefined) {
+  if (!evidence) return null;
+  if (evidence.result.status !== "ok") return evidence.result.status;
+  if (!["get_product", "get_product_availability"].includes(evidence.toolName)) return evidence.result.status;
+  const data = objectValue(evidence.result.data);
+  const nestedStatus = typeof data?.status === "string" ? data.status : null;
+  return nestedStatus && ["not_found", "unknown", "unavailable"].includes(nestedStatus)
+    ? nestedStatus
+    : evidence.result.status;
 }
 
 function validateBasis(
@@ -536,9 +549,10 @@ function containsUnvalidatedOperationalCommitment(value: string): boolean {
   if (!text.trim()) return false;
   const subject = "(?:i|we|our team|support|vi|teamet)";
   const future = "(?:will|can|shall|going to|kan|vil|skal|kan få)";
-  const operation = "(?:cancel\\w*|refund\\w*|chang\\w*|updat\\w*|hold\\w*|delay\\w*|replac\\w*|send\\w*|contact\\w*|investigat\\w*|look into|look further|open (?:a )?(?:carrier )?trace|carrier trace|trac\\w*|escalat\\w*|reorder\\w*|re-order\\w*|reschedul\\w*|postpon\\w*|add (?:a )?note|prepare (?:a )?proposal for|ændr\\w*|opdater\\w*|hold\\w*|forsink\\w*|erstat\\w*|send\\w*|genbestil\\w*|ombook\\w*|kontakt\\w*|undersøg\\w*|noter\\w*|få teamet)";
-  return new RegExp(`\\b${subject}\\b[\\s\\S]{0,160}\\b${future}\\b[\\s\\S]{0,120}\\b${operation}\\b`, "i").test(text)
-    || new RegExp(`\\b${future}\\b[\\s\\S]{0,12}\\b(?:jeg|vi|os|teamet)\\b[\\s\\S]{0,72}\\b${operation}\\b`, "i").test(text)
+  const operation = "(?:cancel\\w*|refund\\w*|chang\\w*|updat\\w*|hold\\w*|delay\\w*|replac\\w*|send\\w*|contact\\w*|investigat\\w*|look into|look further|open (?:a )?(?:carrier )?trace|carrier trace|track(?:\\s+(?:the|your|this|it)\\b|\\s+(?:the|your)\\s+(?:package|shipment|order|parcel|case)\\b)|escalat\\w*|reorder\\w*|re-order\\w*|reschedul\\w*|postpon\\w*|add (?:a )?note|prepare (?:a )?proposal for|ændr\\w*|opdater\\w*|hold\\w*|forsink\\w*|erstat\\w*|send\\w*|genbestil\\w*|ombook\\w*|kontakt\\w*|undersøg\\w*|noter\\w*|få teamet)";
+  return new RegExp(`\\b${subject}\\b\\s+${future}\\s+${operation}\\b`, "i").test(text)
+    || new RegExp(`\\b(?:so|then|så)\\s+(?:i|we|jeg|vi)\\s+${future}\\s+${operation}\\b`, "i").test(text)
+    || /\b(?:i|we|jeg|vi)\s+(?:can|will|kan|vil)\s+get the team\s+to\s+(?:put|place)\b[\s\S]{0,80}\b(?:on hold|hold)\b/i.test(text)
     || new RegExp(`\\b(?:do you mean|do you want us|would you like us|shall we|should we|are you asking(?: us)?|which option do you prefer|what would you prefer|would you rather|let me know whether|vil du have os|skal vi|hvilken mulighed foretrækker du)\\b[\\s\\S]{0,96}\\b${operation}\\b`, "i").test(text);
 }
 
@@ -788,7 +802,11 @@ function orderStateClause(kind: "financial" | "fulfillment", value: string, loca
     return locale === "da" ? `har betalingsstatus ${value}` : `has payment status ${value}`;
   }
   if (key === "fulfilled") return locale === "da" ? "er afsendt" : "has shipped";
-  if (key === "partial" || key === "partially_fulfilled") return locale === "da" ? "er delvist afsendt" : "is partially shipped";
+  if (key === "partial" || key === "partially_fulfilled") {
+    return locale === "da"
+      ? "har sendt nogle varer, mens andre stadig ikke er afsendt"
+      : "has shipped some items while others are still unfulfilled";
+  }
   if (key === "unfulfilled" || key === "pending") return locale === "da" ? "er endnu ikke afsendt" : "has not shipped yet";
   return locale === "da" ? `har leveringsstatus ${value}` : `has fulfillment status ${value}`;
 }
@@ -884,6 +902,31 @@ function verifiedTrackingUrl(facts: Extract<ResponseSegment, { type: "fact" }>[]
     }
   }
   return null;
+}
+
+function verifiedTrackingSourceFromLimitedResult(evidence: ResponseEvidenceRecord | undefined) {
+  if (!evidence || evidence.toolName !== "get_tracking" || !["not_found", "unavailable", "error"].includes(evidence.result.status)) {
+    return null;
+  }
+  const carrier = resultFieldValue(evidence.result, "data.tracking_identifier.carrier").value;
+  const trackingUrl = safeTrackingUrl(resultFieldValue(evidence.result, "data.tracking_identifier.tracking_url").value);
+  if (!meaningful(carrier) && !trackingUrl) return null;
+  return {
+    carrier: meaningful(carrier) ? String(carrier) : null,
+    trackingUrl,
+  };
+}
+
+function renderVerifiedTrackingSource(evidence: ResponseEvidenceRecord | undefined, locale: ResponseLocale) {
+  const source = verifiedTrackingSourceFromLimitedResult(evidence);
+  if (!source) return "";
+  const carrier = source.carrier
+    ? locale === "da" ? `Pakken sendes med ${source.carrier}.` : `Your package is being handled by ${source.carrier}.`
+    : "";
+  const link = source.trackingUrl
+    ? locale === "da" ? `Du kan følge pakken her: ${source.trackingUrl}` : `Track your package here: ${source.trackingUrl}`
+    : "";
+  return [carrier, link].filter(Boolean).join(" ");
 }
 
 function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
@@ -999,24 +1042,47 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
-function renderLimitation(segment: Extract<ResponseSegment, { type: "limitation" }>, context: ResponseValidationContext) {
+function renderLimitation(
+  segment: Extract<ResponseSegment, { type: "limitation" }>,
+  context: ResponseValidationContext,
+  options: { includeVerifiedTrackingSource?: boolean } = {},
+) {
   const evidence = resultFor(segment.basis, context);
   const locale = localeFor(context);
+  const status = effectiveResultStatus(evidence);
   if (evidence?.toolName === "get_product_availability") {
-    if (evidence.result.status === "not_found") {
-      return locale === "da" ? "Jeg kunne ikke finde det produkt i Shopify." : "I couldn’t find that product in Shopify.";
+    if (status === "not_found") {
+      return locale === "da"
+        ? "Jeg kunne ikke finde et matchende produkt eller en variant i butikkens katalog. Hvis du har et SKU eller et produktlink, må du gerne sende det, så kan jeg tjekke det i stedet."
+        : "I couldn’t find a matching product or variant in the store catalog. If you have a SKU or product link, send it and I can check that instead.";
     }
-    if (evidence.result.status === "invalid_request") {
+    if (status === "invalid_request") {
       return locale === "da" ? "Hvilken variant vil du gerne have, at jeg tjekker?" : "Which variant would you like me to check?";
     }
-    if (evidence.result.status === "unavailable") {
+    if (["unavailable", "error", "unknown"].includes(status ?? "")) {
+      if (status === "unknown") {
+        return locale === "da" ? "Jeg kunne ikke bekræfte den aktuelle lagerstatus for dette produkt." : "I couldn’t verify the current availability for this product.";
+      }
       return locale === "da" ? "Jeg kan ikke tjekke den aktuelle lagerstatus lige nu." : "I can’t check the current availability right now.";
     }
   }
-  if (evidence?.toolName === "get_tracking" && evidence.result.status === "not_found") {
+  if (evidence?.toolName === "get_product" && ["unavailable", "error", "unknown"].includes(status ?? "")) {
     return locale === "da"
-      ? "Jeg kan ikke se en live trackingstatus på pakken lige nu."
-      : "I can’t see a live tracking update for this shipment right now.";
+      ? "Jeg kan ikke bekræfte produktet i butikkens katalog lige nu."
+      : "I can’t verify this product in the store catalog right now.";
+  }
+  if (evidence?.toolName === "get_tracking") {
+    const source = options.includeVerifiedTrackingSource ? renderVerifiedTrackingSource(evidence, locale) : "";
+    const limitation = evidence.result.status === "not_found"
+      ? locale === "da"
+        ? "Jeg kunne ikke finde en live trackingopdatering på pakken."
+        : "I couldn’t find a live tracking update for this shipment."
+      : ["unavailable", "error"].includes(evidence.result.status)
+        ? locale === "da"
+          ? "Jeg kan ikke hente en live trackingopdatering på pakken lige nu."
+          : "I can’t retrieve a live tracking update for this shipment right now."
+        : null;
+    if (limitation) return [source, limitation].filter(Boolean).join("\n\n");
   }
   if (evidence?.toolName === "get_order" && evidence.result.status === "not_found") {
     const orderId = resultFieldValue(evidence.result, "data.order_id").value
@@ -1025,6 +1091,28 @@ function renderLimitation(segment: Extract<ResponseSegment, { type: "limitation"
     return locale === "da"
       ? `Jeg kunne ikke finde en ordre med nummer${reference}.`
       : `I couldn’t find an order with number${reference}.`;
+  }
+  if (evidence?.result.status === "not_found") {
+    const messages: Record<string, Record<ResponseLocale, string>> = {
+      search_policy: {
+        en: "I couldn’t verify that policy detail from our current policy information.",
+        da: "Jeg kunne ikke bekræfte den politikoplysning ud fra vores aktuelle politikoplysninger.",
+      },
+      search_product_knowledge: {
+        en: "I couldn’t verify that product detail from our current product information.",
+        da: "Jeg kunne ikke bekræfte den produktoplysning ud fra vores aktuelle produktinformation.",
+      },
+      search_procedures: {
+        en: "I couldn’t verify a support procedure for this issue from our current guidance.",
+        da: "Jeg kunne ikke bekræfte en supportprocedure for dette problem ud fra vores aktuelle vejledning.",
+      },
+      get_brand_guidance: {
+        en: "I couldn’t verify any additional guidance for this request.",
+        da: "Jeg kunne ikke bekræfte yderligere vejledning til denne henvendelse.",
+      },
+    };
+    const message = messages[evidence.toolName]?.[locale];
+    if (message) return message;
   }
   return renderTextSegment(segment.text);
 }
@@ -1054,6 +1142,41 @@ function sameArguments(left: string[], right: string[]) {
   return left.length === right.length && left.every((argument, index) => argument === right[index]);
 }
 
+function customerMessageHasLookupReference(value: string | undefined) {
+  const remaining = String(value ?? "")
+    .toLowerCase()
+    .replace(/\b(?:is|are|am|can|could|do|does|did|will|would|you|i|we|have|has|the|a|an|my|your|our|what|which|available|availability|in|on|stock|right|now|buy|order|carry|sell|currently|please|check|for|product|item|headset)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return remaining.split(/\s+/).filter((token) => token.length > 1 && !["it", "this", "that", "one", "or"].includes(token)).length > 0;
+}
+
+function limitedResultQuestionIsRedundant(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  limitations: Array<{ segment: Extract<ResponseSegment, { type: "limitation" }>; evidence: ResponseEvidenceRecord | undefined }>,
+  context: ResponseValidationContext,
+) {
+  const text = String(segment.text ?? "").toLowerCase();
+  return limitations.some(({ evidence }) => {
+    if (!evidence) return false;
+    const status = effectiveResultStatus(evidence);
+    if (evidence.toolName === "get_tracking" && ["not_found", "unavailable", "error"].includes(status)) {
+      return segment.purpose === "enable_capability"
+        || /track|tracking|carrier|shipment|tracking page|postal|postnummer|country|land|delivery|levering|event|scan|status/.test(text);
+    }
+    if (evidence.toolName === "get_product_availability" && ["not_found", "unavailable", "error", "unknown"].includes(status ?? "")) {
+      if (status === "unknown") return customerMessageHasLookupReference(context.customerMessage);
+      return segment.purpose === "enable_capability"
+        || /product|produkt|sku|variant|stock|lager|availability|lagerstatus|link/.test(text);
+    }
+    if (evidence.toolName === "get_product" && ["unavailable", "error"].includes(status)) {
+      return segment.purpose === "enable_capability"
+        || /product|produkt|sku|catalog|katalog|link/.test(text);
+    }
+    return false;
+  });
+}
+
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const rendered: string[] = [];
@@ -1066,6 +1189,34 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
   const factSegments = segments.filter((segment): segment is Extract<ResponseSegment, { type: "fact" }> => segment.type === "fact");
   const orderFacts = factSegments.filter((segment) => ORDER_FACT_KINDS.has(segment.fact_kind));
   const shipmentFacts = factSegments.filter((segment) => SHIPMENT_FACT_KINDS.has(segment.fact_kind));
+  const limitations = segments
+    .filter((segment): segment is Extract<ResponseSegment, { type: "limitation" }> => segment.type === "limitation")
+    .map((segment) => ({ segment, evidence: resultFor(segment.basis, context) }));
+  const hasLimitedResult = limitations.some(({ evidence }) => ["not_found", "unavailable", "error", "unknown"].includes(effectiveResultStatus(evidence) ?? ""));
+
+  // A limited result should follow verified facts, even when the model placed
+  // its limitation segment before those facts in the structured response.
+  if (hasLimitedResult) {
+    if (orderFacts.length) {
+      rendered.push(renderOrderFacts(orderFacts, context));
+      segments.forEach((candidate, candidateIndex) => {
+        if (candidate.type === "fact" && ORDER_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
+      });
+    }
+    if (shipmentFacts.length) {
+      rendered.push(renderShipmentFacts(shipmentFacts, context));
+      segments.forEach((candidate, candidateIndex) => {
+        if (candidate.type === "fact" && SHIPMENT_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
+      });
+    }
+    factSegments
+      .filter((segment) => PRODUCT_AVAILABILITY_FACT_KINDS.has(segment.fact_kind))
+      .forEach((segment) => {
+        rendered.push(renderSingleFact(segment, context));
+        const segmentIndex = segments.indexOf(segment);
+        if (segmentIndex >= 0) consumed.add(segmentIndex);
+      });
+  }
 
   segments.forEach((segment, index) => {
     if (consumed.has(index)) return;
@@ -1091,6 +1242,9 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
+    else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations, context)) {
+      consumed.add(index);
+    }
     else if (segment.type === "question" && segment.purpose === "enable_capability") {
       const repeatedByAction = segments.some((candidate) => candidate.type === "action_offer"
         && candidate.capability === segment.capability
@@ -1100,7 +1254,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "limitation") {
       const evidence = resultFor(segment.basis, context);
       if (!(hasOrderRecoveryQuestion && evidence?.toolName === "get_order" && evidence.result.status === "not_found")) {
-        rendered.push(renderLimitation(segment, context));
+        rendered.push(renderLimitation(segment, context, { includeVerifiedTrackingSource: shipmentFacts.length === 0 }));
       }
     }
     else rendered.push(renderTextSegment(segment.text));

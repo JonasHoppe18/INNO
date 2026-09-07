@@ -280,6 +280,19 @@ describe("structured response contract", () => {
     expect(result.issues[0].code).toBe("unsupported_operational_commitment");
   });
 
+  it("does not mistake a tracking limitation for an operational promise", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry, {
+      type: "limitation",
+      text: "I can see the tracking number, but the provider returned no live record. I can advise on the next step.",
+      basis: { result_id: order.resultId, field_paths: ["fulfillments[0].trackingNumber"] },
+    });
+
+    expect(result.allValid).toBe(true);
+  });
+
   it("rejects free-form proposal language when no action offer exists", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -795,8 +808,198 @@ describe("structured response contract", () => {
 
     expect(result.allValid).toBe(true);
     const rendered = renderResponseSegments(result.approvedSegments, { ...registry, locale: "da" });
-    expect(rendered).toBe("Jeg kan ikke se en live trackingstatus på pakken lige nu.");
+    expect(rendered).toContain("Pakken sendes med ParcelCo.");
+    expect(rendered).toContain("Du kan følge pakken her: https://tracking.example.test/PC10231");
+    expect(rendered).toContain("Jeg kunne ikke finde en live trackingopdatering på pakken.");
     expect(rendered).not.toMatch(/fordi|because|provider|årsag/i);
+  });
+
+  it("distinguishes tracking provider unavailability and drops a question that cannot unlock another capability", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tracking: {
+        providerName: "test_ship24",
+        lookup: async (input) => ({
+          status: "unavailable",
+          trackingNumber: input.trackingNumber,
+          provider: "test_ship24",
+          observedAt: "2026-09-03T12:00:00.000Z",
+          error: { code: "tracking_provider_unavailable", message: "Provider unavailable." },
+        }),
+      },
+    });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "The live provider is unavailable.",
+        basis: { result_id: tracking.resultId, field_paths: [] },
+      },
+      {
+        type: "question",
+        purpose: "pure_clarification",
+        text: "What does the tracking page show?",
+        capability: null,
+        missing_arguments: [],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("Your package is being handled by ParcelCo.");
+    expect(rendered).toContain("Track your package here: https://tracking.example.test/PC10231");
+    expect(rendered).toContain("I can’t retrieve a live tracking update for this shipment right now.");
+    expect(rendered).not.toContain("What does the tracking page show?");
+    expect(rendered).not.toContain("delivered");
+  });
+
+  it("turns availability not_found into a useful alternate-identifier next step", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getProductAvailability(query) {
+          return { status: "not_found", query };
+        },
+      },
+    });
+    const availability = await registry.execute("get_product_availability", JSON.stringify({ query: "No Such Chaos 999" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "The product was not found.",
+        basis: { result_id: availability.resultId, field_paths: [] },
+      },
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: "Which product name or SKU should I check for availability?",
+        capability: "get_product_availability",
+        missing_arguments: ["query"],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("couldn’t find a matching product or variant");
+    expect(rendered).toContain("SKU or product link");
+    expect(rendered).not.toContain("Which product name or SKU");
+    expect(rendered).not.toContain("out of stock");
+  });
+
+  it("does not ask for more product data while availability is unavailable", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getProductAvailability(query) {
+          return { status: "unavailable", query };
+        },
+      },
+    });
+    const availability = await registry.execute("get_product_availability", JSON.stringify({ query: "A-Blaze" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "The availability lookup is unavailable.",
+        basis: { result_id: availability.resultId, field_paths: [] },
+      },
+      {
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Which version or SKU do you mean?",
+        capability: null,
+        missing_arguments: [],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toBe("I can’t check the current availability right now.");
+  });
+
+  it("treats a nested unknown availability result as unknown when the customer already named the product", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getProductAvailability() {
+          return { status: "unknown", query: "", products: [] };
+        },
+      },
+    });
+    const availability = await registry.execute("get_product_availability", JSON.stringify({ query: "" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "Availability could not be established.",
+        basis: { result_id: availability.resultId, field_paths: ["data.status"] },
+      },
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: "Which product name or SKU should I check for availability?",
+        capability: "get_product_availability",
+        missing_arguments: ["query"],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerMessage: "Can I buy No Such Chaos 999 right now?",
+    });
+    expect(rendered).toBe("I couldn’t verify the current availability for this product.");
+  });
+
+  it("uses customer-facing wording when procedure knowledge is not found", async () => {
+    const dependencies = await createDemoDependencies();
+    const knowledge = {
+      ingest: (...args) => dependencies.knowledge.ingest(...args),
+      search: async () => [],
+    };
+    const registry = createCapabilityRegistry({ ...dependencies, knowledge });
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "reset unknown headset" }));
+    const result = validate(registry, {
+      type: "limitation",
+      text: "Knowledge retrieval returned no evidence.",
+      basis: { result_id: procedure.resultId, field_paths: [] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toBe("I couldn’t verify a support procedure for this issue from our current guidance.");
+    expect(rendered).not.toMatch(/retrieval|database|system/i);
+  });
+
+  it("states the useful partial-fulfillment distinction without inventing item allocation", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getOrder(orderId) {
+          const order = await dependencies.commerce.getOrder(orderId);
+          return order ? { ...order, fulfillmentStatus: "partial" } : null;
+        },
+      },
+    });
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry,
+      { type: "fact", fact_kind: "order_reference", evidence: [{ result_id: order.resultId, field_paths: ["orderNumber"] }] },
+      { type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: order.resultId, field_paths: ["fulfillmentStatus"] }] },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("has shipped some items while others are still unfulfilled");
+    expect(rendered).not.toContain("delivered");
+    expect(rendered).not.toContain("missing item");
   });
 
   it("keeps proposal safety intact while composing action wording", async () => {

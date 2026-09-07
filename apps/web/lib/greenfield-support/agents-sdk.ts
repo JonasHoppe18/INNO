@@ -235,7 +235,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       };
     }
 
-    const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus() };
+    const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus(), customerMessage: options.message };
     const validation = validateStructuredResponse(result?.finalOutput, responseContext);
     const actionExecutions = await executeActionProposals({
       executor: options.actionExecutor,
