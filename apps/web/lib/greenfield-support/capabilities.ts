@@ -314,9 +314,12 @@ function productLookupQuery(context: CapabilityContext, query: string): string {
   const product = context.conversationContext?.customerProvided?.product;
   const variant = context.conversationContext?.customerProvided?.variant;
   const normalizedQuery = query.toLowerCase();
-  return [query, product, variant]
-    .filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))
-    .join(" ");
+  const contextTerms = [product, variant]
+    .filter((term) => term && !normalizedQuery.includes(term.toLowerCase()));
+  // Keep the current tool argument as the authoritative lookup text. Context
+  // may add missing entity terms, but must never filter the argument itself
+  // away when it already contains those terms.
+  return [query, ...contextTerms].filter(Boolean).join(" ");
 }
 
 export function createCapabilityRegistry(context: CapabilityContext) {

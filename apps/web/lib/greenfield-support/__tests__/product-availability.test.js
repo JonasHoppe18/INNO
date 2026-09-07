@@ -64,12 +64,24 @@ function product(overrides = {}) {
 }
 
 describe("greenfield product availability", () => {
-  it("A: maps a tracked sellable variant to AVAILABLE", () => {
+  it("A: maps an exact tracked variant to AVAILABLE", async () => {
     expect(shopifyAvailabilityState(variant({ availableForSale: true, inventory_quantity: 2 }))).toBe("AVAILABLE");
+    const provider = providerFor([product({ variants: [variant({ title: "White", inventory_quantity: 2 })] })]);
+    await expect(provider.getProductAvailability("Aurora Headset White")).resolves.toMatchObject({
+      status: "ok",
+      selection: "exact_variant",
+      products: [{ variants: [{ title: "White", availability_state: "AVAILABLE" }] }],
+    });
   });
 
-  it("B: maps tracked zero inventory with DENY to OUT_OF_STOCK", () => {
+  it("B: maps an exact tracked variant with DENY inventory to OUT_OF_STOCK", async () => {
     expect(shopifyAvailabilityState(variant({ inventory_quantity: 0, inventory_policy: "deny" }))).toBe("OUT_OF_STOCK");
+    const provider = providerFor([product({ variants: [variant({ title: "White", inventory_quantity: 0 })] })]);
+    await expect(provider.getProductAvailability("Aurora Headset White")).resolves.toMatchObject({
+      status: "ok",
+      selection: "exact_variant",
+      products: [{ variants: [{ title: "White", availability_state: "OUT_OF_STOCK" }] }],
+    });
   });
 
   it("C: maps depleted inventory with CONTINUE to AVAILABLE_TO_ORDER", () => {
@@ -113,6 +125,11 @@ describe("greenfield product availability", () => {
     const registry = createCapabilityRegistry({ tenant, knowledge: emptyKnowledge, commerce: provider });
     const toolResult = await registry.execute("get_product_availability", JSON.stringify({ query: "Aurora Headset" }));
     expect(toolResult.status).toBe("invalid_request");
+  });
+
+  it("H2: rejects a variant reference belonging to another product", async () => {
+    const provider = providerFor([product({ variants: [variant({ title: "Black", sku: "AURORA-BLACK" })] })]);
+    await expect(provider.getProductAvailability("Aurora Headset White")).resolves.toMatchObject({ status: "not_found", products: [] });
   });
 
   it("I: returns a safe not-found result for an unknown product", async () => {
@@ -159,5 +176,46 @@ describe("greenfield product availability", () => {
       getResult: () => ({ resultId: "availability-1", toolName: "get_product_availability", result: { status: "ok", data: { ...data, products: [{ ...data.products[0], variants: [{ ...data.products[0].variants[0], availability_state: "IN_STOCK" }] }] } } }),
     });
     expect(fabricatedState.allValid).toBe(false);
+  });
+
+  it("M: preserves exact product and variant arguments through the capability boundary", async () => {
+    const calls = [];
+    const provider = providerFor([product({ variants: [variant({ title: "White / L", inventory_quantity: 0 })] })], calls);
+    const registry = createCapabilityRegistry({
+      tenant: { ...tenant, shopId: "shop-a" },
+      knowledge: emptyKnowledge,
+      commerce: provider,
+      conversationContext: { turn: 1, customerProvided: { product: "Aurora Headset", variant: "White / L" } },
+    });
+
+    const result = await registry.execute("get_product_availability", JSON.stringify({ query: "Aurora Headset White / L" }));
+    const productRequest = calls.find(({ url }) => new URL(url).pathname.endsWith("/products.json"));
+    expect(new URL(productRequest.url).searchParams.get("title")).toBe("Aurora Headset White / L");
+    expect(result).toMatchObject({ status: "ok", data: { query: "Aurora Headset White / L", products: [{ variants: [{ title: "White / L", availability_state: "OUT_OF_STOCK" }] }] } });
+  });
+
+  it("N: preserves an UNKNOWN state instead of converting it to OUT_OF_STOCK", async () => {
+    const provider = providerFor([product({ variants: [variant({ title: "White", inventory_quantity: null })] })]);
+    const result = await provider.getProductAvailability("Aurora Headset White");
+    expect(result).toMatchObject({ status: "ok", products: [{ variants: [{ title: "White", availability_state: "UNKNOWN" }] }] });
+    expect(result.products[0].variants[0].availability_state).not.toBe("OUT_OF_STOCK");
+  });
+
+  it("O: does not accept a product result from a provider bound to another store scope", async () => {
+    const scopeMismatchProvider = {
+      providerName: "shopify_read_only",
+      async getOrder() { return null; },
+      async getOrderHistory() { return []; },
+      async getCustomer() { return null; },
+      async getProduct() { return { status: "not_found" }; },
+      async getProductAvailability() { return { status: "not_found", products: [], reason: "store_scope_mismatch" }; },
+      async inspectFulfillment() { return { status: "not_found" }; },
+    };
+    const registry = createCapabilityRegistry({
+      tenant: { ...tenant, workspaceId: "workspace-b", shopId: "shop-b" },
+      knowledge: emptyKnowledge,
+      commerce: scopeMismatchProvider,
+    });
+    await expect(registry.execute("get_product_availability", JSON.stringify({ query: "Aurora Headset White" }))).resolves.toMatchObject({ status: "not_found", data: { products: [] } });
   });
 });
