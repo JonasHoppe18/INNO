@@ -764,16 +764,40 @@ function joinList(values: string[], locale: ResponseLocale) {
     : `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
 }
 
+type RenderedOrderItem = { title: string; quantity: number | string };
+
+function quantityValue(value: unknown): number | string | null {
+  if (!meaningful(value)) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value).trim();
+  const numeric = Number(text);
+  return Number.isFinite(numeric) && text !== "" ? numeric : text;
+}
+
+function addRenderedOrderItem(items: Map<string, RenderedOrderItem>, titleValue: unknown, quantityValueInput: unknown) {
+  if (!meaningful(titleValue)) return;
+  const quantity = quantityValue(quantityValueInput);
+  if (quantity === null) return;
+  const title = String(titleValue);
+  const existing = items.get(title);
+  if (!existing) {
+    items.set(title, { title, quantity });
+    return;
+  }
+  if (typeof existing.quantity === "number" && typeof quantity === "number") {
+    existing.quantity += quantity;
+  }
+}
+
 function orderItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
-  const items = new Map<string, { title?: string; quantity?: string }>();
-  const rendered = new Set<string>();
+  const items = new Map<string, RenderedOrderItem>();
+  const indexedItems = new Map<string, { title?: unknown; quantity?: unknown }>();
   for (const fact of facts) {
     for (const { path, value } of factEvidenceValues(fact, context)) {
       if (pathHasAnySuffix(path, ["items"]) && Array.isArray(value)) {
         for (const item of value) {
           const record = objectValue(item);
-          if (!meaningful(record?.title) || !meaningful(record?.quantity)) continue;
-          rendered.add(`${String(record.quantity)} × ${String(record.title)}`);
+          addRenderedOrderItem(items, record?.title, record?.quantity);
         }
         continue;
       }
@@ -781,16 +805,55 @@ function orderItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context
       const quantity = indexedCollectionProperty(path, "items", "quantity");
       const indexed = title ?? quantity;
       if (!indexed || !meaningful(value)) continue;
-      const item = items.get(indexed.index) ?? {};
+      const item = indexedItems.get(indexed.index) ?? {};
       if (indexed.property === "title") item.title = String(value);
       if (indexed.property === "quantity") item.quantity = String(value);
-      items.set(indexed.index, item);
+      indexedItems.set(indexed.index, item);
     }
   }
-  items.forEach((item) => {
-    if (item.title && item.quantity) rendered.add(`${item.quantity} × ${item.title}`);
+  indexedItems.forEach((item) => {
+    addRenderedOrderItem(items, item.title, item.quantity);
   });
-  return Array.from(rendered);
+  return Array.from(items.values()).map((item) => `${item.quantity} × ${item.title}`);
+}
+
+function orderHistoryItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const rows = new Map<string, {
+    orderNumber?: string;
+    items: Map<string, RenderedOrderItem>;
+    indexedItems: Map<string, { title?: unknown; quantity?: unknown }>;
+  }>();
+  for (const fact of facts) {
+    for (const { path, value } of factEvidenceValues(fact, context)) {
+      const normalized = normalizedDataPath(path);
+      const match = normalized.match(/^orders\[(\d+)\]\.(orderNumber|items(?:\[\d+\])?(?:\.(?:title|quantity))?)$/i);
+      if (!match) continue;
+      const row = rows.get(match[1]) ?? {
+        items: new Map<string, RenderedOrderItem>(),
+        indexedItems: new Map<string, { title?: unknown; quantity?: unknown }>(),
+      };
+      if (match[2] === "orderNumber" && meaningful(value)) row.orderNumber = String(value);
+      if (match[2] === "items" && Array.isArray(value)) {
+        for (const item of value) {
+          const record = objectValue(item);
+          addRenderedOrderItem(row.items, record?.title, record?.quantity);
+        }
+      }
+      const itemMatch = match[2].match(/^items\[(\d+)\]\.(title|quantity)$/i);
+      if (itemMatch) {
+        const item = row.indexedItems.get(itemMatch[1]) ?? {};
+        item[itemMatch[2] as "title" | "quantity"] = value;
+        row.indexedItems.set(itemMatch[1], item);
+      }
+      rows.set(match[1], row);
+    }
+  }
+  for (const row of rows.values()) {
+    for (const item of row.indexedItems.values()) addRenderedOrderItem(row.items, item.title, item.quantity);
+  }
+  return Array.from(rows.values())
+    .filter((row) => row.orderNumber && row.items.size)
+    .map((row) => `#${row.orderNumber!.replace(/^#/, "")}: ${Array.from(row.items.values()).map((item) => `${item.quantity} × ${item.title}`).join(", ")}`);
 }
 
 function orderStateClause(kind: "financial" | "fulfillment", value: string, locale: ResponseLocale) {
@@ -813,6 +876,12 @@ function orderStateClause(kind: "financial" | "fulfillment", value: string, loca
 
 function renderOrderFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
   const locale = localeFor(context);
+  const history = orderHistoryItems(facts.filter((fact) => fact.fact_kind === "order_reference" || fact.fact_kind === "order_item"), context);
+  if (history.length) {
+    return locale === "da"
+      ? `Dine seneste ordrer er ${joinList(history, locale)}.`
+      : `Your recent orders include ${joinList(history, locale)}.`;
+  }
   const reference = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["orderNumber", "order_number"]));
   const financial = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["financialStatus", "financial_status"]));
   const fulfillment = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["fulfillmentStatus", "fulfillment_status"]));
@@ -929,14 +998,38 @@ function renderVerifiedTrackingSource(evidence: ResponseEvidenceRecord | undefin
   return [carrier, link].filter(Boolean).join(" ");
 }
 
+function latestShipmentScan(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const latestEvent: { timestamp?: string; location?: string } = {};
+  const checkpoints = new Map<string, { timestamp?: string; location?: string }>();
+  for (const fact of facts) {
+    for (const { path, value } of factEvidenceValues(fact, context)) {
+      const normalized = normalizedDataPath(path);
+      if (normalized.endsWith("live_tracking.latestEvent.timestamp")) latestEvent.timestamp = String(value);
+      else if (normalized.endsWith("live_tracking.latestEvent.location")) latestEvent.location = String(value);
+      else {
+        const match = normalized.match(/live_tracking\.checkpoints\[(\d+)\]\.(timestamp|location)$/);
+        if (!match) continue;
+        const checkpoint = checkpoints.get(match[1]) ?? {};
+        checkpoint[match[2] as "timestamp" | "location"] = String(value);
+        checkpoints.set(match[1], checkpoint);
+      }
+    }
+  }
+  if (latestEvent.timestamp || latestEvent.location) return latestEvent;
+  return Array.from(checkpoints.values())
+    .filter((checkpoint) => checkpoint.timestamp || checkpoint.location)
+    .sort((left, right) => String(right.timestamp ?? "").localeCompare(String(left.timestamp ?? "")))[0] ?? {};
+}
+
 function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
   const locale = localeFor(context);
   const carrier = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["carrier"]));
   const tracking = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
   const status = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.status"]));
   const event = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]));
-  const timestamp = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp"));
-  const location = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.location"]) || pathHasIndexedProperty(path, "live_tracking.checkpoints", "location"));
+  const latestScan = latestShipmentScan(facts, context);
+  const timestamp = latestScan.timestamp;
+  const location = latestScan.location;
   const eta = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]));
   const trackingUrl = verifiedTrackingUrl(facts, context);
   const paragraphs: string[] = [];
@@ -1061,7 +1154,10 @@ function renderLimitation(
     }
     if (["unavailable", "error", "unknown"].includes(status ?? "")) {
       if (status === "unknown") {
-        return locale === "da" ? "Jeg kunne ikke bekræfte den aktuelle lagerstatus for dette produkt." : "I couldn’t verify the current availability for this product.";
+        const query = resultFieldValue(evidence.result, "data.query").value;
+        return meaningful(query)
+          ? locale === "da" ? "Jeg kunne ikke bekræfte den aktuelle lagerstatus for dette produkt." : "I couldn’t verify the current availability for this product."
+          : locale === "da" ? "Jeg kunne ikke bekræfte den aktuelle lagerstatus, fordi opslaget ikke indeholdt et bestemt produkt eller en variant." : "I couldn’t verify the current availability because the lookup did not include a specific product or variant.";
       }
       return locale === "da" ? "Jeg kan ikke tjekke den aktuelle lagerstatus lige nu." : "I can’t check the current availability right now.";
     }
@@ -1142,36 +1238,28 @@ function sameArguments(left: string[], right: string[]) {
   return left.length === right.length && left.every((argument, index) => argument === right[index]);
 }
 
-function customerMessageHasLookupReference(value: string | undefined) {
-  const remaining = String(value ?? "")
-    .toLowerCase()
-    .replace(/\b(?:is|are|am|can|could|do|does|did|will|would|you|i|we|have|has|the|a|an|my|your|our|what|which|available|availability|in|on|stock|right|now|buy|order|carry|sell|currently|please|check|for|product|item|headset)\b/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-  return remaining.split(/\s+/).filter((token) => token.length > 1 && !["it", "this", "that", "one", "or"].includes(token)).length > 0;
-}
-
 function limitedResultQuestionIsRedundant(
   segment: Extract<ResponseSegment, { type: "question" }>,
   limitations: Array<{ segment: Extract<ResponseSegment, { type: "limitation" }>; evidence: ResponseEvidenceRecord | undefined }>,
-  context: ResponseValidationContext,
 ) {
-  const text = String(segment.text ?? "").toLowerCase();
   return limitations.some(({ evidence }) => {
     if (!evidence) return false;
     const status = effectiveResultStatus(evidence);
     if (evidence.toolName === "get_tracking" && ["not_found", "unavailable", "error"].includes(status)) {
-      return segment.purpose === "enable_capability"
-        || /track|tracking|carrier|shipment|tracking page|postal|postnummer|country|land|delivery|levering|event|scan|status/.test(text);
+      if (status === "not_found") return segment.purpose === "enable_capability" && segment.capability === "get_tracking";
+      return segment.purpose === "enable_capability" && segment.capability === "get_tracking"
+        || segment.purpose === "pure_clarification";
     }
     if (evidence.toolName === "get_product_availability" && ["not_found", "unavailable", "error", "unknown"].includes(status ?? "")) {
-      if (status === "unknown") return customerMessageHasLookupReference(context.customerMessage);
-      return segment.purpose === "enable_capability"
-        || /product|produkt|sku|variant|stock|lager|availability|lagerstatus|link/.test(text);
+      if (status === "unknown") {
+        const query = resultFieldValue(evidence.result, "data.query").value;
+        return meaningful(query) && segment.purpose === "enable_capability" && segment.capability === "get_product_availability";
+      }
+      return segment.purpose === "enable_capability" && segment.capability === "get_product_availability"
+        || segment.purpose === "pure_clarification";
     }
     if (evidence.toolName === "get_product" && ["unavailable", "error"].includes(status)) {
-      return segment.purpose === "enable_capability"
-        || /product|produkt|sku|catalog|katalog|link/.test(text);
+      return segment.purpose === "enable_capability" && segment.capability === "get_product";
     }
     return false;
   });
@@ -1242,7 +1330,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
-    else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations, context)) {
+    else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
     }
     else if (segment.type === "question" && segment.purpose === "enable_capability") {

@@ -855,6 +855,41 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("delivered");
   });
 
+  it("keeps a relevant customer clarification after a tracking not_found result", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tracking: {
+        providerName: "test_ship24",
+        lookup: async (input) => ({
+          status: "not_found",
+          trackingNumber: input.trackingNumber,
+          provider: "test_ship24",
+          observedAt: "2026-09-03T12:00:00.000Z",
+        }),
+      },
+    });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "No live tracking record was returned.",
+        basis: { result_id: tracking.resultId, field_paths: [] },
+      },
+      {
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Does the tracking page show an error or simply no events?",
+        capability: null,
+        missing_arguments: [],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("Does the tracking page show an error or simply no events?");
+  });
+
   it("turns availability not_found into a useful alternate-identifier next step", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({
@@ -954,7 +989,110 @@ describe("structured response contract", () => {
       ...registry,
       customerMessage: "Can I buy No Such Chaos 999 right now?",
     });
-    expect(rendered).toBe("I couldn’t verify the current availability for this product.");
+    expect(rendered).toContain("because the lookup did not include a specific product or variant");
+    expect(rendered).toContain("Which product name or SKU should I check for availability?");
+  });
+
+  it("keeps an action-related question when an unrelated tracking lookup is limited", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const tracking = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry,
+      {
+        type: "limitation",
+        text: "No live tracking record was returned.",
+        basis: { result_id: tracking.resultId, field_paths: [] },
+      },
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: "What reason should I use for the replacement request?",
+        capability: "send_replacement",
+        missing_arguments: ["order_id", "item_id", "reason"],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("Could you share the order number, the item ID, and the reason");
+  });
+
+  it("keeps order history items bound to their own order", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const history = await registry.execute("get_order_history", JSON.stringify({}));
+    const result = validate(registry,
+      {
+        type: "fact",
+        fact_kind: "order_reference",
+        evidence: [{ result_id: history.resultId, field_paths: ["data.orders[0].orderNumber", "data.orders[1].orderNumber"] }],
+      },
+      {
+        type: "fact",
+        fact_kind: "order_item",
+        evidence: [{ result_id: history.resultId, field_paths: ["data.orders[0].items", "data.orders[1].items"] }],
+      },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("#10231: 1 × Orion Wireless");
+    expect(rendered).toContain("#10232: 1 × Orion Wired");
+    expect(rendered).not.toContain("#10231: 1 × Orion Wired");
+  });
+
+  it("aggregates repeated returned order lines instead of deduplicating quantity", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce: {
+        ...dependencies.commerce,
+        async getOrder(orderId) {
+          const order = await dependencies.commerce.getOrder(orderId);
+          return order ? { ...order, items: [
+            { id: "line-a", title: "Orion Wireless", quantity: 1 },
+            { id: "line-b", title: "Orion Wireless", quantity: 2 },
+          ] } : null;
+        },
+      },
+    });
+    const order = await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const result = validate(registry,
+      { type: "fact", fact_kind: "order_reference", evidence: [{ result_id: order.resultId, field_paths: ["data.orderNumber"] }] },
+      { type: "fact", fact_kind: "order_item", evidence: [{ result_id: order.resultId, field_paths: ["data.items"] }] },
+    );
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toContain("3 × Orion Wireless");
+    expect(renderResponseSegments(result.approvedSegments, registry)).not.toContain("1 × Orion Wireless");
+  });
+
+  it("does not pair a latest timestamp with an older checkpoint location", async () => {
+    const dependencies = await createDemoDependencies();
+    const tracking = deliveredTrackingProvider({ location: null });
+    const originalLookup = tracking.lookup;
+    tracking.lookup = async (input) => {
+      const result = await originalLookup(input);
+      result.data.checkpoints = [{
+        description: "Older scan",
+        timestamp: "2026-09-03T10:00:00.000Z",
+        location: "Older location",
+      }];
+      return result;
+    };
+    const registry = createCapabilityRegistry({ ...dependencies, tracking });
+    await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+    const live = await registry.execute("get_tracking", JSON.stringify({ tracking_number: "PC10231" }));
+    const result = validate(registry,
+      { type: "fact", fact_kind: "shipment_status", evidence: [{ result_id: live.resultId, field_paths: ["data.live_tracking.status"] }] },
+      { type: "fact", fact_kind: "shipment_timestamp", evidence: [{ result_id: live.resultId, field_paths: ["data.live_tracking.latestEvent.timestamp"] }] },
+      { type: "fact", fact_kind: "shipment_location", evidence: [{ result_id: live.resultId, field_paths: ["data.live_tracking.checkpoints[0].location"] }] },
+    );
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("The latest scan was on");
+    expect(rendered).not.toContain("Older location");
   });
 
   it("uses customer-facing wording when procedure knowledge is not found", async () => {
