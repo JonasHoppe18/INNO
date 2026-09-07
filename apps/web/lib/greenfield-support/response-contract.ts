@@ -57,6 +57,13 @@ const KnowledgeGuidanceSchema = z.object({
   basis: BasisSchema,
 }).strict();
 
+const ProcedureGuidanceSchema = z.object({
+  type: z.literal("procedure_guidance"),
+  text: z.string().min(1),
+  basis: BasisSchema,
+  step_paths: z.array(z.string().min(1)).min(1).max(32),
+}).strict();
+
 const AcknowledgementSchema = z.object({
   type: z.literal("acknowledgement"),
   kind: z.enum(["resolution", "thanks", "correction", "closure", "transition"]),
@@ -68,6 +75,7 @@ export const ResponseSegmentSchema = z.discriminatedUnion("type", [
   LimitationSchema,
   ActionOfferSchema,
   KnowledgeGuidanceSchema,
+  ProcedureGuidanceSchema,
   AcknowledgementSchema,
 ]);
 
@@ -241,13 +249,144 @@ function validateKnowledgeBasis(
   return [];
 }
 
+function procedureStepPath(path: string, defaultResultIndex?: number): { resultIndex: number; stepIndex: number } | null {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))\.structured_data\.procedure_steps(?:\[(\d+)\]|\.(\d+))(?:\.text)?$/);
+  if (match) return { resultIndex: Number(match[1] ?? match[2]), stepIndex: Number(match[3] ?? match[4]) };
+  const relative = normalized.match(/^structured_data\.procedure_steps(?:\[(\d+)\]|\.(\d+))(?:\.text)?$/);
+  return relative && defaultResultIndex != null
+    ? { resultIndex: defaultResultIndex, stepIndex: Number(relative[1] ?? relative[2]) }
+    : null;
+}
+
+function resultIndexFromPath(path: string): number | null {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))(?:\.|$)/);
+  return match ? Number(match[1] ?? match[2]) : null;
+}
+
+function procedureStepValue(result: ToolExecutionResult, path: string, defaultResultIndex?: number): unknown {
+  const normalized = normalizedDataPath(path);
+  const effectivePath = defaultResultIndex != null && normalized.startsWith("structured_data.")
+    ? `data.results[${defaultResultIndex}].${normalized}`
+    : path;
+  const field = dataFieldValue(result, effectivePath);
+  if (!field.exists) return undefined;
+  const object = objectValue(field.value);
+  return object && "text" in object ? object.text : field.value;
+}
+
+function normalizedPhrase(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function procedureProductMismatch(
+  results: unknown[],
+  customerMessage: string | undefined,
+  citedResultIndex: number,
+  index: number,
+): ResponseValidationIssue[] {
+  if (!customerMessage) return [];
+  const message = ` ${normalizedPhrase(customerMessage)} `;
+  const matchingModels = results.flatMap((item, resultIndex) => {
+    const record = objectValue(item);
+    const structuredData = objectValue(record?.structured_data);
+    const appliesTo = objectValue(structuredData?.applies_to);
+    const models = Array.isArray(appliesTo?.product_models) ? appliesTo.product_models : [];
+    return models
+      .map((model) => ({ model: normalizedPhrase(model), resultIndex }))
+      .filter(({ model }) => model && message.includes(` ${model} `));
+  });
+  if (!matchingModels.length) return [];
+  const longest = Math.max(...matchingModels.map(({ model }) => model.length));
+  const expectedIndexes = new Set(
+    matchingModels.filter(({ model }) => model.length === longest).map(({ resultIndex }) => resultIndex),
+  );
+  return expectedIndexes.has(citedResultIndex)
+    ? []
+    : [{
+        index,
+        code: "procedure_product_mismatch",
+        message: "The selected procedure does not apply to the product named by the customer.",
+      }];
+}
+
+function validateProcedureGuidance(
+  segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
+  context: ResponseValidationContext,
+  index: number,
+): ResponseValidationIssue[] {
+  const issues = validateKnowledgeBasis(segment.basis, context, index);
+  const evidence = resultFor(segment.basis, context);
+  if (!evidence || evidence.toolName !== "search_procedures") {
+    issues.push({ index, code: "procedure_source_required", message: "Procedure guidance must cite a successful search_procedures result." });
+    return issues;
+  }
+  const results = objectValue(evidence.result.data)?.results;
+  if (!Array.isArray(results)) {
+    issues.push({ index, code: "procedure_evidence_missing", message: "The referenced procedure result does not contain retrieved procedure evidence." });
+    return issues;
+  }
+  const citedIndexes = new Set(
+    segment.basis.field_paths
+      .map(resultIndexFromPath)
+      .filter((value): value is number => value != null),
+  );
+  if (citedIndexes.size !== 1) {
+    issues.push({ index, code: "procedure_source_ambiguous", message: "Procedure guidance must cite exactly one retrieved procedure record." });
+    return issues;
+  }
+  const citedResultIndex = Array.from(citedIndexes)[0];
+  const citedRecord = objectValue(results[citedResultIndex]);
+  if (citedRecord?.knowledge_type !== "procedural") {
+    issues.push({ index, code: "procedure_source_required", message: "Procedure guidance must cite a procedural knowledge record." });
+  }
+  const paths = segment.step_paths.map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
+  if (paths.some(({ parsed }) => !parsed)) {
+    issues.push({ index, code: "procedure_step_path_invalid", message: "Procedure steps must cite returned structured procedure step fields." });
+    return issues;
+  }
+  if (paths.some(({ parsed }) => parsed!.resultIndex !== citedResultIndex)) {
+    issues.push({ index, code: "procedure_cross_record_merge", message: "Procedure guidance cannot combine steps from different retrieved records." });
+  }
+  for (const { path } of paths) {
+    const value = procedureStepValue(evidence.result, path, citedResultIndex);
+    if (!meaningful(value)) {
+      issues.push({ index, code: "procedure_step_missing", message: "A cited procedure step was not returned by the tool." });
+    }
+  }
+  for (let stepIndex = 1; stepIndex < paths.length; stepIndex += 1) {
+    if (paths[stepIndex - 1].parsed!.stepIndex >= paths[stepIndex].parsed!.stepIndex) {
+      issues.push({ index, code: "procedure_step_order", message: "Procedure step references must remain in source order." });
+      break;
+    }
+  }
+  issues.push(...procedureProductMismatch(results, context.customerMessage, citedResultIndex, index));
+  return issues;
+}
+
+function citesProceduralKnowledge(
+  basis: { result_id: string; field_paths: string[] },
+  context: ResponseValidationContext,
+): boolean {
+  const evidence = resultFor(basis, context);
+  if (!evidence || evidence.toolName !== "search_procedures") return false;
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return citedKnowledgeRecords(results, basis.field_paths).some((item) => objectValue(item)?.knowledge_type === "procedural");
+}
+
 function citedKnowledgeRecords(results: unknown[], fieldPaths: string[]) {
   const normalizedPaths = fieldPaths.map(normalizedDataPath);
   const indexed = new Set<number>();
   let citesWholeCollection = false;
   for (const path of normalizedPaths) {
-    const match = path.match(/^results\[(\d+)\](?:\.|$)/);
-    if (match) indexed.add(Number(match[1]));
+    const resultIndex = resultIndexFromPath(path);
+    if (resultIndex != null) indexed.add(resultIndex);
     else if (path === "results" || path.startsWith("results.")) citesWholeCollection = true;
   }
   if (citesWholeCollection) return results;
@@ -500,11 +639,16 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       return validateFact(segment, context, index);
     case "knowledge_guidance": {
       const issues = validateKnowledgeBasis(segment.basis, context, index);
+      if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
+        issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
+      }
       if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
         issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
       }
       return issues;
     }
+    case "procedure_guidance":
+      return validateProcedureGuidance(segment, context, index);
     case "limitation": {
       const evidence = resultFor(segment.basis, context);
       if (!evidence) return [{ index, code: "unknown_result_id", message: "The limitation references a tool result from outside this run." }];
@@ -1135,6 +1279,33 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
+function procedureStepValues(
+  segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
+  context: ResponseValidationContext,
+) {
+  const evidence = resultFor(segment.basis, context);
+  if (!evidence) return [];
+  const citedResultIndex = segment.basis.field_paths
+    .map(resultIndexFromPath)
+    .find((value): value is number => value != null);
+  return segment.step_paths.flatMap((path) => {
+    const value = procedureStepValue(evidence.result, path, citedResultIndex ?? undefined);
+    return meaningful(value) ? [String(value).trim()] : [];
+  });
+}
+
+function renderProcedureGuidance(
+  segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
+  context: ResponseValidationContext,
+) {
+  const steps = procedureStepValues(segment, context);
+  if (!steps.length) return "";
+  const locale = localeFor(context);
+  const heading = locale === "da" ? "Her er de relevante trin:" : "Here are the relevant steps:";
+  const list = steps.map((step) => `- ${step}`).join("\n");
+  return `${heading}\n${list}`;
+}
+
 function renderLimitation(
   segment: Extract<ResponseSegment, { type: "limitation" }>,
   context: ResponseValidationContext,
@@ -1328,6 +1499,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       return;
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
+    else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {

@@ -1,5 +1,6 @@
 import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
+import { structuredKnowledgeData } from "./knowledge";
 import type {
   CapabilityManifest,
   CommerceReadProvider,
@@ -122,7 +123,7 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
           observed_at: record.observedAt,
           expires_at: record.expiresAt,
         },
-        structured_data: record.structuredData,
+        structured_data: structuredKnowledgeData(record),
       })),
     },
   };

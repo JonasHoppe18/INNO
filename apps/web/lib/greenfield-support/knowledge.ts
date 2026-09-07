@@ -53,6 +53,47 @@ function cleanText(value: unknown): string {
     .trim();
 }
 
+/**
+ * Exposes a procedure's source paragraphs as ordered, source-bound values.
+ * The model may choose which values are relevant, but it cannot rewrite them
+ * in the response contract or combine values from different records.
+ */
+export function extractProcedureSteps(value: string): JsonObject[] {
+  const paragraphs = String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map(cleanText)
+    .filter(Boolean);
+  if (!paragraphs.length) return [];
+
+  const first = paragraphs[0];
+  const firstLooksLikeHeading = paragraphs.length > 1 && (
+    /^faq\b|^manual\b|^questions\b/i.test(first)
+    || /\?$/.test(first)
+    || /^\d+[.)]\s+.*\?$/.test(first)
+    || (!/[.!?]$/.test(first) && !/^[-*•]\s/.test(first) && !/^\d+[.)]\s/.test(first))
+  );
+  const sourceParagraphs = firstLooksLikeHeading ? paragraphs.slice(1) : paragraphs;
+  const steps: JsonObject[] = [];
+  for (const paragraph of sourceParagraphs) {
+    const lines = paragraph.split(/\n(?=(?:[-*•]|\d+[.)]|[a-z][.)])\s+)/i);
+    for (const line of lines) {
+      const text = cleanText(line).replace(/^(?:[-*•]|\d+[.)]|[a-z][.)])\s+/i, "").trim();
+      if (!text) continue;
+      steps.push({ text });
+    }
+  }
+  return steps.slice(0, 64);
+}
+
+export function structuredKnowledgeData(record: Pick<KnowledgeRecord, "knowledgeType" | "structuredData" | "content">): JsonObject {
+  if (record.knowledgeType !== "procedural") return record.structuredData;
+  return {
+    ...record.structuredData,
+    procedure_steps: extractProcedureSteps(record.content),
+  };
+}
+
 const CONTENT_ROOTS = ["main", "article", "body"] as const;
 const NON_CONTENT_TAGS = [
   "script",
@@ -493,6 +534,48 @@ function normalizedProductText(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
+function lexicalQueryVariants(query: string): string[] {
+  const source = cleanText(query);
+  const variants = new Set<string>(source ? [source] : []);
+  const words = source.match(/[A-Za-z0-9][A-Za-z0-9-]*/g) ?? [];
+  for (let index = 0; index < words.length; index += 1) {
+    if (!words[index].includes("-")) continue;
+    const phrase = [words[index]];
+    for (let next = index + 1; next < words.length && phrase.length < 4; next += 1) {
+      if (!/^[A-Z][A-Za-z0-9-]*$/.test(words[next])) break;
+      phrase.push(words[next]);
+    }
+    variants.add(phrase.join(" "));
+  }
+  return Array.from(variants).slice(0, 4);
+}
+
+function applicableProductScore(row: any, query: string): number {
+  const models = Array.isArray(row?.structured_data?.applies_to?.product_models)
+    ? row.structured_data.applies_to.product_models.map(normalizedProductText).filter(Boolean)
+    : [];
+  const normalizedQuery = normalizedProductText(query);
+  return models.reduce((best: number, model: string) => (
+    normalizedQuery.includes(model) ? Math.max(best, model.length) : best
+  ), 0);
+}
+
+function relevantToExplicitQuery(row: any, request: KnowledgeSearchRequest, productContext: KnowledgeProductContext | null): boolean {
+  if (isKnowledgeRecordApplicable({
+    workspaceId: String(row.workspace_id ?? request.workspaceId),
+    metadata: row.metadata ?? {},
+  }, productContext)) return true;
+  // A customer-named product is a retrieval hint, not authorization. It may
+  // surface a matching scoped record when no trusted catalog binding exists;
+  // tenant/workspace filtering remains server-owned and unchanged.
+  if (productContext) return false;
+  const models = Array.isArray(row?.metadata?.applies_to?.product_models)
+    ? row.metadata.applies_to.product_models.map(normalizedProductText).filter(Boolean)
+    : [];
+  const query = normalizedProductText(request.query);
+  return models.some((model: string) => query.includes(model));
+}
+
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map((item) => cleanText(item)).filter(Boolean)
@@ -693,9 +776,10 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       const recordId = String(row.id ?? "");
       const selectedIndex = Number(row.chunk_index ?? 0);
       const chunks = chunksByRecord.get(recordId) ?? [];
-      if (!chunks.some((chunk) => chunk.id === String(row.chunk_id ?? ""))) {
+      const selectedChunkId = String(row.chunk_id ?? "");
+      if (selectedChunkId && !chunks.some((chunk) => chunk.id === selectedChunkId)) {
         chunks.push({
-          id: String(row.chunk_id ?? ""),
+          id: selectedChunkId,
           index: selectedIndex,
           content: String(row.chunk_content ?? ""),
         });
@@ -707,6 +791,29 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       ));
     }
     return sections;
+  }
+
+  private async lexicalFallbackRows(request: KnowledgeSearchRequest, query: string, limit: number): Promise<any[]> {
+    const rows: any[] = [];
+    for (const variant of lexicalQueryVariants(query)) {
+      const { data, error } = await this.serviceClient.rpc("greenfield_search_knowledge", {
+        p_workspace_id: request.workspaceId,
+        p_query: variant,
+        p_knowledge_types: request.knowledgeTypes ?? null,
+        p_limit: limit,
+      });
+      // Semantic retrieval remains the primary path. A lexical miss or an
+      // unavailable fallback must not turn a successful semantic lookup into
+      // a tool failure.
+      if (error || !Array.isArray(data)) continue;
+      rows.push(...data);
+    }
+    const unique = new Map<string, any>();
+    for (const row of rows) {
+      const id = String(row?.id ?? "");
+      if (id && !unique.has(id)) unique.set(id, row);
+    }
+    return Array.from(unique.values());
   }
 
   private async embedQuery(query: string): Promise<number[]> {
@@ -821,12 +928,29 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       p_limit: candidateLimit,
     });
     if (error) throw new Error(error.message);
-    const rows = (Array.isArray(data) ? data : [])
+    const semanticRows = (Array.isArray(data) ? data : [])
       .filter((row: any) => isPublished({ metadata: row.metadata ?? {} }))
-      .filter((row: any) => isKnowledgeRecordApplicable({
-        workspaceId: String(row.workspace_id ?? request.workspaceId),
-        metadata: row.metadata ?? {},
-      }, productContext))
+      .filter((row: any) => relevantToExplicitQuery(row, request, productContext))
+      .slice(0, candidateLimit);
+    const lexicalRows = await this.lexicalFallbackRows(request, request.query, candidateLimit);
+    const rowsById = new Map<string, any>();
+    for (const row of semanticRows) rowsById.set(String(row.id), row);
+    for (const row of lexicalRows) {
+      if (!isPublished({ metadata: row.metadata ?? {} })) continue;
+      if (!relevantToExplicitQuery(row, request, productContext)) continue;
+      if (!rowsById.has(String(row.id))) rowsById.set(String(row.id), row);
+    }
+    const mergedRows = Array.from(rowsById.values());
+    const hasApplicableProduct = mergedRows.some((row) => applicableProductScore(row, request.query) > 0);
+    const rows = mergedRows
+      .sort((left, right) => {
+        if (hasApplicableProduct) {
+          const productDifference = applicableProductScore(right, request.query) - applicableProductScore(left, request.query);
+          if (productDifference) return productDifference;
+        }
+        return Number(right.score ?? 0) - Number(left.score ?? 0)
+          || String(right.observed_at ?? "").localeCompare(String(left.observed_at ?? ""));
+      })
       .slice(0, finalLimit);
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows
