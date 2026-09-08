@@ -159,6 +159,7 @@ function TraceMetric({ label, value }) {
 
 function MessageBubble({ message }) {
   const isUser = message.role === "user";
+  const comparisonOnly = message.comparison_only === true;
   return (
     <div className="flex gap-3 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
       <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${isUser ? "bg-gray-100 text-gray-500 ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700" : "bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50"}`} aria-hidden="true">
@@ -166,19 +167,19 @@ function MessageBubble({ message }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className={`text-[10.5px] font-semibold uppercase tracking-widest ${isUser ? "text-gray-400 dark:text-gray-500" : "text-indigo-400 dark:text-indigo-500"}`}>
-          {isUser ? "Customer" : "Sona"}
+          {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
           {message.created_at ? <span className="ml-2 font-normal normal-case tracking-normal text-gray-300 dark:text-gray-600">{formatTime(message.created_at)}</span> : null}
         </p>
         <p className={`mt-1 whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50" : "border border-gray-100 bg-white text-gray-700 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200 dark:shadow-none"}`}>
           {message.content}
         </p>
-        {!isUser ? <TraceDetails trace={message.trace} /> : null}
+        {!isUser && !comparisonOnly ? <TraceDetails trace={message.trace} /> : null}
       </div>
     </div>
   );
 }
 
-function TicketPickerDialog({ open, onOpenChange, onPick }) {
+function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -186,32 +187,35 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
   const [pickerError, setPickerError] = useState("");
 
   useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    setQuery("");
-    setPickerError("");
-    fetch("/api/knowledge/snippets/preview/threads?limit=100", { credentials: "include" })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.error || "Could not load previous tickets.");
-        setTickets(Array.isArray(data?.threads) ? data.threads : []);
-      })
-      .catch((error) => {
-        setTickets([]);
-        setPickerError(error instanceof Error ? error.message : "Could not load previous tickets.");
-      })
-      .finally(() => setLoading(false));
-  }, [open]);
+    if (!open) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setPickerError("");
+      const params = new URLSearchParams({ view: "tickets", limit: "50" });
+      if (query.trim()) params.set("search", query.trim());
+      fetch(`/api/agent-playground?${params.toString()}`, { credentials: "include", cache: "no-store" })
+        .then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data?.error || "Could not load previous tickets.");
+          if (!cancelled) setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setTickets([]);
+          setPickerError(error instanceof Error ? error.message : "Could not load previous tickets.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, query.trim() ? 250 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, query]);
 
-  const filteredTickets = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return tickets;
-    return tickets.filter((ticket) =>
-      `${ticket.subject || ""} ${ticket.preview || ""} ${ticket.customer_email || ""}`
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-  }, [tickets, query]);
+  const filteredTickets = useMemo(() => tickets, [tickets]);
 
   const handlePick = async (ticket) => {
     setLoadingTicketId(ticket.thread_id);
@@ -232,7 +236,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
         <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
           <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold">
             <Inbox className="h-4 w-4 text-indigo-500" />
-            Choose a previous ticket
+            {productionMode ? "Choose a production ticket" : "Choose a previous ticket"}
           </DialogTitle>
           <DialogDescription className="sr-only">
             Choose a scoped ticket to load its raw conversation into the read-only playground.
@@ -244,7 +248,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search subject, customer, preview..."
+              placeholder="Search ticket number, subject, customer..."
               className="flex-1 bg-transparent text-[12px] text-gray-700 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
               autoFocus
             />
@@ -267,7 +271,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
                       onClick={() => handlePick(ticket)}
                       className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800/50"
                     >
-                      <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">{ticket.subject || "(no subject)"}</span>
+                      <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">{ticket.ticket_number ? `#${ticket.ticket_number} · ` : ""}{ticket.subject || "(no subject)"}</span>
                       {ticket.customer_email ? <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">{ticket.customer_email}</span> : null}
                       {ticket.preview ? <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">{ticket.preview}</span> : null}
                       {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-indigo-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
@@ -296,6 +300,8 @@ export function GreenfieldPlayground() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [environment, setEnvironment] = useState("development");
+  const productionMode = environment === "production";
 
   const load = useCallback(async (sessionId = "") => {
     setLoading(true);
@@ -309,6 +315,7 @@ export function GreenfieldPlayground() {
       return;
     }
     setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+    setEnvironment(payload.environment === "production" ? "production" : "development");
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
     setContext(payload.context || null);
@@ -342,6 +349,30 @@ export function GreenfieldPlayground() {
     setContext(null);
     setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
     return payload.session;
+  };
+
+  const runImportedTicket = async () => {
+    if (!selectedSession?.source_thread_id || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/agent-playground", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "run_ticket", session_id: selectedSession.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
+      setSelectedSession(payload.session);
+      setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
+      setMessages((current) => [...current, ...(Array.isArray(payload.messages) ? payload.messages : [])]);
+      setContext(payload.context || null);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "The read-only agent run failed.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const importTicket = async (ticket) => {
@@ -431,12 +462,12 @@ export function GreenfieldPlayground() {
         <div className="min-w-0 flex-1">
           <h1 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Agent Playground</h1>
           <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
-            Test how Sona answers over multiple turns. This is a read-only simulation — nothing is sent or executed.
+            {productionMode ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Test how Sona answers over multiple turns. This is a read-only simulation — nothing is sent or executed."}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-wide text-gray-400 sm:inline-flex dark:text-gray-500">
-            <ShieldCheck className="h-3.5 w-3.5" /> Development only
+            <ShieldCheck className="h-3.5 w-3.5" /> {productionMode ? "Internal · production read-only" : "Development only"}
           </span>
           {selectedSession ? (
             <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 transition-transform active:scale-[0.97]">
@@ -444,17 +475,24 @@ export function GreenfieldPlayground() {
             </Button>
           ) : null}
           <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 transition-transform active:scale-[0.97]">
-            <Inbox className="h-3.5 w-3.5" /> Load ticket
+            <Inbox className="h-3.5 w-3.5" /> {productionMode ? "Choose ticket" : "Load ticket"}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={newConversation} className="gap-1.5 transition-transform active:scale-[0.97]">
-            <Plus className="h-3.5 w-3.5" /> New conversation
-          </Button>
+          {!productionMode ? (
+            <Button type="button" variant="outline" size="sm" onClick={newConversation} className="gap-1.5 transition-transform active:scale-[0.97]">
+              <Plus className="h-3.5 w-3.5" /> New conversation
+            </Button>
+          ) : null}
+          {productionMode && selectedSession?.source_thread_id ? (
+            <Button type="button" size="sm" onClick={runImportedTicket} disabled={sending} className="gap-1.5 transition-transform active:scale-[0.97]">
+              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />} Run Greenfield
+            </Button>
+          ) : null}
         </div>
       </div>
 
       {error ? <div role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
+      {!productionMode ? <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
         <div className="grid grid-cols-1 divide-y divide-gray-100 dark:divide-gray-800">
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
             <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer</span>
@@ -469,7 +507,7 @@ export function GreenfieldPlayground() {
             />
           </label>
         </div>
-      </div>
+      </div> : null}
 
       <details className="mb-3 rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-gray-600 dark:text-gray-300">
@@ -500,8 +538,8 @@ export function GreenfieldPlayground() {
         {!loading && !hasMessages ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-500">
             <div className="space-y-1">
-              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">Start a test conversation</p>
-              <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent.</p>
+              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">{productionMode ? "Choose a production ticket" : "Start a test conversation"}</p>
+              <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{productionMode ? "Choose a real ticket, then run Greenfield to generate a candidate response." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
             </div>
           </div>
         ) : null}
@@ -524,22 +562,22 @@ export function GreenfieldPlayground() {
               send(event);
             }
           }}
-          placeholder={hasMessages ? "Write the customer's next message... (Cmd+Enter to send)" : "Write the customer's first message... (Cmd+Enter to send)"}
+          placeholder={productionMode && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message... (Cmd+Enter to send)" : "Write the customer's first message... (Cmd+Enter to send)"}
           rows={3}
           maxLength={12000}
-          disabled={sending}
+          disabled={sending || (productionMode && !selectedSession)}
           aria-label="Customer message"
           className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
         />
         <div className="flex items-center justify-between gap-3">
           <p className="px-1 text-[11.5px] text-gray-400 dark:text-gray-500">Turn {currentTurn} · read-only simulation · no customer message will be sent</p>
-          <Button type="submit" size="sm" disabled={!draft.trim() || sending} className="gap-1.5 transition-transform active:scale-[0.97]">
+          <Button type="submit" size="sm" disabled={!draft.trim() || sending || (productionMode && !selectedSession)} className="gap-1.5 transition-transform active:scale-[0.97]">
             <Send className="h-3.5 w-3.5" /> {sending ? "Running…" : hasMessages ? "Send next message" : "Send & generate reply"}
           </Button>
         </div>
       </form>
 
-      <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} />
+      <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={productionMode} />
     </div>
   );
 }

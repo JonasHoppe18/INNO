@@ -8,8 +8,55 @@ const MAX_EVIDENCE_SECTIONS = 2;
 export const GREENFIELD_PLAYGROUND_MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;
 export const GREENFIELD_PLAYGROUND_HISTORY_LIMIT = MAX_HISTORY_MESSAGES;
 
+function supabaseProjectRef(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const hostname = new URL(raw).hostname.toLowerCase();
+    const match = hostname.match(/^([a-z0-9]+)\.supabase\.co$/);
+    return match?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+export function greenfieldPlaygroundEnvironment(env = process.env) {
+  return env.NODE_ENV === "production" ? "production" : "development";
+}
+
 export function isGreenfieldPlaygroundEnabled(env = process.env) {
-  return env.NODE_ENV !== "production" && env.GREENFIELD_PLAYGROUND_DISABLED !== "true";
+  if (env.GREENFIELD_PLAYGROUND_DISABLED === "true") return false;
+
+  const environment = greenfieldPlaygroundEnvironment(env);
+  const actualProjectRef = supabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL || env.SUPABASE_URL);
+  const configuredProjectRef = String(env.GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF || "").trim();
+
+  if (configuredProjectRef && actualProjectRef !== configuredProjectRef) return false;
+  if (environment !== "production") return env.GREENFIELD_PLAYGROUND_ENABLED !== "false";
+
+  return (
+    env.GREENFIELD_PLAYGROUND_ENABLED === "true" &&
+    env.GREENFIELD_PLAYGROUND_ENVIRONMENT === "production" &&
+    Boolean(configuredProjectRef) &&
+    actualProjectRef === configuredProjectRef
+  );
+}
+
+export function isGreenfieldPlaygroundProduction(env = process.env) {
+  return greenfieldPlaygroundEnvironment(env) === "production";
+}
+
+export async function isInternalGreenfieldPlaygroundUser(serviceClient, { workspaceId, clerkUserId } = {}) {
+  if (!serviceClient || !workspaceId || !clerkUserId) return false;
+  const { data, error } = await serviceClient
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("clerk_user_id", clerkUserId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const role = String(data?.role || "").toLowerCase();
+  return role.includes("admin") || role.includes("owner");
 }
 
 export function normalizePlaygroundMessage(value) {
@@ -95,7 +142,11 @@ export function normalizePlaygroundContext(value) {
 export function historyFromPlaygroundRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows
-    .filter((row) => (row?.role === "user" || row?.role === "assistant") && typeof row?.content === "string")
+    .filter((row) => (
+      (row?.role === "user" || row?.role === "assistant") &&
+      typeof row?.content === "string" &&
+      row?.trace_json?.comparison_only !== true
+    ))
     .slice(-MAX_HISTORY_MESSAGES)
     .map((row) => ({ role: row.role, content: row.content.slice(0, MAX_MESSAGE_LENGTH) }));
 }
@@ -353,21 +404,25 @@ export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAf
 }
 
 export function publicPlaygroundSession(row) {
+  const sourceThreadId = text(row?.conversation_context_json?.sourceThreadId, 80) || null;
   return {
     id: row.id,
     title: row.title || "New conversation",
     customer_email: row.customer_email || null,
+    source_thread_id: sourceThreadId,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
 export function publicPlaygroundMessage(row) {
+  const comparisonOnly = row?.trace_json?.comparison_only === true;
   return {
     id: row.id,
     role: row.role,
     content: row.content,
-    trace: row.role === "assistant" && isRecord(row.trace_json) ? row.trace_json : null,
+    comparison_only: comparisonOnly,
+    trace: row.role === "assistant" && !comparisonOnly && isRecord(row.trace_json) ? row.trace_json : null,
     created_at: row.created_at,
   };
 }

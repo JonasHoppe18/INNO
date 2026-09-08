@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   resolveAuthScope: vi.fn(),
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
+  isInternalGreenfieldPlaygroundUser: vi.fn(),
+  isGreenfieldPlaygroundProduction: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
   PlaygroundDryRunExecutor: class PlaygroundDryRunExecutor {},
   ShopifyReadOnlyProvider: vi.fn(),
@@ -33,6 +35,9 @@ vi.mock("@/lib/greenfield-support", () => ({
 vi.mock("@/lib/server/greenfield-playground", () => ({
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT: 20,
   isGreenfieldPlaygroundEnabled: () => true,
+  isGreenfieldPlaygroundProduction: mocks.isGreenfieldPlaygroundProduction,
+  isInternalGreenfieldPlaygroundUser: mocks.isInternalGreenfieldPlaygroundUser,
+  greenfieldPlaygroundEnvironment: () => "development",
   isOwnedPlaygroundSession: (session, scope) => session?.workspace_id === scope.workspaceId && session?.owner_clerk_user_id === scope.clerkUserId,
   normalizePlaygroundContext: (value) => value || null,
   normalizePlaygroundCustomerEmail: (value) => ({ value: value ? String(value).trim().toLowerCase() : null, error: null }),
@@ -41,9 +46,9 @@ vi.mock("@/lib/server/greenfield-playground", () => ({
     return /^[A-Za-z][A-Za-z'-]{0,39}$/.test(firstName) ? firstName : null;
   },
   normalizePlaygroundMessage: (value) => ({ value: String(value || "").trim(), error: String(value || "").trim() ? null : "message is required." }),
-  historyFromPlaygroundRows: (rows) => rows || [],
-  publicPlaygroundSession: (row) => ({ id: row.id, title: row.title, customer_email: row.customer_email || null }),
-  publicPlaygroundMessage: (row) => ({ id: row.id, role: row.role, content: row.content, trace: row.trace_json || null, created_at: row.created_at }),
+  historyFromPlaygroundRows: (rows) => (rows || []).filter((row) => row?.trace_json?.comparison_only !== true),
+  publicPlaygroundSession: (row) => ({ id: row.id, title: row.title, customer_email: row.customer_email || null, source_thread_id: row.conversation_context_json?.sourceThreadId || null }),
+  publicPlaygroundMessage: (row) => ({ id: row.id, role: row.role, content: row.content, comparison_only: row.trace_json?.comparison_only === true, trace: row.trace_json || null, created_at: row.created_at }),
   sanitizeGreenfieldTrace: (trace) => ({ trace_id: trace.traceId, runtime: "@openai/agents", provider_results: [], events: [] }),
 }));
 
@@ -56,7 +61,7 @@ const { DELETE, GET, POST } = await import("../route");
 
 function chain({ awaitResult = { data: [], error: null }, maybeSingleResult, singleResult, orderResult } = {}) {
   const builder = {};
-  for (const method of ["select", "eq", "order", "limit", "insert", "update", "delete"]) {
+  for (const method of ["select", "eq", "in", "or", "order", "limit", "insert", "update", "delete"]) {
     builder[method] = vi.fn(() => builder);
   }
   builder.then = (resolve, reject) => Promise.resolve(awaitResult).then(resolve, reject);
@@ -74,6 +79,8 @@ function authScope() {
 beforeEach(() => {
   vi.clearAllMocks();
   authScope();
+  mocks.isInternalGreenfieldPlaygroundUser.mockResolvedValue(true);
+  mocks.isGreenfieldPlaygroundProduction.mockReturnValue(false);
   mocks.resolveScopedShop.mockResolvedValue({ id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" });
   mocks.listScopedShops.mockResolvedValue([{ id: "shop-a", workspace_id: "workspace-a" }]);
   mocks.resolveShopifyCredentialsWithDiagnostics.mockResolvedValue({ shop_domain: "test-shop.example", access_token: "server-only-token" });
@@ -85,6 +92,38 @@ describe("greenfield agent playground API", () => {
     const response = await GET(new Request("http://localhost/api/agent-playground"));
     expect(response.status).toBe(401);
     expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("A2: rejects authenticated non-admin workspace members", async () => {
+    mocks.createClient.mockReturnValue({ from: vi.fn() });
+    mocks.isGreenfieldPlaygroundProduction.mockReturnValue(true);
+    mocks.isInternalGreenfieldPlaygroundUser.mockResolvedValue(false);
+    const response = await GET(new Request("http://localhost/api/agent-playground"));
+    expect(response.status).toBe(403);
+  });
+
+  it("A3: refuses free-form session creation in production mode", async () => {
+    mocks.createClient.mockReturnValue({ from: vi.fn() });
+    mocks.isGreenfieldPlaygroundProduction.mockReturnValue(true);
+    const response = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", customer_email: "spoofed@example.test" }),
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.createClient.mock.results[0].value.from).not.toHaveBeenCalledWith("greenfield_playground_sessions");
+  });
+
+  it("B/C: resolves ticket search through scoped mailboxes on the server", async () => {
+    const mailboxes = chain({ awaitResult: { data: [{ id: "mailbox-a", shop_id: "shop-a" }], error: null } });
+    const threads = chain({ awaitResult: { data: [{ id: "thread-a", ticket_number: 1234, subject: "Order question", snippet: "Where is my order?", customer_email: "customer@example.test", mailbox_id: "mailbox-a", last_message_at: "now" }], error: null } });
+    const client = { from: vi.fn().mockReturnValueOnce(mailboxes).mockReturnValueOnce(threads) };
+    mocks.createClient.mockReturnValue(client);
+    const response = await GET(new Request("http://localhost/api/agent-playground?view=tickets&search=1234"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ tickets: [{ thread_id: "thread-a", ticket_number: 1234, shop_id: "shop-a" }] });
+    expect(threads.eq).toHaveBeenCalledWith("ticket_number", 1234);
+    expect(client.from).not.toHaveBeenCalledWith("greenfield_playground_messages");
   });
 
   it("B/C: lists only sessions owned by the current workspace and user", async () => {
@@ -158,7 +197,7 @@ describe("greenfield agent playground API", () => {
     const response = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "import_ticket", thread_id: "thread-a" }),
+      body: JSON.stringify({ action: "import_ticket", thread_id: "thread-a", customer_email: "spoofed@example.test" }),
     }));
 
     expect(response.status).toBe(200);
@@ -172,9 +211,10 @@ describe("greenfield agent playground API", () => {
     ]);
     expect(imported.insert).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ role: "user", content: "Where is order 1055?", trace_json: null }),
-      expect.objectContaining({ role: "assistant", content: "I will check that for you.", trace_json: null }),
+      expect.objectContaining({ role: "assistant", content: "I will check that for you.", trace_json: expect.objectContaining({ comparison_only: true }) }),
     ]));
     expect(session.insert).toHaveBeenCalledWith(expect.objectContaining({
+      customer_email: "customer@example.test",
       conversation_context_json: expect.objectContaining({ customerFirstName: "Jonas" }),
     }));
   });
@@ -234,6 +274,45 @@ describe("greenfield agent playground API", () => {
     const payload = await response.json();
     expect(JSON.stringify(payload)).not.toContain("server-only-token");
     expect(JSON.stringify(payload)).not.toContain("browser-must-not-win");
+  });
+
+  it("E2: runs an imported ticket from the latest server-loaded customer message without duplicating it", async () => {
+    const session = {
+      id: "session-imported",
+      workspace_id: "workspace-a",
+      owner_clerk_user_id: "clerk-user-a",
+      title: "Order question",
+      customer_email: "customer@example.test",
+      conversation_context_json: { sourceThreadId: "thread-a", customerFirstName: "Jonas" },
+    };
+    const loaded = chain({ maybeSingleResult: { data: session, error: null } });
+    const oldMessages = chain({ awaitResult: { data: [
+      { id: "message-1", role: "user", content: "Where is order 1055?", trace_json: null, created_at: "now" },
+      { id: "message-2", role: "assistant", content: "Previous answer", trace_json: { comparison_only: true }, created_at: "now" },
+    ], error: null } });
+    const inserted = chain({ orderResult: { data: [{ id: "message-new", role: "assistant", content: "I can help.", trace_json: {}, created_at: "now" }], error: null } });
+    const updated = chain({ singleResult: { data: { ...session, updated_at: "now" }, error: null } });
+    const client = { from: vi.fn().mockReturnValueOnce(loaded).mockReturnValueOnce(oldMessages).mockReturnValueOnce(inserted).mockReturnValueOnce(updated) };
+    mocks.createClient.mockReturnValue(client);
+    mocks.runGreenfieldAgentWithAgentsSdk.mockResolvedValue({
+      response: "I can help.",
+      proposedActions: [],
+      trace: { traceId: "trace-run-ticket", events: [] },
+      conversationContext: { turn: 1, activeOrder: null, customerSignal: null },
+    });
+
+    const response = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run_ticket", session_id: session.id }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Where is order 1055?",
+      history: [],
+    }));
+    expect(inserted.insert).toHaveBeenCalledWith([expect.objectContaining({ role: "assistant", content: "I can help." })]);
   });
 
   it("F: deletes only the selected owned session and its dedicated cascade", async () => {

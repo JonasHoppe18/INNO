@@ -14,6 +14,8 @@ import {
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT,
   historyFromPlaygroundRows,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundProduction,
+  isInternalGreenfieldPlaygroundUser,
   isOwnedPlaygroundSession,
   normalizePlaygroundContext,
   normalizePlaygroundCustomerEmail,
@@ -22,6 +24,7 @@ import {
   publicPlaygroundMessage,
   publicPlaygroundSession,
   sanitizeGreenfieldTrace,
+  greenfieldPlaygroundEnvironment,
 } from "@/lib/server/greenfield-playground";
 
 export const runtime = "nodejs";
@@ -31,7 +34,7 @@ const SESSIONS_TABLE = "greenfield_playground_sessions";
 const MESSAGES_TABLE = "greenfield_playground_messages";
 
 const SUPABASE_URL = String(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "",
+  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "",
 ).replace(/\/$/, "");
 const SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
@@ -56,7 +59,7 @@ function createGreenfieldTrackingProvider() {
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
-        const error = new Error(`DEV tracking function returned ${response.status}`) as Error & { status?: number };
+        const error = new Error(`Tracking function returned ${response.status}`) as Error & { status?: number };
         error.status = response.status;
         throw error;
       }
@@ -82,7 +85,7 @@ async function requirePlaygroundRequest() {
   }
   const serviceClient = createServiceClient();
   if (!serviceClient) {
-    return { response: NextResponse.json({ error: "The development service is not configured." }, { status: 503 }) };
+    return { response: NextResponse.json({ error: "The playground service is not configured." }, { status: 503 }) };
   }
   const scope = await resolveAuthScope(serviceClient, {
     clerkUserId: authState.userId,
@@ -91,6 +94,9 @@ async function requirePlaygroundRequest() {
   });
   if (!scope?.workspaceId) {
     return { response: NextResponse.json({ error: "A single active workspace is required." }, { status: 404 }) };
+  }
+  if (isGreenfieldPlaygroundProduction() && !(await isInternalGreenfieldPlaygroundUser(serviceClient, { workspaceId: scope.workspaceId, clerkUserId: authState.userId }))) {
+    return { response: NextResponse.json({ error: "The playground is limited to internal workspace administrators." }, { status: 403 }) };
   }
   return { authState, serviceClient, scope };
 }
@@ -182,15 +188,17 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
 
   const { data: rows, error: messagesError } = await serviceClient
     .from("mail_messages")
-    .select("from_me, clean_body_text, body_text, snippet, from_name, extracted_customer_name, from_email, extracted_customer_email, created_at")
+    .select("from_me, is_draft, provider_message_id, clean_body_text, body_text, snippet, from_name, extracted_customer_name, from_email, extracted_customer_email, created_at")
     .eq("thread_id", threadId)
     .order("created_at", { ascending: true })
     .limit(50);
   if (messagesError) throw new Error(messagesError.message);
 
   const messages = (rows || [])
+    .filter((row: any) => row?.is_draft !== true && !String(row?.provider_message_id || "").startsWith("internal-note:"))
     .map((row: any) => ({
       role: row.from_me ? "assistant" : "user",
+      comparison_only: row.from_me === true,
       content: String(row.clean_body_text || row.body_text || row.snippet || "")
         .replace(/\s+/g, " ")
         .trim(),
@@ -201,7 +209,11 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
   let customerEmail = String(thread.customer_email || "").trim().toLowerCase() || null;
   let customerFirstName = normalizePlaygroundCustomerName(thread.customer_name);
   if (!customerFirstName) {
-    const latestInboundRow = [...(rows || [])].reverse().find((row: any) => row.from_me === false);
+    const latestInboundRow = [...(rows || [])].reverse().find((row: any) => (
+      row.from_me === false &&
+      row.is_draft !== true &&
+      !String(row?.provider_message_id || "").startsWith("internal-note:")
+    ));
     customerFirstName = normalizePlaygroundCustomerName(latestInboundRow?.extracted_customer_name || latestInboundRow?.from_name);
   }
   if (!customerEmail) {
@@ -210,6 +222,7 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
       .select("from_email, extracted_customer_email, from_name, extracted_customer_name")
       .eq("thread_id", threadId)
       .eq("from_me", false)
+      .eq("is_draft", false)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -227,12 +240,75 @@ async function loadScopedTicket(serviceClient: any, scope: any, threadId: string
   };
 }
 
+async function listScopedTicketSummaries(serviceClient: any, scope: any, { search = "", limit = 50 } = {}) {
+  const shops = await listScopedShops(serviceClient, scope, { fields: "id" });
+  const shopIds = (shops || []).map((shop: any) => String(shop.id || "")).filter(Boolean);
+  if (!shopIds.length) return [];
+
+  const { data: mailboxes, error: mailboxError } = await serviceClient
+    .from("mail_accounts")
+    .select("id, shop_id")
+    .in("shop_id", shopIds);
+  if (mailboxError) throw new Error(mailboxError.message);
+  const mailboxIds = (mailboxes || []).map((mailbox: any) => String(mailbox.id || "")).filter(Boolean);
+  if (!mailboxIds.length) return [];
+
+  const normalizedSearch = String(search || "")
+    .trim()
+    .replace(/^#/, "")
+    .replace(/[,()%*\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 5), 100);
+  let query = serviceClient
+    .from("mail_threads")
+    .select("id, subject, snippet, last_message_at, customer_email, mailbox_id, ticket_number")
+    .in("mailbox_id", mailboxIds);
+
+  if (normalizedSearch) {
+    if (/^\d+$/.test(normalizedSearch)) {
+      query = query.eq("ticket_number", Number(normalizedSearch));
+    } else if (/^[0-9a-f-]{36}$/i.test(normalizedSearch)) {
+      query = query.eq("id", normalizedSearch);
+    } else {
+      query = query.or(`subject.ilike.%${normalizedSearch}%,snippet.ilike.%${normalizedSearch}%,customer_email.ilike.%${normalizedSearch}%`);
+    }
+  }
+
+  const { data: threads, error: threadError } = await query
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(safeLimit);
+  if (threadError) throw new Error(threadError.message);
+
+  const shopIdByMailbox = new Map((mailboxes || []).map((mailbox: any) => [String(mailbox.id), String(mailbox.shop_id)]));
+  return (threads || []).map((thread: any) => ({
+    thread_id: thread.id,
+    ticket_number: thread.ticket_number ?? null,
+    subject: String(thread.subject || "").trim() || "(no subject)",
+    preview: String(thread.snippet || "").replace(/\s+/g, " ").trim().slice(0, 140),
+    customer_email: String(thread.customer_email || "").trim().toLowerCase() || null,
+    last_message_at: thread.last_message_at || null,
+    shop_id: shopIdByMailbox.get(String(thread.mailbox_id)) || null,
+  }));
+}
+
 export async function GET(request: Request) {
   try {
     const access = await requirePlaygroundRequest();
     if (access.response) return access.response;
     const { authState, serviceClient, scope } = access;
     const url = new URL(request.url);
+    const view = String(url.searchParams.get("view") || "").trim().toLowerCase();
+    if (view === "tickets") {
+      const tickets = await listScopedTicketSummaries(serviceClient, scope, {
+        search: url.searchParams.get("search") || "",
+        limit: Number(url.searchParams.get("limit") || 50),
+      });
+      return NextResponse.json({
+        environment: greenfieldPlaygroundEnvironment(),
+        tickets,
+      });
+    }
     const sessionId = String(url.searchParams.get("session_id") || "").trim();
     const rows = await listSessions(serviceClient, scope, authState.userId);
     const selected = sessionId ? await loadSession(serviceClient, scope, authState.userId, sessionId) : null;
@@ -240,6 +316,7 @@ export async function GET(request: Request) {
     const messages = selected ? await loadMessages(serviceClient, scope, authState.userId, selected.id) : [];
     const shop = await resolveVisibleShop(serviceClient, scope);
     return NextResponse.json({
+      environment: greenfieldPlaygroundEnvironment(),
       workspace_id: scope.workspaceId,
       active_store: shop ? { id: shop.id, domain: shop.shop_domain } : null,
       sessions: rows.map(publicPlaygroundSession),
@@ -261,6 +338,9 @@ export async function POST(request: Request) {
     const action = String(body?.action || "send").trim().toLowerCase();
 
     if (action === "create") {
+      if (isGreenfieldPlaygroundProduction()) {
+        return NextResponse.json({ error: "Select a real production ticket before running the playground." }, { status: 400 });
+      }
       const customer = normalizePlaygroundCustomerEmail(body?.customer_email);
       if (customer.error) return NextResponse.json({ error: customer.error }, { status: 400 });
       const { data, error } = await serviceClient
@@ -274,7 +354,7 @@ export async function POST(request: Request) {
         .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
         .single();
       if (error) throw new Error(error.message);
-      return NextResponse.json({ session: publicPlaygroundSession(data), messages: [], context: null });
+      return NextResponse.json({ environment: greenfieldPlaygroundEnvironment(), session: publicPlaygroundSession(data), messages: [], context: null });
     }
 
     if (action === "import_ticket") {
@@ -297,9 +377,10 @@ export async function POST(request: Request) {
             activeOrder: null,
             customerSignal: null,
             customerFirstName: ticket.customerFirstName,
+            sourceThreadId: ticket.threadId,
           },
         })
-        .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+        .select("id, workspace_id, owner_clerk_user_id, customer_email, title, conversation_context_json, created_at, updated_at")
         .single();
       if (sessionError) throw new Error(sessionError.message);
 
@@ -309,7 +390,9 @@ export async function POST(request: Request) {
         owner_clerk_user_id: authState.userId,
         role: message.role,
         content: message.content,
-        trace_json: null,
+        trace_json: message.comparison_only
+          ? { comparison_only: true, source: "historical_support_response" }
+          : null,
         created_at: message.created_at || undefined,
       }));
       let importedMessages: any[] = [];
@@ -324,6 +407,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({
+        environment: greenfieldPlaygroundEnvironment(),
         session: publicPlaygroundSession(session),
         messages: importedMessages.map(publicPlaygroundMessage),
         context: null,
@@ -331,18 +415,41 @@ export async function POST(request: Request) {
       });
     }
 
-    if (action !== "send") return NextResponse.json({ error: "Unsupported playground action." }, { status: 400 });
-    const messageInput = normalizePlaygroundMessage(body?.message);
+    const runImportedTicket = action === "run_ticket";
+    if (action !== "send" && !runImportedTicket) return NextResponse.json({ error: "Unsupported playground action." }, { status: 400 });
+    const messageInput = runImportedTicket
+      ? { value: "", error: null }
+      : normalizePlaygroundMessage(body?.message);
     if (messageInput.error) return NextResponse.json({ error: messageInput.error }, { status: 400 });
     const sessionId = String(body?.session_id || "").trim();
     if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
     const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
     if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    if (isGreenfieldPlaygroundProduction() && !String(session.conversation_context_json?.sourceThreadId || "").trim()) {
+      return NextResponse.json({ error: "Only a server-imported production ticket can be evaluated." }, { status: 400 });
+    }
     const messages = await loadMessages(serviceClient, scope, authState.userId, session.id);
+    let messageForAgent = messageInput.value;
+    let historyRows = messages;
+    if (runImportedTicket) {
+      const sourceThreadId = String(session.conversation_context_json?.sourceThreadId || "").trim();
+      if (!sourceThreadId) {
+        return NextResponse.json({ error: "Only a server-imported production ticket can be run here." }, { status: 400 });
+      }
+      const latestInboundIndex = [...messages]
+        .map((message: any, index: number) => ({ message, index }))
+        .reverse()
+        .find(({ message }) => message.role === "user" && message.trace_json?.comparison_only !== true)?.index;
+      if (latestInboundIndex == null) {
+        return NextResponse.json({ error: "The selected ticket has no customer message to evaluate." }, { status: 400 });
+      }
+      messageForAgent = messages[latestInboundIndex].content;
+      historyRows = messages.slice(0, latestInboundIndex);
+    }
+    if (!messageForAgent) return NextResponse.json({ error: "message is required." }, { status: 400 });
     const { shop, credentials } = await requireShopAndCredentials(serviceClient, scope);
     const customerFirstName = normalizePlaygroundCustomerName(session.conversation_context_json?.customerFirstName);
     const contextBefore = normalizePlaygroundContext(session.conversation_context_json);
-    const history = historyFromPlaygroundRows(messages);
     const tenant = {
       workspaceId: scope.workspaceId,
       shopId: shop.id,
@@ -351,8 +458,8 @@ export async function POST(request: Request) {
     };
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
-      message: messageInput.value,
-      history,
+      message: messageForAgent,
+      history: historyFromPlaygroundRows(historyRows),
       conversationContext: (contextBefore || undefined) as any,
       capabilities: {
         tenant,
@@ -371,15 +478,7 @@ export async function POST(request: Request) {
       ? { ...contextAfter, customerFirstName }
       : contextAfter;
     const trace = sanitizeGreenfieldTrace(result.trace, { contextBefore, contextAfter });
-    const nextTitle = session.title === "New conversation" ? messageInput.value.slice(0, 72) : session.title;
-    const userMessage = {
-      session_id: session.id,
-      workspace_id: scope.workspaceId,
-      owner_clerk_user_id: authState.userId,
-      role: "user",
-      content: messageInput.value,
-      trace_json: null,
-    };
+    const nextTitle = session.title === "New conversation" ? messageForAgent.slice(0, 72) : session.title;
     const assistantMessage = {
       session_id: session.id,
       workspace_id: scope.workspaceId,
@@ -388,22 +487,41 @@ export async function POST(request: Request) {
       content: result.response,
       trace_json: trace,
     };
+    const messagesToInsert = runImportedTicket
+      ? [assistantMessage]
+      : [{
+          session_id: session.id,
+          workspace_id: scope.workspaceId,
+          owner_clerk_user_id: authState.userId,
+          role: "user",
+          content: messageForAgent,
+          trace_json: null,
+        }, assistantMessage];
     const { data: insertedMessages, error: messageError } = await serviceClient
       .from(MESSAGES_TABLE)
-      .insert([userMessage, assistantMessage])
+      .insert(messagesToInsert)
       .select("id, role, content, trace_json, created_at")
       .order("created_at", { ascending: true });
     if (messageError) throw new Error(messageError.message);
     const { data: updatedSession, error: updateError } = await serviceClient
       .from(SESSIONS_TABLE)
-      .update({ conversation_context_json: contextToPersist, title: nextTitle })
+      .update({
+        conversation_context_json: {
+          ...(session.conversation_context_json?.sourceThreadId
+            ? { sourceThreadId: session.conversation_context_json.sourceThreadId }
+            : {}),
+          ...contextToPersist,
+        },
+        title: nextTitle,
+      })
       .eq("id", session.id)
       .eq("workspace_id", scope.workspaceId)
       .eq("owner_clerk_user_id", authState.userId)
-      .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
+      .select("id, workspace_id, owner_clerk_user_id, customer_email, title, conversation_context_json, created_at, updated_at")
       .single();
     if (updateError) throw new Error(updateError.message);
     return NextResponse.json({
+      environment: greenfieldPlaygroundEnvironment(),
       session: publicPlaygroundSession(updatedSession),
       messages: Array.isArray(insertedMessages) ? insertedMessages.map(publicPlaygroundMessage) : [],
       context: contextAfter,

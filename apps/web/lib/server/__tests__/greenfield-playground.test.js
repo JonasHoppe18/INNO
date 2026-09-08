@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   historyFromPlaygroundRows,
+  isInternalGreenfieldPlaygroundUser,
   isGreenfieldPlaygroundEnabled,
   isOwnedPlaygroundSession,
   normalizePlaygroundContext,
@@ -13,6 +14,31 @@ describe("greenfield playground boundary", () => {
   it("A: is disabled in production", () => {
     expect(isGreenfieldPlaygroundEnabled({ NODE_ENV: "production" })).toBe(false);
     expect(isGreenfieldPlaygroundEnabled({ NODE_ENV: "development" })).toBe(true);
+    expect(isGreenfieldPlaygroundEnabled({
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ENABLED: "true",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "prodref",
+      NEXT_PUBLIC_SUPABASE_URL: "https://prodref.supabase.co",
+    })).toBe(true);
+    expect(isGreenfieldPlaygroundEnabled({
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ENABLED: "true",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "prodref",
+      NEXT_PUBLIC_SUPABASE_URL: "https://dev-ref.supabase.co",
+    })).toBe(false);
+  });
+
+  it("A2: limits access to workspace administrators", async () => {
+    const serviceClient = { from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: { role: "org:admin" }, error: null }) }),
+        }),
+      }),
+    }) };
+    await expect(isInternalGreenfieldPlaygroundUser(serviceClient, { workspaceId: "workspace-a", clerkUserId: "user-a" })).resolves.toBe(true);
   });
 
   it("B/C: requires both the current workspace and current user", () => {
@@ -51,6 +77,10 @@ describe("greenfield playground boundary", () => {
       ...Array.from({ length: 25 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", content: String(index) })),
     ])).toHaveLength(20);
     expect(historyFromPlaygroundRows([{ role: "system", content: "not allowed" }])).toEqual([]);
+    expect(historyFromPlaygroundRows([
+      { role: "user", content: "customer question" },
+      { role: "assistant", content: "previous response", trace_json: { comparison_only: true } },
+    ])).toEqual([{ role: "user", content: "customer question" }]);
   });
 
   it("G: describes read-only provider results without exposing credentials", () => {
