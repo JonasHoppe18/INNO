@@ -5,6 +5,8 @@ import type {
   CapabilityManifest,
   CommerceReadProvider,
   ConversationContext,
+  FulfillmentItemSnapshot,
+  FulfillmentSnapshot,
   JsonObject,
   JsonValue,
   LiveTrackingProvider,
@@ -197,22 +199,39 @@ function orderFromFulfillmentResult(value: JsonValue, fallbackOrderId: string): 
   const orderId = String(value.order_id ?? value.orderId ?? fallbackOrderId).trim();
   const orderNumber = String(value.order_number ?? value.orderNumber ?? fallbackOrderId).trim();
   if (!orderId || !orderNumber || !Array.isArray(value.fulfillments)) return null;
-  const fulfillments = value.fulfillments
+  const fulfillments: FulfillmentSnapshot[] = value.fulfillments
     .filter((item): item is JsonObject => Boolean(item && typeof item === "object" && !Array.isArray(item)))
-    .map((item) => ({
-      id: String(item.id ?? "").trim(),
-      status: item.status == null ? null : String(item.status),
-      carrier: item.carrier == null ? null : String(item.carrier),
-      trackingNumber: item.tracking_number == null && item.trackingNumber == null
-        ? null
-        : String(item.tracking_number ?? item.trackingNumber),
-      trackingUrl: item.tracking_url == null && item.trackingUrl == null
-        ? null
-        : String(item.tracking_url ?? item.trackingUrl),
-      shipmentStatus: item.shipment_status == null && item.shipmentStatus == null
-        ? null
-        : String(item.shipment_status ?? item.shipmentStatus),
-    }))
+    .map((item) => {
+      const items: FulfillmentItemSnapshot[] = Array.isArray(item.items)
+        ? item.items
+          .filter((child): child is JsonObject => Boolean(child && typeof child === "object" && !Array.isArray(child)))
+          .map((child) => ({
+            orderLineItemId: String(child.orderLineItemId ?? child.order_line_item_id ?? "").trim(),
+            variantId: child.variantId == null && child.variant_id == null ? null : String(child.variantId ?? child.variant_id),
+            title: String(child.title ?? "").trim(),
+            quantity: Number(child.quantity ?? 0),
+            orderedQuantity: child.orderedQuantity == null && child.ordered_quantity == null ? null : Number(child.orderedQuantity ?? child.ordered_quantity),
+            fulfilledQuantity: child.fulfilledQuantity == null && child.fulfilled_quantity == null ? null : Number(child.fulfilledQuantity ?? child.fulfilled_quantity),
+          }))
+          .filter((child) => child.orderLineItemId && child.title && Number.isFinite(child.quantity))
+        : [];
+      return {
+        id: String(item.id ?? "").trim(),
+        status: item.status == null ? null : String(item.status),
+        carrier: item.carrier == null ? null : String(item.carrier),
+        trackingNumber: item.tracking_number == null && item.trackingNumber == null
+          ? null
+          : String(item.tracking_number ?? item.trackingNumber),
+        trackingUrl: item.tracking_url == null && item.trackingUrl == null
+          ? null
+          : String(item.tracking_url ?? item.trackingUrl),
+        shipmentStatus: item.shipment_status == null && item.shipmentStatus == null
+          ? null
+          : String(item.shipment_status ?? item.shipmentStatus),
+        items,
+        itemMappingStatus: item.item_mapping_status === "verified" || item.itemMappingStatus === "verified" ? "verified" : "unavailable",
+      } satisfies FulfillmentSnapshot;
+    })
     .filter((item) => item.id);
   return {
     id: orderId,
@@ -221,6 +240,12 @@ function orderFromFulfillmentResult(value: JsonValue, fallbackOrderId: string): 
     fulfillmentStatus: value.fulfillment_status == null && value.fulfillmentStatus == null
       ? null
       : String(value.fulfillment_status ?? value.fulfillmentStatus),
+    items: Array.isArray(value.items)
+      ? value.items
+        .filter((item): item is JsonObject => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+        .map((item) => ({ id: String(item.id ?? "").trim(), title: String(item.title ?? "").trim(), quantity: Number(item.quantity ?? 0), variantId: item.variantId == null && item.variant_id == null ? null : String(item.variantId ?? item.variant_id) }))
+        .filter((item) => item.id && item.title && Number.isFinite(item.quantity))
+      : [],
     fulfillments,
   };
 }

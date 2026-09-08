@@ -13,6 +13,7 @@ const FactKindSchema = z.enum([
   "order_item",
   "order_financial_status",
   "order_fulfillment_status",
+  "shipment_item",
   "product_value",
   "product_availability",
   "shipment_carrier",
@@ -490,14 +491,28 @@ function indexedCollectionProperty(path: string, collection: string, property: s
   return { index: normalized.slice(indexStart, indexEnd), property };
 }
 
-type ItemPath = { index: string | null; property: "collection" | "object" | "title" | "quantity" };
+type ItemPath = {
+  scope: "order" | "fulfillment";
+  fulfillmentIndex: string | null;
+  index: string | null;
+  property: "collection" | "object" | "title" | "quantity";
+};
 
 function itemPath(path: string): ItemPath | null {
   const normalized = normalizedDataPath(path);
+  const fulfillmentMatch = normalized.match(/(?:^|\.)fulfillments\[(\d+)\]\.items(?:\[(\d+)\])?(?:\.(title|quantity))?$/i);
+  if (fulfillmentMatch) {
+    return {
+      scope: "fulfillment",
+      fulfillmentIndex: fulfillmentMatch[1],
+      index: fulfillmentMatch[2] ?? null,
+      property: (fulfillmentMatch[3] as ItemPath["property"] | undefined) ?? (fulfillmentMatch[2] == null ? "collection" : "object"),
+    };
+  }
   const match = normalized.match(/(?:^|\.)items(?:\[(\d+)\])?(?:\.(title|quantity))?$/i);
   if (!match) return null;
-  if (match[1] == null) return { index: null, property: "collection" };
-  return { index: match[1], property: (match[2] as ItemPath["property"] | undefined) ?? "object" };
+  if (match[1] == null) return { scope: "order", fulfillmentIndex: null, index: null, property: "collection" };
+  return { scope: "order", fulfillmentIndex: null, index: match[1], property: (match[2] as ItemPath["property"] | undefined) ?? "object" };
 }
 
 function itemPathBase(path: string, index: string): string | null {
@@ -538,7 +553,9 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
     case "shipment_eta":
       return pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]);
     case "order_item":
-      return Boolean(itemPath(path));
+      return itemPath(path)?.scope === "order";
+    case "shipment_item":
+      return itemPath(path)?.scope === "fulfillment";
     case "product_value":
       return safeLiveProductFieldPath(path);
     case "product_availability":
@@ -631,6 +648,47 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
         code: "order_item_fields_required",
         message: "An order item fact must bind the title and quantity of one returned item object.",
       }];
+    }
+  }
+
+  if (segment.fact_kind === "shipment_item") {
+    const bindings = segment.evidence.flatMap((basis) => basis.field_paths.map((path) => ({
+      basis,
+      path,
+      binding: itemPath(path),
+    }))).filter((item): item is { basis: { result_id: string; field_paths: string[] }; path: string; binding: ItemPath } => Boolean(item.binding?.scope === "fulfillment"));
+    const bindingKeys = new Set(bindings.map(({ binding }) => `${binding.fulfillmentIndex}:${binding.index}`));
+    const itemResultIds = new Set(bindings.map(({ basis }) => basis.result_id));
+    const itemBasis = bindings[0]?.basis;
+    const itemEvidence = itemBasis ? resultFor(itemBasis, context) : undefined;
+    const firstBinding = bindings[0]?.binding;
+    const hasTitle = bindings.some(({ binding, basis, path }) => binding.property === "title"
+      || (binding.property === "object" && meaningful(objectValue(dataFieldValue(resultFor(basis, context)!.result, path).value)?.title))
+      || (binding.index != null && meaningful(siblingItemValue(resultFor(basis, context), path, binding.index, "title").value)));
+    const hasQuantity = bindings.some(({ binding, basis, path }) => binding.property === "quantity"
+      || (binding.property === "object" && meaningful(objectValue(dataFieldValue(resultFor(basis, context)!.result, path).value)?.quantity))
+      || (binding.index != null && meaningful(siblingItemValue(resultFor(basis, context), path, binding.index, "quantity").value)));
+    if (!bindings.length || !firstBinding?.fulfillmentIndex || !firstBinding.index || bindingKeys.size !== 1 || itemResultIds.size !== 1 || !hasTitle || !hasQuantity) {
+      return [{ index, code: "shipment_item_fields_required", message: "A shipment item fact must bind one fulfillment item with its title and quantity." }];
+    }
+    if (itemEvidence?.toolName !== "inspect_fulfillment") {
+      return [{ index, code: "shipment_item_source_required", message: "A shipment item fact must cite an inspect_fulfillment result." }];
+    }
+    const fulfillmentId = dataFieldValue(itemEvidence.result, `fulfillments[${firstBinding.fulfillmentIndex}].id`).value;
+    if (!meaningful(fulfillmentId)) {
+      return [{ index, code: "shipment_item_fulfillment_id_required", message: "A shipment item fact must bind to a returned fulfillment ID." }];
+    }
+    const trackingBases = segment.evidence.filter((basis) => resultFor(basis, context)?.toolName === "get_tracking");
+    if (trackingBases.length) {
+      const trackingEvidence = resultFor(trackingBases[0], context);
+      const trackingFulfillmentId = dataFieldValue(trackingEvidence!.result, "tracking_identifier.fulfillment_id").value;
+      const trackingStatus = dataFieldValue(trackingEvidence!.result, "live_tracking.status").value;
+      if (!meaningful(trackingFulfillmentId) || !meaningful(trackingStatus)) {
+        return [{ index, code: "shipment_item_tracking_binding_required", message: "Item-level tracking claims must cite the matching fulfillment ID and live tracking status." }];
+      }
+      if (String(trackingFulfillmentId) !== String(fulfillmentId)) {
+        return [{ index, code: "shipment_item_tracking_scope_mismatch", message: "The tracking result belongs to a different fulfillment than the cited item." }];
+      }
     }
   }
   return [];
@@ -1458,6 +1516,42 @@ function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[]
   return paragraphs.join(" ");
 }
 
+function renderShipmentItemFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  return facts
+    .filter((fact) => fact.fact_kind === "shipment_item")
+    .map((fact) => {
+      const candidate = factEvidenceValues(fact, context).find((item) => itemPath(item.path)?.scope === "fulfillment");
+      if (!candidate) return "";
+      const binding = itemPath(candidate.path);
+      if (!binding || binding.index == null || binding.fulfillmentIndex == null) return "";
+      const base = itemPathBase(candidate.path, binding.index);
+      const record = base ? objectValue(dataFieldValue(candidate.evidence.result, base).value) : null;
+      const title = meaningful(record?.title)
+        ? String(record.title)
+        : String(siblingItemValue(candidate.evidence, candidate.path, binding.index, "title").value ?? "").trim();
+      const quantity = meaningful(record?.quantity)
+        ? String(record.quantity)
+        : String(siblingItemValue(candidate.evidence, candidate.path, binding.index, "quantity").value ?? "").trim();
+      if (!title || !quantity) return "";
+      const fulfillmentId = dataFieldValue(candidate.evidence.result, `fulfillments[${binding.fulfillmentIndex}].id`).value;
+      const tracking = fact.evidence
+        .map((basis) => resultFor(basis, context))
+        .find((evidence) => evidence?.toolName === "get_tracking");
+      const trackingFulfillmentId = tracking ? dataFieldValue(tracking.result, "tracking_identifier.fulfillment_id").value : null;
+      const trackingStatus = tracking && String(trackingFulfillmentId) === String(fulfillmentId)
+        ? String(dataFieldValue(tracking.result, "live_tracking.status").value ?? "").toLowerCase()
+        : "";
+      const itemText = `${quantity} × ${title}`;
+      if (trackingStatus === "delivered") {
+        return locale === "da" ? `Den leverede forsendelse indeholdt ${itemText}.` : `The delivered shipment included ${itemText}.`;
+      }
+      return locale === "da" ? `Forsendelsen indeholdt ${itemText}.` : `The shipment included ${itemText}.`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
   const values = factEvidenceValues(segment, context);
   switch (segment.fact_kind) {
@@ -1505,10 +1599,16 @@ const ORDER_FACT_KINDS = new Set<FactKind>([
   "order_reference", "order_item", "order_financial_status", "order_fulfillment_status",
 ]);
 const SHIPMENT_FACT_KINDS = new Set<FactKind>([
-  "shipment_carrier", "shipment_tracking_number", "shipment_status", "shipment_event",
+  "shipment_item", "shipment_carrier", "shipment_tracking_number", "shipment_status", "shipment_event",
   "shipment_timestamp", "shipment_location", "shipment_eta",
 ]);
 const PRODUCT_AVAILABILITY_FACT_KINDS = new Set<FactKind>(["product_availability"]);
+
+function renderShipmentBundle(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const itemFacts = renderShipmentItemFacts(facts, context);
+  const standardFacts = renderShipmentFacts(facts.filter((fact) => fact.fact_kind !== "shipment_item"), context);
+  return [itemFacts, standardFacts].filter(Boolean).join("\n\n");
+}
 
 function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
@@ -1787,7 +1887,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       });
     }
     if (shipmentFacts.length) {
-      rendered.push(renderShipmentFacts(shipmentFacts, context));
+      rendered.push(renderShipmentBundle(shipmentFacts, context));
       segments.forEach((candidate, candidateIndex) => {
         if (candidate.type === "fact" && SHIPMENT_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
       });
@@ -1811,7 +1911,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       return;
     }
     if (segment.type === "fact" && SHIPMENT_FACT_KINDS.has(segment.fact_kind)) {
-      rendered.push(renderShipmentFacts(shipmentFacts, context));
+      rendered.push(renderShipmentBundle(shipmentFacts, context));
       segments.forEach((candidate, candidateIndex) => {
         if (candidate.type === "fact" && SHIPMENT_FACT_KINDS.has(candidate.fact_kind)) consumed.add(candidateIndex);
       });

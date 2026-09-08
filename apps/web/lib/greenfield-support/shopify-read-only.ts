@@ -1,6 +1,8 @@
 import type {
   CommerceReadProvider,
   CustomerSnapshot,
+  FulfillmentItemSnapshot,
+  FulfillmentSnapshot,
   JsonValue,
   OrderSnapshot,
   ProductAvailabilityState,
@@ -36,6 +38,11 @@ function numeric(value: unknown): number | null {
   if (value == null || (typeof value === "string" && !value.trim())) return null;
   const result = Number(value);
   return Number.isFinite(result) ? result : null;
+}
+
+function integer(value: unknown): number | null {
+  const result = numeric(value);
+  return result !== null && Number.isInteger(result) && result >= 0 ? result : null;
 }
 
 function inventoryPolicy(value: unknown): "deny" | "continue" | null {
@@ -156,6 +163,57 @@ function mapOrder(raw: any): OrderSnapshot {
   const orderNumber = clean(raw?.order_number ?? raw?.name).replace(/^#/, "");
   const cancelled = Boolean(raw?.cancelled_at);
   const fulfillmentStatus = raw?.fulfillment_status == null ? null : clean(raw.fulfillment_status);
+  const rawLineItems = Array.isArray(raw?.line_items) ? raw.line_items : [];
+  const lineItems = rawLineItems.map((item: any) => ({
+    id: clean(item?.id),
+    title: clean(item?.title),
+    quantity: integer(item?.quantity) ?? 0,
+    variantId: item?.variant_id == null ? null : clean(item.variant_id),
+  }));
+  const lineItemsById = new Map(lineItems.filter((item) => item.id).map((item) => [item.id, item]));
+  const fulfilledQuantities = new Map<string, number>();
+  const rawFulfillments = Array.isArray(raw?.fulfillments) ? raw.fulfillments : [];
+  for (const fulfillment of rawFulfillments) {
+    for (const item of Array.isArray(fulfillment?.line_items) ? fulfillment.line_items : []) {
+      const lineItemId = clean(item?.id ?? item?.line_item_id);
+      const quantity = integer(item?.quantity);
+      if (!lineItemId || quantity == null) continue;
+      fulfilledQuantities.set(lineItemId, (fulfilledQuantities.get(lineItemId) ?? 0) + quantity);
+    }
+  }
+  const mapFulfillment = (fulfillment: any): FulfillmentSnapshot => {
+    const rawItems = Array.isArray(fulfillment?.line_items) ? fulfillment.line_items : null;
+    const items: FulfillmentItemSnapshot[] = [];
+    let mappingComplete = Array.isArray(rawItems) && rawItems.length > 0;
+    for (const item of rawItems ?? []) {
+      const orderLineItemId = clean(item?.id ?? item?.line_item_id);
+      const sourceItem = lineItemsById.get(orderLineItemId);
+      const quantity = integer(item?.quantity);
+      if (!orderLineItemId || !sourceItem || quantity == null) {
+        mappingComplete = false;
+        continue;
+      }
+      items.push({
+        orderLineItemId,
+        variantId: sourceItem.variantId ?? null,
+        title: sourceItem.title,
+        quantity,
+        orderedQuantity: sourceItem.quantity,
+        fulfilledQuantity: fulfilledQuantities.get(orderLineItemId) ?? quantity,
+      });
+    }
+    if (items.length !== (rawItems?.length ?? 0)) mappingComplete = false;
+    return {
+      id: clean(fulfillment?.id),
+      status: fulfillment?.status ?? null,
+      carrier: fulfillment?.tracking_company ?? null,
+      trackingNumber: fulfillment?.tracking_number ?? null,
+      trackingUrl: fulfillment?.tracking_url ?? null,
+      shipmentStatus: fulfillment?.shipment_status ?? null,
+      items,
+      itemMappingStatus: mappingComplete ? "verified" : "unavailable",
+    };
+  };
   return {
     id: clean(raw?.id),
     orderNumber,
@@ -166,19 +224,8 @@ function mapOrder(raw: any): OrderSnapshot {
     updatedAt: raw?.updated_at ?? null,
     total: raw?.total_price ?? null,
     currency: raw?.currency ?? null,
-    items: Array.isArray(raw?.line_items)
-      ? raw.line_items.map((item: any) => ({ id: clean(item?.id), title: clean(item?.title), quantity: Number(item?.quantity ?? 0) }))
-      : [],
-    fulfillments: Array.isArray(raw?.fulfillments)
-      ? raw.fulfillments.map((fulfillment: any) => ({
-          id: clean(fulfillment?.id),
-          status: fulfillment?.status ?? null,
-          carrier: fulfillment?.tracking_company ?? null,
-          trackingNumber: fulfillment?.tracking_number ?? null,
-          trackingUrl: fulfillment?.tracking_url ?? null,
-          shipmentStatus: fulfillment?.shipment_status ?? null,
-        }))
-      : [],
+    items: lineItems,
+    fulfillments: rawFulfillments.map(mapFulfillment),
   };
 }
 
@@ -356,6 +403,13 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
   async inspectFulfillment(orderId: string): Promise<JsonValue> {
     const order = await this.getOrder(orderId);
     if (!order) return { status: "not_found", order_id: clean(orderId) };
-    return { status: "ok", order_id: order.id, order_number: order.orderNumber, fulfillment_status: order.fulfillmentStatus, fulfillments: order.fulfillments ?? [] };
+    return {
+      status: "ok",
+      order_id: order.id,
+      order_number: order.orderNumber,
+      fulfillment_status: order.fulfillmentStatus,
+      items: order.items ?? [],
+      fulfillments: order.fulfillments ?? [],
+    };
   }
 }

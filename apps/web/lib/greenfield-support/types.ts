@@ -140,15 +140,30 @@ export interface OrderSnapshot {
   updatedAt?: string | null;
   total?: string | null;
   currency?: string | null;
-  items?: Array<{ id: string; title: string; quantity: number }>;
-  fulfillments?: Array<{
-    id: string;
-    status?: string | null;
-    carrier?: string | null;
-    trackingNumber?: string | null;
-    trackingUrl?: string | null;
-    shipmentStatus?: string | null;
-  }>;
+  items?: Array<{ id: string; title: string; quantity: number; variantId?: string | null }>;
+  fulfillments?: FulfillmentSnapshot[];
+}
+
+export interface FulfillmentItemSnapshot {
+  /** Stable Shopify order line-item identifier used for the join. */
+  orderLineItemId: string;
+  variantId?: string | null;
+  title: string;
+  /** Quantity in this specific fulfillment, never the full ordered quantity. */
+  quantity: number;
+  orderedQuantity?: number | null;
+  fulfilledQuantity?: number | null;
+}
+
+export interface FulfillmentSnapshot {
+  id: string;
+  status?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  shipmentStatus?: string | null;
+  items: FulfillmentItemSnapshot[];
+  itemMappingStatus: "verified" | "unavailable";
 }
 
 /**
