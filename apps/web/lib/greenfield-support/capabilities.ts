@@ -22,6 +22,8 @@ export interface CapabilityContext {
   knowledge: KnowledgeStore;
   commerce: CommerceReadProvider;
   tracking?: LiveTrackingProvider;
+  /** Server-owned current customer wording; never supplied by the model. */
+  customerMessage?: string;
   /** Explicit order references extracted from the current customer request. */
   orderReferences?: string[];
   /** Trusted server-owned continuity state; never supplied by the model. */
@@ -101,20 +103,20 @@ function availabilityProviderStatus(value: JsonValue): "ok" | "not_found" | "inv
 
 function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, query: string): ToolExecutionResult {
   const procedural = result.some(({ record }) => record.knowledgeType === "procedural");
+  const procedureHit = result.find(({ record }) => record.knowledgeType === "procedural");
   const taskSpecificity = procedural
-    ? result.some(({ record, taskTitleMatches = 0 }) => {
-        const appliesTo = record.metadata?.applies_to;
-        const productScoped = appliesTo && typeof appliesTo === "object" && !Array.isArray(appliesTo)
-          && (Array.isArray(appliesTo.product_models) && appliesTo.product_models.length > 0
-            || Array.isArray(appliesTo.product_ids) && appliesTo.product_ids.length > 0);
-        return taskTitleMatches > 0 || (record.authority === "authoritative" && productScoped);
-      }) ? "matched" : "insufficient"
+    ? procedureHit?.taskSpecificity
+      ?? (result.some(({ taskTitleMatches = 0 }) => taskTitleMatches > 0) ? "sufficient" : "insufficient")
     : "not_applicable";
+  const procedureCandidates = procedureHit?.procedureCandidates ?? [];
   return {
     status: result.length ? "ok" : "not_found",
     data: {
       query,
       task_specificity: taskSpecificity,
+      ...(procedural && taskSpecificity === "insufficient" && procedureCandidates.length
+        ? { possible_tasks: procedureCandidates.map(({ taskKey, title }) => ({ task_key: taskKey, title })) }
+        : {}),
       results: result.map(({ record, score, taskRelevance = 0, taskTitleMatches = 0, taskBodyMatches = 0, matchReason, rank, evidenceSections }, index) => ({
         title: record.title,
         knowledge_type: record.knowledgeType,
@@ -139,7 +141,10 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
           observed_at: record.observedAt,
           expires_at: record.expiresAt,
         },
-        structured_data: structuredKnowledgeData(record),
+        structured_data: taskSpecificity === "insufficient" && record.knowledgeType === "procedural"
+          ? { task_candidate_only: true, task_key: record.taskKey, task_title: record.title }
+          : structuredKnowledgeData(record),
+        ...(taskSpecificity === "insufficient" && record.knowledgeType === "procedural" ? { evidence_sections: [] } : {}),
       })),
     },
   };
@@ -330,6 +335,7 @@ function searchKnowledge(
     workspaceId: context.tenant.workspaceId,
     trustedShopId: context.tenant.shopId ?? null,
     query: contextualQuery,
+    taskQuery: context.customerMessage || customerProvided?.issue || query,
     knowledgeTypes,
     limit,
   });

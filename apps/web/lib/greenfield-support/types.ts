@@ -149,6 +149,8 @@ export interface KnowledgeRecord {
 export interface KnowledgeSearchRequest {
   workspaceId: string;
   query: string;
+  /** Server-owned latest customer wording used for task specificity; retrieval query may be model-composed. */
+  taskQuery?: string;
   knowledgeTypes?: KnowledgeType[];
   limit?: number;
   /** Server-owned shop binding used to resolve a product from the current catalog. */
@@ -169,6 +171,11 @@ export interface KnowledgeEvidenceSection {
   chunkIds: string[];
 }
 
+export interface KnowledgeProcedureCandidate {
+  taskKey: string | null;
+  title: string;
+}
+
 export interface KnowledgeHit {
   record: KnowledgeRecord;
   score: number;
@@ -179,6 +186,9 @@ export interface KnowledgeHit {
   matchReason: "lexical" | "title" | "structured" | "semantic";
   rank?: number;
   evidenceSections?: KnowledgeEvidenceSection[];
+  taskSpecificity?: "sufficient" | "insufficient";
+  /** Sanitized labels used only to ground a task clarification. */
+  procedureCandidates?: KnowledgeProcedureCandidate[];
 }
 
 export interface KnowledgeStore {

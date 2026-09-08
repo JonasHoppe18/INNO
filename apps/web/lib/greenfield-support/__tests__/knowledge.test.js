@@ -257,15 +257,18 @@ describe("greenfield knowledge store", () => {
     expect(new Set(first.records.map((record) => record.sourceRecordKey)).size).toBe(5);
 
     const coffeeContext = { workspaceId: "generic-home-store", productId: "coffee-x", productModels: ["Coffee Machine X"] };
-    const grinder = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X grinder is blocked", productContext: coffeeContext, limit: 3 });
+    const grinder = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X grinder is blocked", knowledgeTypes: ["procedural"], productContext: coffeeContext, limit: 3 });
     expect(grinder[0].record.title).toContain("Grinder blocked");
+    expect(grinder[0].taskSpecificity).toBe("sufficient");
 
-    const descale = await store.search({ workspaceId: "generic-home-store", query: "How do I descale Coffee Machine X?", productContext: coffeeContext, limit: 3 });
+    const descale = await store.search({ workspaceId: "generic-home-store", query: "How do I descale Coffee Machine X?", knowledgeTypes: ["procedural"], productContext: coffeeContext, limit: 3 });
     expect(descale[0].record.title).toContain("Descale");
 
-    const ambiguous = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X isn't working", productContext: coffeeContext, limit: 5 });
-    expect(ambiguous.length).toBeGreaterThan(1);
-    expect(new Set(ambiguous.map((hit) => hit.record.structuredData.procedure.task.key))).toEqual(new Set([
+    const ambiguous = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X isn't working", knowledgeTypes: ["procedural"], productContext: coffeeContext, limit: 5 });
+    expect(ambiguous).toHaveLength(1);
+    expect(ambiguous[0].taskSpecificity).toBe("insufficient");
+    expect(ambiguous[0].procedureCandidates.length).toBeGreaterThan(1);
+    expect(new Set(ambiguous[0].procedureCandidates.map((candidate) => candidate.taskKey))).toEqual(new Set([
       "descale",
       "grinder_blocked",
       "water_not_heating",
@@ -275,17 +278,18 @@ describe("greenfield knowledge store", () => {
     const wrongProduct = await store.search({
       workspaceId: "generic-home-store",
       query: "Coffee Machine X pair remote",
+      knowledgeTypes: ["procedural"],
       productContext: coffeeContext,
       limit: 5,
     });
     expect(wrongProduct.map((hit) => hit.record.title)).not.toContain("Pair remote");
 
     const lampContext = { workspaceId: "generic-home-store", productId: "lamp-y", productModels: ["Desk Lamp Y"] };
-    const lamp = await store.search({ workspaceId: "generic-home-store", query: "Desk Lamp Y pair remote", productContext: lampContext, limit: 3 });
+    const lamp = await store.search({ workspaceId: "generic-home-store", query: "Desk Lamp Y pair remote", knowledgeTypes: ["procedural"], productContext: lampContext, limit: 3 });
     expect(lamp[0].record.title).toContain("Pair remote");
     expect(lamp.map((hit) => hit.record.title)).not.toContain("Grinder blocked");
 
-    const foreignWorkspace = await store.search({ workspaceId: "other-workspace", query: "Coffee Machine X grinder blocked", productContext: { ...coffeeContext, workspaceId: "other-workspace" }, limit: 5 });
+    const foreignWorkspace = await store.search({ workspaceId: "other-workspace", query: "Coffee Machine X grinder blocked", knowledgeTypes: ["procedural"], productContext: { ...coffeeContext, workspaceId: "other-workspace" }, limit: 5 });
     expect(foreignWorkspace).toEqual([]);
   });
 

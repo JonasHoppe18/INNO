@@ -838,7 +838,7 @@ function hasSpecificCustomerIssue(context: ResponseValidationContext) {
 function asksForMissingCustomerContext(value: string, context: ResponseValidationContext) {
   if (!context.customerMessage?.trim()) return false;
   const asksForProduct = /\b(?:which|what)\s+(?:exact\s+)?(?:[a-z][\w-]*\s+)?(?:product|device|model)(?:\s+(?:number|name))?\b|\b(?:exact\s+)?model\s+(?:number|name)\b|\bwhat(?:'s|\s+is)\s+the\s+(?:make|model)\b/i.test(value);
-  const asksForTask = /\bwhat(?:'s|\s+is)?\s+(?:exactly\s+)?wrong\b|\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:problem|issue|symptom|happening)\b|\bwhich\s+(?:problem|issue|symptom)\b|\b(?:describe|tell\s+me)\s+(?:the\s+)?(?:problem|issue|symptoms?)\b|\bis\s+it\s+(?:a|an)?\s*(?:power|connection|sound|audio|physical|pairing|detection|charging)\b/i.test(value);
+  const asksForTask = /\bwhat(?:'s|\s+is)?\s+(?:exactly\s+)?wrong\b|\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:problem|issue|symptom|happening)\b|\bwhat\s+(?:problem|issue|symptom)\b|\bwhich\s+(?:problem|issue|symptom)\b|\b(?:describe|tell\s+me)\s+(?:the\s+)?(?:problem|issue|symptoms?)\b|\bis\s+it\s+(?:a|an)?\s*(?:power|connection|sound|audio|physical|pairing|detection|charging)\b/i.test(value);
   const productMissing = !meaningful(context.customerProvidedContext?.product);
   const taskMissing = !hasSpecificCustomerIssue(context);
   return (productMissing && asksForProduct) || (taskMissing && asksForTask);
@@ -860,6 +860,23 @@ function canClarifyMissingCustomerContext(
   return asksForMissingCustomerContext(segment.text ?? "", context);
 }
 
+/**
+ * The runtime can safely ground a task clarification in the latest
+ * insufficient knowledge result even when the model omitted the optional
+ * basis. This never applies to a successful procedure result.
+ */
+function canClarifyInsufficientTaskResult(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+) {
+  if (segment.purpose !== "clarify_task" || segment.basis || segment.capability !== null || segment.missing_arguments.length) return false;
+  return (context.getResults?.() ?? []).some((record) => {
+    if (!["search_procedures", "search_product_knowledge", "search_policy", "get_brand_guidance"].includes(record.toolName)) return false;
+    const data = objectValue(record.result.data);
+    return effectiveResultStatus(record) === "not_found" || data?.task_specificity === "insufficient";
+  });
+}
+
 function validateGroundedQuestion(
   segment: Extract<ResponseSegment, { type: "question" }>,
   context: ResponseValidationContext,
@@ -872,12 +889,18 @@ function validateGroundedQuestion(
     issues.push({ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." });
   }
   const contextOnlyClarification = canClarifyMissingCustomerContext(segment, context);
-  const grounded = contextOnlyClarification
+  const implicitTaskClarification = canClarifyInsufficientTaskResult(segment, context);
+  const grounded = contextOnlyClarification || implicitTaskClarification
     ? { evidence: undefined, issues: [] }
     : validateQuestionBasis(segment, context, index);
   issues.push(...grounded.issues);
   const evidence = grounded.evidence;
-  if (!evidence) return issues;
+  if (!evidence) {
+    if (purpose === "clarify_task" && asksForKnownProduct(segment.text ?? "", context)) {
+      issues.push({ index, code: "known_context_reasked", message: "The clarification must not ask for customer-provided product context again." });
+    }
+    return issues;
+  }
   const data = objectValue(evidence.result.data);
   const status = effectiveResultStatus(evidence);
 
@@ -911,7 +934,8 @@ function validateGroundedQuestion(
     if (!(["search_procedures", "search_product_knowledge", "search_policy", "get_brand_guidance"].includes(evidence.toolName))) {
       issues.push({ index, code: "task_question_source_required", message: "A task clarification must follow a knowledge or procedure lookup." });
     }
-    if (status !== "not_found" && data?.task_specificity !== "insufficient") {
+    const hasGroundedTaskCandidates = Array.isArray(data?.possible_tasks) && data.possible_tasks.length > 0;
+    if (status !== "not_found" && data?.task_specificity !== "insufficient" && !hasGroundedTaskCandidates) {
       issues.push({ index, code: "task_ambiguity_required", message: "Task clarification requires missing or insufficient task evidence." });
     }
     if (asksForKnownProduct(segment.text ?? "", context)) {

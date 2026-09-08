@@ -250,6 +250,14 @@ describe("response contract expressiveness", () => {
     });
 
     expect(result.allValid).toBe(true);
+    const omittedBasis = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "What exactly is going wrong?",
+      capability: null,
+      missing_arguments: [],
+    });
+    expect(omittedBasis.allValid).toBe(true);
   });
 
   it("E/G: binds an item title-only citation to quantity from the same normalized item", async () => {

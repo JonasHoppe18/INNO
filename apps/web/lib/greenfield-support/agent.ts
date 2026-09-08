@@ -112,6 +112,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
   const registry = createCapabilityRegistry({
     ...options.capabilities,
+    customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });

@@ -85,6 +85,138 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(result.data.task_specificity).toBe("insufficient");
   });
 
+  it("fails closed when one product has several procedures but the task is broad", async () => {
+    const store = await competingProcedures();
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "My Product A is not working", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+    expect(hits[0].procedureCandidates?.length).toBe(4);
+
+    const registry = createCapabilityRegistry({ tenant: { workspaceId: WORKSPACE_ID }, knowledge: store, commerce: commerce() });
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "My Product A is not working" }));
+    expect(result.data.task_specificity).toBe("insufficient");
+    expect(result.data.possible_tasks).toHaveLength(4);
+    expect(result.data.results[0].structured_data).toMatchObject({ task_candidate_only: true });
+    expect(result.data.results[0].structured_data).not.toHaveProperty("procedure_steps");
+    expect(result.data.results[0].evidence_sections).toEqual([]);
+  });
+
+  it("keeps a single applicable procedure usable even without a discriminating task term", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "My Product A is not working", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("sufficient");
+  });
+
+  it("does not use a weak semantic tie between same-task candidates as a winner", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "connection-a", "Product A connection reset help", "Reconnect Product A.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    await ingest(store, "connection-b", "Product A connection pairing help", "Check the Product A connection and connectivity.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A connection problem", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+    expect(hits[0].procedureCandidates).toHaveLength(2);
+  });
+
+  it("uses customer aliases for task matching but omits them from procedural evidence", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "microphone", "Product A microphone diagnostics", "Check the input device.", {
+      structuredData: {
+        procedure: {
+          task: { key: "microphone_troubleshooting", title: "Microphone troubleshooting" },
+          aliases: ["nobody can hear me", "voice not detected"],
+        },
+      },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "nobody can hear me", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+    expect(hits[0].record.sourceId).toBe("microphone");
+    expect(hits[0].taskRelevance).toBeGreaterThan(0);
+
+    const registry = createCapabilityRegistry({ tenant: { workspaceId: WORKSPACE_ID }, knowledge: store, commerce: commerce() });
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "nobody can hear me" }));
+    expect(result.data.task_specificity).toBe("sufficient");
+    expect(result.data.results[0].structured_data).not.toHaveProperty("procedure.aliases");
+    expect(JSON.stringify(result.data.results[0].structured_data)).not.toContain("nobody can hear me");
+  });
+
+  it("turns a broad first turn into a specific procedure after task clarification", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "microphone", "Product A microphone diagnostics", "Check the input device.", {
+      structuredData: {
+        procedure: {
+          task: { key: "microphone_troubleshooting", title: "Microphone troubleshooting" },
+          aliases: ["nobody can hear me"],
+        },
+      },
+    });
+    await ingest(store, "reset", "Product A factory reset", "Factory reset Product A.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const first = createCapabilityRegistry({
+      tenant: { workspaceId: WORKSPACE_ID },
+      knowledge: store,
+      commerce: commerce(),
+      conversationContext: { turn: 1, activeOrder: null, customerSignal: null, customerProvided: { product: "Product A", issue: "not working" } },
+    });
+    const firstResult = await first.execute("search_procedures", JSON.stringify({ query: "Product A" }));
+    expect(firstResult.data.task_specificity).toBe("insufficient");
+
+    const second = createCapabilityRegistry({
+      tenant: { workspaceId: WORKSPACE_ID },
+      knowledge: store,
+      commerce: commerce(),
+      conversationContext: { turn: 2, activeOrder: null, customerSignal: null, customerProvided: { product: "Product A", issue: "nobody can hear me" } },
+    });
+    const secondResult = await second.execute("search_procedures", JSON.stringify({ query: "nobody can hear me" }));
+    expect(secondResult.data.task_specificity).toBe("sufficient");
+    expect(secondResult.data.results[0].title).toContain("microphone");
+  });
+
+  it("keeps product correction separate from task specificity", async () => {
+    const store = await competingProcedures();
+    const registry = createCapabilityRegistry({
+      tenant: { workspaceId: WORKSPACE_ID },
+      knowledge: store,
+      commerce: commerce(),
+      conversationContext: { turn: 2, activeOrder: null, customerSignal: null, customerProvided: { product: "Product A", issue: "not working" } },
+    });
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "Product A" }));
+    expect(result.data.task_specificity).toBe("insufficient");
+  });
+
+  it("uses the server-owned customer wording instead of a model-invented task query", async () => {
+    const store = await competingProcedures();
+    const registry = createCapabilityRegistry({
+      tenant: { workspaceId: WORKSPACE_ID },
+      knowledge: store,
+      commerce: commerce(),
+      customerMessage: "My Product A is not working",
+    });
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "Product A audio troubleshooting" }));
+    expect(result.data.task_specificity).toBe("insufficient");
+  });
+
+  it("does not let unpublished procedure candidates contribute to specificity", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "draft", "Product A reset", "Reset Product A.", {
+      metadata: { lifecycle_status: "draft" },
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    await ingest(store, "archived", "Product A pairing", "Pair Product A.", {
+      metadata: { lifecycle_status: "archived" },
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A reset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+    expect(hits).toEqual([]);
+  });
+
   it("F: later clarification improves task-scoped retrieval", async () => {
     const store = await competingProcedures();
     const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A dongle will not pair with the headset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });

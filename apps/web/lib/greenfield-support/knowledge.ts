@@ -5,6 +5,7 @@ import type {
   KnowledgeEvidenceSection,
   KnowledgeRecord,
   KnowledgeProductContext,
+  KnowledgeProcedureCandidate,
   KnowledgeSearchRequest,
   KnowledgeSourceInput,
   KnowledgeSourceCandidateInput,
@@ -328,13 +329,23 @@ export function extractProcedureSteps(value: string): JsonObject[] {
 
 export function structuredKnowledgeData(record: Pick<KnowledgeRecord, "knowledgeType" | "structuredData" | "content">): JsonObject {
   if (record.knowledgeType !== "procedural") return record.structuredData;
+  const rawProcedure = record.structuredData.procedure && typeof record.structuredData.procedure === "object" && !Array.isArray(record.structuredData.procedure)
+    ? record.structuredData.procedure as JsonObject
+    : null;
+  const safeProcedure = rawProcedure
+    ? Object.fromEntries(Object.entries(rawProcedure).filter(([key]) => !["aliases", "customer_language_aliases"].includes(key))) as JsonObject
+    : null;
+  const safeStructuredData = Object.fromEntries(
+    Object.entries(record.structuredData).filter(([key]) => !["aliases", "customer_language_aliases"].includes(key)),
+  ) as JsonObject;
   const explicit = normalizeProcedureBlocks(
     record.structuredData.procedure_blocks
       ?? record.structuredData.procedure_steps
       ?? (record.structuredData.procedure as JsonObject | undefined)?.blocks,
   );
   return {
-    ...record.structuredData,
+    ...safeStructuredData,
+    ...(safeProcedure ? { procedure: safeProcedure } : {}),
     procedure_steps: explicit.length ? explicit : extractProcedureSteps(record.content),
   };
 }
@@ -868,11 +879,46 @@ function rowProductModels(row: any): string[] {
   return [...structuredModels, ...metadataModels].map(normalizedProductText).filter(Boolean);
 }
 
+function rowProcedureMetadata(row: any): { taskKey: string | null; title: string; aliases: string[] } {
+  const structuredData = row?.structured_data
+    ?? row?.record?.record?.structuredData
+    ?? row?.record?.structuredData
+    ?? {};
+  const procedure = structuredData?.procedure && typeof structuredData.procedure === "object" && !Array.isArray(structuredData.procedure)
+    ? structuredData.procedure
+    : {};
+  const task = procedure.task && typeof procedure.task === "object" && !Array.isArray(procedure.task)
+    ? procedure.task
+    : {};
+  const aliases = [
+    ...(Array.isArray(row?.customer_aliases) ? row.customer_aliases : []),
+    ...(Array.isArray(row?.record?.record?.customerAliases) ? row.record.record.customerAliases : []),
+    ...(Array.isArray(procedure.aliases) ? procedure.aliases : []),
+    ...(Array.isArray(procedure.customer_language_aliases) ? procedure.customer_language_aliases : []),
+    ...(Array.isArray(structuredData.customer_language_aliases) ? structuredData.customer_language_aliases : []),
+  ].map(cleanText).filter(Boolean);
+  return {
+    taskKey: cleanText(row?.task_key ?? task.key ?? structuredData.task_key) || null,
+    title: cleanText(task.title ?? row?.title),
+    aliases: Array.from(new Set(aliases)),
+  };
+}
+
 function rowRelevanceText(row: any): string {
   const title = cleanText(row?.title);
-  if (title) return title;
   const chunk = cleanText(row?.chunk_content ?? row?.content ?? "");
+  const knowledgeType = String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "");
+  if (knowledgeType === "procedural" || row?.structured_data?.procedure) {
+    const procedure = rowProcedureMetadata(row);
+    return [title, procedure.title, procedure.taskKey, ...procedure.aliases].filter(Boolean).join(" ");
+  }
+  if (title) return title;
   return chunk.split(/\n\s*\n/)[0] ?? "";
+}
+
+function rowProcedureCandidate(row: any): KnowledgeProcedureCandidate {
+  const procedure = rowProcedureMetadata(row);
+  return { taskKey: procedure.taskKey, title: procedure.title || cleanText(row?.title) || "Procedure" };
 }
 
 function tokenForms(token: string): Set<string> {
@@ -934,7 +980,7 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
     const bodyMatches = taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
     const coverage = matchingTerms.length / Math.max(taskTerms.length, 1);
     const boundedBodySupport = Math.min(0.2, bodyMatches * 0.05);
-    signals.set(String(row?.id ?? row?.source_id ?? row?.content_hash ?? ""), {
+    signals.set(rowRelevanceKey(row), {
       score: Math.min(1, coverage + boundedBodySupport),
       matches: matchingTerms.length,
       titleMatches: matchingTerms.length,
@@ -947,7 +993,15 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
 }
 
 function rowRelevanceKey(row: any): string {
-  return String(row?.id ?? row?.source_id ?? row?.content_hash ?? "");
+  return String(
+    row?.id
+      ?? row?.source_id
+      ?? row?.content_hash
+      ?? row?.record?.record?.id
+      ?? row?.record?.record?.sourceId
+      ?? row?.record?.record?.contentHash
+      ?? "",
+  );
 }
 
 function sortKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
@@ -955,13 +1009,16 @@ function sortKnowledgeRows(rows: any[], query: string, productContext: Knowledge
   const hasApplicableProduct = rows.some((row) => applicableProductScore(row, query) > 0);
   const hasTaskSignal = rows.some((row) => (signals.get(rowRelevanceKey(row))?.score ?? 0) > 0);
   const sorted = [...rows].sort((left, right) => {
-    if (hasApplicableProduct) {
-      const productDifference = applicableProductScore(right, query) - applicableProductScore(left, query);
-      if (productDifference) return productDifference;
-    }
     if (hasTaskSignal) {
       const taskDifference = (signals.get(rowRelevanceKey(right))?.score ?? 0) - (signals.get(rowRelevanceKey(left))?.score ?? 0);
       if (taskDifference) return taskDifference;
+    }
+    // Applicability is a constraint before ranking. When a generic procedure
+    // and an exact product procedure are both eligible, the customer's task
+    // signal must decide which evidence is primary.
+    if (hasApplicableProduct) {
+      const productDifference = applicableProductScore(right, query) - applicableProductScore(left, query);
+      if (productDifference) return productDifference;
     }
     return Number(right.score ?? 0) - Number(left.score ?? 0)
       || String(right.observed_at ?? "").localeCompare(String(left.observed_at ?? ""));
@@ -969,10 +1026,81 @@ function sortKnowledgeRows(rows: any[], query: string, productContext: Knowledge
   return { rows: sorted, signals };
 }
 
-function selectKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, finalLimit: number, knowledgeTypes?: KnowledgeType[]): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
+function procedureSelectionInfo(rows: any[], signals: Map<string, TaskRelevanceSignals>, query: string): {
+  taskSpecificity: "sufficient" | "insufficient";
+  procedureCandidates: KnowledgeProcedureCandidate[];
+} {
+  const procedureRows = rows.filter((row) => String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "") === "procedural");
+  const procedureCandidates = Array.from(new Map(
+    procedureRows
+      .map((row) => ({ row, metadata: rowProcedureMetadata(row) }))
+      // Legacy bundled procedure rows can remain searchable, but they do not
+      // provide a canonical task label that is safe to offer for clarification.
+      .filter(({ metadata }) => Boolean(metadata.taskKey))
+      .map(({ row }) => {
+        const candidate = rowProcedureCandidate(row);
+        return [`${candidate.taskKey ?? ""}:${candidate.title.toLowerCase()}`, candidate] as const;
+      }),
+  ).values()).slice(0, 8);
+  if (procedureRows.length <= 1) {
+    if (!procedureRows.length) return { taskSpecificity: "insufficient", procedureCandidates };
+    const onlySignal = signals.get(rowRelevanceKey(procedureRows[0]));
+    const canonicalTask = rowProcedureMetadata(procedureRows[0]).taskKey;
+    return {
+      // A canonical single procedure can answer a broad query. A legacy
+      // bundled row without a task identity cannot: it must not become a
+      // back door for arbitrary procedural disclosure.
+      taskSpecificity: canonicalTask || (onlySignal?.titleMatches ?? 0) > 0 ? "sufficient" : "insufficient",
+      procedureCandidates,
+    };
+  }
+
+  const directTaskCandidates = procedureRows
+    .map((row) => ({ row, signal: signals.get(rowRelevanceKey(row)) }))
+    .filter(({ signal }) => (signal?.titleMatches ?? 0) > 0)
+    .sort((left, right) => (
+      (right.signal?.score ?? 0) - (left.signal?.score ?? 0)
+      || Number(right.row.score ?? 0) - Number(left.row.score ?? 0)
+    ));
+  if (!directTaskCandidates.length || directTaskCandidates.length === 1) {
+    return { taskSpecificity: directTaskCandidates.length ? "sufficient" : "insufficient", procedureCandidates };
+  }
+
+  // Two procedures matching the same customer term are competing answers.
+  // A semantic tie cannot break that competition safely; a larger explicit
+  // task match can, while disjoint matches represent an explicit multi-task.
+  const top = directTaskCandidates[0].signal!;
+  const second = directTaskCandidates[1].signal!;
+  const sharedTerms = top.matchedTerms.filter((term) => second.matchedTerms.includes(term));
+  const clearTaskWinner = top.matches > second.matches;
+  const productScores = directTaskCandidates.map(({ row }) => applicableProductScore(row, query));
+  const highestProductScore = Math.max(...productScores);
+  const hasUniqueProductWinner = highestProductScore > 0
+    && productScores.filter((score) => score === highestProductScore).length === 1;
+  return {
+    taskSpecificity: sharedTerms.length && !clearTaskWinner && !hasUniqueProductWinner ? "insufficient" : "sufficient",
+    procedureCandidates,
+  };
+}
+
+function selectKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, finalLimit: number, knowledgeTypes?: KnowledgeType[]): {
+  rows: any[];
+  signals: Map<string, TaskRelevanceSignals>;
+  taskSpecificity?: "sufficient" | "insufficient";
+  procedureCandidates?: KnowledgeProcedureCandidate[];
+} {
   const ranked = sortKnowledgeRows(rows, query, productContext);
   if (!knowledgeTypes?.includes("procedural") || !ranked.rows.length) {
     return { rows: ranked.rows.slice(0, finalLimit), signals: ranked.signals };
+  }
+
+  const procedureInfo = procedureSelectionInfo(ranked.rows, ranked.signals, query);
+  if (procedureInfo.taskSpecificity === "insufficient") {
+    return {
+      rows: ranked.rows.slice(0, 1),
+      signals: ranked.signals,
+      ...procedureInfo,
+    };
   }
 
   const top = ranked.rows[0];
@@ -990,7 +1118,7 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
       && (candidateSignal?.titleMatches ?? 0) > 0
       && (signal >= topSignal * 0.75 || separateTask);
   });
-  return { rows: selected.slice(0, finalLimit), signals: ranked.signals };
+  return { rows: selected.slice(0, finalLimit), signals: ranked.signals, ...procedureInfo };
 }
 
 function relevantToExplicitQuery(row: any, request: KnowledgeSearchRequest, productContext: KnowledgeProductContext | null): boolean {
@@ -1160,7 +1288,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     }));
     const selected = selectKnowledgeRows(
       rows,
-      request.query,
+      request.taskQuery ?? request.query,
       request.productContext ?? null,
       Math.max(1, Math.min(request.limit ?? 5, 20)),
       request.knowledgeTypes,
@@ -1171,6 +1299,8 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
       taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
       taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
       rank: index + 1,
+      taskSpecificity: selected.taskSpecificity,
+      procedureCandidates: selected.procedureCandidates,
     }));
   }
 }
@@ -1574,7 +1704,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           return score === 0 || score === strongestExplicitProduct;
         })
       : mergedRows;
-    const selected = selectKnowledgeRows(productScopedRows, request.query, productContext, finalLimit, request.knowledgeTypes);
+    const selected = selectKnowledgeRows(productScopedRows, request.taskQuery ?? request.query, productContext, finalLimit, request.knowledgeTypes);
     const rows = selected.rows;
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows
@@ -1611,6 +1741,8 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       rank: index + 1,
       evidenceSections: evidenceSections.get(String(row.id)) ?? [],
       matchReason: row.match_reason ?? "semantic",
+      taskSpecificity: selected.taskSpecificity,
+      procedureCandidates: selected.procedureCandidates,
       }));
   }
 }

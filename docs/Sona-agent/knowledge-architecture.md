@@ -132,6 +132,13 @@ citations; legacy indexed `step_paths` remain supported for compatibility.
 Chunks and embeddings are derived data: published-record ingestion repairs
 missing embeddings without changing the canonical record.
 
+For procedures, product applicability is first an eligibility constraint, not
+task evidence. Deterministic task relevance reads the canonical task title/key
+and customer-language aliases, with bounded body support. When multiple
+published procedures remain applicable without a clear task winner, retrieval
+returns `task_specificity=insufficient` and sanitized task labels only; the
+agent must clarify instead of receiving a complete arbitrary procedure.
+
 ## Review workflow
 
 The Knowledge UI supports two small workflows:

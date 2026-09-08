@@ -34,6 +34,7 @@ function unavailableCommerceProvider() {
 }
 
 function summarize(run) {
+  const knowledgeEvent = run.trace.events.find((event) => event.type === "tool_result" && Array.isArray(event.data?.result?.data?.results));
   const knowledge = run.trace.events
     .filter((event) => event.type === "tool_result")
     .flatMap((event) => Array.isArray(event.data?.result?.data?.results) ? event.data.result.data.results : [])
@@ -49,6 +50,8 @@ function summarize(run) {
   return {
     response: run.response,
     tools: run.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data?.name),
+    task_specificity: knowledgeEvent?.data?.result?.data?.task_specificity ?? null,
+    possible_tasks: knowledgeEvent?.data?.result?.data?.possible_tasks ?? [],
     knowledge,
     errors: run.trace.events.filter((event) => event.type === "error").map((event) => event.data),
     validation: run.trace.events.find((event) => event.type === "final_response")?.data?.validation || null,
@@ -57,7 +60,7 @@ function summarize(run) {
 }
 
 describe.skipIf(!RUN_REAL_EVAL)("Greenfield Knowledge V1 one-agent DEV evaluation", () => {
-  it("runs 14 focused Luna cases against real DEV knowledge", async () => {
+  it("runs a focused Luna task-specificity evaluation against real DEV knowledge", async () => {
     loadEnvFile(resolve(process.cwd(), ".env.development.local"));
     loadEnvFile(resolve(process.cwd(), "apps/web/.env.development.local"));
     expect(process.env.OPENAI_API_KEY).toBeTruthy();
@@ -70,20 +73,21 @@ describe.skipIf(!RUN_REAL_EVAL)("Greenfield Knowledge V1 one-agent DEV evaluatio
     const commerce = unavailableCommerceProvider();
     const tenant = { workspaceId: WORKSPACE_ID, customerEmail: null };
     const cases = [
-      { id: "structured_factory_reset", message: "How do I factory reset my A-Spire Wireless headset?" },
-      { id: "structured_dongle_pairing", message: "My A-Spire Wireless dongle will not connect to the headset. What should I try?" },
-      { id: "structured_firmware", message: "How do I update the A-Spire Wireless headset and dongle firmware?" },
-      { id: "structured_microphone", message: "My headset microphone is not picking up my voice. What should I check?" },
-      { id: "structured_interference", message: "I am experiencing dongle interference on A-Spire Wireless." },
-      { id: "structured_charging", message: "Can I keep using my A-Spire Wireless dongle while charging?" },
-      { id: "ambiguous_same_product", message: "My A-Spire Wireless is not working. What should I do?" },
-      { id: "cross_product_dongle", message: "The dongle for my A-Blaze is not connecting. What can I try?" },
-      { id: "policy_returns", message: "Can I return my headset after opening the package?" },
+      { id: "specific_factory_reset", message: "How do I factory reset my A-Spire Wireless headset?" },
+      { id: "specific_dongle_pairing", message: "My A-Spire Wireless dongle will not connect to the headset. What should I try?" },
+      { id: "specific_firmware", message: "How do I update the A-Spire Wireless headset and dongle firmware?" },
+      { id: "specific_microphone", message: "My A-Spire Wireless microphone is not picking up my voice. What should I check?" },
+      { id: "specific_interference", message: "I am experiencing dongle interference on A-Spire Wireless." },
+      { id: "ambiguous_broad_failure", message: "My A-Spire Wireless is not working. What should I do?" },
+      { id: "ambiguous_headset_problem", message: "My A-Spire Wireless headset has a problem. Can you help?" },
+      { id: "ambiguous_support_needed", message: "I need help with my A-Spire Wireless; something is wrong." },
       { id: "policy_warranty", message: "How long is the warranty in the EU?" },
       { id: "product_compatibility", message: "Is the A-Spire Wireless compatible with PlayStation 5?" },
       { id: "legacy_product", message: "What can I use A-Rise Bluetooth for, and is it suitable for gaming?" },
-      { id: "brand_guidance", message: "What is AceZone focused on as a brand?" },
-      { id: "multi_intent", message: "My A-Spire Wireless microphone is not working, and I also want to know whether the warranty covers a replacement." },
+    ];
+    const multiTurnFlows = [
+      { id: "multi_turn_microphone_clarification", first: "My A-Spire Wireless is not working. What should I do?", follow: "It is specifically the microphone; nobody can hear me." },
+      { id: "multi_turn_pairing_clarification", first: "My A-Spire Wireless is not working. What should I do?", follow: "It is specifically the dongle; it will not connect to the headset." },
     ];
 
     const results = [];
@@ -101,28 +105,32 @@ describe.skipIf(!RUN_REAL_EVAL)("Greenfield Knowledge V1 one-agent DEV evaluatio
       results.push({ id: item.id, customer_message: item.message, ...summarize(run) });
     }
 
-    const firstTurn = await runGreenfieldAgentWithAgentsSdk({
-      tenant,
-      message: "My A-Spire Wireless is not working. What should I do?",
-      model: "gpt-5.6-luna",
-      reasoningEffort: "medium",
-      capabilities: { tenant, knowledge, commerce },
-      maxTurns: 8,
-    });
-    const continuation = await runGreenfieldAgentWithAgentsSdk({
-      tenant,
-      history: [
-        { role: "user", content: "My A-Spire Wireless is not working. What should I do?" },
-        { role: "assistant", content: firstTurn.response },
-      ],
-      message: "It is specifically the microphone; nobody can hear me.",
-      model: "gpt-5.6-luna",
-      reasoningEffort: "medium",
-      capabilities: { tenant, knowledge, commerce },
-      maxTurns: 8,
-    });
-    expect(continuation.response).toBeTruthy();
-    results.push({ id: "multi_turn_microphone_clarification", customer_message: continuation.trace.events.find((event) => event.type === "agent_started")?.data?.message, ...summarize(continuation) });
+    for (const flow of multiTurnFlows) {
+      const firstTurn = await runGreenfieldAgentWithAgentsSdk({
+        tenant,
+        message: flow.first,
+        model: "gpt-5.6-luna",
+        reasoningEffort: "medium",
+        capabilities: { tenant, knowledge, commerce },
+        maxTurns: 8,
+      });
+      expect(firstTurn.response).toBeTruthy();
+      results.push({ id: `${flow.id}:first`, customer_message: flow.first, ...summarize(firstTurn) });
+      const continuation = await runGreenfieldAgentWithAgentsSdk({
+        tenant,
+        history: [
+          { role: "user", content: flow.first },
+          { role: "assistant", content: firstTurn.response },
+        ],
+        message: flow.follow,
+        model: "gpt-5.6-luna",
+        reasoningEffort: "medium",
+        capabilities: { tenant, knowledge, commerce },
+        maxTurns: 8,
+      });
+      expect(continuation.response).toBeTruthy();
+      results.push({ id: flow.id, customer_message: flow.follow, ...summarize(continuation) });
+    }
 
     console.log("GREENFIELD_KNOWLEDGE_V1_LUNA_MEDIUM_DEV_EVAL");
     console.log(JSON.stringify({
@@ -131,7 +139,8 @@ describe.skipIf(!RUN_REAL_EVAL)("Greenfield Knowledge V1 one-agent DEV evaluatio
       supabase: "sona-development",
       workspace: WORKSPACE_ID,
       architecture: "one Sona Support Agent + existing deterministic tools",
-      case_count: results.length,
+      case_count: cases.length + multiTurnFlows.length,
+      trace_count: results.length,
       results,
     }, null, 2));
   }, 900_000);

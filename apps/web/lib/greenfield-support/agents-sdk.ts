@@ -162,6 +162,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
   const registry = createCapabilityRegistry({
     ...options.capabilities,
+    customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
