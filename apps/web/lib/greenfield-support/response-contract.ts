@@ -776,6 +776,38 @@ function asksForKnownProduct(value: string, context: ResponseValidationContext) 
   return /\b(?:which|what)\s+(?:exact\s+)?(?:product|headset|device)\b|\b(?:exact\s+)?model\s+number\b/i.test(value);
 }
 
+function hasSpecificCustomerIssue(context: ResponseValidationContext) {
+  const issue = String(context.customerProvidedContext?.issue ?? "").trim();
+  if (!issue) return false;
+  if (/\b(?:pair|connect|disconnect|power|sound|audio|microphone|mic|charge|charging|detected|detection|firmware|reset|button|volume|static|noise|echo)\b/i.test(issue)) return true;
+  return !/\b(?:broken|not\s+working|problem|issue|trouble|something\s+wrong)\b/i.test(issue);
+}
+
+function asksForMissingCustomerContext(value: string, context: ResponseValidationContext) {
+  if (!context.customerMessage?.trim()) return false;
+  const asksForProduct = /\b(?:which|what)\s+(?:exact\s+)?(?:[a-z][\w-]*\s+)?(?:product|device|model)(?:\s+(?:number|name))?\b|\b(?:exact\s+)?model\s+(?:number|name)\b|\bwhat(?:'s|\s+is)\s+the\s+(?:make|model)\b/i.test(value);
+  const asksForTask = /\bwhat(?:'s|\s+is)?\s+(?:exactly\s+)?wrong\b|\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:problem|issue|symptom|happening)\b|\bwhich\s+(?:problem|issue|symptom)\b|\b(?:describe|tell\s+me)\s+(?:the\s+)?(?:problem|issue|symptoms?)\b|\bis\s+it\s+(?:a|an)?\s*(?:power|connection|sound|audio|physical|pairing|detection|charging)\b/i.test(value);
+  const productMissing = !meaningful(context.customerProvidedContext?.product);
+  const taskMissing = !hasSpecificCustomerIssue(context);
+  return (productMissing && asksForProduct) || (taskMissing && asksForTask);
+}
+
+/**
+ * A clarification can be grounded in the deterministic absence of required
+ * customer context when no lookup has run yet. This deliberately does not
+ * treat customer context as a verified fact and does not apply once a tool
+ * result exists, where the result must remain the source of truth.
+ */
+function canClarifyMissingCustomerContext(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+) {
+  if (segment.purpose !== "clarify_task" || segment.basis || segment.capability !== null || segment.missing_arguments.length) return false;
+  const results = context.getResults?.();
+  if (!results || results.length) return false;
+  return asksForMissingCustomerContext(segment.text ?? "", context);
+}
+
 function validateGroundedQuestion(
   segment: Extract<ResponseSegment, { type: "question" }>,
   context: ResponseValidationContext,
@@ -787,7 +819,10 @@ function validateGroundedQuestion(
   if (segment.capability && !availableCapability(segment.capability, context)) {
     issues.push({ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." });
   }
-  const grounded = validateQuestionBasis(segment, context, index);
+  const contextOnlyClarification = canClarifyMissingCustomerContext(segment, context);
+  const grounded = contextOnlyClarification
+    ? { evidence: undefined, issues: [] }
+    : validateQuestionBasis(segment, context, index);
   issues.push(...grounded.issues);
   const evidence = grounded.evidence;
   if (!evidence) return issues;

@@ -86,6 +86,110 @@ describe("response contract expressiveness", () => {
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe("Which compatibility detail should I verify?");
   });
 
+  it("allows a missing model clarification before any lookup runs", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "Which headset model are you using?",
+      capability: null,
+      missing_arguments: [],
+      basis: null,
+    });
+    const responseContext = {
+      ...registry,
+      customerMessage: "It will not connect. Which model are you using?",
+      customerProvidedContext: { issue: "It will not connect" },
+    };
+    const contextualResult = validateStructuredResponse({ segments: result.parsed.segments }, responseContext);
+
+    expect(contextualResult.allValid).toBe(true);
+    expect(renderResponseSegments(contextualResult.approvedSegments, responseContext)).toBe("Which headset model are you using?");
+  });
+
+  it("allows a missing task clarification when the customer only supplied a broad issue", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "What exactly is wrong with the headset—for example, is it a power, connection, sound, or physical-damage issue?",
+      capability: null,
+      missing_arguments: [],
+      basis: null,
+    });
+    const responseContext = {
+      ...registry,
+      customerMessage: "My headset is broken. What can you help with?",
+      customerProvidedContext: { issue: "My headset is broken" },
+    };
+    const contextualResult = validateStructuredResponse({ segments: result.parsed.segments }, responseContext);
+
+    expect(contextualResult.allValid).toBe(true);
+    expect(renderResponseSegments(contextualResult.approvedSegments, responseContext)).toBe(result.parsed.segments[0].text);
+  });
+
+  it("rejects a context-only product re-ask when the model is already known", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "Which headset model are you using?",
+      capability: null,
+      missing_arguments: [],
+      basis: null,
+    });
+    const contextualResult = validateStructuredResponse({ segments: result.parsed.segments }, {
+      ...registry,
+      customerMessage: "My A-Spire Wireless will not connect.",
+      customerProvidedContext: { product: "A-Spire Wireless", issue: "My A-Spire Wireless will not connect" },
+    });
+
+    expect(contextualResult.allValid).toBe(false);
+  });
+
+  it("rejects a context-only task re-ask when the issue is already specific", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "What exactly is wrong with the headset?",
+      capability: null,
+      missing_arguments: [],
+      basis: null,
+    });
+    const contextualResult = validateStructuredResponse({ segments: result.parsed.segments }, {
+      ...registry,
+      customerMessage: "My A-Spire Wireless will not connect.",
+      customerProvidedContext: { product: "A-Spire Wireless", issue: "My A-Spire Wireless will not connect" },
+    });
+
+    expect(contextualResult.allValid).toBe(false);
+  });
+
+  it("does not approve an unsupported arbitrary context-only question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = grounded(registry, {
+      type: "question",
+      purpose: "clarify_task",
+      text: "What is your favorite color?",
+      capability: null,
+      missing_arguments: [],
+      basis: null,
+    });
+    const contextualResult = validateStructuredResponse({ segments: result.parsed.segments }, {
+      ...registry,
+      customerMessage: "My headset is broken.",
+      customerProvidedContext: { issue: "My headset is broken" },
+    });
+
+    expect(contextualResult.allValid).toBe(false);
+  });
+
   it("accepts an unresolved-order clarification when its basis includes null verification fields", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({ ...dependencies, orderReferences: ["9999"] });
