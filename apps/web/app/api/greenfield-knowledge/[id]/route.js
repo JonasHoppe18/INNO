@@ -12,7 +12,7 @@ import {
 
 export const runtime = "nodejs";
 
-const RECORD_FIELDS = "id,workspace_id,knowledge_type,authority,title,content,structured_data,source_kind,source_id,source_uri,source_label,content_hash,published_at,observed_at,expires_at,metadata,created_at,updated_at";
+const RECORD_FIELDS = "id,workspace_id,knowledge_type,authority,title,content,structured_data,source_kind,source_id,source_uri,source_label,content_hash,published_at,observed_at,expires_at,metadata,source_uuid,source_version,source_content_hash,source_location,source_record_key,task_key,customer_aliases,created_at,updated_at";
 
 async function scopedRecord(id) {
   const authState = await auth();

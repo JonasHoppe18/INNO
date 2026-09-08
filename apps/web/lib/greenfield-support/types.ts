@@ -29,6 +29,35 @@ export const AUTHORITY_LEVELS = [
 
 export type AuthorityLevel = (typeof AUTHORITY_LEVELS)[number];
 
+export const PROCEDURE_BLOCK_KINDS = [
+  "heading",
+  "prerequisite",
+  "instruction",
+  "note",
+  "warning",
+  "condition",
+  "expected_result",
+  "alternative",
+] as const;
+
+export type ProcedureBlockKind = (typeof PROCEDURE_BLOCK_KINDS)[number];
+
+export type ProcedureBlock = JsonObject & {
+  kind: ProcedureBlockKind;
+  text: string;
+  list_style?: "ordered" | "unordered" | null;
+  source?: {
+    line?: number | null;
+    section?: string | null;
+    excerpt?: string | null;
+  } | null;
+};
+
+export interface ProcedureTask {
+  key: string;
+  title?: string | null;
+}
+
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 
@@ -57,6 +86,37 @@ export interface KnowledgeSourceInput {
   observedAt?: string | null;
   expiresAt?: string | null;
   metadata?: JsonObject;
+  sourceVersion?: number | null;
+  sourceContentHash?: string | null;
+  sourceLocation?: JsonObject | null;
+  sourceRecordKey?: string | null;
+  taskKey?: string | null;
+  customerAliases?: string[];
+}
+
+export interface KnowledgeSourceCandidateInput {
+  recordKey: string;
+  title: string;
+  content: string;
+  knowledgeType?: KnowledgeType | null;
+  authority?: AuthorityLevel | null;
+  structuredData?: JsonObject;
+  metadata?: JsonObject;
+  sourceLocation?: JsonObject | null;
+  taskKey?: string | null;
+  customerAliases?: string[];
+}
+
+export interface KnowledgeSourceDocumentInput {
+  sourceKind: string;
+  sourceId: string;
+  title?: string | null;
+  content: string;
+  sourceUri?: string | null;
+  sourceLabel?: string | null;
+  sourceVersion?: number | null;
+  metadata?: JsonObject;
+  candidates: KnowledgeSourceCandidateInput[];
 }
 
 export interface KnowledgeRecord {
@@ -77,6 +137,12 @@ export interface KnowledgeRecord {
   expiresAt: string | null;
   metadata: JsonObject;
   chunks: string[];
+  sourceVersion?: number | null;
+  sourceContentHash?: string | null;
+  sourceLocation?: JsonObject | null;
+  sourceRecordKey?: string | null;
+  taskKey?: string | null;
+  customerAliases?: string[];
 }
 
 export interface KnowledgeSearchRequest {
@@ -117,6 +183,13 @@ export interface KnowledgeHit {
 export interface KnowledgeStore {
   ingest(workspaceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord>;
   search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]>;
+}
+
+export interface KnowledgeSourceStore {
+  ingestSource(
+    workspaceId: string,
+    source: KnowledgeSourceDocumentInput,
+  ): Promise<{ sourceId: string; sourceVersion: number; records: KnowledgeRecord[] }>;
 }
 
 /** Per-run capability truth derived from the existing tool registry and providers. */

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   BookOpen,
   Check,
   ChevronRight,
@@ -18,6 +20,7 @@ import {
   Sparkles,
   Store,
   TestTube2,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,7 +69,16 @@ function statusClass(status) {
 }
 
 function emptyForm() {
-  return { title: "", content: "", type: "policy", status: "draft", applies_to: { kind: "all", product_ids: [] } };
+  return {
+    title: "",
+    content: "",
+    type: "policy",
+    status: "draft",
+    applies_to: { kind: "all", product_ids: [] },
+    task_key: "",
+    customer_aliases: [],
+    procedure_blocks: [{ kind: "instruction", text: "", list_style: "ordered" }],
+  };
 }
 
 function formFromRecord(record) {
@@ -78,7 +90,69 @@ function formFromRecord(record) {
     applies_to: record.applies_to?.kind === "products"
       ? { kind: "products", product_ids: Array.isArray(record.applies_to.product_ids) ? record.applies_to.product_ids : [] }
       : { kind: "all", product_ids: [] },
+    task_key: record.procedure?.task_key || "",
+    customer_aliases: Array.isArray(record.procedure?.customer_aliases) ? record.procedure.customer_aliases : [],
+    procedure_blocks: Array.isArray(record.procedure?.blocks) && record.procedure.blocks.length
+      ? record.procedure.blocks
+      : [{ kind: "instruction", text: "", list_style: "ordered" }],
   };
+}
+
+const PROCEDURE_BLOCK_OPTIONS = [
+  ["heading", "Heading"],
+  ["prerequisite", "Prerequisite"],
+  ["instruction", "Instruction"],
+  ["note", "Note"],
+  ["warning", "Warning"],
+  ["condition", "Condition"],
+  ["expected_result", "Expected result"],
+  ["alternative", "Alternative"],
+];
+
+function procedureContent(blocks) {
+  return (Array.isArray(blocks) ? blocks : [])
+    .filter((block) => String(block?.text || "").trim())
+    .map((block) => {
+      const text = String(block.text).trim();
+      if (block.kind === "heading") return `## ${text}`;
+      if (block.kind === "instruction") return block.list_style === "unordered" ? `- ${text}` : text;
+      const label = PROCEDURE_BLOCK_OPTIONS.find(([value]) => value === block.kind)?.[1] || "Instruction";
+      return `${label}: ${text}`;
+    })
+    .join("\n\n");
+}
+
+function ProcedureBlockEditor({ blocks, onChange, disabled }) {
+  const update = (index, patch) => onChange(blocks.map((block, itemIndex) => itemIndex === index ? { ...block, ...patch } : block));
+  const move = (index, direction) => {
+    const target = index + direction;
+    if (target < 0 || target >= blocks.length) return;
+    const next = [...blocks];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+  return (
+    <div className="space-y-2">
+      {(blocks || []).map((block, index) => (
+        <div key={`${index}-${block.kind}`} className="rounded-lg border border-gray-200 bg-gray-50/60 p-2.5">
+          <div className="flex items-center gap-2">
+            <Select value={block.kind} onValueChange={(kind) => update(index, { kind })} disabled={disabled}>
+              <SelectTrigger className="h-8 w-36 bg-white text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>{PROCEDURE_BLOCK_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+            </Select>
+            {block.kind === "instruction" ? <Select value={block.list_style || "ordered"} onValueChange={(list_style) => update(index, { list_style })} disabled={disabled}><SelectTrigger className="h-8 w-28 bg-white text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ordered">Ordered</SelectItem><SelectItem value="unordered">Bullets</SelectItem></SelectContent></Select> : null}
+            <div className="ml-auto flex items-center gap-0.5">
+              <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => move(index, -1)} disabled={disabled || index === 0} aria-label="Move block up"><ArrowUp className="size-3.5" /></Button>
+              <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => move(index, 1)} disabled={disabled || index === blocks.length - 1} aria-label="Move block down"><ArrowDown className="size-3.5" /></Button>
+              <Button type="button" variant="ghost" size="icon" className="size-7 text-gray-400 hover:text-red-600" onClick={() => onChange(blocks.filter((_, itemIndex) => itemIndex !== index))} disabled={disabled || blocks.length <= 1} aria-label="Remove block"><Trash2 className="size-3.5" /></Button>
+            </div>
+          </div>
+          <Textarea value={block.text} onChange={(event) => update(index, { text: event.target.value })} disabled={disabled} placeholder="Write this block exactly as the merchant procedure requires..." className="mt-2 min-h-16 resize-y bg-white text-sm leading-5" />
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={() => onChange([...(blocks || []), { kind: "instruction", text: "", list_style: "ordered" }])} disabled={disabled}><Plus className="size-4" /> Add block</Button>
+    </div>
+  );
 }
 
 function ErrorMessage({ children }) {
@@ -127,6 +201,9 @@ export function GreenfieldKnowledgePageClient() {
   const [form, setForm] = useState(emptyForm);
   const [products, setProducts] = useState({ available: false, items: [] });
   const [saving, setSaving] = useState(false);
+  const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
+  const [sourceSaving, setSourceSaving] = useState(false);
+  const [sourceForm, setSourceForm] = useState({ title: "", knowledge_type: "procedural", content: "" });
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -181,15 +258,17 @@ export function GreenfieldKnowledgePageClient() {
   };
 
   const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const updateProcedureBlocks = (procedure_blocks) => setForm((current) => ({ ...current, procedure_blocks }));
 
   const save = async (nextStatus = form.status) => {
     setSaving(true);
     try {
+      const content = form.type === "procedure" ? procedureContent(form.procedure_blocks) : form.content;
       const response = await fetch(selected ? `/api/greenfield-knowledge/${selected.id}` : "/api/greenfield-knowledge", {
         method: selected ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ ...form, status: nextStatus }),
+        body: JSON.stringify({ ...form, content, status: nextStatus, task_key: form.task_key, customer_aliases: form.customer_aliases }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not save knowledge.");
@@ -200,6 +279,28 @@ export function GreenfieldKnowledgePageClient() {
       toast.error(saveError instanceof Error ? saveError.message : "Could not save knowledge.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const ingestSource = async () => {
+    setSourceSaving(true);
+    try {
+      const response = await fetch("/api/greenfield-knowledge/source", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(sourceForm),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not ingest source.");
+      toast.success(`${payload.source?.candidate_count || 0} draft knowledge records created for review`);
+      setSourceSheetOpen(false);
+      setSourceForm({ title: "", knowledge_type: "procedural", content: "" });
+      await loadRecords();
+    } catch (sourceError) {
+      toast.error(sourceError instanceof Error ? sourceError.message : "Could not ingest source.");
+    } finally {
+      setSourceSaving(false);
     }
   };
 
@@ -222,6 +323,7 @@ export function GreenfieldKnowledgePageClient() {
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm"><Link href="/playground"><TestTube2 className="size-4" /> Test Sona</Link></Button>
+          <Button variant="outline" size="sm" onClick={() => setSourceSheetOpen(true)}><FileText className="size-4" /> Add source</Button>
           <Button size="sm" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button>
         </div>
       </div>
@@ -279,11 +381,28 @@ export function GreenfieldKnowledgePageClient() {
             <div className="grid gap-2"><Label htmlFor="greenfield-title">Title</Label><Input id="greenfield-title" value={form.title} onChange={(event) => updateForm("title", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. Return policy" maxLength={180} /></div>
             <div className="grid gap-2"><Label htmlFor="greenfield-type">Type</Label><Select value={form.type} onValueChange={(value) => updateForm("type", value)} disabled={!isEditable || saving}><SelectTrigger id="greenfield-type"><SelectValue /></SelectTrigger><SelectContent>{TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
             <div className="grid gap-2"><Label htmlFor="greenfield-applies">Applies to</Label><Select value={form.applies_to.kind} onValueChange={(value) => updateForm("applies_to", { kind: value, product_ids: value === "all" ? [] : form.applies_to.product_ids })} disabled={!isEditable || saving}><SelectTrigger id="greenfield-applies"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All products</SelectItem>{products.available ? <SelectItem value="products">Specific products</SelectItem> : null}</SelectContent></Select>{form.applies_to.kind === "products" ? <ProductChooser products={products} value={form.applies_to.product_ids} onChange={(product_ids) => updateForm("applies_to", { kind: "products", product_ids })} disabled={!isEditable || saving} /> : <p className="text-xs text-muted-foreground">This guidance can be used for any product in the store.</p>}</div>
-            <div className="grid gap-2"><Label htmlFor="greenfield-content">Content</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder="Write the policy, product information or numbered troubleshooting steps here..." className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>
+            {form.type === "procedure" ? <>
+              <div className="grid gap-2"><Label htmlFor="greenfield-task">Problem / task</Label><Input id="greenfield-task" value={form.task_key} onChange={(event) => updateForm("task_key", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. microphone not working" /><p className="text-xs leading-5 text-muted-foreground">Stored as a generic task label so several procedures can coexist for one product.</p></div>
+              <div className="grid gap-2"><Label htmlFor="greenfield-aliases">Customer may say <span className="font-normal text-gray-400">(optional)</span></Label><Input id="greenfield-aliases" value={form.customer_aliases.join(", ")} onChange={(event) => updateForm("customer_aliases", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))} disabled={!isEditable || saving} placeholder="mic not working, nobody can hear me" /></div>
+              <div className="grid gap-2"><Label>Procedure content</Label><ProcedureBlockEditor blocks={form.procedure_blocks} onChange={updateProcedureBlocks} disabled={!isEditable || saving} /><p className="text-xs leading-5 text-muted-foreground">Blocks are stored in this order. Critical values such as durations, controls and conditions are kept source-bound.</p></div>
+            </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">Content</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder="Write the policy or product information here..." className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
             <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={!isEditable || saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
             {selected ? <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-3 text-xs text-gray-500"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-gray-700"><SourceIcon source={selected.source?.label} />{selected.source?.label}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-gray-700">{formatDate(selected.updated_at)}</span></div></div> : null}
           </div>
-          {isEditable ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" size="sm" onClick={() => save(form.status)} disabled={saving || !form.title.trim() || !form.content.trim()}>{saving ? <Loader2 className="size-4 animate-spin" /> : form.status === "published" ? <Check className="size-4" /> : <Pencil className="size-4" />}{saveLabel}</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
+          {isEditable ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" size="sm" onClick={() => save(form.status)} disabled={saving || !form.title.trim() || (form.type === "procedure" ? !form.procedure_blocks.some((block) => block.text.trim()) : !form.content.trim())}>{saving ? <Loader2 className="size-4 animate-spin" /> : form.status === "published" ? <Check className="size-4" /> : <Pencil className="size-4" />}{saveLabel}</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={sourceSheetOpen} onOpenChange={setSourceSheetOpen}>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
+          <SheetHeader className="border-b border-gray-100 px-6 py-5 text-left"><div className="flex items-center gap-2 text-indigo-600"><FileText className="size-4" /><span className="text-xs font-medium">Source ingestion</span></div><SheetTitle>Add a Markdown / TXT source</SheetTitle><SheetDescription>One source can produce several draft records. Review and publish each candidate separately after ingestion.</SheetDescription></SheetHeader>
+          <div className="flex-1 space-y-5 px-6 py-5">
+            <div className="grid gap-2"><Label htmlFor="greenfield-source-title">Source title</Label><Input id="greenfield-source-title" value={sourceForm.title} onChange={(event) => setSourceForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. A-Spire Wireless manual" disabled={sourceSaving} /></div>
+            <div className="grid gap-2"><Label>Candidate type</Label><Select value={sourceForm.knowledge_type} onValueChange={(knowledge_type) => setSourceForm((current) => ({ ...current, knowledge_type }))} disabled={sourceSaving}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="procedure">Troubleshooting / Procedure</SelectItem><SelectItem value="product">Product information</SelectItem><SelectItem value="policy">Policy</SelectItem><SelectItem value="brand">Brand / Company</SelectItem></SelectContent></Select></div>
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 text-xs leading-5 text-indigo-800">Use headings (`## Factory reset`, `## Dongle pairing`, …) to split the source. Candidates are always created as Draft.</div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-source-content">Raw source</Label><Textarea id="greenfield-source-content" value={sourceForm.content} onChange={(event) => setSourceForm((current) => ({ ...current, content: event.target.value }))} disabled={sourceSaving} placeholder={'## Factory reset\n\n1. Turn the headset off.\n2. Hold the power button for 15 seconds.\n\n## Dongle pairing\n\n1. ...'} className="min-h-[360px] resize-y font-mono text-xs leading-5" /></div>
+          </div>
+          <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => setSourceSheetOpen(false)} disabled={sourceSaving}>Cancel</Button><Button type="button" onClick={ingestSource} disabled={sourceSaving || !sourceForm.title.trim() || !sourceForm.content.trim()}>{sourceSaving ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Create drafts</Button></SheetFooter>
         </SheetContent>
       </Sheet>
     </div>

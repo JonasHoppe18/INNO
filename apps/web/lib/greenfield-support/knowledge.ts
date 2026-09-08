@@ -1,3 +1,4 @@
+import { PROCEDURE_BLOCK_KINDS } from "./types";
 import type {
   AuthorityLevel,
   KnowledgeHit,
@@ -6,9 +7,13 @@ import type {
   KnowledgeProductContext,
   KnowledgeSearchRequest,
   KnowledgeSourceInput,
+  KnowledgeSourceCandidateInput,
   KnowledgeStore,
   KnowledgeType,
   JsonObject,
+  ProcedureBlock,
+  ProcedureBlockKind,
+  KnowledgeSourceDocumentInput,
 } from "./types";
 
 const DEFAULT_CLASSIFICATION: Record<
@@ -60,6 +65,225 @@ function cleanText(value: unknown): string {
     .trim();
 }
 
+const PROCEDURE_LABELS: Record<string, ProcedureBlockKind> = {
+  prerequisite: "prerequisite",
+  prerequisites: "prerequisite",
+  instruction: "instruction",
+  instructions: "instruction",
+  step: "instruction",
+  note: "note",
+  notes: "note",
+  warning: "warning",
+  warnings: "warning",
+  condition: "condition",
+  conditions: "condition",
+  "expected result": "expected_result",
+  "expected outcome": "expected_result",
+  result: "expected_result",
+  alternative: "alternative",
+  alternatives: "alternative",
+};
+
+function procedureKindLabel(value: string): ProcedureBlockKind | null {
+  return PROCEDURE_LABELS[cleanText(value).toLowerCase()] ?? null;
+}
+
+function procedureTaskKey(value: unknown): string {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120);
+}
+
+function procedureBlockText(value: unknown): string {
+  if (typeof value === "string") return cleanText(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return cleanText((value as Record<string, unknown>).text);
+  }
+  return "";
+}
+
+function normalizeProcedureBlocks(value: unknown): ProcedureBlock[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item): ProcedureBlock | null => {
+    const object = item && typeof item === "object" && !Array.isArray(item)
+      ? item as Record<string, unknown>
+      : {};
+    const text = procedureBlockText(item);
+    if (!text) return null;
+    const rawKind = cleanText(object.kind).toLowerCase();
+    const kind = PROCEDURE_BLOCK_KINDS.includes(rawKind as ProcedureBlockKind)
+      ? rawKind as ProcedureBlockKind
+      : "instruction";
+    const listStyle = object.list_style === "ordered" || object.listStyle === "ordered"
+      ? "ordered"
+      : object.list_style === "unordered" || object.listStyle === "unordered"
+        ? "unordered"
+        : null;
+    const source = object.source && typeof object.source === "object" && !Array.isArray(object.source)
+      ? object.source as Record<string, unknown>
+      : null;
+    return {
+      kind,
+      text,
+      list_style: listStyle,
+      ...(source ? {
+        source: {
+          line: Number.isFinite(Number(source.line)) ? Number(source.line) : null,
+          ...(cleanText(source.section) ? { section: cleanText(source.section) } : {}),
+          ...(cleanText(source.excerpt) ? { excerpt: cleanText(source.excerpt) } : {}),
+        },
+      } : {}),
+    };
+  }).filter(Boolean) as ProcedureBlock[];
+}
+
+/**
+ * Deterministically preserves the small semantic vocabulary needed by a
+ * procedure without asking a model to rewrite source values. Unknown prose is
+ * retained as an instruction block; labels are only interpreted when explicit.
+ */
+export function parseProcedureBlocks(value: string): ProcedureBlock[] {
+  const lines = String(value ?? "").replace(/\r\n/g, "\n").split("\n");
+  const blocks: ProcedureBlock[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const original = lines[index] ?? "";
+    const trimmed = original.trim();
+    if (!trimmed) continue;
+
+    const heading = trimmed.match(/^#{1,6}\s+(.+?)\s*#*$/);
+    if (heading) {
+      blocks.push({ kind: "heading", text: cleanText(heading[1]), list_style: null, source: { line: index + 1, excerpt: original } });
+      continue;
+    }
+
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    const unordered = trimmed.match(/^[-*•]\s+(.+)$/);
+    const listText = ordered?.[1] ?? unordered?.[1] ?? null;
+    const listStyle = ordered ? "ordered" : unordered ? "unordered" : null;
+    const candidate = listText ?? trimmed;
+    const labeled = candidate.match(/^([^:]{2,32}):\s+(.+)$/);
+    const labeledKind = labeled ? procedureKindLabel(labeled[1]) : null;
+    const kind = labeledKind
+      ?? (/^if\b|^when\b|^unless\b|^only if\b/i.test(candidate) ? "condition" : null)
+      ?? (/^(?:otherwise|alternatively|as an alternative)\b/i.test(candidate) ? "alternative" : null)
+      ?? "instruction";
+    const text = cleanText(labeled ? labeled[2] : candidate);
+    if (!text) continue;
+
+    const previous = blocks[blocks.length - 1];
+    const isContinuation = !listText && !labeled && previous && previous.kind !== "heading"
+      && !/[.!?:]$/.test(previous.text);
+    if (isContinuation) {
+      previous.text = `${previous.text}\n${text}`;
+      if (previous.source) previous.source.excerpt = `${previous.source.excerpt ?? previous.text}\n${original}`;
+      continue;
+    }
+    blocks.push({ kind, text, list_style: listStyle, source: { line: index + 1, excerpt: original } });
+  }
+  return blocks;
+}
+
+export function splitMarkdownKnowledgeSource(
+  source: Pick<KnowledgeSourceDocumentInput, "title" | "content"> & {
+    knowledgeType?: KnowledgeType | null;
+    authority?: AuthorityLevel | null;
+  },
+): KnowledgeSourceCandidateInput[] {
+  const lines = String(source.content ?? "").replace(/\r\n/g, "\n").split("\n");
+  const sections: Array<{ heading: string; lines: string[]; order: number; content: string }> = [];
+  let current: { heading: string; lines: string[]; order: number } | null = null;
+  const flush = () => {
+    if (!current) return;
+    const content = current.lines.join("\n").trim();
+    if (content) sections.push({ ...current, content });
+    current = null;
+  };
+  for (const line of lines) {
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*$/);
+    if (heading) {
+      flush();
+      current = { heading: cleanText(heading[1]), lines: [], order: sections.length };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  flush();
+  if (!sections.length && cleanText(source.content)) {
+    sections.push({ heading: cleanText(source.title) || "Knowledge section", lines: [source.content], order: 0, content: cleanText(source.content) });
+  }
+  return sections.map((section) => {
+    const sourceTitle = cleanText(source.title) || "Knowledge";
+    const normalizedSourceTitle = sourceTitle.toLowerCase();
+    const normalizedHeading = cleanText(section.heading).toLowerCase();
+    const title = normalizedHeading === normalizedSourceTitle || normalizedHeading.startsWith(`${normalizedSourceTitle} —`)
+      ? section.heading
+      : `${sourceTitle} — ${section.heading}`;
+    const structuredData: JsonObject = {
+      source_section: section.heading,
+      source_section_order: section.order,
+    };
+    if (source.knowledgeType === "procedural") {
+      const taskKey = procedureTaskKey(section.heading);
+      structuredData.procedure = {
+        task: { key: taskKey, title: section.heading },
+        aliases: [],
+        blocks: parseProcedureBlocks(section.content),
+      };
+    }
+    return {
+      recordKey: `section-${section.order + 1}-${procedureTaskKey(section.heading) || "knowledge"}`,
+      title,
+      content: section.content,
+      knowledgeType: source.knowledgeType ?? "product",
+      authority: source.authority ?? (source.knowledgeType === "policy" ? "authoritative" : "reference"),
+      structuredData,
+      metadata: { lifecycle_status: "draft", source_section: section.heading, source_section_order: section.order },
+      sourceLocation: { section: section.heading, order: section.order },
+      taskKey: source.knowledgeType === "procedural" ? procedureTaskKey(section.heading) : null,
+      customerAliases: [],
+    };
+  });
+}
+
+function procedureStructuredData(source: KnowledgeSourceInput, initial: JsonObject): JsonObject {
+  if (source.knowledgeType !== "procedural") return initial;
+  const procedure = initial.procedure && typeof initial.procedure === "object" && !Array.isArray(initial.procedure)
+    ? initial.procedure as JsonObject
+    : {};
+  const explicitBlocks = normalizeProcedureBlocks(
+    procedure.blocks ?? initial.procedure_blocks ?? initial.procedure_steps,
+  );
+  const blocks = explicitBlocks.length ? explicitBlocks : parseProcedureBlocks(source.content);
+  const explicitTask = procedure.task && typeof procedure.task === "object" && !Array.isArray(procedure.task)
+    ? procedure.task as JsonObject
+    : {};
+  const taskTitle = cleanText(explicitTask.title) || cleanText(source.title) || "Procedure";
+  const taskKey = procedureTaskKey(source.taskKey || explicitTask.key || initial.task_key || taskTitle);
+  const aliases = Array.from(new Set([
+    ...(source.customerAliases ?? []),
+    ...(Array.isArray(procedure.aliases) ? procedure.aliases : []),
+    ...(Array.isArray(initial.customer_language_aliases) ? initial.customer_language_aliases : []),
+  ].map(cleanText).filter(Boolean))).slice(0, 20);
+  return {
+    ...initial,
+    procedure: {
+      ...procedure,
+      task: { key: taskKey, title: taskTitle },
+      aliases,
+      blocks,
+    },
+    procedure_blocks: blocks,
+    // Keep the existing response contract stable while the richer canonical
+    // shape is introduced. The renderer can use kind/list_style/source later.
+    procedure_steps: blocks,
+    task_key: taskKey,
+    customer_language_aliases: aliases,
+  };
+}
+
 /**
  * Exposes a procedure's source paragraphs as ordered, source-bound values.
  * The model may choose which values are relevant, but it cannot rewrite them
@@ -95,9 +319,14 @@ export function extractProcedureSteps(value: string): JsonObject[] {
 
 export function structuredKnowledgeData(record: Pick<KnowledgeRecord, "knowledgeType" | "structuredData" | "content">): JsonObject {
   if (record.knowledgeType !== "procedural") return record.structuredData;
+  const explicit = normalizeProcedureBlocks(
+    record.structuredData.procedure_blocks
+      ?? record.structuredData.procedure_steps
+      ?? (record.structuredData.procedure as JsonObject | undefined)?.blocks,
+  );
   return {
     ...record.structuredData,
-    procedure_steps: extractProcedureSteps(record.content),
+    procedure_steps: explicit.length ? explicit : extractProcedureSteps(record.content),
   };
 }
 
@@ -480,7 +709,14 @@ function extractStructuredData(source: KnowledgeSourceInput): JsonObject {
   if (returnWindow && result.return_window_days == null) {
     result.return_window_days = Number(returnWindow);
   }
-  return result;
+  return procedureStructuredData(source, result);
+}
+
+function procedureChunkContent(content: string, structuredData: JsonObject, knowledgeType: KnowledgeType): string {
+  if (knowledgeType !== "procedural") return content;
+  const blocks = normalizeProcedureBlocks(structuredData.procedure_blocks ?? structuredData.procedure_steps);
+  if (!blocks.length) return content;
+  return blocks.map((block) => block.text).join("\n\n");
 }
 
 export async function normalizeKnowledgeSource(
@@ -496,6 +732,8 @@ export async function normalizeKnowledgeSource(
   }
   const classification = classify(source);
   const title = cleanText(source.title) || content.slice(0, 100);
+  const normalizedSource = { ...source, content, knowledgeType: classification.knowledgeType };
+  const structuredData = extractStructuredData(normalizedSource);
   // Hash content rather than an external source id so repeated imports from
   // different source records do not create duplicate searchable facts.
   const canonical = [normalizedWorkspaceId, classification.knowledgeType, content].join("\u001f");
@@ -507,7 +745,7 @@ export async function normalizeKnowledgeSource(
     authority: classification.authority,
     title,
     content,
-    structuredData: extractStructuredData(source),
+    structuredData,
     sourceKind: cleanText(source.sourceKind),
     sourceId: cleanText(source.sourceId),
     sourceUri: cleanText(source.sourceUri) || null,
@@ -517,8 +755,54 @@ export async function normalizeKnowledgeSource(
     observedAt: cleanText(source.observedAt) || null,
     expiresAt: cleanText(source.expiresAt) || null,
     metadata: { ...(source.metadata ?? {}) },
-    chunks: splitIntoChunks(content),
+    chunks: splitIntoChunks(procedureChunkContent(content, structuredData, classification.knowledgeType)),
+    sourceVersion: source.sourceVersion == null ? null : Math.max(1, Number(source.sourceVersion) || 1),
+    sourceContentHash: cleanText(source.sourceContentHash) || null,
+    sourceLocation: source.sourceLocation && typeof source.sourceLocation === "object" ? source.sourceLocation : null,
+    sourceRecordKey: cleanText(source.sourceRecordKey) || null,
+    taskKey: cleanText(source.taskKey) || cleanText((structuredData.procedure as JsonObject | undefined)?.task_key) || cleanText(structuredData.task_key) || null,
+    customerAliases: Array.from(new Set((source.customerAliases ?? []).map(cleanText).filter(Boolean))),
   };
+}
+
+export async function normalizeKnowledgeSourceDocument(
+  workspaceId: string,
+  source: KnowledgeSourceDocumentInput,
+): Promise<{ source: KnowledgeSourceInput; records: KnowledgeRecord[]; sourceContentHash: string }> {
+  const normalizedContent = cleanRawContent(source.content);
+  if (!normalizedContent) throw new Error("Knowledge source content is required.");
+  if (!cleanText(source.sourceKind) || !cleanText(source.sourceId)) {
+    throw new Error("Knowledge provenance requires sourceKind and sourceId.");
+  }
+  const sourceContentHash = await sha256([cleanText(workspaceId), cleanText(source.sourceKind), cleanText(source.sourceId), normalizedContent].join("\u001f"));
+  const sourceBase: KnowledgeSourceInput = {
+    sourceKind: source.sourceKind,
+    sourceId: source.sourceId,
+    title: source.title,
+    content: normalizedContent,
+    sourceUri: source.sourceUri,
+    sourceLabel: source.sourceLabel,
+    sourceVersion: source.sourceVersion ?? 1,
+    sourceContentHash,
+    metadata: source.metadata,
+  };
+  const records = [];
+  for (const candidate of source.candidates) {
+    records.push(await normalizeKnowledgeSource(workspaceId, {
+      ...sourceBase,
+      sourceRecordKey: candidate.recordKey,
+      title: candidate.title,
+      content: candidate.content,
+      knowledgeType: candidate.knowledgeType,
+      authority: candidate.authority,
+      structuredData: candidate.structuredData,
+      metadata: { ...(source.metadata ?? {}), ...(candidate.metadata ?? {}) },
+      sourceLocation: candidate.sourceLocation,
+      taskKey: candidate.taskKey,
+      customerAliases: candidate.customerAliases,
+    }));
+  }
+  return { source: sourceBase, records, sourceContentHash };
 }
 
 function isExpired(record: KnowledgeRecord, now: number): boolean {
@@ -558,9 +842,7 @@ function lexicalQueryVariants(query: string): string[] {
 }
 
 function applicableProductScore(row: any, query: string): number {
-  const models = Array.isArray(row?.structured_data?.applies_to?.product_models)
-    ? row.structured_data.applies_to.product_models.map(normalizedProductText).filter(Boolean)
-    : [];
+  const models = rowProductModels(row);
   const normalizedQuery = normalizedProductText(query);
   return models.reduce((best: number, model: string) => (
     normalizedQuery.includes(model) ? Math.max(best, model.length) : best
@@ -796,6 +1078,35 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     return record;
   }
 
+  async ingestSource(workspaceId: string, source: KnowledgeSourceDocumentInput) {
+    const normalized = await normalizeKnowledgeSourceDocument(workspaceId, source);
+    const candidateKeys = new Set(normalized.records.map((record) => record.sourceRecordKey).filter(Boolean));
+    for (const [key, existing] of this.records) {
+      if (
+        existing.workspaceId === workspaceId
+        && existing.sourceId === source.sourceId
+        && existing.sourceRecordKey
+        && !candidateKeys.has(existing.sourceRecordKey)
+      ) {
+        this.records.set(key, {
+          ...existing,
+          metadata: { ...existing.metadata, lifecycle_status: "unpublished", source_refresh_state: "removed" },
+        });
+      }
+    }
+    const records: KnowledgeRecord[] = [];
+    for (const record of normalized.records) {
+      const existingEntry = Array.from(this.records.entries()).find(([, existing]) => (
+        existing.workspaceId === workspaceId
+        && existing.sourceId === record.sourceId
+        && existing.sourceRecordKey === record.sourceRecordKey
+      ));
+      if (existingEntry && existingEntry[1].contentHash !== record.contentHash) this.records.delete(existingEntry[0]);
+      records.push(await this.ingest(workspaceId, record));
+    }
+    return { sourceId: source.sourceId, sourceVersion: normalized.records[0]?.sourceVersion ?? source.sourceVersion ?? 1, records };
+  }
+
   async replaceSource(workspaceId: string, sourceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
     const normalizedWorkspaceId = cleanText(workspaceId);
     const normalizedSourceId = cleanText(sourceId);
@@ -1024,42 +1335,179 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     }
   }
 
-  async ingest(workspaceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
-    const record = await normalizeKnowledgeSource(workspaceId, source);
-    const { data, error } = await this.serviceClient
-      .from("greenfield_knowledge_records")
-      .upsert({
-        workspace_id: record.workspaceId,
-        knowledge_type: record.knowledgeType,
-        authority: record.authority,
-        title: record.title,
-        content: record.content,
-        structured_data: record.structuredData,
-        source_kind: record.sourceKind,
-        source_id: record.sourceId,
-        source_uri: record.sourceUri,
-        source_label: record.sourceLabel,
-        content_hash: record.contentHash,
-        published_at: record.publishedAt,
-        observed_at: record.observedAt,
-        expires_at: record.expiresAt,
-        metadata: record.metadata,
-      }, { onConflict: "workspace_id,content_hash" })
-      .select("*")
-      .single();
-    if (error || !data?.id) throw new Error(error?.message || "Could not store greenfield knowledge record.");
-    const chunks = record.chunks.map((content, chunkIndex) => ({
+  private async persistRecord(record: KnowledgeRecord, sourceUuid?: string | null): Promise<KnowledgeRecord> {
+    let payload = {
       workspace_id: record.workspaceId,
-      record_id: data.id,
-      chunk_index: chunkIndex,
-      content,
-    }));
-    const chunkResult = await this.serviceClient
-      .from("greenfield_knowledge_chunks")
-      .upsert(chunks, { onConflict: "record_id,chunk_index" });
-    if (chunkResult.error) throw new Error(chunkResult.error.message);
-    await this.ensureChunkEmbeddings(record.workspaceId, String(data.id));
+      knowledge_type: record.knowledgeType,
+      authority: record.authority,
+      title: record.title,
+      content: record.content,
+      structured_data: record.structuredData,
+      source_kind: record.sourceKind,
+      source_id: record.sourceId,
+      source_uri: record.sourceUri,
+      source_label: record.sourceLabel,
+      content_hash: record.contentHash,
+      published_at: record.publishedAt,
+      observed_at: record.observedAt,
+      expires_at: record.expiresAt,
+      metadata: record.metadata,
+      ...(sourceUuid ? { source_uuid: sourceUuid } : {}),
+      ...(record.sourceVersion != null ? { source_version: record.sourceVersion } : {}),
+      ...(record.sourceContentHash ? { source_content_hash: record.sourceContentHash } : {}),
+      ...(record.sourceLocation ? { source_location: record.sourceLocation } : {}),
+      ...(record.sourceRecordKey ? { source_record_key: record.sourceRecordKey } : {}),
+      ...(record.taskKey ? { task_key: record.taskKey } : {}),
+      ...(record.customerAliases?.length ? { customer_aliases: record.customerAliases } : {}),
+    };
+    const conflictTarget = record.sourceRecordKey
+      ? "workspace_id,source_id,source_record_key"
+      : "workspace_id,content_hash";
+    let existingId: string | null = null;
+    let existingContentHash: string | null = null;
+    let matchedBySourceKey = false;
+    if (record.sourceRecordKey) {
+      const existingByKey = await this.serviceClient
+        .from("greenfield_knowledge_records")
+        .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
+        .eq("workspace_id", record.workspaceId)
+        .eq("source_id", record.sourceId)
+        .eq("source_record_key", record.sourceRecordKey)
+        .maybeSingle();
+      if (existingByKey.error) throw new Error(existingByKey.error.message);
+      existingId = existingByKey.data?.id ? String(existingByKey.data.id) : null;
+      existingContentHash = existingByKey.data?.content_hash ? String(existingByKey.data.content_hash) : null;
+      matchedBySourceKey = Boolean(existingId);
+      const existing = existingId ? existingByKey : await this.serviceClient
+        .from("greenfield_knowledge_records")
+        .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
+        .eq("workspace_id", record.workspaceId)
+        .eq("content_hash", record.contentHash)
+        .maybeSingle();
+      if (existing.error) throw new Error(existing.error.message);
+      if (!existingId) {
+        existingId = existing.data?.id ? String(existing.data.id) : null;
+        existingContentHash = existing.data?.content_hash ? String(existing.data.content_hash) : null;
+      }
+      if (existingId) {
+        // Reusing an existing raw Greenfield record must not silently turn a
+        // published legacy record into a draft. Source linkage is additive;
+        // its current lifecycle/applicability remains authoritative.
+        payload = { ...payload, metadata: { ...(record.metadata ?? {}), ...(existing.data?.metadata ?? {}) } };
+        if (!matchedBySourceKey) {
+          // Content-hash adoption is the compatibility path for the 24-record
+          // legacy DEV corpus. Keep its original external provenance while
+          // attaching the new first-class source relation.
+          payload = {
+            ...payload,
+            source_kind: existing.data?.source_kind ?? payload.source_kind,
+            source_id: existing.data?.source_id ?? payload.source_id,
+            source_uri: existing.data?.source_uri ?? payload.source_uri,
+            source_label: existing.data?.source_label ?? payload.source_label,
+          };
+        }
+      }
+    }
+    const result = existingId
+      ? await this.serviceClient.from("greenfield_knowledge_records").update(payload).eq("id", existingId).eq("workspace_id", record.workspaceId).select("*").single()
+      : await this.serviceClient.from("greenfield_knowledge_records").upsert(payload, { onConflict: conflictTarget }).select("*").single();
+    const { data, error } = result;
+    if (error || !data?.id) throw new Error(error?.message || "Could not store greenfield knowledge record.");
+
+    // A same-hash source update only changes provenance/structure metadata;
+    // preserve existing chunks and embeddings. Changed content gets a clean
+    // derived index, while drafts remain cheap to review.
+    const contentChanged = Boolean(existingId && existingContentHash && existingContentHash !== record.contentHash);
+    if (!existingId || contentChanged) {
+      if (contentChanged) {
+        const deleteChunks = await this.serviceClient
+          .from("greenfield_knowledge_chunks")
+          .delete()
+          .eq("workspace_id", record.workspaceId)
+          .eq("record_id", data.id);
+        if (deleteChunks.error) throw new Error(deleteChunks.error.message);
+      }
+      const chunks = record.chunks.map((content, chunkIndex) => ({
+        workspace_id: record.workspaceId,
+        record_id: data.id,
+        chunk_index: chunkIndex,
+        content,
+      }));
+      if (chunks.length) {
+        const chunkResult = await this.serviceClient
+          .from("greenfield_knowledge_chunks")
+          .insert(chunks);
+        if (chunkResult.error) throw new Error(chunkResult.error.message);
+      }
+      // Draft candidates are intentionally usable for review without paying
+      // for embeddings. Publishing creates the embeddings retrieval needs.
+      if (isPublished({ metadata: payload.metadata })) await this.ensureChunkEmbeddings(record.workspaceId, String(data.id));
+    }
     return { ...record, id: String(data.id) };
+  }
+
+  async ingest(workspaceId: string, source: KnowledgeSourceInput): Promise<KnowledgeRecord> {
+    const normalized = await normalizeKnowledgeSource(workspaceId, source);
+    return this.persistRecord(normalized);
+  }
+
+  async ingestSource(workspaceId: string, source: KnowledgeSourceDocumentInput) {
+    const normalized = await normalizeKnowledgeSourceDocument(workspaceId, source);
+    const sourceLookup = await this.serviceClient
+      .from("greenfield_knowledge_sources")
+      .select("id,source_version,content_hash")
+      .eq("workspace_id", workspaceId)
+      .eq("source_kind", source.sourceKind)
+      .eq("source_id", source.sourceId)
+      .maybeSingle();
+    if (sourceLookup.error) throw new Error(sourceLookup.error.message);
+    const currentVersion = Number(sourceLookup.data?.source_version ?? 0);
+    const sourceVersion = sourceLookup.data && sourceLookup.data.content_hash !== normalized.sourceContentHash
+      ? currentVersion + 1
+      : currentVersion || Number(source.sourceVersion ?? 1);
+    const sourceRow = await this.serviceClient
+      .from("greenfield_knowledge_sources")
+      .upsert({
+        workspace_id: workspaceId,
+        source_kind: source.sourceKind,
+        source_id: source.sourceId,
+        title: cleanText(source.title) || source.sourceId,
+        raw_content: source.content,
+        normalized_content: normalized.source.content,
+        source_uri: cleanText(source.sourceUri) || null,
+        source_label: cleanText(source.sourceLabel) || null,
+        content_hash: normalized.sourceContentHash,
+        source_version: sourceVersion,
+        status: "draft",
+        metadata: source.metadata ?? {},
+      }, { onConflict: "workspace_id,source_kind,source_id" })
+      .select("id")
+      .single();
+    if (sourceRow.error || !sourceRow.data?.id) throw new Error(sourceRow.error?.message || "Could not store greenfield knowledge source.");
+
+    const candidateKeys = new Set(normalized.records.map((record) => record.sourceRecordKey).filter(Boolean));
+    const existing = await this.serviceClient
+      .from("greenfield_knowledge_records")
+      .select("id,source_record_key,metadata")
+      .eq("workspace_id", workspaceId)
+      .eq("source_uuid", sourceRow.data.id);
+    if (existing.error) throw new Error(existing.error.message);
+    for (const row of Array.isArray(existing.data) ? existing.data : []) {
+      if (!row.source_record_key || candidateKeys.has(row.source_record_key)) continue;
+      const metadata = { ...(row.metadata ?? {}), lifecycle_status: "unpublished", source_refresh_state: "removed" };
+      const update = await this.serviceClient
+        .from("greenfield_knowledge_records")
+        .update({ metadata })
+        .eq("workspace_id", workspaceId)
+        .eq("id", row.id);
+      if (update.error) throw new Error(update.error.message);
+    }
+
+    const records: KnowledgeRecord[] = [];
+    for (const record of normalized.records) {
+      records.push(await this.persistRecord({ ...record, sourceVersion, sourceContentHash: normalized.sourceContentHash }, String(sourceRow.data.id)));
+    }
+    return { sourceId: String(sourceRow.data.id), sourceVersion, records };
   }
 
   /** Ingest first, then remove only older copies of this tenant/source pair. */
@@ -1138,6 +1586,12 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         expiresAt: row.expires_at ?? null,
         metadata: row.metadata ?? {},
         chunks: Array.isArray(row.chunks) ? row.chunks : [row.content],
+        sourceVersion: row.source_version == null ? null : Number(row.source_version),
+        sourceContentHash: row.source_content_hash ?? null,
+        sourceLocation: row.source_location ?? null,
+        sourceRecordKey: row.source_record_key ?? null,
+        taskKey: row.task_key ?? null,
+        customerAliases: Array.isArray(row.customer_aliases) ? row.customer_aliases : [],
       },
       score: Number(row.score ?? 0),
       taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,

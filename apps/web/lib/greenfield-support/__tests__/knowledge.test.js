@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanRawContent, InMemoryKnowledgeStore, isKnowledgeRecordApplicable, normalizeKnowledgeSource, selectEvidenceSections, SupabaseKnowledgeStore } from "../knowledge";
+import { cleanRawContent, InMemoryKnowledgeStore, isKnowledgeRecordApplicable, normalizeKnowledgeSource, normalizeKnowledgeSourceDocument, parseProcedureBlocks, selectEvidenceSections, splitMarkdownKnowledgeSource, SupabaseKnowledgeStore } from "../knowledge";
 
 const PRODUCT_A = { workspaceId: "tenant-a", productId: "product-a", productModels: ["Product A"] };
 const PRODUCT_B = { workspaceId: "tenant-a", productId: "product-b", productModels: ["Product B"] };
@@ -66,6 +66,78 @@ function queryBuilder(data, error = null) {
 }
 
 describe("greenfield knowledge store", () => {
+  it("preserves ordered semantic procedure blocks and critical source values", async () => {
+    const blocks = parseProcedureBlocks([
+      "## Factory reset",
+      "Prerequisite: Connect the USB-C cable.",
+      "1. Hold the power button for at least 15 seconds.",
+      "Note: The LED stays purple.",
+      "If the prompt says \"Reset complete\", continue.",
+      "Expected result: Saved Bluetooth connections are deleted.",
+    ].join("\n"));
+    expect(blocks.map((block) => block.kind)).toEqual(["heading", "prerequisite", "instruction", "note", "condition", "expected_result"]);
+    expect(blocks[2].text).toContain("15 seconds");
+    expect(blocks[3].text).toContain("LED stays purple");
+    expect(blocks[4].text).toContain("Reset complete");
+
+    const record = await normalizeKnowledgeSource("tenant-a", {
+      sourceKind: "procedure",
+      sourceId: "manual-1",
+      sourceRecordKey: "factory-reset",
+      sourceVersion: 2,
+      sourceContentHash: "source-hash",
+      title: "Factory reset",
+      content: "The source content remains canonical.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      structuredData: { procedure_blocks: blocks },
+      taskKey: "factory_reset",
+      customerAliases: ["reset my headset"],
+    });
+    expect(record.content).toBe("The source content remains canonical.");
+    expect(record.sourceVersion).toBe(2);
+    expect(record.structuredData.procedure_steps).toEqual(blocks);
+    expect(record.structuredData.procedure.task.key).toBe("factory_reset");
+  });
+
+  it("supports one source producing multiple focused candidates without product collision", async () => {
+    const candidates = splitMarkdownKnowledgeSource({
+      title: "A-Spire Wireless manual",
+      content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the input device and permissions.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+    });
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((candidate) => candidate.recordKey)).toEqual(["section-1-factory_reset", "section-2-microphone_troubleshooting"]);
+
+    const normalized = await normalizeKnowledgeSourceDocument("tenant-a", {
+      sourceKind: "document",
+      sourceId: "spire-manual-v1",
+      title: "A-Spire Wireless manual",
+      content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the input device and permissions.",
+      candidates,
+    });
+    expect(normalized.records).toHaveLength(2);
+    expect(normalized.records.map((record) => record.sourceRecordKey)).toEqual(["section-1-factory_reset", "section-2-microphone_troubleshooting"]);
+    expect(normalized.records.every((record) => record.sourceContentHash === normalized.sourceContentHash)).toBe(true);
+  });
+
+  it("keeps multiple procedures for one product distinct and asks retrieval to follow the task", async () => {
+    const store = new InMemoryKnowledgeStore();
+    const sourceCandidates = splitMarkdownKnowledgeSource({ title: "A-Spire Wireless manual", content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the microphone input device.", knowledgeType: "procedural", authority: "authoritative" })
+      .map((candidate) => ({ ...candidate, metadata: { ...candidate.metadata, lifecycle_status: "published" } }));
+    await store.ingestSource("tenant-a", {
+      sourceKind: "document",
+      sourceId: "spire-manual",
+      title: "A-Spire Wireless manual",
+      content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the microphone input device.",
+      candidates: sourceCandidates,
+    });
+    const mic = await store.search({ workspaceId: "tenant-a", query: "A-Spire Wireless microphone not working", knowledgeTypes: ["procedural"], limit: 2 });
+    expect(mic[0].record.title).toContain("Microphone troubleshooting");
+    expect(mic[0].record.structuredData.procedure.task.key).toBe("microphone_troubleshooting");
+  });
+
   it("conservatively converts generic HTML into visible source text", () => {
     const cleaned = cleanRawContent(`
       <html><body>

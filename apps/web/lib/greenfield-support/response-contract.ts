@@ -1653,7 +1653,7 @@ type ProcedureStepPresentation = {
   text: string;
   path: string;
   sourceIndex: number;
-  kind: "heading" | "condition" | "note" | "instruction";
+  kind: "heading" | "prerequisite" | "condition" | "note" | "warning" | "instruction" | "expected_result" | "alternative";
   listStyle: "ordered" | "unordered" | null;
 };
 
@@ -1666,8 +1666,8 @@ function normalizeProcedureText(value: unknown) {
 }
 
 function procedureStepKind(text: string, source: JsonObject | null): ProcedureStepPresentation["kind"] {
-  const declared = String(source?.presentation_kind ?? "").toLowerCase();
-  if (["heading", "condition", "note", "instruction"].includes(declared)) return declared as ProcedureStepPresentation["kind"];
+  const declared = String(source?.kind ?? source?.presentation_kind ?? "").toLowerCase();
+  if (["heading", "prerequisite", "condition", "note", "warning", "instruction", "expected_result", "alternative"].includes(declared)) return declared as ProcedureStepPresentation["kind"];
   if (/^(?:if|when|unless)\b/i.test(text)) return "condition";
   if (/^(?:please note|note:|important:)\b/i.test(text)) return "note";
   if (/:$/.test(text) && !/^\d+(?:\.\d+)?\s*(?:seconds?|minutes?)\b/i.test(text)) return "heading";
