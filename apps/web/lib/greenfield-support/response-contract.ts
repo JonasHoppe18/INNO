@@ -285,11 +285,20 @@ function resultIndexFromPath(path: string): number | null {
   return match ? Number(match[1] ?? match[2]) : null;
 }
 
-function procedureStepValue(result: ToolExecutionResult, path: string, defaultResultIndex?: number): unknown {
+function procedureStepDataPath(path: string, defaultResultIndex?: number) {
   const normalized = normalizedDataPath(path);
-  const effectivePath = defaultResultIndex != null && normalized.startsWith("structured_data.")
+  return defaultResultIndex != null && normalized.startsWith("structured_data.")
     ? `data.results[${defaultResultIndex}].${normalized}`
     : path;
+}
+
+function procedureStepObject(result: ToolExecutionResult, path: string, defaultResultIndex?: number): JsonObject | null {
+  const effectivePath = procedureStepDataPath(path, defaultResultIndex).replace(/\.text$/i, "");
+  return objectValue(dataFieldValue(result, effectivePath).value);
+}
+
+function procedureStepValue(result: ToolExecutionResult, path: string, defaultResultIndex?: number): unknown {
+  const effectivePath = procedureStepDataPath(path, defaultResultIndex);
   const field = dataFieldValue(result, effectivePath);
   if (!field.exists) return undefined;
   const object = objectValue(field.value);
@@ -1505,6 +1514,36 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
+type ProcedureStepPresentation = {
+  text: string;
+  path: string;
+  sourceIndex: number;
+  kind: "heading" | "condition" | "note" | "instruction";
+  listStyle: "ordered" | "unordered" | null;
+};
+
+function normalizeProcedureText(value: unknown) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+    .replace(/\s+([,.;:!?])/g, "$1");
+}
+
+function procedureStepKind(text: string, source: JsonObject | null): ProcedureStepPresentation["kind"] {
+  const declared = String(source?.presentation_kind ?? "").toLowerCase();
+  if (["heading", "condition", "note", "instruction"].includes(declared)) return declared as ProcedureStepPresentation["kind"];
+  if (/^(?:if|when|unless)\b/i.test(text)) return "condition";
+  if (/^(?:please note|note:|important:)\b/i.test(text)) return "note";
+  if (/:$/.test(text) && !/^\d+(?:\.\d+)?\s*(?:seconds?|minutes?)\b/i.test(text)) return "heading";
+  return "instruction";
+}
+
+function procedureStepListStyle(source: JsonObject | null): ProcedureStepPresentation["listStyle"] {
+  const declared = String(source?.list_style ?? "").toLowerCase();
+  return declared === "ordered" || declared === "unordered" ? declared : null;
+}
+
 function procedureStepValues(
   segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
   context: ResponseValidationContext,
@@ -1516,19 +1555,78 @@ function procedureStepValues(
     .find((value): value is number => value != null);
   return segment.step_paths.flatMap((path) => {
     const value = procedureStepValue(evidence.result, path, citedResultIndex ?? undefined);
-    return meaningful(value) ? [String(value).trim()] : [];
+    if (!meaningful(value)) return [];
+    const parsed = procedureStepPath(path, citedResultIndex ?? undefined);
+    if (!parsed) return [];
+    const text = normalizeProcedureText(value);
+    return text ? [{
+      text,
+      path,
+      sourceIndex: parsed.stepIndex,
+      kind: procedureStepKind(text, procedureStepObject(evidence.result, path, citedResultIndex ?? undefined)),
+      listStyle: procedureStepListStyle(procedureStepObject(evidence.result, path, citedResultIndex ?? undefined)),
+    }] : [];
   });
+}
+
+function normalizedProcedurePhrase(value: unknown) {
+  return normalizeProcedureText(value)
+    .toLowerCase()
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sourceTitleForProcedure(
+  segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
+  context: ResponseValidationContext,
+) {
+  const evidence = resultFor(segment.basis, context);
+  const citedResultIndex = segment.basis.field_paths
+    .map(resultIndexFromPath)
+    .find((value): value is number => value != null);
+  const data = objectValue(evidence?.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return objectValue(results[citedResultIndex ?? 0])?.title;
+}
+
+function isDuplicateProcedureTitle(step: ProcedureStepPresentation, title: unknown) {
+  if (step.sourceIndex !== 0 || step.kind !== "instruction") return false;
+  const stepPhrase = normalizedProcedurePhrase(step.text);
+  const titlePhrase = normalizedProcedurePhrase(title);
+  return Boolean(stepPhrase && titlePhrase && (stepPhrase === titlePhrase || titlePhrase.endsWith(stepPhrase)));
+}
+
+function focusedProcedureSteps(steps: ProcedureStepPresentation[], customerMessage?: string) {
+  const message = String(customerMessage ?? "");
+  if (!/\bhow long\b|\bhow many seconds?\b|\bwhat(?:'s| is) the (?:duration|time)\b/i.test(message)) return steps;
+  const candidates = steps.filter((step) =>
+    /\b\d+(?:\.\d+)?\s*(?:seconds?|minutes?)\b/i.test(step.text)
+    && /\b(?:hold|press|wait|keep)\b/i.test(step.text),
+  );
+  return candidates.length === 1 ? candidates : steps;
 }
 
 function renderProcedureGuidance(
   segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
   context: ResponseValidationContext,
 ) {
-  const steps = procedureStepValues(segment, context);
+  const sourceSteps = procedureStepValues(segment, context);
+  const title = sourceTitleForProcedure(segment, context);
+  const steps = focusedProcedureSteps(sourceSteps, context.customerMessage)
+    .filter((step) => !isDuplicateProcedureTitle(step, title) && !(step.kind === "heading" && step.sourceIndex === 0));
   if (!steps.length) return "";
+  if (steps.length === 1 && steps[0].kind === "instruction") return sentence(steps[0].text);
   const locale = localeFor(context);
   const heading = locale === "da" ? "Her er de relevante trin:" : "Here are the relevant steps:";
-  const list = steps.map((step) => `- ${step}`).join("\n");
+  const useOrderedList = steps.some((step) => step.listStyle === "ordered")
+    && steps.every((step) => step.listStyle !== "unordered");
+  let ordinal = 0;
+  const list = steps.map((step) => {
+    if (step.kind !== "instruction") return step.text;
+    ordinal += 1;
+    return `${useOrderedList ? `${ordinal}.` : "-"} ${step.text}`;
+  }).join("\n");
   return `${heading}\n${list}`;
 }
 
