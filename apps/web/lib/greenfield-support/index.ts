@@ -9,5 +9,6 @@ export * from "./agent";
 export * from "./conversation-context";
 export * from "./agents-sdk";
 export * from "./responses-model";
+export * from "./runtime-config";
 export * from "./shopify-read-only";
 export * from "./ship24-read-only";

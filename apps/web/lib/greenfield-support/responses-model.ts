@@ -1,5 +1,6 @@
 import type { GreenfieldModel, ModelRequest, ModelResponse, ToolCall } from "./types";
 import type { StrictToolDefinition } from "./tool-contracts";
+import { resolveGreenfieldRuntimeConfig, type GreenfieldReasoningEffort } from "./runtime-config";
 
 export interface ResponsesApiModelOptions {
   apiKey?: string;
@@ -7,6 +8,7 @@ export interface ResponsesApiModelOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  reasoningEffort?: GreenfieldReasoningEffort;
 }
 
 function toResponsesTool(tool: StrictToolDefinition) {
@@ -43,7 +45,8 @@ function parseResponse(payload: any): ModelResponse {
 /** Optional real model adapter. No key means the route fails safely; tests use a scripted model. */
 export function createResponsesApiModel(options: ResponsesApiModelOptions = {}): GreenfieldModel {
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? "";
-  const model = options.model ?? process.env.OPENAI_MODEL ?? "gpt-5.2";
+  const runtimeConfig = resolveGreenfieldRuntimeConfig({ model: options.model, reasoningEffort: options.reasoningEffort });
+  const model = runtimeConfig.model;
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 30_000;
@@ -62,6 +65,7 @@ export function createResponsesApiModel(options: ResponsesApiModelOptions = {}):
             input: request.input,
             tools: request.tools.map(toResponsesTool),
             parallel_tool_calls: false,
+            ...(runtimeConfig.reasoningEffort ? { reasoning: { effort: runtimeConfig.reasoningEffort } } : {}),
             store: false,
           }),
           signal: controller.signal,

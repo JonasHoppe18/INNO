@@ -7,6 +7,7 @@ import { createCapabilityRegistry, extractOrderReferences } from "./capabilities
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import { modelConversationContext, nextConversationContext } from "./conversation-context";
+import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
   AgentRunResult,
   ActionExecutor,
@@ -37,6 +38,7 @@ export interface GreenfieldAgentsSdkOptions {
   maxTurns?: number;
   now?: () => string;
   model?: string | Model;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   actionExecutor?: ActionExecutor;
 }
 
@@ -169,13 +171,20 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const proposedActions: ProposedAction[] = [];
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
   const maxTurns = Math.max(1, Math.min(options.maxTurns ?? 8, 12));
-  const model = options.model ?? process.env.OPENAI_MODEL ?? "gpt-5.2";
+  const runtimeConfig = resolveGreenfieldRuntimeConfig({
+    model: typeof options.model === "string" ? options.model : undefined,
+    reasoningEffort: options.reasoningEffort,
+  });
+  const model = options.model ?? runtimeConfig.model;
   const agent = new Agent<SonaAgentContext, typeof StructuredResponseSchema>({
     name: "Sona Support Agent",
     instructions,
     model,
     outputType: StructuredResponseSchema,
-    modelSettings: { parallelToolCalls: false },
+    modelSettings: {
+      parallelToolCalls: false,
+      ...(runtimeConfig.reasoningEffort ? { reasoning: { effort: runtimeConfig.reasoningEffort } } : {}),
+    },
     tools: createSdkTools(context),
   });
   const runner = new Runner({

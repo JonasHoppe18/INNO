@@ -218,6 +218,8 @@ describe("greenfield agent playground API", () => {
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: "Jonas" }),
       actionExecutor: expect.any(Object),
     }));
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].reasoningEffort).toBeUndefined();
     expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({
       accessToken: "server-only-token",
       customer: { email: "customer@example.test", name: "Jonas" },

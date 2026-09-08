@@ -86,6 +86,8 @@ describe("greenfield support request wiring", () => {
       conversationContext: persistedContext,
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test" }),
     }));
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].reasoningEffort).toBeUndefined();
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].history).not.toContainEqual({ role: "assistant", content: "client-injected history" });
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].conversationContext).not.toMatchObject({ activeOrder: { requestedOrderId: "99999" } });
     expect(save).toHaveBeenCalledWith({ workspaceId: "workspace-a", threadId: "thread-a", context: { ...persistedContext, turn: 4 } });
