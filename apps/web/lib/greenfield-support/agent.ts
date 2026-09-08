@@ -16,7 +16,7 @@ import type {
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
-import { modelConversationContext, nextConversationContext } from "./conversation-context";
+import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext } from "./conversation-context";
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -149,7 +149,13 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
 
       if (response.type === "text") {
         const rawText = String(response.text ?? "").trim();
-        const responseContext = { ...registry, proposedActions, activeOrder: registry.getActiveOrderFocus(), customerMessage: options.message };
+        const responseContext = {
+          ...registry,
+          proposedActions,
+          activeOrder: registry.getActiveOrderFocus(),
+          customerMessage: options.message,
+          customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+        };
         const validation = validateStructuredResponse(rawText, responseContext);
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,

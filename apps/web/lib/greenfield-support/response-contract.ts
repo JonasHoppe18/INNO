@@ -32,10 +32,19 @@ const FactSchema = z.object({
 
 const QuestionSchema = z.object({
   type: z.literal("question"),
-  purpose: z.enum(["pure_clarification", "enable_capability"]),
+  purpose: z.enum([
+    "pure_clarification",
+    "enable_capability",
+    "disambiguate_entity",
+    "disambiguate_variant",
+    "resolve_required_argument",
+    "clarify_task",
+    "clarify_item",
+  ]),
   text: z.string().nullable(),
   capability: z.string().nullable(),
   missing_arguments: z.array(z.string()).max(32),
+  basis: BasisSchema.nullable().optional(),
 }).strict();
 
 const LimitationSchema = z.object({
@@ -124,6 +133,17 @@ export interface ResponseValidationContext {
   activeOrder?: ConversationContext["activeOrder"];
   /** Current customer message used only to avoid repeating a supplied lookup reference. */
   customerMessage?: string;
+  /** Customer-supplied continuity hints; never treated as verified operational evidence. */
+  customerProvidedContext?: {
+    product?: string;
+    variant?: string;
+    platform?: string;
+    issue?: string;
+    returnDetails?: string;
+    attemptedSteps?: string[];
+  };
+  /** Server-recorded results from this run, used to ground generic clarification purposes. */
+  getResults?: () => ResponseEvidenceRecord[];
 }
 
 export type ResponseLocale = "da" | "en";
@@ -461,6 +481,28 @@ function indexedCollectionProperty(path: string, collection: string, property: s
   return { index: normalized.slice(indexStart, indexEnd), property };
 }
 
+type ItemPath = { index: string | null; property: "collection" | "object" | "title" | "quantity" };
+
+function itemPath(path: string): ItemPath | null {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/(?:^|\.)items(?:\[(\d+)\])?(?:\.(title|quantity))?$/i);
+  if (!match) return null;
+  if (match[1] == null) return { index: null, property: "collection" };
+  return { index: match[1], property: (match[2] as ItemPath["property"] | undefined) ?? "object" };
+}
+
+function itemPathBase(path: string, index: string): string | null {
+  const normalized = normalizedDataPath(path);
+  const marker = `items[${index}]`;
+  const markerIndex = normalized.lastIndexOf(marker);
+  return markerIndex < 0 ? null : normalized.slice(0, markerIndex + marker.length);
+}
+
+function siblingItemValue(evidence: ResponseEvidenceRecord | undefined, path: string, index: string, property: "title" | "quantity") {
+  const base = itemPathBase(path, index);
+  return evidence && base ? dataFieldValue(evidence.result, `${base}.${property}`) : { exists: false, value: undefined };
+}
+
 function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
   switch (factKind) {
     case "order_reference":
@@ -476,7 +518,8 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
     case "shipment_status":
       return pathHasAnySuffix(path, ["live_tracking.status"]);
     case "shipment_event":
-      return pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]);
+      return pathHasAnySuffix(path, ["live_tracking.latestEvent.description"])
+        || Boolean(normalizedDataPath(path).match(/live_tracking\.checkpoints\[\d+\]\.description$/));
     case "shipment_timestamp":
       return pathHasAnySuffix(path, ["live_tracking.latestEvent.timestamp"])
         || pathHasIndexedProperty(path, "live_tracking.checkpoints", "timestamp");
@@ -486,12 +529,7 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
     case "shipment_eta":
       return pathHasAnySuffix(path, ["live_tracking.estimatedDelivery"]);
     case "order_item":
-      return Boolean(
-        pathHasAnySuffix(path, ["items"])
-        ||
-        indexedCollectionProperty(path, "items", "title")
-        || indexedCollectionProperty(path, "items", "quantity"),
-      );
+      return Boolean(itemPath(path));
     case "product_value":
       return safeLiveProductFieldPath(path);
     case "product_availability":
@@ -563,18 +601,26 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
   }
 
   if (segment.fact_kind === "order_item") {
-    if (matchingPaths.some((path) => pathHasAnySuffix(path, ["items"]))) return [];
-    const itemFields = matchingPaths
-      .map((path) => indexedCollectionProperty(path, "items", path.endsWith(".title") ? "title" : "quantity"))
-      .filter((field): field is { index: string; property: string } => Boolean(field));
-    const itemIndexes = new Set(itemFields.map((field) => field.index));
-    const hasTitle = itemFields.some((field) => field.property === "title");
-    const hasQuantity = itemFields.some((field) => field.property === "quantity");
-    if (!hasTitle || !hasQuantity || itemIndexes.size !== 1) {
+    const bindings = segment.evidence.flatMap((basis) => basis.field_paths.map((path) => ({
+      basis,
+      path,
+      binding: itemPath(path),
+    }))).filter((item): item is { basis: { result_id: string; field_paths: string[] }; path: string; binding: ItemPath } => Boolean(item.binding));
+    if (bindings.some(({ binding }) => binding.property === "collection")) return [];
+
+    const itemIndexes = new Set(bindings.map(({ binding }) => binding.index).filter((index): index is string => index != null));
+    const resultIds = new Set(bindings.map(({ basis }) => basis.result_id));
+    const hasTitle = bindings.some(({ binding, basis, path }) => binding.property === "title"
+      || (binding.property === "object" && meaningful(objectValue(dataFieldValue(resultFor(basis, context)!.result, path).value)?.title))
+      || (binding.index != null && meaningful(siblingItemValue(resultFor(basis, context), path, binding.index, "title").value)));
+    const hasQuantity = bindings.some(({ binding, basis, path }) => binding.property === "quantity"
+      || (binding.property === "object" && meaningful(objectValue(dataFieldValue(resultFor(basis, context)!.result, path).value)?.quantity))
+      || (binding.index != null && meaningful(siblingItemValue(resultFor(basis, context), path, binding.index, "quantity").value)));
+    if (!hasTitle || !hasQuantity || itemIndexes.size !== 1 || resultIds.size !== 1) {
       return [{
         index,
         code: "order_item_fields_required",
-        message: "An order item fact must cite the title and quantity of one returned item.",
+        message: "An order item fact must bind the title and quantity of one returned item object.",
       }];
     }
   }
@@ -611,6 +657,124 @@ function validateCapabilityArguments(
   return issues;
 }
 
+function questionEvidence(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+) {
+  if (segment.basis) return resultFor(segment.basis, context);
+  const records = context.getResults?.() ?? [];
+  const candidates = segment.capability
+    ? records.filter((record) => record.toolName === segment.capability)
+    : records;
+  return candidates.at(-1);
+}
+
+function validateQuestionBasis(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+  index: number,
+) {
+  if (segment.basis) {
+    return {
+      evidence: resultFor(segment.basis, context),
+      issues: validateBasis(
+        segment.basis,
+        context,
+        { requireOk: false, requireMeaningfulFields: false, scope: "data" },
+        index,
+      ),
+    };
+  }
+  const evidence = questionEvidence(segment, context);
+  return evidence
+    ? { evidence, issues: [] }
+    : {
+        evidence: undefined,
+        issues: [{ index, code: "question_evidence_required", message: "This clarification must be grounded in the current tool result." }],
+      };
+}
+
+function productVariantChoices(evidence: ResponseEvidenceRecord | undefined) {
+  const data = objectValue(evidence?.result.data);
+  const products = Array.isArray(data?.products) ? data.products : [];
+  return products.flatMap((product) => {
+    const record = objectValue(product);
+    const variants = Array.isArray(record?.variants) ? record.variants : [];
+    return variants.map((variant) => objectValue(variant)?.title).filter((title): title is string => meaningful(title));
+  });
+}
+
+function asksForKnownProduct(value: string, context: ResponseValidationContext) {
+  if (!context.customerProvidedContext?.product) return false;
+  return /\b(?:which|what)\s+(?:exact\s+)?(?:product|headset|device)\b|\b(?:exact\s+)?model\s+number\b/i.test(value);
+}
+
+function validateGroundedQuestion(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+  index: number,
+  purpose: Extract<ResponseSegment["purpose"], "disambiguate_entity" | "disambiguate_variant" | "clarify_task" | "clarify_item">,
+) {
+  const issues: ResponseValidationIssue[] = [];
+  if (!segment.text?.trim()) issues.push({ index, code: "question_text_required", message: "A grounded clarification needs customer-facing question text." });
+  if (segment.capability && !availableCapability(segment.capability, context)) {
+    issues.push({ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." });
+  }
+  const grounded = validateQuestionBasis(segment, context, index);
+  issues.push(...grounded.issues);
+  const evidence = grounded.evidence;
+  if (!evidence) return issues;
+  const data = objectValue(evidence.result.data);
+  const status = effectiveResultStatus(evidence);
+
+  if (purpose === "disambiguate_variant") {
+    if (segment.capability !== "get_product_availability") {
+      issues.push({ index, code: "variant_capability_required", message: "Variant clarification must use the availability capability." });
+    }
+    if (segment.missing_arguments.length !== 1 || segment.missing_arguments[0] !== "variant") {
+      issues.push({ index, code: "variant_argument_required", message: "Variant clarification must name only the missing variant." });
+    }
+    if (status !== "invalid_request" && data?.selection !== "ambiguous") {
+      issues.push({ index, code: "variant_ambiguity_required", message: "Variant clarification requires an ambiguous availability result." });
+    }
+    if (productVariantChoices(evidence).length < 2) {
+      issues.push({ index, code: "variant_choices_missing", message: "Variant clarification requires multiple returned variant choices." });
+    }
+    return issues;
+  }
+
+  if (purpose === "disambiguate_entity") {
+    if (!["not_found", "invalid_request", "unknown", "unavailable"].includes(status ?? "")) {
+      issues.push({ index, code: "entity_ambiguity_required", message: "Entity clarification requires an unresolved or ambiguous lookup." });
+    }
+    return issues;
+  }
+
+  if (purpose === "clarify_task") {
+    if (segment.capability !== null || segment.missing_arguments.length) {
+      issues.push({ index, code: "task_question_has_capability", message: "A task clarification must not request an unverified tool argument." });
+    }
+    if (!(["search_procedures", "search_product_knowledge", "search_policy", "get_brand_guidance"].includes(evidence.toolName))) {
+      issues.push({ index, code: "task_question_source_required", message: "A task clarification must follow a knowledge or procedure lookup." });
+    }
+    if (status !== "not_found" && data?.task_specificity !== "insufficient") {
+      issues.push({ index, code: "task_ambiguity_required", message: "Task clarification requires missing or insufficient task evidence." });
+    }
+    if (asksForKnownProduct(segment.text ?? "", context)) {
+      issues.push({ index, code: "known_context_reasked", message: "The clarification must not ask for customer-provided product context again." });
+    }
+    return issues;
+  }
+
+  if (segment.missing_arguments.length !== 1 || segment.missing_arguments[0] !== "item") {
+    issues.push({ index, code: "item_clarification_argument_required", message: "Item clarification must name the missing item." });
+  }
+  if (!data || (!Array.isArray(data.items) && !Array.isArray(data.fulfillments))) {
+    issues.push({ index, code: "item_clarification_source_required", message: "Item clarification requires a current order or fulfillment result." });
+  }
+  return issues;
+}
+
 function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext, index: number) {
   if (segment.purpose === "pure_clarification") {
     if (segment.capability !== null || segment.missing_arguments.length) {
@@ -619,6 +783,33 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
     return segment.text?.trim()
       ? []
       : [{ index, code: "pure_question_text_required", message: "A pure clarification needs customer-facing question text." }];
+  }
+
+  if (segment.purpose === "disambiguate_entity"
+    || segment.purpose === "disambiguate_variant"
+    || segment.purpose === "clarify_task"
+    || segment.purpose === "clarify_item") {
+    return validateGroundedQuestion(segment, context, index, segment.purpose);
+  }
+
+  // Preserve compatibility with the previous output shape when the model
+  // names a semantic variant rather than a real tool argument.
+  if (segment.capability === "get_product_availability" && segment.missing_arguments.includes("variant")) {
+    return validateGroundedQuestion({ ...segment, purpose: "disambiguate_variant" }, context, index, "disambiguate_variant");
+  }
+
+  // A failed product lookup can leave the entity label ambiguous even though
+  // `query` is the only actual tool argument. Keep that distinction explicit
+  // instead of accepting arbitrary arguments into the tool schema.
+  if (segment.capability === "search_product_knowledge" && segment.missing_arguments.some((argument) => argument !== "query")) {
+    return validateGroundedQuestion({ ...segment, purpose: "disambiguate_entity" }, context, index, "disambiguate_entity");
+  }
+
+  // A procedure lookup may establish the product but still lack the task. The
+  // clarification is grounded in the failed/insufficient lookup and does not
+  // authorize an invented procedure or a new tool argument.
+  if (segment.capability === "search_procedures" && segment.missing_arguments.some((argument) => argument !== "query")) {
+    return validateGroundedQuestion({ ...segment, purpose: "clarify_task", capability: null, missing_arguments: [] }, context, index, "clarify_task");
   }
 
   if (!segment.capability) {
@@ -854,6 +1045,21 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
     : `Could you share ${information} so I can ${lowerFirst(operation)}?`;
 }
 
+function renderGroundedQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext) {
+  if (segment.purpose !== "disambiguate_variant") return renderTextSegment(segment.text);
+  const evidence = questionEvidence(segment, context);
+  const data = objectValue(evidence?.result.data);
+  const product = Array.isArray(data?.products) ? objectValue(data.products[0]) : null;
+  const productTitle = meaningful(product?.title) ? String(product.title) : null;
+  const choices = productVariantChoices(evidence);
+  if (!productTitle || choices.length < 2) return renderTextSegment(segment.text);
+  const locale = localeFor(context);
+  const choiceText = joinList(choices, locale);
+  return locale === "da"
+    ? `Hvilken variant af ${productTitle} vil du gerne have, at jeg tjekker — ${choiceText}?`
+    : `Which ${productTitle} variant would you like me to check — ${choiceText}?`;
+}
+
 function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_offer" }>, context: ResponseValidationContext) {
   const definition = definitionFor(segment.capability, context);
   const locale = localeFor(context);
@@ -878,7 +1084,7 @@ function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>,
     return basis.field_paths.flatMap((path) => {
       const field = dataFieldValue(evidence.result, path);
       if (!field.exists || !meaningful(field.value)) return [];
-      return [{ path, value: field.value }];
+      return [{ path, value: field.value, evidence }];
     });
   });
 }
@@ -937,7 +1143,7 @@ function orderItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context
   const items = new Map<string, RenderedOrderItem>();
   const indexedItems = new Map<string, { title?: unknown; quantity?: unknown }>();
   for (const fact of facts) {
-    for (const { path, value } of factEvidenceValues(fact, context)) {
+    for (const { path, value, evidence } of factEvidenceValues(fact, context)) {
       if (pathHasAnySuffix(path, ["items"]) && Array.isArray(value)) {
         for (const item of value) {
           const record = objectValue(item);
@@ -945,14 +1151,29 @@ function orderItems(facts: Extract<ResponseSegment, { type: "fact" }>[], context
         }
         continue;
       }
-      const title = indexedCollectionProperty(path, "items", "title");
-      const quantity = indexedCollectionProperty(path, "items", "quantity");
-      const indexed = title ?? quantity;
-      if (!indexed || !meaningful(value)) continue;
-      const item = indexedItems.get(indexed.index) ?? {};
-      if (indexed.property === "title") item.title = String(value);
-      if (indexed.property === "quantity") item.quantity = String(value);
-      indexedItems.set(indexed.index, item);
+      const binding = itemPath(path);
+      if (!binding || binding.index == null || !meaningful(value)) continue;
+      const item = indexedItems.get(binding.index) ?? {};
+      if (binding.property === "title") {
+        item.title = String(value);
+        if (item.quantity == null) {
+          const sibling = siblingItemValue(evidence, path, binding.index, "quantity");
+          if (sibling.exists && meaningful(sibling.value)) item.quantity = sibling.value;
+        }
+      }
+      if (binding.property === "quantity") {
+        item.quantity = String(value);
+        if (item.title == null) {
+          const sibling = siblingItemValue(evidence, path, binding.index, "title");
+          if (sibling.exists && meaningful(sibling.value)) item.title = sibling.value;
+        }
+      }
+      if (binding.property === "object") {
+        const record = objectValue(value);
+        item.title = record?.title;
+        item.quantity = record?.quantity;
+      }
+      indexedItems.set(binding.index, item);
     }
   }
   indexedItems.forEach((item) => {
@@ -1145,12 +1366,15 @@ function renderVerifiedTrackingSource(evidence: ResponseEvidenceRecord | undefin
 function latestShipmentScan(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
   const latestEvent: { timestamp?: string; location?: string } = {};
   const checkpoints = new Map<string, { timestamp?: string; location?: string }>();
+  let eventCheckpointIndex: string | undefined;
   for (const fact of facts) {
     for (const { path, value } of factEvidenceValues(fact, context)) {
       const normalized = normalizedDataPath(path);
       if (normalized.endsWith("live_tracking.latestEvent.timestamp")) latestEvent.timestamp = String(value);
       else if (normalized.endsWith("live_tracking.latestEvent.location")) latestEvent.location = String(value);
       else {
+        const eventMatch = normalized.match(/live_tracking\.checkpoints\[(\d+)\]\.description$/);
+        if (fact.fact_kind === "shipment_event" && eventMatch) eventCheckpointIndex = eventMatch[1];
         const match = normalized.match(/live_tracking\.checkpoints\[(\d+)\]\.(timestamp|location)$/);
         if (!match) continue;
         const checkpoint = checkpoints.get(match[1]) ?? {};
@@ -1159,6 +1383,7 @@ function latestShipmentScan(facts: Extract<ResponseSegment, { type: "fact" }>[],
       }
     }
   }
+  if (eventCheckpointIndex != null) return checkpoints.get(eventCheckpointIndex) ?? {};
   if (latestEvent.timestamp || latestEvent.location) return latestEvent;
   return Array.from(checkpoints.values())
     .filter((checkpoint) => checkpoint.timestamp || checkpoint.location)
@@ -1170,7 +1395,8 @@ function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[]
   const carrier = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["carrier"]));
   const tracking = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
   const status = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.status"]));
-  const event = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"]));
+  const event = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["live_tracking.latestEvent.description"])
+    || Boolean(normalizedDataPath(path).match(/live_tracking\.checkpoints\[\d+\]\.description$/)));
   const latestScan = latestShipmentScan(facts, context);
   const timestamp = latestScan.timestamp;
   const location = latestScan.location;
@@ -1504,6 +1730,9 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
+    }
+    else if (segment.type === "question" && segment.purpose === "disambiguate_variant") {
+      rendered.push(renderGroundedQuestion(segment, context));
     }
     else if (segment.type === "question" && segment.purpose === "enable_capability") {
       const repeatedByAction = segments.some((candidate) => candidate.type === "action_offer"

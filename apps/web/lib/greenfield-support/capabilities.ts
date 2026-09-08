@@ -353,6 +353,9 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     getResult(resultId: string) {
       return resultRecords.get(resultId);
     },
+    getResults() {
+      return Array.from(resultRecords.values());
+    },
     getActiveOrderFocus() {
       if (!orderFocus) return null;
       return {
