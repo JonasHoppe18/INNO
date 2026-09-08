@@ -71,8 +71,14 @@ const ProcedureGuidanceSchema = z.object({
   type: z.literal("procedure_guidance"),
   text: z.string().min(1),
   basis: BasisSchema,
-  step_paths: z.array(z.string().min(1)).min(1).max(32),
-}).strict();
+  // Stable block identifiers are preferred. step_paths remains accepted for
+  // compatibility with older callers and stored traces.
+  block_ids: z.array(z.string().min(1)).max(32).optional(),
+  step_paths: z.array(z.string().min(1)).max(32).optional(),
+}).strict().refine((value) => Boolean(value.block_ids?.length || value.step_paths?.length), {
+  message: "Procedure guidance must cite at least one procedure block.",
+  path: ["block_ids"],
+});
 
 const AcknowledgementSchema = z.object({
   type: z.literal("acknowledgement"),
@@ -306,6 +312,26 @@ function procedureStepValue(result: ToolExecutionResult, path: string, defaultRe
   return object && "text" in object ? object.text : field.value;
 }
 
+function procedureBlocks(result: ToolExecutionResult, resultIndex: number): Array<{ index: number; block: JsonObject; blockId: string }> {
+  const data = objectValue(result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const record = objectValue(results[resultIndex]);
+  const structuredData = objectValue(record?.structured_data);
+  const blocks = Array.isArray(structuredData?.procedure_steps)
+    ? structuredData.procedure_steps
+    : Array.isArray(structuredData?.procedure_blocks)
+      ? structuredData.procedure_blocks
+      : [];
+  return blocks.map((value, index) => {
+    const block = objectValue(value) ?? {};
+    return {
+      index,
+      block,
+      blockId: String(block.block_id ?? block.id ?? `block_${index + 1}`),
+    };
+  });
+}
+
 function normalizedPhrase(value: unknown): string {
   return String(value ?? "")
     .toLowerCase()
@@ -375,24 +401,50 @@ function validateProcedureGuidance(
   if (citedRecord?.knowledge_type !== "procedural") {
     issues.push({ index, code: "procedure_source_required", message: "Procedure guidance must cite a procedural knowledge record." });
   }
-  const paths = segment.step_paths.map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
-  if (paths.some(({ parsed }) => !parsed)) {
-    issues.push({ index, code: "procedure_step_path_invalid", message: "Procedure steps must cite returned structured procedure step fields." });
-    return issues;
-  }
-  if (paths.some(({ parsed }) => parsed!.resultIndex !== citedResultIndex)) {
-    issues.push({ index, code: "procedure_cross_record_merge", message: "Procedure guidance cannot combine steps from different retrieved records." });
-  }
-  for (const { path } of paths) {
-    const value = procedureStepValue(evidence.result, path, citedResultIndex);
-    if (!meaningful(value)) {
-      issues.push({ index, code: "procedure_step_missing", message: "A cited procedure step was not returned by the tool." });
+  const blockIds = segment.block_ids?.length ? segment.block_ids : null;
+  const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
+  const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
+  const references = blockIds
+    ? blockIds.map((blockId) => blocksById.get(blockId)).filter((entry): entry is (typeof availableBlocks)[number] => Boolean(entry))
+    : [];
+  if (blockIds) {
+    const foundIds = new Set(references.map((entry) => entry.blockId));
+    for (const blockId of blockIds) {
+      if (!foundIds.has(blockId)) {
+        issues.push({ index, code: "procedure_block_missing", message: "A cited procedure block was not returned by the tool." });
+      }
     }
-  }
-  for (let stepIndex = 1; stepIndex < paths.length; stepIndex += 1) {
-    if (paths[stepIndex - 1].parsed!.stepIndex >= paths[stepIndex].parsed!.stepIndex) {
-      issues.push({ index, code: "procedure_step_order", message: "Procedure step references must remain in source order." });
-      break;
+    for (const entry of references) {
+      if (!meaningful(entry.block.text)) {
+        issues.push({ index, code: "procedure_block_missing", message: "A cited procedure block was empty." });
+      }
+    }
+    for (let blockIndex = 1; blockIndex < references.length; blockIndex += 1) {
+      if (references[blockIndex - 1].index >= references[blockIndex].index) {
+        issues.push({ index, code: "procedure_step_order", message: "Procedure block references must remain in source order." });
+        break;
+      }
+    }
+  } else {
+    const paths = (segment.step_paths ?? []).map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
+    if (paths.some(({ parsed }) => !parsed)) {
+      issues.push({ index, code: "procedure_step_path_invalid", message: "Procedure steps must cite returned structured procedure step fields." });
+      return issues;
+    }
+    if (paths.some(({ parsed }) => parsed!.resultIndex !== citedResultIndex)) {
+      issues.push({ index, code: "procedure_cross_record_merge", message: "Procedure guidance cannot combine steps from different retrieved records." });
+    }
+    for (const { path } of paths) {
+      const value = procedureStepValue(evidence.result, path, citedResultIndex);
+      if (!meaningful(value)) {
+        issues.push({ index, code: "procedure_step_missing", message: "A cited procedure step was not returned by the tool." });
+      }
+    }
+    for (let stepIndex = 1; stepIndex < paths.length; stepIndex += 1) {
+      if (paths[stepIndex - 1].parsed!.stepIndex >= paths[stepIndex].parsed!.stepIndex) {
+        issues.push({ index, code: "procedure_step_order", message: "Procedure step references must remain in source order." });
+        break;
+      }
     }
   }
   issues.push(...procedureProductMismatch(results, context.customerMessage, citedResultIndex, index));
@@ -1652,6 +1704,7 @@ function renderTextSegment(value: string | null) {
 type ProcedureStepPresentation = {
   text: string;
   path: string;
+  blockId: string;
   sourceIndex: number;
   kind: "heading" | "prerequisite" | "condition" | "note" | "warning" | "instruction" | "expected_result" | "alternative";
   listStyle: "ordered" | "unordered" | null;
@@ -1665,7 +1718,24 @@ function normalizeProcedureText(value: unknown) {
     .replace(/\s+([,.;:!?])/g, "$1");
 }
 
+function isPlainProcedureHeading(value: string) {
+  const text = value.trim();
+  return /[:?]$/.test(text)
+    || /^(?:faq|manual|questions|how to|troubleshooting|critical values|steps?|instructions?|procedure)\b/i.test(text);
+}
+
+function removeLeadingProcedureHeadings(value: string, sourceIndex: number) {
+  if (sourceIndex !== 0) return value;
+  const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  while (lines.length > 0 && isPlainProcedureHeading(lines[0])) lines.shift();
+  return lines.join("\n");
+}
+
 function procedureStepKind(text: string, source: JsonObject | null): ProcedureStepPresentation["kind"] {
+  // A source-authored title/section label can be stored by older imports as
+  // an instruction. Presentation must still avoid turning that label into an
+  // action bullet; the underlying cited value remains unchanged.
+  if (/[:?]$/.test(text.trim())) return "heading";
   const declared = String(source?.kind ?? source?.presentation_kind ?? "").toLowerCase();
   if (["heading", "prerequisite", "condition", "note", "warning", "instruction", "expected_result", "alternative"].includes(declared)) return declared as ProcedureStepPresentation["kind"];
   if (/^(?:if|when|unless)\b/i.test(text)) return "condition";
@@ -1688,18 +1758,37 @@ function procedureStepValues(
   const citedResultIndex = segment.basis.field_paths
     .map(resultIndexFromPath)
     .find((value): value is number => value != null);
-  return segment.step_paths.flatMap((path) => {
+  if (segment.block_ids?.length && citedResultIndex != null) {
+    const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
+    const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
+    return segment.block_ids.flatMap((blockId) => {
+      const entry = blocksById.get(blockId);
+      if (!entry || !meaningful(entry.block.text)) return [];
+      const text = removeLeadingProcedureHeadings(normalizeProcedureText(entry.block.text), entry.index);
+      return text ? [{
+        text,
+        path: `structured_data.procedure_steps[${entry.index}]`,
+        blockId: entry.blockId,
+        sourceIndex: entry.index,
+        kind: procedureStepKind(text, entry.block),
+        listStyle: procedureStepListStyle(entry.block),
+      }] : [];
+    });
+  }
+  return (segment.step_paths ?? []).flatMap((path) => {
     const value = procedureStepValue(evidence.result, path, citedResultIndex ?? undefined);
     if (!meaningful(value)) return [];
     const parsed = procedureStepPath(path, citedResultIndex ?? undefined);
     if (!parsed) return [];
-    const text = normalizeProcedureText(value);
+    const source = procedureStepObject(evidence.result, path, citedResultIndex ?? undefined);
+    const text = removeLeadingProcedureHeadings(normalizeProcedureText(value), parsed.stepIndex);
     return text ? [{
       text,
       path,
+      blockId: String(source?.block_id ?? source?.id ?? `block_${parsed.stepIndex + 1}`),
       sourceIndex: parsed.stepIndex,
-      kind: procedureStepKind(text, procedureStepObject(evidence.result, path, citedResultIndex ?? undefined)),
-      listStyle: procedureStepListStyle(procedureStepObject(evidence.result, path, citedResultIndex ?? undefined)),
+      kind: procedureStepKind(text, source),
+      listStyle: procedureStepListStyle(source),
     }] : [];
   });
 }
@@ -1749,7 +1838,7 @@ function renderProcedureGuidance(
   const sourceSteps = procedureStepValues(segment, context);
   const title = sourceTitleForProcedure(segment, context);
   const steps = focusedProcedureSteps(sourceSteps, context.customerMessage)
-    .filter((step) => !isDuplicateProcedureTitle(step, title) && !(step.kind === "heading" && step.sourceIndex === 0));
+    .filter((step) => !isDuplicateProcedureTitle(step, title) && step.kind !== "heading");
   if (!steps.length) return "";
   if (steps.length === 1 && steps[0].kind === "instruction") return sentence(steps[0].text);
   const locale = localeFor(context);

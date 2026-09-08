@@ -52,6 +52,7 @@ function summarize(run) {
     knowledge,
     errors: run.trace.events.filter((event) => event.type === "error").map((event) => event.data),
     validation: run.trace.events.find((event) => event.type === "final_response")?.data?.validation || null,
+    structured_response: run.trace.events.find((event) => event.type === "final_response")?.data?.structured_response || null,
   };
 }
 

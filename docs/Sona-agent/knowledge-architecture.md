@@ -74,10 +74,10 @@ is:
     "task": { "key": "factory_reset", "title": "Factory reset" },
     "aliases": ["reset my headset"],
     "blocks": [
-      { "kind": "prerequisite", "text": "...", "list_style": null },
-      { "kind": "instruction", "text": "...", "list_style": "ordered" },
-      { "kind": "warning", "text": "...", "list_style": null },
-      { "kind": "expected_result", "text": "...", "list_style": null }
+      { "block_id": "block_1", "kind": "prerequisite", "text": "...", "list_style": null },
+      { "block_id": "block_2", "kind": "instruction", "text": "...", "list_style": "ordered" },
+      { "block_id": "block_3", "kind": "warning", "text": "...", "list_style": null },
+      { "block_id": "block_4", "kind": "expected_result", "text": "...", "list_style": null }
     ]
   }
 }
@@ -87,7 +87,8 @@ The supported semantic kinds are `heading`, `prerequisite`, `instruction`,
 `note`, `warning`, `condition`, `expected_result`, and `alternative`. The
 parser recognizes explicit labels and list order conservatively. Unlabelled
 prose remains an `instruction`; source text, order, line, and excerpt
-provenance are retained. Product applicability is separate from task identity,
+provenance are retained. Each block has a stable identifier for response
+citations, while source order remains deterministic. Product applicability is separate from task identity,
 so two procedures for the same product remain distinct.
 
 Legacy procedural rows remain readable. If they do not yet have canonical
@@ -126,7 +127,10 @@ existing DEV records do not lose applicability during the transition.
 
 The agent receives bounded evidence with provenance. A failed search is an
 unknown result, not a business fact. The response contract remains source-bound
-for policy and procedure claims.
+for policy and procedure claims. Procedure guidance prefers stable `block_id`
+citations; legacy indexed `step_paths` remain supported for compatibility.
+Chunks and embeddings are derived data: published-record ingestion repairs
+missing embeddings without changing the canonical record.
 
 ## Review workflow
 

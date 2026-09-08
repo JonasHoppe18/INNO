@@ -49,6 +49,10 @@ function stepPath(resultIndex, stepIndex) {
   return `data.results[${resultIndex}].structured_data.procedure_steps[${stepIndex}].text`;
 }
 
+function blockIds(result, resultIndex, stepIndexes) {
+  return stepIndexes.map((index) => result.data.results[resultIndex].structured_data.procedure_steps[index].block_id);
+}
+
 function procedureSegment(resultId, resultIndex, steps, text = "I found the relevant instructions.") {
   return {
     type: "procedure_guidance",
@@ -121,6 +125,30 @@ describe("source-bound merchant procedure guidance", () => {
     expect(rendered).not.toContain("ANC");
     expect(rendered).not.toContain("10 seconds");
     expect(rendered).not.toContain("Play/Pause");
+  });
+
+  it("accepts stable block identifiers and still enforces source order", async () => {
+    const registry = await procedureRegistry();
+    const lookup = await registry.execute("search_procedures", JSON.stringify({ query: "A-Spire Wireless factory reset" }));
+    const wirelessIndex = procedureResultIndex(lookup, "wireless-reset");
+    const ids = blockIds(lookup, wirelessIndex, [0, 1, 2]);
+    const grounded = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Here are the source-bound steps.",
+      basis: { result_id: lookup.resultId, field_paths: [`data.results[${wirelessIndex}]`] },
+      block_ids: ids,
+    }] }, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" });
+    expect(grounded.allValid).toBe(true);
+    const rendered = renderResponseSegments(grounded.approvedSegments, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" });
+    expect(rendered).toContain("15 seconds");
+
+    const reordered = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Here are the source-bound steps.",
+      basis: { result_id: lookup.resultId, field_paths: [`data.results[${wirelessIndex}]`] },
+      block_ids: [...ids].reverse(),
+    }] }, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" });
+    expect(reordered.issues.map((issue) => issue.code)).toContain("procedure_step_order");
   });
 
   it("keeps partial continuation source-bound and rejects a mismatched product", async () => {

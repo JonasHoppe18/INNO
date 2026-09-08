@@ -122,6 +122,80 @@ describe("greenfield knowledge store", () => {
     expect(normalized.records.every((record) => record.sourceContentHash === normalized.sourceContentHash)).toBe(true);
   });
 
+  it("supports one source producing mixed canonical knowledge types", async () => {
+    const normalized = await normalizeKnowledgeSourceDocument("tenant-a", {
+      sourceKind: "merchant_manual",
+      sourceId: "mixed-manual-v1",
+      title: "Coffee Machine X manual",
+      content: "## Product overview\n\n## Descale\n\nRun the descale cycle.",
+      candidates: [
+        {
+          recordKey: "product-overview",
+          title: "Coffee Machine X — Product overview",
+          content: "Coffee Machine X supports the approved descale cycle.",
+          knowledgeType: "product",
+          authority: "reference",
+          sourceLocation: { section: "Product overview", order: 0 },
+        },
+        {
+          recordKey: "descale",
+          title: "Coffee Machine X — Descale",
+          content: "Run the descale cycle.",
+          knowledgeType: "procedural",
+          authority: "authoritative",
+          structuredData: { applies_to: { product_models: ["Coffee Machine X"] } },
+          sourceLocation: { section: "Descale", order: 1 },
+          taskKey: "descale",
+        },
+      ],
+    });
+
+    expect(normalized.records).toHaveLength(2);
+    expect(normalized.records.map((record) => record.knowledgeType)).toEqual(["product", "procedural"]);
+    expect(normalized.records.every((record) => record.sourceId === "mixed-manual-v1")).toBe(true);
+    expect(normalized.records.every((record) => record.sourceContentHash === normalized.sourceContentHash)).toBe(true);
+    expect(normalized.records[1].structuredData.procedure.task.key).toBe("descale");
+  });
+
+  it("splits a multi-topic policy source into independently retrievable records", async () => {
+    const store = new InMemoryKnowledgeStore();
+    const sourceContent = [
+      "# Store policies",
+      "## Return window",
+      "Unused items may be returned within 30 days of delivery.",
+      "## Opened product eligibility",
+      "Opened products may be inspected before a refund is approved.",
+      "## Return shipping",
+      "Customers arrange return shipping unless the policy says otherwise.",
+      "## Refund timing",
+      "Approved refunds are issued after inspection.",
+    ].join("\n\n");
+    const candidates = splitMarkdownKnowledgeSource({
+      title: "Store policies",
+      content: sourceContent,
+      knowledgeType: "policy",
+      authority: "authoritative",
+    }).map((candidate) => ({
+      ...candidate,
+      metadata: { ...candidate.metadata, lifecycle_status: "published" },
+    }));
+    const result = await store.ingestSource("tenant-a", {
+      sourceKind: "policy_document",
+      sourceId: "store-policies-v1",
+      title: "Store policies",
+      content: sourceContent,
+      candidates,
+    });
+
+    expect(result.records).toHaveLength(4);
+    expect(result.records.every((record) => record.knowledgeType === "policy")).toBe(true);
+    expect(new Set(result.records.map((record) => record.sourceId))).toEqual(new Set(["store-policies-v1"]));
+    expect(new Set(result.records.map((record) => record.sourceContentHash)).size).toBe(1);
+    const refund = await store.search({ workspaceId: "tenant-a", query: "refund inspection", knowledgeTypes: ["policy"], limit: 3 });
+    expect(refund[0].record.title).toContain("Refund timing");
+    expect(refund[0].record.content).toContain("after inspection");
+  });
+
   it("keeps multiple procedures for one product distinct and asks retrieval to follow the task", async () => {
     const store = new InMemoryKnowledgeStore();
     const sourceCandidates = splitMarkdownKnowledgeSource({ title: "A-Spire Wireless manual", content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the microphone input device.", knowledgeType: "procedural", authority: "authoritative" })
@@ -136,6 +210,109 @@ describe("greenfield knowledge store", () => {
     const mic = await store.search({ workspaceId: "tenant-a", query: "A-Spire Wireless microphone not working", knowledgeTypes: ["procedural"], limit: 2 });
     expect(mic[0].record.title).toContain("Microphone troubleshooting");
     expect(mic[0].record.structuredData.procedure.task.key).toBe("microphone_troubleshooting");
+  });
+
+  it("works for a synthetic non-AceZone merchant with many product tasks", async () => {
+    const store = new InMemoryKnowledgeStore();
+    const sourceTitle = "Generic Home Store support manual";
+    const sourceContent = [
+      "## Descale",
+      "Run the descale cycle with the approved solution.",
+      "## Grinder blocked",
+      "1. Switch the machine off.",
+      "2. Clear the grinder channel.",
+      "Warning: Do not insert tools while the machine is powered.",
+      "## Water not heating",
+      "Condition: If the machine has power but the water stays cold.",
+      "Run the heating diagnostic and check the reservoir.",
+      "## Cleaning cycle",
+      "Run the cleaning cycle after removing the filter.",
+      "## Pair remote",
+      "Hold the remote pairing button for five seconds.",
+    ].join("\n\n");
+    const candidates = splitMarkdownKnowledgeSource({
+      title: sourceTitle,
+      content: sourceContent,
+      knowledgeType: "procedural",
+      authority: "authoritative",
+    }).map((candidate) => ({
+      ...candidate,
+      metadata: {
+        ...candidate.metadata,
+        lifecycle_status: "published",
+        applies_to: {
+          product_models: candidate.title.includes("Pair remote") ? ["Desk Lamp Y"] : ["Coffee Machine X"],
+        },
+      },
+    }));
+    const first = await store.ingestSource("generic-home-store", {
+      sourceKind: "merchant_manual",
+      sourceId: "generic-support-manual",
+      title: sourceTitle,
+      content: sourceContent,
+      candidates,
+    });
+
+    expect(first.records).toHaveLength(5);
+    expect(new Set(first.records.map((record) => record.sourceRecordKey)).size).toBe(5);
+
+    const coffeeContext = { workspaceId: "generic-home-store", productId: "coffee-x", productModels: ["Coffee Machine X"] };
+    const grinder = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X grinder is blocked", productContext: coffeeContext, limit: 3 });
+    expect(grinder[0].record.title).toContain("Grinder blocked");
+
+    const descale = await store.search({ workspaceId: "generic-home-store", query: "How do I descale Coffee Machine X?", productContext: coffeeContext, limit: 3 });
+    expect(descale[0].record.title).toContain("Descale");
+
+    const ambiguous = await store.search({ workspaceId: "generic-home-store", query: "My Coffee Machine X isn't working", productContext: coffeeContext, limit: 5 });
+    expect(ambiguous.length).toBeGreaterThan(1);
+    expect(new Set(ambiguous.map((hit) => hit.record.structuredData.procedure.task.key))).toEqual(new Set([
+      "descale",
+      "grinder_blocked",
+      "water_not_heating",
+      "cleaning_cycle",
+    ]));
+
+    const wrongProduct = await store.search({
+      workspaceId: "generic-home-store",
+      query: "Coffee Machine X pair remote",
+      productContext: coffeeContext,
+      limit: 5,
+    });
+    expect(wrongProduct.map((hit) => hit.record.title)).not.toContain("Pair remote");
+
+    const lampContext = { workspaceId: "generic-home-store", productId: "lamp-y", productModels: ["Desk Lamp Y"] };
+    const lamp = await store.search({ workspaceId: "generic-home-store", query: "Desk Lamp Y pair remote", productContext: lampContext, limit: 3 });
+    expect(lamp[0].record.title).toContain("Pair remote");
+    expect(lamp.map((hit) => hit.record.title)).not.toContain("Grinder blocked");
+
+    const foreignWorkspace = await store.search({ workspaceId: "other-workspace", query: "Coffee Machine X grinder blocked", productContext: { ...coffeeContext, workspaceId: "other-workspace" }, limit: 5 });
+    expect(foreignWorkspace).toEqual([]);
+  });
+
+  it("keeps source refreshes identifiable and never deletes a removed published candidate", async () => {
+    const store = new InMemoryKnowledgeStore();
+    const source = (content) => ({
+      sourceKind: "merchant_manual",
+      sourceId: "refreshable-manual",
+      title: "Refreshable manual",
+      content,
+      candidates: splitMarkdownKnowledgeSource({ title: "Refreshable manual", content, knowledgeType: "procedural", authority: "authoritative" })
+        .map((candidate) => ({ ...candidate, metadata: { ...candidate.metadata, lifecycle_status: "published" } })),
+    });
+    const original = await store.ingestSource("tenant-a", source("## A\n\nRun task A.\n\n## B\n\nRun task B."));
+    const same = await store.ingestSource("tenant-a", source("## A\n\nRun task A.\n\n## B\n\nRun task B."));
+    expect(same.records.map((record) => record.id)).toEqual(original.records.map((record) => record.id));
+
+    const changed = await store.ingestSource("tenant-a", source("## A\n\nRun task A updated.\n\n## B\n\nRun task B."));
+    const updatedA = changed.records.find((record) => record.sourceRecordKey === "section-1-a");
+    expect(updatedA?.content).toContain("updated");
+    const removed = await store.ingestSource("tenant-a", source("## A\n\nRun task A updated."));
+    expect(removed.records).toHaveLength(1);
+    const removedB = Array.from(store.records.values()).find((record) => record.sourceRecordKey === "section-2-b");
+    expect(removedB?.metadata.lifecycle_status).toBe("unpublished");
+    expect(removedB?.metadata.source_refresh_state).toBe("removed");
+    const allB = await store.search({ workspaceId: "tenant-a", query: "task B", knowledgeTypes: ["procedural"], limit: 5 });
+    expect(allB.map((hit) => hit.record.sourceRecordKey)).not.toContain("section-2-b");
   });
 
   it("conservatively converts generic HTML into visible source text", () => {

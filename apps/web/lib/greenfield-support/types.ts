@@ -43,6 +43,7 @@ export const PROCEDURE_BLOCK_KINDS = [
 export type ProcedureBlockKind = (typeof PROCEDURE_BLOCK_KINDS)[number];
 
 export type ProcedureBlock = JsonObject & {
+  block_id?: string;
   kind: ProcedureBlockKind;
   text: string;
   list_style?: "ordered" | "unordered" | null;

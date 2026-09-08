@@ -105,9 +105,17 @@ function procedureBlockText(value: unknown): string {
   return "";
 }
 
+function procedureBlockId(value: unknown, index: number): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const explicit = cleanText((value as Record<string, unknown>).block_id ?? (value as Record<string, unknown>).id);
+    if (explicit) return explicit;
+  }
+  return `block_${index + 1}`;
+}
+
 function normalizeProcedureBlocks(value: unknown): ProcedureBlock[] {
   if (!Array.isArray(value)) return [];
-  return value.map((item): ProcedureBlock | null => {
+  return value.map((item, index): ProcedureBlock | null => {
     const object = item && typeof item === "object" && !Array.isArray(item)
       ? item as Record<string, unknown>
       : {};
@@ -126,6 +134,7 @@ function normalizeProcedureBlocks(value: unknown): ProcedureBlock[] {
       ? object.source as Record<string, unknown>
       : null;
     return {
+      block_id: procedureBlockId(item, index),
       kind,
       text,
       list_style: listStyle,
@@ -183,7 +192,7 @@ export function parseProcedureBlocks(value: string): ProcedureBlock[] {
     }
     blocks.push({ kind, text, list_style: listStyle, source: { line: index + 1, excerpt: original } });
   }
-  return blocks;
+  return normalizeProcedureBlocks(blocks);
 }
 
 export function splitMarkdownKnowledgeSource(
@@ -1414,9 +1423,10 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     const { data, error } = result;
     if (error || !data?.id) throw new Error(error?.message || "Could not store greenfield knowledge record.");
 
-    // A same-hash source update only changes provenance/structure metadata;
-    // preserve existing chunks and embeddings. Changed content gets a clean
-    // derived index, while drafts remain cheap to review.
+    // A same-hash source update preserves the canonical record and derived
+    // chunks. Changed content gets a clean derived index, while drafts remain
+    // cheap to review. Published records also repair missing embeddings from
+    // legacy or interrupted ingestion without changing canonical content.
     const contentChanged = Boolean(existingId && existingContentHash && existingContentHash !== record.contentHash);
     if (!existingId || contentChanged) {
       if (contentChanged) {
@@ -1439,10 +1449,11 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           .insert(chunks);
         if (chunkResult.error) throw new Error(chunkResult.error.message);
       }
-      // Draft candidates are intentionally usable for review without paying
-      // for embeddings. Publishing creates the embeddings retrieval needs.
-      if (isPublished({ metadata: payload.metadata })) await this.ensureChunkEmbeddings(record.workspaceId, String(data.id));
     }
+    // Draft candidates are intentionally usable for review without paying for
+    // embeddings. A published record must have every derived chunk indexed,
+    // including when it was adopted from an older Greenfield row.
+    if (isPublished({ metadata: payload.metadata })) await this.ensureChunkEmbeddings(record.workspaceId, String(data.id));
     return { ...record, id: String(data.id) };
   }
 
