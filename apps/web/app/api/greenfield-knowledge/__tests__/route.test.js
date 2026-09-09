@@ -131,6 +131,32 @@ describe("greenfield knowledge API", () => {
     expect(mocks.replaceSource).toHaveBeenCalledWith("workspace-a", "merchant-ui:one", expect.objectContaining({ metadata: expect.objectContaining({ lifecycle_status: "archived" }) }));
   });
 
+  it("supports published create and lifecycle transitions for every knowledge type", async () => {
+    const published = { ...merchantRecord, metadata: { lifecycle_status: "published", applies_to: { kind: "all", product_ids: [] } }, published_at: "2026-09-06T12:00:00.000Z", expires_at: null };
+    const service = makeSupabase({ records: [published] });
+    mocks.createServiceSupabase.mockReturnValue(service);
+
+    for (const type of ["policy", "product", "brand", "procedure"]) {
+      mocks.ingest.mockResolvedValueOnce({ id: "record-a" });
+      const response = await POST(new Request("http://localhost/api/greenfield-knowledge", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: `${type} guide`, type, status: "published", content: `Published ${type} guidance.`, applies_to: { kind: "all", product_ids: [] } }),
+      }));
+      expect(response.status).toBe(201);
+      expect(mocks.ingest).toHaveBeenLastCalledWith("workspace-a", expect.objectContaining({ knowledgeType: type === "procedure" ? "procedural" : type, metadata: expect.objectContaining({ lifecycle_status: "published" }) }));
+    }
+
+    const transition = await PATCH(new Request("http://localhost/api/greenfield-knowledge/record-a", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Connection steps", type: "procedure", status: "unpublished", content: "Use the reset button.", applies_to: { kind: "all", product_ids: [] } }),
+    }), { params: { id: "record-a" } });
+
+    expect(transition.status).toBe(200);
+    expect(mocks.replaceSource).toHaveBeenLastCalledWith("workspace-a", "merchant-ui:one", expect.objectContaining({ metadata: expect.objectContaining({ lifecycle_status: "unpublished" }) }));
+  });
+
   it("G/H: rejects product IDs outside the current Shopify store scope", async () => {
     const service = makeSupabase({ records: [], products: [] });
     mocks.createServiceSupabase.mockReturnValue(service);

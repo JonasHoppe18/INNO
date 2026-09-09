@@ -1555,6 +1555,20 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           };
         }
       }
+    } else {
+      // Merchant-authored UI records have one canonical record per source id
+      // but no source_record_key. Resolve that record before upserting so a
+      // lifecycle edit (draft -> published, etc.) updates it in place and
+      // does not attempt to insert its existing chunks again.
+      const existingBySource = await this.serviceClient
+        .from("greenfield_knowledge_records")
+        .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
+        .eq("workspace_id", record.workspaceId)
+        .eq("source_id", record.sourceId)
+        .maybeSingle();
+      if (existingBySource.error) throw new Error(existingBySource.error.message);
+      existingId = existingBySource.data?.id ? String(existingBySource.data.id) : null;
+      existingContentHash = existingBySource.data?.content_hash ? String(existingBySource.data.content_hash) : null;
     }
     const result = existingId
       ? await this.serviceClient.from("greenfield_knowledge_records").update(payload).eq("id", existingId).eq("workspace_id", record.workspaceId).select("*").single()

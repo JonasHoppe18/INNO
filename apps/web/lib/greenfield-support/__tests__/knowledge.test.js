@@ -483,6 +483,62 @@ describe("greenfield knowledge store", () => {
     expect((await store.search({ workspaceId: "tenant-a", query: "restart new receiver" }))[0].record.content).toContain("restart the new receiver");
   });
 
+  it("updates merchant-authored lifecycle in place without duplicating chunks", async () => {
+    let record = null;
+    let chunks = [];
+    let chunkInsertCount = 0;
+    const serviceClient = {
+      from(table) {
+        if (table === "greenfield_knowledge_records") {
+          const state = { operation: null, payload: null };
+          const builder = {
+            select() { return this; },
+            eq() { return this; },
+            maybeSingle: async () => ({ data: record, error: null }),
+            upsert(payload) { state.operation = "upsert"; state.payload = payload; return this; },
+            update(payload) { state.operation = "update"; state.payload = payload; return this; },
+            single: async () => {
+              record = { ...(record || {}), ...(state.payload || {}), id: record?.id || "record-1" };
+              return { data: record, error: null };
+            },
+          };
+          return builder;
+        }
+        if (table === "greenfield_knowledge_chunks") {
+          const state = { payload: null };
+          const builder = {
+            select() { return this; },
+            eq() { return this; },
+            order() { return this; },
+            insert(payload) { chunkInsertCount += 1; state.payload = payload; chunks = payload.map((chunk) => ({ ...chunk, id: `chunk-${chunk.chunk_index}`, embedding: [0] })); return Promise.resolve({ error: null }); },
+            then(resolve, reject) { return Promise.resolve({ data: chunks, error: null }).then(resolve, reject); },
+          };
+          return builder;
+        }
+        throw new Error(`Unexpected table: ${table}`);
+      },
+    };
+    const store = new SupabaseKnowledgeStore(serviceClient);
+    store.embedQuery = async () => [0];
+    const source = {
+      sourceKind: "merchant_authored",
+      sourceId: "merchant-ui:lifecycle",
+      title: "Lifecycle policy",
+      content: "Customers can return items within 30 days.",
+      knowledgeType: "policy",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "draft" },
+    };
+
+    const draft = await store.ingest("tenant-a", source);
+    const published = await store.ingest("tenant-a", { ...source, metadata: { lifecycle_status: "published" } });
+
+    expect(draft.id).toBe("record-1");
+    expect(published.id).toBe(draft.id);
+    expect(record.metadata.lifecycle_status).toBe("published");
+    expect(chunkInsertCount).toBe(1);
+  });
+
   it("selects a bounded relevant section instead of widening an adjacent chunk window", () => {
     const sections = selectEvidenceSections([
       { chunkId: "chunk-0", chunkIndex: 0, content: "Overview\n\nA wireless headset for everyday gaming." },
