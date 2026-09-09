@@ -881,7 +881,7 @@ function validateGroundedQuestion(
   segment: Extract<ResponseSegment, { type: "question" }>,
   context: ResponseValidationContext,
   index: number,
-  purpose: Extract<ResponseSegment["purpose"], "disambiguate_entity" | "disambiguate_variant" | "clarify_task" | "clarify_item">,
+  purpose: Extract<Extract<ResponseSegment, { type: "question" }>["purpose"], "disambiguate_entity" | "disambiguate_variant" | "clarify_task" | "clarify_item">,
 ) {
   const issues: ResponseValidationIssue[] = [];
   if (!segment.text?.trim()) issues.push({ index, code: "question_text_required", message: "A grounded clarification needs customer-facing question text." });

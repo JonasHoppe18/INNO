@@ -13,6 +13,7 @@ import {
   createGreenfieldConversationContextStore,
   loadGreenfieldThreadState,
 } from "@/lib/server/greenfield-thread-context";
+import { isGreenfieldPlaygroundEnabled } from "@/lib/server/greenfield-playground";
 
 export const runtime = "nodejs";
 
@@ -61,6 +62,9 @@ function normalizeHistory(value: unknown) {
 
 export async function POST(request: Request) {
   try {
+    if (!isGreenfieldPlaygroundEnabled()) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
     const body = await request.json().catch(() => null);
     const message = String(body?.message || "").trim();
     if (!message) return NextResponse.json({ error: "message is required." }, { status: 400 });

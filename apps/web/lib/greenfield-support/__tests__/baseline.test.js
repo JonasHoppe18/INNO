@@ -5,11 +5,11 @@ import { createDemoDependencies } from "../demo-fixtures";
 
 describe("greenfield representative contract baseline", () => {
   it("covers every fixed case through the general capability contracts", async () => {
-    const dependencies = await createDemoDependencies();
-    const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
     const results = [];
 
     for (const testCase of casesFile.cases) {
+      const dependencies = await createDemoDependencies();
+      const registry = createCapabilityRegistry({ ...dependencies, tenant: dependencies.tenant });
       const expected = testCase.expected || {};
       const observedTools = [];
       for (const toolName of expected.knowledge_capabilities || []) {

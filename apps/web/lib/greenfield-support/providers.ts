@@ -19,6 +19,26 @@ function orderMatches(order: OrderSnapshot, query: string): boolean {
   );
 }
 
+function serializeFulfillment(fulfillment: NonNullable<OrderSnapshot["fulfillments"]>[number]): JsonValue {
+  return {
+    id: fulfillment.id,
+    status: fulfillment.status ?? null,
+    carrier: fulfillment.carrier ?? null,
+    trackingNumber: fulfillment.trackingNumber ?? null,
+    trackingUrl: fulfillment.trackingUrl ?? null,
+    shipmentStatus: fulfillment.shipmentStatus ?? null,
+    items: fulfillment.items.map((item) => ({
+      orderLineItemId: item.orderLineItemId,
+      variantId: item.variantId ?? null,
+      title: item.title,
+      quantity: item.quantity,
+      orderedQuantity: item.orderedQuantity ?? null,
+      fulfilledQuantity: item.fulfilledQuantity ?? null,
+    })),
+    itemMappingStatus: fulfillment.itemMappingStatus,
+  };
+}
+
 export interface InMemoryCommerceData {
   customer?: CustomerSnapshot | null;
   orders?: OrderSnapshot[];
@@ -74,7 +94,7 @@ export class InMemoryCommerceProvider implements CommerceReadProvider {
       orderId: order.id,
       orderNumber: order.orderNumber,
       fulfillmentStatus: order.fulfillmentStatus ?? null,
-      fulfillments: order.fulfillments ?? [],
+      fulfillments: (order.fulfillments ?? []).map(serializeFulfillment),
     };
   }
 }

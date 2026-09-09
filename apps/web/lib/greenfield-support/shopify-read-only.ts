@@ -3,6 +3,7 @@ import type {
   CustomerSnapshot,
   FulfillmentItemSnapshot,
   FulfillmentSnapshot,
+  JsonObject,
   JsonValue,
   OrderSnapshot,
   ProductAvailabilityState,
@@ -159,6 +160,26 @@ function publicAvailabilityVariant(
   };
 }
 
+function serializeFulfillment(fulfillment: FulfillmentSnapshot): JsonObject {
+  return {
+    id: fulfillment.id,
+    status: fulfillment.status ?? null,
+    carrier: fulfillment.carrier ?? null,
+    trackingNumber: fulfillment.trackingNumber ?? null,
+    trackingUrl: fulfillment.trackingUrl ?? null,
+    shipmentStatus: fulfillment.shipmentStatus ?? null,
+    items: fulfillment.items.map((item) => ({
+      orderLineItemId: item.orderLineItemId,
+      variantId: item.variantId ?? null,
+      title: item.title,
+      quantity: item.quantity,
+      orderedQuantity: item.orderedQuantity ?? null,
+      fulfilledQuantity: item.fulfilledQuantity ?? null,
+    })),
+    itemMappingStatus: fulfillment.itemMappingStatus,
+  };
+}
+
 function mapOrder(raw: any): OrderSnapshot {
   const orderNumber = clean(raw?.order_number ?? raw?.name).replace(/^#/, "");
   const cancelled = Boolean(raw?.cancelled_at);
@@ -170,7 +191,7 @@ function mapOrder(raw: any): OrderSnapshot {
     quantity: integer(item?.quantity) ?? 0,
     variantId: item?.variant_id == null ? null : clean(item.variant_id),
   }));
-  const lineItemsById = new Map(lineItems.filter((item) => item.id).map((item) => [item.id, item]));
+  const lineItemsById = new Map<string, (typeof lineItems)[number]>(lineItems.filter((item) => item.id).map((item) => [item.id, item]));
   const fulfilledQuantities = new Map<string, number>();
   const rawFulfillments = Array.isArray(raw?.fulfillments) ? raw.fulfillments : [];
   for (const fulfillment of rawFulfillments) {
@@ -409,7 +430,7 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
       order_number: order.orderNumber,
       fulfillment_status: order.fulfillmentStatus,
       items: order.items ?? [],
-      fulfillments: order.fulfillments ?? [],
+      fulfillments: (order.fulfillments ?? []).map(serializeFulfillment),
     };
   }
 }

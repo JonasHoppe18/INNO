@@ -1,5 +1,6 @@
 import { InMemoryCommerceProvider, InMemoryTrackingProvider } from "./providers";
 import { InMemoryKnowledgeStore } from "./knowledge";
+import type { OrderSnapshot } from "./types";
 
 export const DEMO_TENANT = {
   workspaceId: "greenfield-demo-workspace",
@@ -94,11 +95,11 @@ export async function createDemoDependencies() {
   ];
   for (const source of sources) await knowledge.ingest(DEMO_TENANT.workspaceId, source);
 
-  const orders = [
-    { id: "shopify-10231", orderNumber: "10231", status: "fulfilled", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "149.00", currency: "EUR", items: [{ id: "line-10231", title: "Orion Wireless", quantity: 1 }], fulfillments: [{ id: "fulfillment-10231", status: "in_transit", carrier: "ParcelCo", trackingNumber: "PC10231", trackingUrl: "https://tracking.example.test/PC10231", shipmentStatus: "in_transit" }] },
+  const orders: OrderSnapshot[] = [
+    { id: "shopify-10231", orderNumber: "10231", status: "fulfilled", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "149.00", currency: "EUR", items: [{ id: "line-10231", title: "Orion Wireless", quantity: 1 }], fulfillments: [{ id: "fulfillment-10231", status: "in_transit", carrier: "ParcelCo", trackingNumber: "PC10231", trackingUrl: "https://tracking.example.test/PC10231", shipmentStatus: "in_transit", items: [], itemMappingStatus: "unavailable" }] },
     { id: "shopify-10232", orderNumber: "10232", status: "processing", financialStatus: "paid", fulfillmentStatus: null, total: "89.00", currency: "EUR", items: [{ id: "line-10232", title: "Orion Wired", quantity: 1 }], fulfillments: [] },
-    { id: "shopify-10233", orderNumber: "10233", status: "fulfilled", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "149.00", currency: "EUR", items: [{ id: "line-10233", title: "Orion Wireless", quantity: 1 }], fulfillments: [{ id: "fulfillment-10233", status: "exception", carrier: "ParcelCo", trackingNumber: "PC10233", trackingUrl: "https://tracking.example.test/PC10233", shipmentStatus: "exception" }] },
-    { id: "shopify-10234", orderNumber: "10234", status: "delivered", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "49.00", currency: "EUR", items: [{ id: "line-10234", title: "Orion replacement ear pads", quantity: 1 }], fulfillments: [{ id: "fulfillment-10234", status: "delivered", carrier: "ParcelCo", trackingNumber: "PC10234", trackingUrl: "https://tracking.example.test/PC10234", shipmentStatus: "delivered" }] },
+    { id: "shopify-10233", orderNumber: "10233", status: "fulfilled", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "149.00", currency: "EUR", items: [{ id: "line-10233", title: "Orion Wireless", quantity: 1 }], fulfillments: [{ id: "fulfillment-10233", status: "exception", carrier: "ParcelCo", trackingNumber: "PC10233", trackingUrl: "https://tracking.example.test/PC10233", shipmentStatus: "exception", items: [], itemMappingStatus: "unavailable" }] },
+    { id: "shopify-10234", orderNumber: "10234", status: "delivered", financialStatus: "paid", fulfillmentStatus: "fulfilled", total: "49.00", currency: "EUR", items: [{ id: "line-10234", title: "Orion replacement ear pads", quantity: 1 }], fulfillments: [{ id: "fulfillment-10234", status: "delivered", carrier: "ParcelCo", trackingNumber: "PC10234", trackingUrl: "https://tracking.example.test/PC10234", shipmentStatus: "delivered", items: [], itemMappingStatus: "unavailable" }] },
   ];
   const tracking = orders.filter((order) => order.fulfillments.length).map((order) => ({ orderId: order.id, carrier: order.fulfillments[0].carrier, trackingNumber: order.fulfillments[0].trackingNumber, trackingUrl: order.fulfillments[0].trackingUrl, status: order.fulfillments[0].shipmentStatus, statusText: order.fulfillments[0].shipmentStatus, observedAt: "2026-09-03T08:00:00.000Z" }));
   const commerce = new InMemoryCommerceProvider({

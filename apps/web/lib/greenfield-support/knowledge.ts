@@ -437,7 +437,7 @@ function extractContentRoot(value: string): { content: string; tag: (typeof CONT
 
 function extractMetaSummary(value: string): string {
   const descriptions: string[] = [];
-  for (const match of value.matchAll(/<meta\b[^>]*>/gi)) {
+  for (const match of Array.from(value.matchAll(/<meta\b[^>]*>/gi))) {
     const tag = match[0];
     const name = tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
     const content = tag.match(/\bcontent\s*=\s*["']([^"']+)["']/i)?.[1];
@@ -1223,7 +1223,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
   async ingestSource(workspaceId: string, source: KnowledgeSourceDocumentInput) {
     const normalized = await normalizeKnowledgeSourceDocument(workspaceId, source);
     const candidateKeys = new Set(normalized.records.map((record) => record.sourceRecordKey).filter(Boolean));
-    for (const [key, existing] of this.records) {
+    for (const [key, existing] of Array.from(this.records.entries())) {
       if (
         existing.workspaceId === workspaceId
         && existing.sourceId === source.sourceId
@@ -1256,7 +1256,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
       throw new Error("Source replacement requires matching workspace and source identity.");
     }
     const replacement = await this.ingest(normalizedWorkspaceId, source);
-    for (const [key, record] of this.records) {
+    for (const [key, record] of Array.from(this.records.entries())) {
       if (
         record.workspaceId === normalizedWorkspaceId &&
         record.sourceId === normalizedSourceId &&
