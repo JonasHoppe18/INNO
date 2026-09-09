@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Bot,
   ChevronDown,
   Database,
@@ -290,7 +288,6 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
 }
 
 export function GreenfieldPlayground() {
-  const router = useRouter();
   const scrollRef = useRef(null);
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -454,16 +451,6 @@ export function GreenfieldPlayground() {
   return (
     <div className="flex h-[calc(100vh-80px)] flex-col">
       <div className="flex items-center gap-4 pb-4">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 transition-transform active:scale-[0.97]"
-          onClick={() => router.push("/knowledge")}
-          aria-label="Back to knowledge"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div className="min-w-0 flex-1">
           <h1 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Agent Playground</h1>
           <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
