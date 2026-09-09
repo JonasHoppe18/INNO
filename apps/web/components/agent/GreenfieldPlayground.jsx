@@ -171,7 +171,7 @@ function AnswerInspector({ message }) {
   const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
   const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden px-4 pb-4 pt-4 xl:border-l xl:border-border/60 xl:pl-5 xl:pt-5 lg:max-h-full" aria-label="Answer evidence">
+    <aside className="flex min-h-0 flex-col overflow-hidden px-4 pb-4 pt-4 lg:border-l lg:border-border/60 lg:pl-5 lg:pt-5 lg:max-h-full" aria-label="Answer evidence">
       <div className="shrink-0 px-0 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -587,7 +587,7 @@ export function GreenfieldPlayground() {
             {ticketRequired ? "Test how Sona would handle a real support ticket in a safe, read-only workspace." : "Test a customer conversation with Sona in a safe, read-only workspace."}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <span className="text-[11px] font-medium text-muted-foreground">Read-only</span>
           {selectedSession ? (
             <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
@@ -631,7 +631,7 @@ export function GreenfieldPlayground() {
         </div>
       </details>
 
-      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden bg-card xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden bg-card lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
