@@ -18,6 +18,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+const STARTER_MESSAGES = [
+  "Where is my order?",
+  "Can I return this item?",
+  "Is this product compatible with my setup?",
+];
+
 function formatTime(value) {
   if (!value) return "";
   const parsed = new Date(value);
@@ -108,7 +114,7 @@ function SourceCard({ source, index }) {
   const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
   const preview = sections[0]?.content || "No excerpt captured in the trace.";
   return (
-    <details className="group overflow-hidden border-b border-border/60 bg-background/35 pb-2 last:border-b-0 transition-colors duration-150 ease-out open:bg-muted/20" open={index === 0}>
+    <details className="group overflow-hidden rounded-lg bg-muted/[0.22] pb-1 transition-colors duration-150 ease-out open:bg-muted/40" open={index === 0}>
       <summary className="flex cursor-pointer list-none items-start gap-3 px-2.5 py-3 transition-colors duration-150 ease-out hover:bg-muted/35">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
         <span className="min-w-0 flex-1">
@@ -121,7 +127,7 @@ function SourceCard({ source, index }) {
         </span>
         <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
       </summary>
-      <div className="px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+      <div className="px-3 pb-3 pt-1 text-xs leading-relaxed text-muted-foreground">
         <div className="mb-3 flex flex-wrap gap-1.5">
           {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
           {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
@@ -136,7 +142,7 @@ function SourceCard({ source, index }) {
           )) : <p className="text-foreground/70">{preview}</p>}
         </div>
         {(provenance.source_id || provenance.source_uri) ? (
-          <p className="mt-3 border-t border-border/60 pt-2 text-[10.5px] text-muted-foreground/80">
+          <p className="mt-3 pt-2 text-[10.5px] text-muted-foreground/80">
             {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri ? provenance.source_uri : ""}
           </p>
         ) : null}
@@ -165,23 +171,23 @@ function AnswerInspector({ message }) {
   const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
   const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden border-t border-border/70 pt-5 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0 lg:max-h-full" aria-label="Answer evidence">
-      <div className="shrink-0 px-0 pb-4">
+    <aside className="flex min-h-0 flex-col overflow-hidden px-4 pb-4 pt-4 xl:border-l xl:border-border/60 xl:pl-5 xl:pt-5 lg:max-h-full" aria-label="Answer evidence">
+      <div className="shrink-0 px-0 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer basis</p>
-            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Sources & checks</h2>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer details</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Why Sona replied</h2>
           </div>
-          {trace ? <span className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+          {trace ? <span className="rounded-full bg-muted/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-          {trace ? "The verified information and checks behind the selected Sona reply." : "Select a Sona reply to inspect what informed it."}
+          {trace ? "The verified information and checks behind the selected reply." : "The information behind a reply will appear here."}
         </p>
       </div>
       {!trace ? (
         <div className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center">
-          <p className="text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
-          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View evidence” below Sona’s reply.</p>
+          <p className="text-[13px] font-semibold text-foreground">No answer selected</p>
+          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message and select a reply to see its sources and checks.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-0 py-2">
@@ -191,7 +197,7 @@ function AnswerInspector({ message }) {
             <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
           </div>
 
-          <InspectorSection title="How the reply was formed">
+          <InspectorSection title="What informed the reply">
             <ol className="relative ml-1 flex flex-col gap-4 border-l border-border pl-4">
               {buildReasoningSteps(trace).map((step, index) => (
                 <li key={`${step.title}-${index}`} className="relative">
@@ -237,7 +243,7 @@ function AnswerInspector({ message }) {
           ) : null}
 
           <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
-            Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.
+            Only verified facts, provenance and high-level steps are shown.
           </div>
         </div>
       )}
@@ -272,14 +278,14 @@ function MessageBubble({ message, onInspect, inspected }) {
   const canInspect = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
-      <div className="w-full max-w-[min(88%,42rem)]">
+      <div className="w-full max-w-[min(78%,44rem)]">
         <div className={`flex items-center gap-2 ${isUser ? "" : "justify-end"}`}>
           <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
             {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
             {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
           </p>
         </div>
-        <p className={`mt-1 whitespace-pre-wrap rounded-[14px] px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-muted/70 text-foreground" : "rounded-tr-md bg-sky-50/70 text-foreground dark:bg-sky-950/25"}`}>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-sky-50 text-foreground dark:bg-sky-950/30"}`}>
           {message.content}
         </p>
         {canInspect ? (
@@ -573,17 +579,16 @@ export function GreenfieldPlayground() {
   }, [messages, sending]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Support simulation</p>
-          <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em] text-foreground">Conversation simulator</h1>
+          <h1 className="text-[22px] font-semibold tracking-[-0.025em] text-foreground">Playground</h1>
           <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-gray-500 dark:text-gray-400">
-            {ticketRequired ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Write a message and chat with Sona over multiple turns. This is a read-only simulation — nothing is sent or executed."}
+            {ticketRequired ? "Test how Sona would handle a real support ticket in a safe, read-only workspace." : "Test a customer conversation with Sona in a safe, read-only workspace."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Read-only</span>
+          <span className="text-[11px] font-medium text-muted-foreground">Read-only</span>
           {selectedSession ? (
             <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
               New conversation
@@ -600,14 +605,14 @@ export function GreenfieldPlayground() {
         </div>
       </div>
 
-      {error ? <div role="alert" className="rounded-xl border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
+      {error ? <div role="alert" className="shrink-0 rounded-xl bg-red-50/80 px-3.5 py-2.5 text-[12px] text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      <details className="group shrink-0 overflow-hidden rounded-xl bg-muted/25 shadow-[0_2px_10px_rgba(15,23,42,0.02)]">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/30">
+      <details className="group shrink-0 overflow-hidden rounded-lg bg-muted/35">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/55">
           <span>Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
         </summary>
-        <div className="border-t border-border/70 px-2 py-2">
+        <div className="px-2 pb-2">
           {sessions.length ? (
             <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
               {sessions.map((session) => (
@@ -626,15 +631,15 @@ export function GreenfieldPlayground() {
         </div>
       </details>
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)]">
-          <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden bg-card xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
-              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Freeform customer conversation"}</p>
+              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Customer conversation"}</p>
             </div>
             {!ticketRequired ? (
-              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-1.5 sm:max-w-[240px]">
+              <label className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/45 px-2.5 py-1.5 sm:max-w-[240px]">
                 <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Customer</span>
                 <input
                   id="playground-customer-email"
@@ -649,13 +654,31 @@ export function GreenfieldPlayground() {
             ) : null}
           </div>
 
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-6 overflow-y-auto bg-muted/[0.08] px-4 py-5 sm:px-6">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-muted/[0.12] px-5 py-5 sm:px-8">
             {loading ? <p className="text-[12px] text-muted-foreground">Loading playground…</p> : null}
             {!loading && !hasMessages ? (
-              <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 py-12 text-center animate-in fade-in-0 duration-300">
-                <div className="space-y-1.5">
-                  <p className="text-[14px] font-semibold text-foreground">{ticketRequired ? "Choose a production ticket" : "Start a conversation"}</p>
-                  <p className="max-w-sm text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s message below. Sona will respond and show the evidence behind the answer."}</p>
+              <div className="flex h-full min-h-[240px] flex-col items-center justify-center py-12 text-center animate-in fade-in-0 duration-300">
+                <div className="max-w-[30rem] space-y-1.5">
+                  <p className="text-[15px] font-semibold text-foreground">{ticketRequired ? "Choose a ticket to begin" : "Write the first message"}</p>
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Sona will create a candidate reply here without sending anything to the customer." : "Your messages and Sona's replies will appear here as a conversation."}</p>
+                  {!ticketRequired ? (
+                    <div className="mt-5 flex flex-wrap justify-center gap-2">
+                      {STARTER_MESSAGES.map((starterMessage) => (
+                        <button
+                          key={starterMessage}
+                          type="button"
+                          onClick={() => setDraft(starterMessage)}
+                          className="rounded-lg bg-background px-3 py-2 text-[11px] text-muted-foreground shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-900 hover:text-white active:scale-[0.98] dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                        >
+                          {starterMessage}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="mt-5 rounded-lg bg-background text-[11px] shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-transform active:scale-[0.98]">
+                      Choose ticket
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -671,16 +694,16 @@ export function GreenfieldPlayground() {
               <div className="flex justify-end animate-in fade-in-0 duration-200">
                 <div className="w-full max-w-[min(88%,42rem)]">
                   <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
-                  <div className="ml-auto mt-1 inline-flex rounded-[14px] rounded-tr-md bg-sky-50/70 px-3 py-2.5 dark:bg-sky-950/25"><TypingDots /></div>
+                  <div className="ml-auto mt-1 inline-flex rounded-[16px] rounded-tr-md bg-sky-50 px-4 py-3 dark:bg-sky-950/30"><TypingDots /></div>
                 </div>
               </div>
             ) : null}
           </div>
 
-          <form className="shrink-0 bg-transparent px-3 pb-3 pt-3 sm:px-4 sm:pb-4" onSubmit={send}>
-            <div className="mx-auto flex w-full flex-col overflow-hidden rounded-[22px] border border-border/60 bg-background/95 shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ease-out focus-within:border-border focus-within:bg-background focus-within:shadow-[0_14px_34px_hsl(var(--foreground)/0.09),0_0_0_3px_hsl(var(--foreground)/0.05)]">
-              <div className="flex items-center justify-between gap-3 px-4 pb-1 pt-3.5">
-                <span className="text-[11px] font-medium text-muted-foreground">Customer message</span>
+          <form className="shrink-0 bg-background px-4 pb-4 pt-3 sm:px-5" onSubmit={send}>
+            <div className="mx-auto flex w-full flex-col overflow-hidden rounded-xl bg-muted/[0.42] transition-[background-color,box-shadow] duration-150 ease-out focus-within:bg-muted/55 focus-within:shadow-[0_0_0_2px_hsl(var(--foreground)/0.08)]">
+              <div className="flex items-center justify-between gap-3 px-4 pb-0 pt-3">
+                <span className="text-[11px] font-medium text-foreground/70">Customer message</span>
                 <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘ Enter to send</span>
               </div>
               <textarea
@@ -697,9 +720,9 @@ export function GreenfieldPlayground() {
                 maxLength={12000}
                 disabled={sending || (ticketRequired && !selectedSession)}
                 aria-label="Customer message"
-                className="min-h-[84px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+                className="min-h-[68px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
               />
-              <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-1">
+              <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-0.5">
                 <p className="truncate text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
                 <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
                   <Send className="h-3.5 w-3.5" /> {sending ? "Thinking…" : "Send"}
