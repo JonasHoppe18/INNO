@@ -2,23 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot,
-  BookOpen,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
-  FileText,
-  Inbox,
-  Info,
   Loader2,
-  Plus,
-  RotateCcw,
   Search,
   Send,
-  ShieldCheck,
-  Sparkles,
-  User,
-  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,9 +27,9 @@ function formatTime(value) {
 function TypingDots() {
   return (
     <div className="flex items-center gap-1 py-0.5">
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300 [animation-delay:-0.3s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300 [animation-delay:-0.15s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
     </div>
   );
 }
@@ -120,11 +108,9 @@ function SourceCard({ source, index }) {
   const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
   const preview = sections[0]?.content || "No excerpt captured in the trace.";
   return (
-    <details className="group overflow-hidden rounded-xl border border-border/80 bg-background transition-[border-color,box-shadow] duration-150 ease-out open:border-violet-200 open:shadow-[0_8px_24px_rgba(91,33,182,0.06)]" open={index === 0}>
+    <details className="group overflow-hidden rounded-lg border border-border/80 bg-background transition-[border-color,box-shadow] duration-150 ease-out open:border-slate-300 open:shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:open:border-slate-700" open={index === 0}>
       <summary className="flex cursor-pointer list-none items-start gap-3 px-3.5 py-3.5 transition-colors duration-150 ease-out hover:bg-muted/35">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-violet-200/80 bg-violet-50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">
-          <FileText className="size-4" />
-        </span>
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
         <span className="min-w-0 flex-1">
           <span className="mb-1 flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
@@ -161,10 +147,9 @@ function SourceCard({ source, index }) {
 
 function ProviderCheck({ result }) {
   const successful = result?.status === "ok" || result?.status === "success";
-  const Icon = successful ? CheckCircle2 : result?.status ? XCircle : Info;
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
-      <Icon className={`mt-0.5 size-3.5 shrink-0 ${successful ? "text-emerald-600" : result?.status ? "text-amber-600" : "text-muted-foreground"}`} />
+      <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${successful ? "bg-emerald-500" : result?.status ? "bg-amber-500" : "bg-muted-foreground/50"}`} aria-hidden="true" />
       <div className="min-w-0">
         <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
         <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
@@ -180,29 +165,23 @@ function AnswerInspector({ message }) {
   const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
   const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_8px_30px_rgba(15,23,42,0.04)] lg:max-h-full" aria-label="Answer inspector">
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)] lg:max-h-full" aria-label="Answer evidence">
       <div className="shrink-0 border-b border-border/70 px-4 py-4">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 text-violet-700 dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-violet-300">
-            <Sparkles className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer inspector</p>
-            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Sources & reasoning</h2>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer basis</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Sources & checks</h2>
           </div>
-          {trace ? <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+          {trace ? <span className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-          {trace ? "A compact evidence trail for the selected Sona response." : "Select a Sona response to inspect what informed it."}
+          {trace ? "The verified information and checks behind the selected Sona reply." : "Select a Sona reply to inspect what informed it."}
         </p>
       </div>
       {!trace ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 text-muted-foreground">
-            <BookOpen className="size-5" />
-          </div>
-          <p className="mt-4 text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
-          <p className="mt-1 max-w-[24ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View answer basis” below Sona’s reply.</p>
+          <p className="text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
+          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View evidence” below Sona’s reply.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -212,11 +191,11 @@ function AnswerInspector({ message }) {
             <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
           </div>
 
-          <InspectorSection title="Why this answer" icon={Sparkles}>
-            <ol className="relative ml-1 flex flex-col gap-4 border-l border-violet-200 pl-4 dark:border-violet-900/60">
+          <InspectorSection title="How the reply was formed">
+            <ol className="relative ml-1 flex flex-col gap-4 border-l border-border pl-4">
               {buildReasoningSteps(trace).map((step, index) => (
                 <li key={`${step.title}-${index}`} className="relative">
-                  <span className={`absolute -left-[21px] top-0.5 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-violet-500" : "bg-muted-foreground/50"}`} />
+                  <span className={`absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-foreground" : "bg-muted-foreground/50"}`} />
                   <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
                 </li>
@@ -224,7 +203,7 @@ function AnswerInspector({ message }) {
             </ol>
           </InspectorSection>
 
-          <InspectorSection title="Knowledge sources" icon={BookOpen} count={sources.length}>
+          <InspectorSection title="Knowledge sources" count={sources.length}>
             {sources.length ? (
               <div className="flex flex-col gap-2">
                 {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
@@ -235,13 +214,13 @@ function AnswerInspector({ message }) {
           </InspectorSection>
 
           {providerResults.length ? (
-            <InspectorSection title="Live checks" icon={CheckCircle2} count={providerResults.length}>
+            <InspectorSection title="Live checks" count={providerResults.length}>
               <div className="flex flex-col gap-2">{providerResults.map((result, index) => <ProviderCheck key={`${result?.tool || "provider"}-${index}`} result={result} />)}</div>
             </InspectorSection>
           ) : null}
 
           {simulatedActions.length ? (
-            <InspectorSection title="Proposed actions" icon={ShieldCheck} count={simulatedActions.length}>
+            <InspectorSection title="Proposed actions" count={simulatedActions.length}>
               <div className="flex flex-col gap-2">
                 {simulatedActions.map((action, index) => (
                   <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
@@ -257,9 +236,8 @@ function AnswerInspector({ message }) {
             </InspectorSection>
           ) : null}
 
-          <div className="mt-5 flex items-start gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
-            <span>Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.</span>
+          <div className="mt-5 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+            Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.
           </div>
         </div>
       )}
@@ -267,11 +245,10 @@ function AnswerInspector({ message }) {
   );
 }
 
-function InspectorSection({ title, icon: Icon, count, children }) {
+function InspectorSection({ title, count, children }) {
   return (
     <section className="mb-5 last:mb-0">
       <div className="mb-2.5 flex items-center gap-2">
-        <Icon className="size-3.5 text-muted-foreground" />
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
         {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
       </div>
@@ -295,31 +272,27 @@ function MessageBubble({ message, onInspect, inspected }) {
   const canInspect = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
-      <div className={`flex w-full max-w-[min(88%,42rem)] gap-3 ${isUser ? "" : "flex-row-reverse"}`}>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${isUser ? "bg-gray-100 text-gray-500 ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700" : "bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50"}`} aria-hidden="true">
-          {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className={`text-[10.5px] font-semibold uppercase tracking-widest ${isUser ? "text-gray-400 dark:text-gray-500" : "text-right text-indigo-400 dark:text-indigo-500"}`}>
-          {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
-          {message.created_at ? <span className="ml-2 font-normal normal-case tracking-normal text-gray-300 dark:text-gray-600">{formatTime(message.created_at)}</span> : null}
+      <div className="w-full max-w-[min(88%,42rem)]">
+        <div className={`flex items-center gap-2 ${isUser ? "" : "justify-end"}`}>
+          <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
+            {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
+            {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
           </p>
-          <p className={`mt-1 whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50" : "rounded-tr-md border border-indigo-100 bg-indigo-50/70 text-left text-gray-700 shadow-[0_1px_3px_rgba(79,70,229,0.08)] dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-gray-200 dark:shadow-none"}`}>
-            {message.content}
-          </p>
-          {canInspect ? (
-            <button
-              type="button"
-              onClick={() => onInspect?.(message.id)}
-              className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
-              aria-pressed={inspected}
-            >
-              <Sparkles className="size-3" />
-              {inspected ? "Viewing answer basis" : "View answer basis"}
-              <ChevronRight className="size-3" />
-            </button>
-          ) : null}
         </div>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[14px] px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-muted/70 text-foreground ring-1 ring-inset ring-border/50" : "rounded-tr-md border border-sky-200/80 bg-sky-50/40 text-foreground dark:border-sky-900/70 dark:bg-sky-950/20"}`}>
+          {message.content}
+        </p>
+        {canInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect?.(message.id)}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            aria-pressed={inspected}
+          >
+            {inspected ? "Viewing evidence" : "View evidence"}
+            <ChevronRight className="size-3" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -380,10 +353,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
-          <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold">
-            <Inbox className="h-4 w-4 text-indigo-500" />
-            {productionMode ? "Choose a production ticket" : "Choose a previous ticket"}
-          </DialogTitle>
+          <DialogTitle className="text-[14px] font-semibold">{productionMode ? "Choose a production ticket" : "Choose a previous ticket"}</DialogTitle>
           <DialogDescription className="sr-only">
             Choose a scoped ticket to load its raw conversation into the read-only playground.
           </DialogDescription>
@@ -420,7 +390,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
                       <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">{ticket.ticket_number ? `#${ticket.ticket_number} · ` : ""}{ticket.subject || "(no subject)"}</span>
                       {ticket.customer_email ? <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">{ticket.customer_email}</span> : null}
                       {ticket.preview ? <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">{ticket.preview}</span> : null}
-                      {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-indigo-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
+                      {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-slate-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
                     </button>
                   </li>
                 ))}
@@ -603,30 +573,28 @@ export function GreenfieldPlayground() {
   }, [messages, sending]);
 
   return (
-    <div className="flex min-h-[680px] flex-col gap-4">
+    <div className="flex min-h-[680px] flex-1 flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-600 dark:text-violet-400">Internal workspace</p>
-          <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em] text-gray-900 dark:text-gray-100">Agent Playground</h1>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Support simulation</p>
+          <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em] text-foreground">Conversation simulator</h1>
           <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-gray-500 dark:text-gray-400">
             {ticketRequired ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Write a message and chat with Sona over multiple turns. This is a read-only simulation — nothing is sent or executed."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-            <ShieldCheck className="h-3.5 w-3.5" /> Read-only
-          </span>
+          <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Read-only</span>
           {selectedSession ? (
             <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
-              <RotateCcw className="h-3.5 w-3.5" /> New
+              New conversation
             </Button>
           ) : null}
           <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
-            <Inbox className="h-3.5 w-3.5" /> {ticketRequired ? "Choose ticket" : "Load ticket"}
+            {ticketRequired ? "Choose ticket" : "Load previous ticket"}
           </Button>
           {!ticketRequired ? (
-            <Button type="button" size="sm" onClick={newConversation} className="gap-1.5 rounded-lg bg-violet-600 text-white shadow-[0_4px_12px_rgba(124,58,237,0.18)] transition-[transform,background-color] duration-150 ease-out hover:bg-violet-700 active:scale-[0.98]">
-              <Plus className="h-3.5 w-3.5" /> New chat
+            <Button type="button" size="sm" onClick={newConversation} className="gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+              New conversation
             </Button>
           ) : null}
         </div>
@@ -634,9 +602,9 @@ export function GreenfieldPlayground() {
 
       {error ? <div role="alert" className="rounded-xl border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      <details className="shrink-0 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_2px_10px_rgba(15,23,42,0.025)]">
+      <details className="group shrink-0 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_2px_10px_rgba(15,23,42,0.02)]">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/30">
-          <span className="inline-flex items-center gap-2"><Inbox className="h-3.5 w-3.5 text-muted-foreground" /> Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
+          <span>Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
         </summary>
         <div className="border-t border-border/70 px-2 py-2">
@@ -646,7 +614,7 @@ export function GreenfieldPlayground() {
                 <button
                   type="button"
                   key={session.id}
-                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-violet-50/80 dark:bg-violet-950/30" : ""}`}
+                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-sky-50/70 dark:bg-sky-950/25" : ""}`}
                   onClick={() => load(session.id)}
                 >
                   <span className="truncate font-medium text-foreground">{session.title}</span>
@@ -659,14 +627,11 @@ export function GreenfieldPlayground() {
       </details>
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)]">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300"><Bot className="size-4" /></span>
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
-                <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Freeform customer conversation"}</p>
-              </div>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
+              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Freeform customer conversation"}</p>
             </div>
             {!ticketRequired ? (
               <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-1.5 sm:max-w-[240px]">
@@ -684,13 +649,10 @@ export function GreenfieldPlayground() {
             ) : null}
           </div>
 
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-6 overflow-y-auto bg-gradient-to-b from-muted/[0.12] to-background px-4 py-5 sm:px-6">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-6 overflow-y-auto bg-muted/[0.08] px-4 py-5 sm:px-6">
             {loading ? <p className="text-[12px] text-muted-foreground">Loading playground…</p> : null}
             {!loading && !hasMessages ? (
-              <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-300">
-                <div className="flex size-14 items-center justify-center rounded-2xl border border-violet-200/80 bg-gradient-to-br from-violet-50 to-indigo-50 text-violet-600 shadow-[0_8px_24px_rgba(124,58,237,0.08)] dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-violet-300">
-                  <Sparkles className="size-6" />
-                </div>
+              <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 py-12 text-center animate-in fade-in-0 duration-300">
                 <div className="space-y-1.5">
                   <p className="text-[14px] font-semibold text-foreground">{ticketRequired ? "Choose a production ticket" : "Start a conversation"}</p>
                   <p className="max-w-sm text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s message below. Sona will respond and show the evidence behind the answer."}</p>
@@ -707,16 +669,16 @@ export function GreenfieldPlayground() {
             ))}
             {sending ? (
               <div className="flex justify-end animate-in fade-in-0 duration-200">
-                <div className="flex w-full max-w-[min(88%,42rem)] flex-row-reverse gap-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-800/50"><Bot className="h-3.5 w-3.5" /></div>
-                  <div className="min-w-0 flex-1 space-y-1.5"><p className="text-right text-[10.5px] font-semibold uppercase tracking-widest text-violet-500 dark:text-violet-400">Sona</p><div className="ml-auto inline-flex rounded-2xl rounded-tr-md border border-violet-100 bg-violet-50/70 px-3 py-2.5 shadow-[0_1px_3px_rgba(79,70,229,0.08)] dark:border-violet-900/60 dark:bg-violet-950/30"><TypingDots /></div></div>
+                <div className="w-full max-w-[min(88%,42rem)]">
+                  <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
+                  <div className="ml-auto mt-1 inline-flex rounded-[14px] rounded-tr-md border border-sky-200/80 bg-sky-50/40 px-3 py-2.5 dark:border-sky-900/70 dark:bg-sky-950/20"><TypingDots /></div>
                 </div>
               </div>
             ) : null}
           </div>
 
           <form className="shrink-0 border-t border-border/70 bg-card p-3 sm:p-4" onSubmit={send}>
-            <div className="rounded-xl border border-border/80 bg-background shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-violet-300 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.08)] dark:focus-within:border-violet-700">
+            <div className="rounded-xl border border-border/80 bg-background shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-slate-400 focus-within:shadow-[0_0_0_3px_rgba(15,23,42,0.06)] dark:focus-within:border-slate-600">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -735,7 +697,7 @@ export function GreenfieldPlayground() {
               />
               <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
                 <p className="truncate px-1 text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
-                <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-violet-600 text-white shadow-[0_4px_12px_rgba(124,58,237,0.18)] transition-[transform,background-color] duration-150 ease-out hover:bg-violet-700 active:scale-[0.98]">
+                <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
                   <Send className="h-3.5 w-3.5" /> {sending ? "Thinking…" : "Send"}
                 </Button>
               </div>
