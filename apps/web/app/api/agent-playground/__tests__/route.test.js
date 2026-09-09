@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
   isInternalGreenfieldPlaygroundUser: vi.fn(),
+  isGreenfieldPlaygroundTicketRequired: vi.fn(),
   isGreenfieldPlaygroundProduction: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
   PlaygroundDryRunExecutor: class PlaygroundDryRunExecutor {},
@@ -36,6 +37,7 @@ vi.mock("@/lib/server/greenfield-playground", () => ({
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT: 20,
   isGreenfieldPlaygroundEnabled: () => true,
   isGreenfieldPlaygroundProduction: mocks.isGreenfieldPlaygroundProduction,
+  isGreenfieldPlaygroundTicketRequired: mocks.isGreenfieldPlaygroundTicketRequired,
   isInternalGreenfieldPlaygroundUser: mocks.isInternalGreenfieldPlaygroundUser,
   greenfieldPlaygroundEnvironment: () => "development",
   isOwnedPlaygroundSession: (session, scope) => session?.workspace_id === scope.workspaceId && session?.owner_clerk_user_id === scope.clerkUserId,
@@ -80,6 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   authScope();
   mocks.isInternalGreenfieldPlaygroundUser.mockResolvedValue(true);
+  mocks.isGreenfieldPlaygroundTicketRequired.mockReturnValue(false);
   mocks.isGreenfieldPlaygroundProduction.mockReturnValue(false);
   mocks.resolveScopedShop.mockResolvedValue({ id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" });
   mocks.listScopedShops.mockResolvedValue([{ id: "shop-a", workspace_id: "workspace-a" }]);
@@ -104,6 +107,7 @@ describe("greenfield agent playground API", () => {
 
   it("A3: refuses free-form session creation in production mode", async () => {
     mocks.createClient.mockReturnValue({ from: vi.fn() });
+    mocks.isGreenfieldPlaygroundTicketRequired.mockReturnValue(true);
     mocks.isGreenfieldPlaygroundProduction.mockReturnValue(true);
     const response = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
@@ -156,8 +160,27 @@ describe("greenfield agent playground API", () => {
       body: JSON.stringify({ action: "create", customer_email: session.customer_email }),
     }));
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ticket_required: false, session: { id: "session-a" } });
     expect(client.from).toHaveBeenCalledWith("greenfield_playground_sessions");
     expect(client.from.mock.calls.map(([table]) => table)).not.toEqual(expect.arrayContaining(["mail_threads", "mail_messages", "drafts", "draft_generations"]));
+  });
+
+  it("D1: keeps free-form creation available for an explicitly authorized internal environment", async () => {
+    const session = { id: "session-freeform", workspace_id: "workspace-a", owner_clerk_user_id: "clerk-user-a", title: "New conversation", customer_email: null };
+    const create = chain({ singleResult: { data: session, error: null } });
+    const client = { from: vi.fn(() => create) };
+    mocks.createClient.mockReturnValue(client);
+    mocks.isGreenfieldPlaygroundProduction.mockReturnValue(true);
+    mocks.isGreenfieldPlaygroundTicketRequired.mockReturnValue(false);
+
+    const response = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create" }),
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ticket_required: false, session: { id: "session-freeform" } });
   });
 
   it("D2: imports only a scoped raw ticket into dedicated playground storage", async () => {

@@ -4,6 +4,7 @@ const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TRACE_STRING_LENGTH = 420;
 const MAX_EVIDENCE_SECTIONS = 2;
+const GREENFIELD_DEV_SUPABASE_PROJECT_REF = "zxaoycxzdjrbnzvbullk";
 
 export const GREENFIELD_PLAYGROUND_MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;
 export const GREENFIELD_PLAYGROUND_HISTORY_LIMIT = MAX_HISTORY_MESSAGES;
@@ -44,6 +45,19 @@ export function isGreenfieldPlaygroundEnabled(env = process.env) {
 
 export function isGreenfieldPlaygroundProduction(env = process.env) {
   return greenfieldPlaygroundEnvironment(env) === "production";
+}
+
+export function isGreenfieldPlaygroundFreeformEnabled(env = process.env) {
+  if (!isGreenfieldPlaygroundProduction(env)) return true;
+  if (env.GREENFIELD_PLAYGROUND_ALLOW_FREEFORM !== "true") return false;
+
+  const actualProjectRef = supabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL || env.SUPABASE_URL);
+  const configuredProjectRef = String(env.GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF || "").trim();
+  return actualProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF && configuredProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF;
+}
+
+export function isGreenfieldPlaygroundTicketRequired(env = process.env) {
+  return !isGreenfieldPlaygroundFreeformEnabled(env);
 }
 
 export async function isInternalGreenfieldPlaygroundUser(serviceClient, { workspaceId, clerkUserId } = {}) {

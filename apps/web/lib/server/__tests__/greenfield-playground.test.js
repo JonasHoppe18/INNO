@@ -3,6 +3,8 @@ import {
   historyFromPlaygroundRows,
   isInternalGreenfieldPlaygroundUser,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundFreeformEnabled,
+  isGreenfieldPlaygroundTicketRequired,
   isOwnedPlaygroundSession,
   normalizePlaygroundContext,
   normalizePlaygroundCustomerEmail,
@@ -28,6 +30,28 @@ describe("greenfield playground boundary", () => {
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "prodref",
       NEXT_PUBLIC_SUPABASE_URL: "https://dev-ref.supabase.co",
     })).toBe(false);
+  });
+
+  it("A1: allows free-form only for the explicitly authorized development project", () => {
+    expect(isGreenfieldPlaygroundFreeformEnabled({ NODE_ENV: "development" })).toBe(true);
+    expect(isGreenfieldPlaygroundFreeformEnabled({
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ALLOW_FREEFORM: "true",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
+      NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
+    })).toBe(true);
+    expect(isGreenfieldPlaygroundTicketRequired({
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ALLOW_FREEFORM: "true",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "prodref",
+      NEXT_PUBLIC_SUPABASE_URL: "https://prodref.supabase.co",
+    })).toBe(true);
+    expect(isGreenfieldPlaygroundTicketRequired({
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ALLOW_FREEFORM: "true",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
+      NEXT_PUBLIC_SUPABASE_URL: "https://other.supabase.co",
+    })).toBe(true);
   });
 
   it("A2: limits access to workspace administrators", async () => {

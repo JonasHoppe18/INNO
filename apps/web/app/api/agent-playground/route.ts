@@ -14,6 +14,7 @@ import {
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT,
   historyFromPlaygroundRows,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundTicketRequired,
   isGreenfieldPlaygroundProduction,
   isInternalGreenfieldPlaygroundUser,
   isOwnedPlaygroundSession,
@@ -306,6 +307,7 @@ export async function GET(request: Request) {
       });
       return NextResponse.json({
         environment: greenfieldPlaygroundEnvironment(),
+        ticket_required: isGreenfieldPlaygroundTicketRequired(),
         tickets,
       });
     }
@@ -317,6 +319,7 @@ export async function GET(request: Request) {
     const shop = await resolveVisibleShop(serviceClient, scope);
     return NextResponse.json({
       environment: greenfieldPlaygroundEnvironment(),
+      ticket_required: isGreenfieldPlaygroundTicketRequired(),
       workspace_id: scope.workspaceId,
       active_store: shop ? { id: shop.id, domain: shop.shop_domain } : null,
       sessions: rows.map(publicPlaygroundSession),
@@ -338,7 +341,7 @@ export async function POST(request: Request) {
     const action = String(body?.action || "send").trim().toLowerCase();
 
     if (action === "create") {
-      if (isGreenfieldPlaygroundProduction()) {
+      if (isGreenfieldPlaygroundTicketRequired()) {
         return NextResponse.json({ error: "Select a real production ticket before running the playground." }, { status: 400 });
       }
       const customer = normalizePlaygroundCustomerEmail(body?.customer_email);
@@ -354,7 +357,7 @@ export async function POST(request: Request) {
         .select("id, workspace_id, owner_clerk_user_id, customer_email, title, created_at, updated_at")
         .single();
       if (error) throw new Error(error.message);
-      return NextResponse.json({ environment: greenfieldPlaygroundEnvironment(), session: publicPlaygroundSession(data), messages: [], context: null });
+      return NextResponse.json({ environment: greenfieldPlaygroundEnvironment(), ticket_required: isGreenfieldPlaygroundTicketRequired(), session: publicPlaygroundSession(data), messages: [], context: null });
     }
 
     if (action === "import_ticket") {
@@ -408,6 +411,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         environment: greenfieldPlaygroundEnvironment(),
+        ticket_required: isGreenfieldPlaygroundTicketRequired(),
         session: publicPlaygroundSession(session),
         messages: importedMessages.map(publicPlaygroundMessage),
         context: null,
@@ -425,7 +429,7 @@ export async function POST(request: Request) {
     if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
     const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
     if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
-    if (isGreenfieldPlaygroundProduction() && !String(session.conversation_context_json?.sourceThreadId || "").trim()) {
+    if (isGreenfieldPlaygroundTicketRequired() && !String(session.conversation_context_json?.sourceThreadId || "").trim()) {
       return NextResponse.json({ error: "Only a server-imported production ticket can be evaluated." }, { status: 400 });
     }
     const messages = await loadMessages(serviceClient, scope, authState.userId, session.id);
@@ -522,6 +526,7 @@ export async function POST(request: Request) {
     if (updateError) throw new Error(updateError.message);
     return NextResponse.json({
       environment: greenfieldPlaygroundEnvironment(),
+      ticket_required: isGreenfieldPlaygroundTicketRequired(),
       session: publicPlaygroundSession(updatedSession),
       messages: Array.isArray(insertedMessages) ? insertedMessages.map(publicPlaygroundMessage) : [],
       context: contextAfter,

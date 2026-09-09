@@ -303,6 +303,7 @@ export function GreenfieldPlayground() {
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [environment, setEnvironment] = useState("development");
+  const [ticketRequired, setTicketRequired] = useState(true);
   const productionMode = environment === "production";
 
   const load = useCallback(async (sessionId = "") => {
@@ -318,6 +319,7 @@ export function GreenfieldPlayground() {
     }
     setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
     setEnvironment(payload.environment === "production" ? "production" : "development");
+    setTicketRequired(payload.ticket_required === true);
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
     setContext(payload.context || null);
@@ -465,7 +467,7 @@ export function GreenfieldPlayground() {
         <div className="min-w-0 flex-1">
           <h1 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Agent Playground</h1>
           <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
-            {productionMode ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Test how Sona answers over multiple turns. This is a read-only simulation — nothing is sent or executed."}
+            {ticketRequired ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Write a message and chat with Sona over multiple turns. This is a read-only simulation — nothing is sent or executed."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -478,9 +480,9 @@ export function GreenfieldPlayground() {
             </Button>
           ) : null}
           <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 transition-transform active:scale-[0.97]">
-            <Inbox className="h-3.5 w-3.5" /> {productionMode ? "Choose ticket" : "Load ticket"}
+            <Inbox className="h-3.5 w-3.5" /> {ticketRequired ? "Choose ticket" : "Load ticket"}
           </Button>
-          {!productionMode ? (
+          {!ticketRequired ? (
             <Button type="button" variant="outline" size="sm" onClick={newConversation} className="gap-1.5 transition-transform active:scale-[0.97]">
               <Plus className="h-3.5 w-3.5" /> New conversation
             </Button>
@@ -490,7 +492,7 @@ export function GreenfieldPlayground() {
 
       {error ? <div role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      {!productionMode ? <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
+      {!ticketRequired ? <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
         <div className="grid grid-cols-1 divide-y divide-gray-100 dark:divide-gray-800">
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
             <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer</span>
@@ -536,8 +538,8 @@ export function GreenfieldPlayground() {
         {!loading && !hasMessages ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-500">
             <div className="space-y-1">
-              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">{productionMode ? "Choose a production ticket" : "Start a test conversation"}</p>
-          <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{productionMode ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
+              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">{ticketRequired ? "Choose a production ticket" : "Start a test conversation"}</p>
+          <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{ticketRequired ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
             </div>
           </div>
         ) : null}
@@ -560,22 +562,22 @@ export function GreenfieldPlayground() {
               send(event);
             }
           }}
-          placeholder={productionMode && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message... (Cmd+Enter to send)" : "Write the customer's first message... (Cmd+Enter to send)"}
+          placeholder={ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message... (Cmd+Enter to send)" : "Write the customer's first message... (Cmd+Enter to send)"}
           rows={3}
           maxLength={12000}
-          disabled={sending || (productionMode && !selectedSession)}
+          disabled={sending || (ticketRequired && !selectedSession)}
           aria-label="Customer message"
           className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
         />
         <div className="flex items-center justify-between gap-3">
           <p className="px-1 text-[11.5px] text-gray-400 dark:text-gray-500">Turn {currentTurn} · read-only simulation · no customer message will be sent</p>
-          <Button type="submit" size="sm" disabled={!draft.trim() || sending || (productionMode && !selectedSession)} className="gap-1.5 transition-transform active:scale-[0.97]">
+          <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="gap-1.5 transition-transform active:scale-[0.97]">
             <Send className="h-3.5 w-3.5" /> {sending ? "Running…" : hasMessages ? "Send next message" : "Send & generate reply"}
           </Button>
         </div>
       </form>
 
-      <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={productionMode} />
+      <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={ticketRequired} />
     </div>
   );
 }
