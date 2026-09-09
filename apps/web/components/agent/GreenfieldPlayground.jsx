@@ -677,8 +677,12 @@ export function GreenfieldPlayground() {
             ) : null}
           </div>
 
-          <form className="shrink-0 border-t border-border/70 bg-card p-3 sm:p-4" onSubmit={send}>
-            <div className="rounded-xl bg-muted/25 shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[background-color,box-shadow] duration-150 ease-out focus-within:bg-muted/35 focus-within:shadow-[0_0_0_3px_rgba(15,23,42,0.06)]">
+          <form className="shrink-0 bg-transparent px-3 pb-3 pt-3 sm:px-4 sm:pb-4" onSubmit={send}>
+            <div className="mx-auto flex w-full flex-col overflow-hidden rounded-[22px] border border-border/60 bg-background/95 shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ease-out focus-within:border-border focus-within:bg-background focus-within:shadow-[0_14px_34px_hsl(var(--foreground)/0.09),0_0_0_3px_hsl(var(--foreground)/0.05)]">
+              <div className="flex items-center justify-between gap-3 px-4 pb-1 pt-3.5">
+                <span className="text-[11px] font-medium text-muted-foreground">Customer message</span>
+                <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘ Enter to send</span>
+              </div>
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -693,16 +697,15 @@ export function GreenfieldPlayground() {
                 maxLength={12000}
                 disabled={sending || (ticketRequired && !selectedSession)}
                 aria-label="Customer message"
-                className="w-full resize-none rounded-xl border-0 bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+                className="min-h-[84px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
               />
-              <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
-                <p className="truncate px-1 text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
+              <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-1">
+                <p className="truncate text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
                 <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
                   <Send className="h-3.5 w-3.5" /> {sending ? "Thinking…" : "Send"}
                 </Button>
               </div>
             </div>
-            <p className="mt-2 px-1 text-[10px] text-muted-foreground/70">⌘ Enter to send · Sona&apos;s evidence appears in the inspector</p>
           </form>
         </section>
 
