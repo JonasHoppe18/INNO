@@ -42,7 +42,7 @@ export default async function PlaygroundPage() {
   }
 
   return (
-    <DashboardPageShell className="flex min-h-svh flex-col space-y-0">
+    <DashboardPageShell className="flex min-h-0 flex-1 flex-col space-y-0 overflow-hidden">
       <GreenfieldPlayground />
     </DashboardPageShell>
   );

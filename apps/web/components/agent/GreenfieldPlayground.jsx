@@ -573,7 +573,7 @@ export function GreenfieldPlayground() {
   }, [messages, sending]);
 
   return (
-    <div className="flex min-h-[680px] flex-1 flex-col gap-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Support simulation</p>

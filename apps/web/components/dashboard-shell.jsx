@@ -11,7 +11,8 @@ export function DashboardShell({ children }) {
   const pathname = usePathname();
   const isInboxWorkspace = pathname === "/inbox";
   const isSettingsWorkspace = pathname === "/settings";
-  const isFixedWorkspace = isInboxWorkspace || isSettingsWorkspace;
+  const isPlaygroundWorkspace = pathname === "/playground";
+  const isFixedWorkspace = isInboxWorkspace || isSettingsWorkspace || isPlaygroundWorkspace;
 
   return (
     <SidebarInset className={cn(isFixedWorkspace ? "h-[calc(100svh_-_var(--app-top-offset,0px))] overflow-hidden" : "min-h-svh")}>
