@@ -724,8 +724,16 @@ export function GreenfieldPlayground() {
               />
               <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-0.5">
                 <p className="truncate text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
-                <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
-                  <Send className="h-3.5 w-3.5" /> {sending ? "Thinking…" : "Send"}
+                <Button
+                  type="submit"
+                  disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)}
+                  aria-label={sending ? "Thinking" : "Send message"}
+                  title={sending ? "Thinking…" : "Send message (⌘↵ / Ctrl+↵)"}
+                  aria-busy={sending}
+                  aria-keyshortcuts="Meta+Enter Control+Enter"
+                  className="h-9 w-9 shrink-0 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-2"
+                >
+                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
