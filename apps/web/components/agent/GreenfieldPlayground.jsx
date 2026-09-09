@@ -3,16 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  BookOpen,
+  CheckCircle2,
   ChevronDown,
-  Database,
+  ChevronRight,
+  FileText,
   Inbox,
+  Info,
   Loader2,
   Plus,
   RotateCcw,
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   User,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,117 +53,246 @@ function actionLabel(value) {
     .join(" ");
 }
 
-function TraceDetails({ trace }) {
-  const [open, setOpen] = useState(false);
-  if (!trace) return null;
-  const toolCalls = Array.isArray(trace.events) ? trace.events.filter((event) => event.type === "tool_call") : [];
-  const providerResults = Array.isArray(trace.provider_results) ? trace.provider_results : [];
-  const simulatedActions = Array.isArray(trace.simulated_actions) ? trace.simulated_actions : [];
+function humanize(value) {
+  return String(value || "unknown")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function toolLabel(value) {
+  const labels = {
+    search_policy: "Merchant policy",
+    search_product_knowledge: "Product knowledge",
+    search_historical_cases: "Previous support cases",
+    get_brand_guidance: "Brand guidance",
+    get_procedure: "Merchant procedure",
+    get_order: "Order details",
+    get_order_history: "Order history",
+    get_customer: "Customer details",
+    get_product: "Live product details",
+    get_fulfillment: "Fulfillment details",
+    get_tracking: "Tracking details",
+    get_shipment: "Shipment details",
+  };
+  return labels[value] || humanize(value);
+}
+
+function resultForTool(trace, event) {
+  return (trace?.events || []).find((candidate) => (
+    candidate?.type === "tool_result" &&
+    ((event?.call_id && candidate.call_id === event.call_id) || candidate.name === event?.name)
+  ));
+}
+
+function buildReasoningSteps(trace) {
+  const events = Array.isArray(trace?.events) ? trace.events : [];
+  const toolCalls = events.filter((event) => event?.type === "tool_call");
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const steps = toolCalls.slice(0, 6).map((event) => {
+    const result = resultForTool(trace, event);
+    const resultData = result?.result?.data;
+    const resultCount = Array.isArray(resultData?.results) ? resultData.results.length : 0;
+    const status = result?.result?.status;
+    const detail = resultCount
+      ? `${resultCount} relevant result${resultCount === 1 ? "" : "s"} returned.`
+      : status && status !== "ok"
+        ? `Result: ${humanize(status)}.`
+        : "Checked and continued with the available result.";
+    return { title: toolLabel(event.name), detail, status: status === "ok" || resultCount > 0 ? "complete" : "neutral" };
+  });
+
+  if (!steps.length && sources.length) {
+    steps.push({ title: "Supporting knowledge", detail: `${sources.length} source${sources.length === 1 ? "" : "s"} was attached to the response.`, status: "complete" });
+  }
+  if (!steps.length) {
+    steps.push({ title: "Safe fallback", detail: "No supporting tool result was recorded, so the response stayed within the verified information available.", status: "neutral" });
+  }
+  steps.push({
+    title: "Composed the reply",
+    detail: sources.length ? "The answer was written from the evidence and checks shown below." : "The answer was written without inventing an unsupported fact.",
+    status: "complete",
+  });
+  return steps;
+}
+
+function SourceCard({ source, index }) {
+  const provenance = source?.provenance || {};
+  const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
+  const preview = sections[0]?.content || "No excerpt captured in the trace.";
   return (
-    <div className="mt-2 rounded-lg border border-gray-100 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.03)] dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[11px] font-medium text-gray-500 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800/50"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-      >
-        <span className="flex items-center gap-2">
-          <Database className="h-3.5 w-3.5" aria-hidden="true" />
-          Developer trace
-          <span className="font-normal">{toolCalls.length} tool call{toolCalls.length === 1 ? "" : "s"}</span>
+    <details className="group overflow-hidden rounded-xl border border-border/80 bg-background transition-[border-color,box-shadow] duration-150 ease-out open:border-violet-200 open:shadow-[0_8px_24px_rgba(91,33,182,0.06)]" open={index === 0}>
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-3.5 py-3.5 transition-colors duration-150 ease-out hover:bg-muted/35">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-violet-200/80 bg-violet-50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">
+          <FileText className="size-4" />
         </span>
-        <ChevronDown className={`h-3.5 w-3.5 ${open ? "rotate-180" : ""} transition-transform`} aria-hidden="true" />
-      </button>
-      {open ? (
-        <div className="flex flex-col gap-3 border-t border-gray-100 p-3 text-xs dark:border-gray-800">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <TraceMetric label="Runtime" value={trace.runtime || "@openai/agents"} />
-            <TraceMetric label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
-            <TraceMetric label="Availability" value={trace.availability_state || "Not used"} />
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <TraceMetric label="Order focus" value={trace.order_focus?.verified_order_number || trace.order_focus?.requested_order_id || "Unbound"} />
-            <TraceMetric label="Provider" value={providerResults.map((item) => item.provider).filter(Boolean).join(", ") || "Not used"} />
-          </div>
-          {simulatedActions.length ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">Simulated action</p>
-                <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:border-amber-800 dark:text-amber-300">DRY RUN</span>
-              </div>
-              {simulatedActions.map((action, index) => (
-                <div key={`${action.action}-${index}`} className="mt-2 space-y-2 border-t border-amber-200 pt-2 text-amber-900 dark:border-amber-900/60 dark:text-amber-200">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <TraceMetric label="Action" value={actionLabel(action.action)} />
-                    <TraceMetric label="Target" value={action.target?.order_id ? `#${action.target.order_id}` : "Not specified"} />
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <TraceMetric label="Validation" value={action.validation_status || "—"} />
-                    <TraceMetric label="Would execute" value={action.would_execute ? "Yes" : "No"} />
-                    <TraceMetric label="Executed" value="NO — PLAYGROUND SIMULATION" />
-                  </div>
-                  <div className="rounded border border-amber-200/70 bg-white/50 p-2 dark:border-amber-900/50 dark:bg-amber-950/10">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em]">Arguments</p>
-                    <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-[11px]">{JSON.stringify(action.arguments || {}, null, 2)}</pre>
-                  </div>
-                  {Array.isArray(action.validation_checks) && action.validation_checks.length ? (
-                    <div className="space-y-1 text-[11px]">
-                      {action.validation_checks.map((check) => (
-                        <p key={`${check.name}-${check.detail}`}><span className="font-medium">{check.status === "passed" ? "✓" : "×"} {check.name}:</span> {check.detail}</p>
-                      ))}
-                    </div>
-                  ) : null}
-                  <p className="text-[11px] font-medium">{action.reason}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {providerResults.length ? (
-            <div className="flex flex-col gap-1">
-              <p className="font-medium text-foreground">Provider results</p>
-              {providerResults.map((item, index) => (
-                <p key={`${item.tool}-${index}`} className="text-muted-foreground">
-                  <span className="font-mono text-foreground">{item.tool}</span>: {item.status || "unknown"}{item.provider ? ` · ${item.provider}` : ""}
-                </p>
-              ))}
-            </div>
-          ) : null}
-          {Array.isArray(trace.evidence_sources) && trace.evidence_sources.length ? (
-            <div className="flex flex-col gap-1">
-              <p className="font-medium text-foreground">Evidence / sources</p>
-              {trace.evidence_sources.map((source, index) => (
-                <p key={`${source.provenance?.source_id || source.title}-${index}`} className="text-muted-foreground">
-                  {source.title || "Untitled source"} · {source.authority || "unknown authority"} · {source.provenance?.source_label || source.provenance?.source_kind || "unknown source"}
-                </p>
-              ))}
-            </div>
-          ) : null}
-          <details className="rounded-md border border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/40">
-            <summary className="cursor-pointer px-3 py-2 font-medium text-gray-700 dark:text-gray-200">Context before / after</summary>
-            <pre className="max-h-64 overflow-auto border-t border-gray-100 p-3 text-[11px] leading-relaxed text-gray-500 dark:border-gray-800 dark:text-gray-400">{JSON.stringify({ before: trace.context_before, after: trace.context_after }, null, 2)}</pre>
-          </details>
-          <details className="rounded-md border border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/40">
-            <summary className="cursor-pointer px-3 py-2 font-medium text-gray-700 dark:text-gray-200">Sanitized events</summary>
-            <pre className="max-h-80 overflow-auto border-t border-gray-100 p-3 text-[11px] leading-relaxed text-gray-500 dark:border-gray-800 dark:text-gray-400">{JSON.stringify(trace.events || [], null, 2)}</pre>
-          </details>
+        <span className="min-w-0 flex-1">
+          <span className="mb-1 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
+            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
+          </span>
+          <span className="block truncate text-[13px] font-semibold text-foreground">{source?.title || "Untitled source"}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
+        </span>
+        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border/70 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
+          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
+          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">{humanize(provenance.source_kind)}</span> : null}
         </div>
-      ) : null}
-    </div>
+        <div className="flex flex-col gap-3">
+          {sections.length ? sections.map((section, sectionIndex) => (
+            <div key={`${section.heading || "excerpt"}-${sectionIndex}`}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
+              <p className="whitespace-pre-wrap text-foreground/80">{section.content || "No excerpt captured."}</p>
+            </div>
+          )) : <p className="text-foreground/70">{preview}</p>}
+        </div>
+        {(provenance.source_id || provenance.source_uri) ? (
+          <p className="mt-3 border-t border-border/60 pt-2 text-[10.5px] text-muted-foreground/80">
+            {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri ? provenance.source_uri : ""}
+          </p>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
-function TraceMetric({ label, value }) {
+function ProviderCheck({ result }) {
+  const successful = result?.status === "ok" || result?.status === "success";
+  const Icon = successful ? CheckCircle2 : result?.status ? XCircle : Info;
   return (
-    <div className="rounded-md border border-gray-100 bg-gray-50/50 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/40">
-      <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{label}</p>
-      <p className="mt-1 truncate font-medium text-gray-700 dark:text-gray-200" title={value}>{value}</p>
+    <div className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
+      <Icon className={`mt-0.5 size-3.5 shrink-0 ${successful ? "text-emerald-600" : result?.status ? "text-amber-600" : "text-muted-foreground"}`} />
+      <div className="min-w-0">
+        <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
+        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
+      </div>
     </div>
   );
 }
 
-function MessageBubble({ message }) {
+function AnswerInspector({ message }) {
+  const trace = message?.trace;
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const providerResults = Array.isArray(trace?.provider_results) ? trace.provider_results : [];
+  const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
+  const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
+  return (
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_8px_30px_rgba(15,23,42,0.04)] lg:max-h-full" aria-label="Answer inspector">
+      <div className="shrink-0 border-b border-border/70 px-4 py-4">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 text-violet-700 dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-violet-300">
+            <Sparkles className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer inspector</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Sources & reasoning</h2>
+          </div>
+          {trace ? <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {trace ? "A compact evidence trail for the selected Sona response." : "Select a Sona response to inspect what informed it."}
+        </p>
+      </div>
+      {!trace ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 text-muted-foreground">
+            <BookOpen className="size-5" />
+          </div>
+          <p className="mt-4 text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
+          <p className="mt-1 max-w-[24ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View answer basis” below Sona’s reply.</p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="mb-4 grid grid-cols-3 gap-1.5">
+            <InspectorStat label="Checks" value={toolCalls.length} />
+            <InspectorStat label="Sources" value={sources.length} />
+            <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
+          </div>
+
+          <InspectorSection title="Why this answer" icon={Sparkles}>
+            <ol className="relative ml-1 flex flex-col gap-4 border-l border-violet-200 pl-4 dark:border-violet-900/60">
+              {buildReasoningSteps(trace).map((step, index) => (
+                <li key={`${step.title}-${index}`} className="relative">
+                  <span className={`absolute -left-[21px] top-0.5 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-violet-500" : "bg-muted-foreground/50"}`} />
+                  <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </InspectorSection>
+
+          <InspectorSection title="Knowledge sources" icon={BookOpen} count={sources.length}>
+            {sources.length ? (
+              <div className="flex flex-col gap-2">
+                {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+            )}
+          </InspectorSection>
+
+          {providerResults.length ? (
+            <InspectorSection title="Live checks" icon={CheckCircle2} count={providerResults.length}>
+              <div className="flex flex-col gap-2">{providerResults.map((result, index) => <ProviderCheck key={`${result?.tool || "provider"}-${index}`} result={result} />)}</div>
+            </InspectorSection>
+          ) : null}
+
+          {simulatedActions.length ? (
+            <InspectorSection title="Proposed actions" icon={ShieldCheck} count={simulatedActions.length}>
+              <div className="flex flex-col gap-2">
+                {simulatedActions.map((action, index) => (
+                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{actionLabel(action?.action)}</p>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                    </div>
+                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
+                    {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </InspectorSection>
+          ) : null}
+
+          <div className="mt-5 flex items-start gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.</span>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function InspectorSection({ title, icon: Icon, count, children }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <div className="mb-2.5 flex items-center gap-2">
+        <Icon className="size-3.5 text-muted-foreground" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InspectorStat({ label, value }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-muted/20 px-2 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onInspect, inspected }) {
   const isUser = message.role === "user";
   const comparisonOnly = message.comparison_only === true;
+  const canInspect = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
       <div className={`flex w-full max-w-[min(88%,42rem)] gap-3 ${isUser ? "" : "flex-row-reverse"}`}>
@@ -172,7 +307,18 @@ function MessageBubble({ message }) {
           <p className={`mt-1 whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50" : "rounded-tr-md border border-indigo-100 bg-indigo-50/70 text-left text-gray-700 shadow-[0_1px_3px_rgba(79,70,229,0.08)] dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-gray-200 dark:shadow-none"}`}>
             {message.content}
           </p>
-          {!isUser && !comparisonOnly ? <TraceDetails trace={message.trace} /> : null}
+          {canInspect ? (
+            <button
+              type="button"
+              onClick={() => onInspect?.(message.id)}
+              className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+              aria-pressed={inspected}
+            >
+              <Sparkles className="size-3" />
+              {inspected ? "Viewing answer basis" : "View answer basis"}
+              <ChevronRight className="size-3" />
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -299,9 +445,8 @@ export function GreenfieldPlayground() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [environment, setEnvironment] = useState("development");
+  const [inspectedMessageId, setInspectedMessageId] = useState(null);
   const [ticketRequired, setTicketRequired] = useState(true);
-  const productionMode = environment === "production";
 
   const load = useCallback(async (sessionId = "") => {
     setLoading(true);
@@ -315,10 +460,10 @@ export function GreenfieldPlayground() {
       return;
     }
     setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
-    setEnvironment(payload.environment === "production" ? "production" : "development");
     setTicketRequired(payload.ticket_required === true);
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    setInspectedMessageId(null);
     setContext(payload.context || null);
     setCustomerEmail(payload.selected_session?.customer_email || "");
     setLoading(false);
@@ -334,6 +479,7 @@ export function GreenfieldPlayground() {
     setContext(null);
     setDraft("");
     setError("");
+    setInspectedMessageId(null);
   };
 
   const createSession = async () => {
@@ -367,7 +513,10 @@ export function GreenfieldPlayground() {
       if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
       setSelectedSession(payload.session);
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
-      setMessages((current) => [...current, ...(Array.isArray(payload.messages) ? payload.messages : [])]);
+      const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((message) => message.role === "assistant" && message.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "The read-only agent run failed.");
@@ -416,7 +565,10 @@ export function GreenfieldPlayground() {
       if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
       setSelectedSession(payload.session);
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
-      setMessages((current) => [...current, ...(Array.isArray(payload.messages) ? payload.messages : [])]);
+      const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((item) => item.role === "assistant" && item.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
       setDraft("");
     } catch (sendError) {
@@ -444,125 +596,156 @@ export function GreenfieldPlayground() {
 
   const currentTurn = context?.turn || 0;
   const hasMessages = messages.length > 0;
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.trace);
+  const inspectedMessage = messages.find((message) => message.id === inspectedMessageId && message.role === "assistant" && message.trace) || latestAssistant || null;
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
 
   return (
-    <div className="flex h-[calc(100vh-80px)] flex-col">
-      <div className="flex items-center gap-4 pb-4">
+    <div className="flex min-h-[680px] flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Agent Playground</h1>
-          <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-600 dark:text-violet-400">Internal workspace</p>
+          <h1 className="mt-1 text-[22px] font-semibold tracking-[-0.025em] text-gray-900 dark:text-gray-100">Agent Playground</h1>
+          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-gray-500 dark:text-gray-400">
             {ticketRequired ? "Evaluate a real support ticket with Sona. Read-only simulation — nothing is sent or executed." : "Write a message and chat with Sona over multiple turns. This is a read-only simulation — nothing is sent or executed."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-wide text-gray-400 sm:inline-flex dark:text-gray-500">
-            <ShieldCheck className="h-3.5 w-3.5" /> {productionMode ? "Internal · production read-only" : "Development only"}
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+            <ShieldCheck className="h-3.5 w-3.5" /> Read-only
           </span>
           {selectedSession ? (
-            <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 transition-transform active:scale-[0.97]">
-              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
+              <RotateCcw className="h-3.5 w-3.5" /> New
             </Button>
           ) : null}
-          <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 transition-transform active:scale-[0.97]">
+          <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
             <Inbox className="h-3.5 w-3.5" /> {ticketRequired ? "Choose ticket" : "Load ticket"}
           </Button>
           {!ticketRequired ? (
-            <Button type="button" variant="outline" size="sm" onClick={newConversation} className="gap-1.5 transition-transform active:scale-[0.97]">
-              <Plus className="h-3.5 w-3.5" /> New conversation
+            <Button type="button" size="sm" onClick={newConversation} className="gap-1.5 rounded-lg bg-violet-600 text-white shadow-[0_4px_12px_rgba(124,58,237,0.18)] transition-[transform,background-color] duration-150 ease-out hover:bg-violet-700 active:scale-[0.98]">
+              <Plus className="h-3.5 w-3.5" /> New chat
             </Button>
           ) : null}
         </div>
       </div>
 
-      {error ? <div role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
+      {error ? <div role="alert" className="rounded-xl border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      {!ticketRequired ? <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
-        <div className="grid grid-cols-1 divide-y divide-gray-100 dark:divide-gray-800">
-          <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer</span>
-            <input
-              id="playground-customer-email"
-              type="email"
-              value={customerEmail}
-              onChange={(event) => setCustomerEmail(event.target.value)}
-              placeholder="customer@example.com"
-              disabled={sending}
-              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-gray-700 outline-none placeholder:text-gray-300 disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
-            />
-          </label>
-        </div>
-      </div> : null}
-
-      <details className="mb-3 rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-gray-600 dark:text-gray-300">
-          <span className="inline-flex items-center gap-2"><Inbox className="h-3.5 w-3.5 text-gray-400" /> Saved test sessions <span className="font-normal text-gray-400">({sessions.length})</span></span>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+      <details className="shrink-0 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_2px_10px_rgba(15,23,42,0.025)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/30">
+          <span className="inline-flex items-center gap-2"><Inbox className="h-3.5 w-3.5 text-muted-foreground" /> Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
         </summary>
-        <div className="border-t border-gray-100 px-2 py-2 dark:border-gray-800">
+        <div className="border-t border-border/70 px-2 py-2">
           {sessions.length ? (
             <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
               {sessions.map((session) => (
                 <button
                   type="button"
                   key={session.id}
-                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50 ${selectedSession?.id === session.id ? "bg-indigo-50/70 dark:bg-indigo-950/30" : ""}`}
+                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-violet-50/80 dark:bg-violet-950/30" : ""}`}
                   onClick={() => load(session.id)}
                 >
-                  <span className="truncate font-medium text-gray-700 dark:text-gray-200">{session.title}</span>
-                  <span className="truncate text-gray-400 dark:text-gray-500">{session.customer_email || "No email"}</span>
+                  <span className="truncate font-medium text-foreground">{session.title}</span>
+                  <span className="truncate text-muted-foreground">{session.customer_email || "No email"}</span>
                 </button>
               ))}
             </div>
-          ) : <p className="px-2 py-2 text-[11.5px] text-gray-400 dark:text-gray-500">No saved sessions yet.</p>}
+          ) : <p className="px-2 py-2 text-[11.5px] text-muted-foreground">No saved conversations yet.</p>}
         </div>
       </details>
 
-      <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto rounded-xl border border-gray-200/60 bg-white px-5 py-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] dark:border-gray-800 dark:bg-card dark:shadow-none">
-        {loading ? <p className="text-[12px] text-gray-400 dark:text-gray-500">Loading playground…</p> : null}
-        {!loading && !hasMessages ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-500">
-            <div className="space-y-1">
-              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">{ticketRequired ? "Choose a production ticket" : "Start a test conversation"}</p>
-          <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{ticketRequired ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
+      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300"><Bot className="size-4" /></span>
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
+                <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Freeform customer conversation"}</p>
+              </div>
             </div>
+            {!ticketRequired ? (
+              <label className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-1.5 sm:max-w-[240px]">
+                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Customer</span>
+                <input
+                  id="playground-customer-email"
+                  type="email"
+                  value={customerEmail}
+                  onChange={(event) => setCustomerEmail(event.target.value)}
+                  placeholder="Optional email"
+                  disabled={sending}
+                  className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+                />
+              </label>
+            ) : null}
           </div>
-        ) : null}
-        {messages.map((message) => <MessageBubble key={message.id} message={message} />)}
-        {sending ? (
-          <div className="flex gap-3 animate-in fade-in-0 duration-200">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50"><Bot className="h-3.5 w-3.5" /></div>
-            <div className="min-w-0 flex-1 space-y-1.5"><p className="text-[10.5px] font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">Sona AI</p><div className="inline-flex rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40"><TypingDots /></div></div>
-          </div>
-        ) : null}
-      </div>
 
-      <form className="mt-3 space-y-2" onSubmit={send}>
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && draft.trim()) {
-              event.preventDefault();
-              send(event);
-            }
-          }}
-          placeholder={ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message... (Cmd+Enter to send)" : "Write the customer's first message... (Cmd+Enter to send)"}
-          rows={3}
-          maxLength={12000}
-          disabled={sending || (ticketRequired && !selectedSession)}
-          aria-label="Customer message"
-          className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
-        />
-        <div className="flex items-center justify-between gap-3">
-          <p className="px-1 text-[11.5px] text-gray-400 dark:text-gray-500">Turn {currentTurn} · read-only simulation · no customer message will be sent</p>
-          <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="gap-1.5 transition-transform active:scale-[0.97]">
-            <Send className="h-3.5 w-3.5" /> {sending ? "Running…" : hasMessages ? "Send next message" : "Send & generate reply"}
-          </Button>
-        </div>
-      </form>
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-6 overflow-y-auto bg-gradient-to-b from-muted/[0.12] to-background px-4 py-5 sm:px-6">
+            {loading ? <p className="text-[12px] text-muted-foreground">Loading playground…</p> : null}
+            {!loading && !hasMessages ? (
+              <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-300">
+                <div className="flex size-14 items-center justify-center rounded-2xl border border-violet-200/80 bg-gradient-to-br from-violet-50 to-indigo-50 text-violet-600 shadow-[0_8px_24px_rgba(124,58,237,0.08)] dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-violet-300">
+                  <Sparkles className="size-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[14px] font-semibold text-foreground">{ticketRequired ? "Choose a production ticket" : "Start a conversation"}</p>
+                  <p className="max-w-sm text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s message below. Sona will respond and show the evidence behind the answer."}</p>
+                </div>
+              </div>
+            ) : null}
+            {messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onInspect={setInspectedMessageId}
+                inspected={inspectedMessage?.id === message.id}
+              />
+            ))}
+            {sending ? (
+              <div className="flex justify-end animate-in fade-in-0 duration-200">
+                <div className="flex w-full max-w-[min(88%,42rem)] flex-row-reverse gap-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-800/50"><Bot className="h-3.5 w-3.5" /></div>
+                  <div className="min-w-0 flex-1 space-y-1.5"><p className="text-right text-[10.5px] font-semibold uppercase tracking-widest text-violet-500 dark:text-violet-400">Sona</p><div className="ml-auto inline-flex rounded-2xl rounded-tr-md border border-violet-100 bg-violet-50/70 px-3 py-2.5 shadow-[0_1px_3px_rgba(79,70,229,0.08)] dark:border-violet-900/60 dark:bg-violet-950/30"><TypingDots /></div></div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <form className="shrink-0 border-t border-border/70 bg-card p-3 sm:p-4" onSubmit={send}>
+            <div className="rounded-xl border border-border/80 bg-background shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-violet-300 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.08)] dark:focus-within:border-violet-700">
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && draft.trim()) {
+                    event.preventDefault();
+                    send(event);
+                  }
+                }}
+                placeholder={ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message..." : "Write the customer's first message..."}
+                rows={3}
+                maxLength={12000}
+                disabled={sending || (ticketRequired && !selectedSession)}
+                aria-label="Customer message"
+                className="w-full resize-none rounded-xl border-0 bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+              />
+              <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
+                <p className="truncate px-1 text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
+                <Button type="submit" size="sm" disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)} className="shrink-0 gap-1.5 rounded-lg bg-violet-600 text-white shadow-[0_4px_12px_rgba(124,58,237,0.18)] transition-[transform,background-color] duration-150 ease-out hover:bg-violet-700 active:scale-[0.98]">
+                  <Send className="h-3.5 w-3.5" /> {sending ? "Thinking…" : "Send"}
+                </Button>
+              </div>
+            </div>
+            <p className="mt-2 px-1 text-[10px] text-muted-foreground/70">⌘ Enter to send · Sona&apos;s evidence appears in the inspector</p>
+          </form>
+        </section>
+
+        <AnswerInspector message={inspectedMessage} />
+      </div>
 
       <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={ticketRequired} />
     </div>
