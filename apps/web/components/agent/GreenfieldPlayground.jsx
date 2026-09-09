@@ -108,8 +108,8 @@ function SourceCard({ source, index }) {
   const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
   const preview = sections[0]?.content || "No excerpt captured in the trace.";
   return (
-    <details className="group overflow-hidden rounded-lg border border-border/80 bg-background transition-[border-color,box-shadow] duration-150 ease-out open:border-slate-300 open:shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:open:border-slate-700" open={index === 0}>
-      <summary className="flex cursor-pointer list-none items-start gap-3 px-3.5 py-3.5 transition-colors duration-150 ease-out hover:bg-muted/35">
+    <details className="group overflow-hidden border-b border-border/60 bg-background/35 pb-2 last:border-b-0 transition-colors duration-150 ease-out open:bg-muted/20" open={index === 0}>
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-2.5 py-3 transition-colors duration-150 ease-out hover:bg-muted/35">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
         <span className="min-w-0 flex-1">
           <span className="mb-1 flex flex-wrap items-center gap-1.5">
@@ -121,7 +121,7 @@ function SourceCard({ source, index }) {
         </span>
         <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
       </summary>
-      <div className="border-t border-border/70 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+      <div className="px-3 py-2 text-xs leading-relaxed text-muted-foreground">
         <div className="mb-3 flex flex-wrap gap-1.5">
           {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
           {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
@@ -148,7 +148,7 @@ function SourceCard({ source, index }) {
 function ProviderCheck({ result }) {
   const successful = result?.status === "ok" || result?.status === "success";
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/35 px-3 py-2.5">
       <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${successful ? "bg-emerald-500" : result?.status ? "bg-amber-500" : "bg-muted-foreground/50"}`} aria-hidden="true" />
       <div className="min-w-0">
         <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
@@ -165,8 +165,8 @@ function AnswerInspector({ message }) {
   const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
   const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)] lg:max-h-full" aria-label="Answer evidence">
-      <div className="shrink-0 border-b border-border/70 px-4 py-4">
+    <aside className="flex min-h-0 flex-col overflow-hidden border-t border-border/70 pt-5 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0 lg:max-h-full" aria-label="Answer evidence">
+      <div className="shrink-0 px-0 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer basis</p>
@@ -179,12 +179,12 @@ function AnswerInspector({ message }) {
         </p>
       </div>
       {!trace ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center">
           <p className="text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
           <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View evidence” below Sona’s reply.</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-0 py-2">
           <div className="mb-4 grid grid-cols-3 gap-1.5">
             <InspectorStat label="Checks" value={toolCalls.length} />
             <InspectorStat label="Sources" value={sources.length} />
@@ -209,7 +209,7 @@ function AnswerInspector({ message }) {
                 {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+              <div className="rounded-lg bg-muted/35 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
             )}
           </InspectorSection>
 
@@ -236,7 +236,7 @@ function AnswerInspector({ message }) {
             </InspectorSection>
           ) : null}
 
-          <div className="mt-5 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+          <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
             Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.
           </div>
         </div>
@@ -259,7 +259,7 @@ function InspectorSection({ title, count, children }) {
 
 function InspectorStat({ label, value }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-muted/20 px-2 py-2 text-center">
+    <div className="rounded-lg bg-muted/45 px-2 py-2 text-center">
       <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
     </div>
@@ -279,7 +279,7 @@ function MessageBubble({ message, onInspect, inspected }) {
             {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
           </p>
         </div>
-        <p className={`mt-1 whitespace-pre-wrap rounded-[14px] px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-muted/70 text-foreground ring-1 ring-inset ring-border/50" : "rounded-tr-md border border-sky-200/80 bg-sky-50/40 text-foreground dark:border-sky-900/70 dark:bg-sky-950/20"}`}>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[14px] px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-muted/70 text-foreground" : "rounded-tr-md bg-sky-50/70 text-foreground dark:bg-sky-950/25"}`}>
           {message.content}
         </p>
         {canInspect ? (
@@ -602,7 +602,7 @@ export function GreenfieldPlayground() {
 
       {error ? <div role="alert" className="rounded-xl border border-red-100 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
-      <details className="group shrink-0 overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_2px_10px_rgba(15,23,42,0.02)]">
+      <details className="group shrink-0 overflow-hidden rounded-xl bg-muted/25 shadow-[0_2px_10px_rgba(15,23,42,0.02)]">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/30">
           <span>Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
@@ -627,7 +627,7 @@ export function GreenfieldPlayground() {
       </details>
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)]">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-card shadow-[0_4px_18px_rgba(15,23,42,0.035)]">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="min-w-0">
               <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
@@ -671,14 +671,14 @@ export function GreenfieldPlayground() {
               <div className="flex justify-end animate-in fade-in-0 duration-200">
                 <div className="w-full max-w-[min(88%,42rem)]">
                   <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
-                  <div className="ml-auto mt-1 inline-flex rounded-[14px] rounded-tr-md border border-sky-200/80 bg-sky-50/40 px-3 py-2.5 dark:border-sky-900/70 dark:bg-sky-950/20"><TypingDots /></div>
+                  <div className="ml-auto mt-1 inline-flex rounded-[14px] rounded-tr-md bg-sky-50/70 px-3 py-2.5 dark:bg-sky-950/25"><TypingDots /></div>
                 </div>
               </div>
             ) : null}
           </div>
 
           <form className="shrink-0 border-t border-border/70 bg-card p-3 sm:p-4" onSubmit={send}>
-            <div className="rounded-xl border border-border/80 bg-background shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-slate-400 focus-within:shadow-[0_0_0_3px_rgba(15,23,42,0.06)] dark:focus-within:border-slate-600">
+            <div className="rounded-xl bg-muted/25 shadow-[0_2px_8px_rgba(15,23,42,0.03)] transition-[background-color,box-shadow] duration-150 ease-out focus-within:bg-muted/35 focus-within:shadow-[0_0_0_3px_rgba(15,23,42,0.06)]">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
