@@ -161,19 +161,21 @@ function MessageBubble({ message }) {
   const isUser = message.role === "user";
   const comparisonOnly = message.comparison_only === true;
   return (
-    <div className="flex gap-3 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
-      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${isUser ? "bg-gray-100 text-gray-500 ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700" : "bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50"}`} aria-hidden="true">
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className={`text-[10.5px] font-semibold uppercase tracking-widest ${isUser ? "text-gray-400 dark:text-gray-500" : "text-indigo-400 dark:text-indigo-500"}`}>
+    <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
+      <div className={`flex w-full max-w-[min(88%,42rem)] gap-3 ${isUser ? "" : "flex-row-reverse"}`}>
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${isUser ? "bg-gray-100 text-gray-500 ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700" : "bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50"}`} aria-hidden="true">
+          {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className={`text-[10.5px] font-semibold uppercase tracking-widest ${isUser ? "text-gray-400 dark:text-gray-500" : "text-right text-indigo-400 dark:text-indigo-500"}`}>
           {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
           {message.created_at ? <span className="ml-2 font-normal normal-case tracking-normal text-gray-300 dark:text-gray-600">{formatTime(message.created_at)}</span> : null}
-        </p>
-        <p className={`mt-1 whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50" : "border border-gray-100 bg-white text-gray-700 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200 dark:shadow-none"}`}>
-          {message.content}
-        </p>
-        {!isUser && !comparisonOnly ? <TraceDetails trace={message.trace} /> : null}
+          </p>
+          <p className={`mt-1 whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${isUser ? "rounded-tl-md bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50" : "rounded-tr-md border border-indigo-100 bg-indigo-50/70 text-left text-gray-700 shadow-[0_1px_3px_rgba(79,70,229,0.08)] dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-gray-200 dark:shadow-none"}`}>
+            {message.content}
+          </p>
+          {!isUser && !comparisonOnly ? <TraceDetails trace={message.trace} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -351,8 +353,8 @@ export function GreenfieldPlayground() {
     return payload.session;
   };
 
-  const runImportedTicket = async () => {
-    if (!selectedSession?.source_thread_id || sending) return;
+  const runImportedTicket = async (sessionToRun = selectedSession) => {
+    if (!sessionToRun?.source_thread_id || sending) return;
     setSending(true);
     setError("");
     try {
@@ -360,7 +362,7 @@ export function GreenfieldPlayground() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ action: "run_ticket", session_id: selectedSession.id }),
+        body: JSON.stringify({ action: "run_ticket", session_id: sessionToRun.id }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
@@ -391,6 +393,7 @@ export function GreenfieldPlayground() {
     setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
     setDraft("");
     setError("");
+    await runImportedTicket(payload.session);
   };
 
   const send = async (event) => {
@@ -482,11 +485,6 @@ export function GreenfieldPlayground() {
               <Plus className="h-3.5 w-3.5" /> New conversation
             </Button>
           ) : null}
-          {productionMode && selectedSession?.source_thread_id ? (
-            <Button type="button" size="sm" onClick={runImportedTicket} disabled={sending} className="gap-1.5 transition-transform active:scale-[0.97]">
-              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />} Run Greenfield
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -539,7 +537,7 @@ export function GreenfieldPlayground() {
           <div className="flex h-full flex-col items-center justify-center gap-4 py-12 text-center animate-in fade-in-0 duration-500">
             <div className="space-y-1">
               <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">{productionMode ? "Choose a production ticket" : "Start a test conversation"}</p>
-              <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{productionMode ? "Choose a real ticket, then run Greenfield to generate a candidate response." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
+          <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">{productionMode ? "Choose a real ticket and Sona will generate a candidate response automatically." : "Write the customer&apos;s first message below. Sona will use the same read-only runtime used by the support agent."}</p>
             </div>
           </div>
         ) : null}
