@@ -17,6 +17,7 @@ import {
   InboxIcon,
   LayoutDashboardIcon,
   MailIcon,
+  PanelLeftOpen,
   SettingsIcon,
   SquarePenIcon,
   Trash2,
@@ -46,6 +47,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar"
 
@@ -123,8 +125,7 @@ function SidebarWorkspaceRail({
                 aria-label={navigationOpen ? "Close navigation" : "Open navigation"}
                 aria-expanded={navigationOpen}
               >
-                <SonaLogo size={20} className="h-5 w-5 shrink-0" />
-                <span className="sr-only">Sona AI</span>
+                <PanelLeftOpen aria-hidden="true" />
               </button>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -220,28 +221,18 @@ function SidebarExpandedNavigation({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
-      <div className="flex h-12 shrink-0 items-center px-4 pt-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              tooltip="Close navigation"
-              tooltipAlways
-              className="justify-start px-2"
-            >
-              <button
-                type="button"
-                onClick={onToggleNavigation}
-                aria-label="Close navigation"
-                aria-expanded="true"
-                className="flex items-center gap-2"
-              >
-                <SonaLogo size={20} className="h-5 w-5 shrink-0" />
-                <span className="truncate text-sm font-semibold">Sona AI</span>
-              </button>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-2 pt-2">
+        <Link
+          href="/dashboard"
+          aria-label="Sona AI home"
+          className="flex min-w-0 items-center gap-2 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+            <SonaLogo size={22} className="shrink-0" />
+          </span>
+          <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
+        </Link>
+        <SidebarTrigger className="size-8 shrink-0" />
       </div>
 
       <SidebarContent className="gap-0">
@@ -745,21 +736,14 @@ export function AppSidebar({
         )
       ) : (
         <>
-          <SidebarHeader>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Sona AI"
-                  className="data-[slot=sidebar-menu-button]:!p-1.5 group-data-[collapsible=icon]:justify-center"
-                >
-                  <Link href="/dashboard" className="flex items-center gap-2 text-inherit no-underline">
-                    <SonaLogo size={22} className="h-[22px] w-[22px] shrink-0" />
-                    <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">Sona AI</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
+          <SidebarHeader className="h-12 flex-row items-center justify-between gap-2">
+            <Link href="/dashboard" aria-label="Sona AI home" className="flex min-w-0 items-center gap-2 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+              <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+                <SonaLogo size={22} className="shrink-0" />
+              </span>
+              <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
+            </Link>
+            <SidebarTrigger className="size-8 shrink-0" />
           </SidebarHeader>
           <SidebarContent>
             <NavMain items={data.navMain} />

@@ -86,7 +86,7 @@ export default async function DashboardLayout({ children }) {
   }
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
-  const defaultSidebarOpen = sidebarCookie === "false" ? false : true;
+  const defaultSidebarOpen = sidebarCookie === "true";
 
   return (
     <DashboardThemeProvider>
