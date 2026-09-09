@@ -32,10 +32,10 @@ function formatTime(value) {
 
 function TypingDots() {
   return (
-    <div className="flex items-center gap-1 py-0.5">
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+    <div className="flex items-center gap-1.5 py-0.5" aria-label="Sona is typing">
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.3s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.15s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80" />
     </div>
   );
 }
@@ -419,6 +419,7 @@ export function GreenfieldPlayground() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState(null);
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [inspectedMessageId, setInspectedMessageId] = useState(null);
@@ -439,6 +440,7 @@ export function GreenfieldPlayground() {
     setTicketRequired(payload.ticket_required === true);
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    setPendingUserMessage(null);
     setInspectedMessageId(null);
     setContext(payload.context || null);
     setCustomerEmail(payload.selected_session?.customer_email || "");
@@ -452,6 +454,7 @@ export function GreenfieldPlayground() {
   const newConversation = () => {
     setSelectedSession(null);
     setMessages([]);
+    setPendingUserMessage(null);
     setContext(null);
     setDraft("");
     setError("");
@@ -512,6 +515,7 @@ export function GreenfieldPlayground() {
     if (!response?.ok) throw new Error(payload?.error || "Could not import this ticket.");
     setSelectedSession(payload.session);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    setPendingUserMessage(null);
     setContext(payload.context || null);
     setCustomerEmail(payload.session?.customer_email || "");
     setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
@@ -524,6 +528,13 @@ export function GreenfieldPlayground() {
     event.preventDefault();
     const message = draft.trim();
     if (!message || sending) return;
+    setPendingUserMessage({
+      id: `pending-${Date.now()}`,
+      role: "user",
+      content: message,
+      created_at: new Date().toISOString(),
+    });
+    setDraft("");
     setSending(true);
     setError("");
     try {
@@ -546,8 +557,10 @@ export function GreenfieldPlayground() {
       const latestResponse = [...responseMessages].reverse().find((item) => item.role === "assistant" && item.trace);
       if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
-      setDraft("");
+      setPendingUserMessage(null);
     } catch (sendError) {
+      setPendingUserMessage(null);
+      setDraft(message);
       setError(sendError instanceof Error ? sendError.message : "The read-only agent run failed.");
     } finally {
       setSending(false);
@@ -571,12 +584,21 @@ export function GreenfieldPlayground() {
   };
 
   const currentTurn = context?.turn || 0;
-  const hasMessages = messages.length > 0;
+  const displayedMessages = pendingUserMessage ? [...messages, pendingUserMessage] : messages;
+  const hasMessages = displayedMessages.length > 0;
   const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.trace);
   const inspectedMessage = messages.find((message) => message.id === inspectedMessageId && message.role === "assistant" && message.trace) || latestAssistant || null;
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, sending]);
+    const frame = window.requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, pendingUserMessage, sending]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
@@ -682,7 +704,7 @@ export function GreenfieldPlayground() {
                 </div>
               </div>
             ) : null}
-            {messages.map((message) => (
+            {displayedMessages.map((message) => (
               <MessageBubble
                 key={message.id}
                 message={message}
@@ -691,10 +713,10 @@ export function GreenfieldPlayground() {
               />
             ))}
             {sending ? (
-              <div className="flex justify-end animate-in fade-in-0 duration-200">
+              <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
                 <div className="w-full max-w-[min(88%,42rem)]">
                   <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
-                  <div className="ml-auto mt-1 inline-flex rounded-[16px] rounded-tr-md bg-sky-50 px-4 py-3 dark:bg-sky-950/30"><TypingDots /></div>
+                  <div className="ml-auto mt-1 inline-flex min-w-[3.5rem] justify-center rounded-[16px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30"><TypingDots /></div>
                 </div>
               </div>
             ) : null}
@@ -715,7 +737,7 @@ export function GreenfieldPlayground() {
                     send(event);
                   }
                 }}
-                placeholder={ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message..." : "Write the customer's first message..."}
+                placeholder={sending ? "Sona is thinking…" : ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message..." : "Write the customer's first message..."}
                 rows={3}
                 maxLength={12000}
                 disabled={sending || (ticketRequired && !selectedSession)}
@@ -723,7 +745,7 @@ export function GreenfieldPlayground() {
                 className="min-h-[68px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
               />
               <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-0.5">
-                <p className="truncate text-[10.5px] text-muted-foreground">Turn {currentTurn} · read-only · nothing will be sent</p>
+                <p className="truncate text-[10.5px] text-muted-foreground">{sending ? "Sona is replying…" : `Turn ${currentTurn} · read-only · nothing will be sent`}</p>
                 <Button
                   type="submit"
                   disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)}
