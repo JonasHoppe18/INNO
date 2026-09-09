@@ -65,6 +65,27 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(reset.slice(1).some((hit) => hit.record.sourceId === "pairing")).toBe(false);
   });
 
+  it("uses canonical task identity instead of secondary re-pair wording", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "pairing", "Product A dongle pairing", "Pair the headset and dongle.", {
+      structuredData: {
+        applies_to: { product_models: ["Product A"] },
+        procedure: { task: { key: "dongle_pairing", title: "Dongle pairing" } },
+      },
+    });
+    await ingest(store, "reset", "Product A factory reset and re-pair", "Factory reset the headset.", {
+      structuredData: {
+        applies_to: { product_models: ["Product A"] },
+        procedure: { task: { key: "factory_reset", title: "Factory reset" } },
+      },
+    });
+
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A pair the USB dongle", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
+
+    expect(hits[0].record.sourceId).toBe("pairing");
+    expect(hits[0].taskSpecificity).toBe("sufficient");
+  });
+
   it("D: firmware wording outranks connection wording without changing semantic scores", async () => {
     const hits = await (await competingProcedures()).search({ workspaceId: WORKSPACE_ID, query: "Product A firmware update", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits[0].record.sourceId).toBe("firmware");

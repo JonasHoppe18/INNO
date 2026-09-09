@@ -560,8 +560,8 @@ describe("greenfield knowledge store", () => {
   it("uses a bounded larger semantic candidate pool before filtering", async () => {
     let rpcArguments;
     const rows = [
-      { id: "b", workspace_id: "tenant-a", title: "Product B", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "b", source_label: "B", metadata: { applies_to: { product_ids: ["product-b"] } }, score: 0.99, chunk_id: "b-chunk", chunk_index: 0, chunk_content: "Product B pairing" },
-      { id: "a", workspace_id: "tenant-a", title: "Product A", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "a", source_label: "A", metadata: { applies_to: { product_ids: ["product-a"] } }, score: 0.80, chunk_id: "a-chunk", chunk_index: 0, chunk_content: "Product A pairing" },
+      { id: "b", workspace_id: "tenant-a", title: "Product B", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "b", source_label: "B", metadata: { applies_to: { product_ids: ["external-b"] } }, score: 0.99, chunk_id: "b-chunk", chunk_index: 0, chunk_content: "Product B pairing" },
+      { id: "a", workspace_id: "tenant-a", title: "Product A", content: "pairing", knowledge_type: "procedural", authority: "authoritative", source_kind: "procedure", source_id: "a", source_label: "A", metadata: { applies_to: { product_ids: ["external-a"] } }, score: 0.80, chunk_id: "a-chunk", chunk_index: 0, chunk_content: "Product A pairing" },
       { id: "global", workspace_id: "tenant-a", title: "Global", content: "pairing", knowledge_type: "procedural", authority: "guidance", source_kind: "procedure", source_id: "global", source_label: "Global", metadata: {}, score: 0.70, chunk_id: "global-chunk", chunk_index: 0, chunk_content: "Global pairing" },
     ];
     const serviceClient = {
@@ -583,5 +583,42 @@ describe("greenfield knowledge store", () => {
 
     expect(rpcArguments.p_limit).toBe(4);
     expect(hits.map((hit) => hit.record.sourceId)).toEqual(["a"]);
+    expect(hits[0].record.metadata.applies_to.product_ids).toEqual(["external-a"]);
+  });
+
+  it("fails closed when the trusted catalog row has no external Shopify id", async () => {
+    const row = {
+      id: "scoped",
+      workspace_id: "tenant-a",
+      title: "Product A",
+      content: "Product A pairing",
+      knowledge_type: "procedural",
+      authority: "authoritative",
+      source_kind: "procedure",
+      source_id: "scoped",
+      source_label: "A",
+      metadata: { applies_to: { product_ids: ["external-a"] } },
+      score: 0.99,
+      chunk_id: "scoped-chunk",
+      chunk_index: 0,
+      chunk_content: "Product A pairing",
+    };
+    const serviceClient = {
+      from(table) {
+        if (table === "shops") return queryBuilder({ id: "shop-a" });
+        if (table === "shop_products") return queryBuilder([{ id: "product-a", title: "Product A", handle: "product-a" }]);
+        if (table === "greenfield_knowledge_chunks") return queryBuilder([]);
+        throw new Error(`Unexpected table: ${table}`);
+      },
+      async rpc() {
+        return { data: [row], error: null };
+      },
+    };
+    const store = new SupabaseKnowledgeStore(serviceClient);
+    store.embedQuery = async () => [0];
+
+    const hits = await store.search({ workspaceId: "tenant-a", trustedShopId: "shop-a", query: "Product A pairing", knowledgeTypes: ["procedural"], limit: 1 });
+
+    expect(hits).toEqual([]);
   });
 });

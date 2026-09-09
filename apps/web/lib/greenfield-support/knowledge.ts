@@ -910,7 +910,12 @@ function rowRelevanceText(row: any): string {
   const knowledgeType = String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "");
   if (knowledgeType === "procedural" || row?.structured_data?.procedure) {
     const procedure = rowProcedureMetadata(row);
-    return [title, procedure.title, procedure.taskKey, ...procedure.aliases].filter(Boolean).join(" ");
+    // A canonical task key is the stable task identity. Display titles may
+    // contain secondary actions such as "re-pair" and should not make two
+    // distinct procedures compete as the same task.
+    return procedure.taskKey
+      ? [procedure.taskKey, ...procedure.aliases].filter(Boolean).join(" ")
+      : [title, procedure.title, ...procedure.aliases].filter(Boolean).join(" ");
   }
   if (title) return title;
   return chunk.split(/\n\s*\n/)[0] ?? "";
@@ -1352,10 +1357,14 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       ? Math.max(...candidates[0].identities.map((value: string) => value.length))
       : 0;
     const strongest = candidates.filter(({ identities }) => identities.some((identity) => identity.length === strongestLength));
-    const context = strongest.length === 1
+    // `shop_products.id` is an internal mirror key, not the merchant's
+    // Shopify product identity. Applicability metadata is bound to the
+    // verified external Shopify id; never fall back to the mirror key.
+    const verifiedShopifyProductId = cleanText(strongest[0]?.product?.external_id);
+    const context = strongest.length === 1 && verifiedShopifyProductId
       ? {
           workspaceId: request.workspaceId,
-          productId: cleanText(strongest[0].product?.id),
+          productId: verifiedShopifyProductId,
           productModels: [strongest[0].product?.title, strongest[0].product?.handle].map(cleanText).filter(Boolean),
         }
       : null;
