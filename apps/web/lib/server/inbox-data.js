@@ -20,7 +20,7 @@ async function loadMailboxes(serviceClient, scope) {
   const { data, error } = await applyScope(
     serviceClient
       .from("mail_accounts")
-      .select("id, provider, provider_email")
+      .select("id, provider, provider_email, status")
       .order("created_at", { ascending: true }),
     scope
   );

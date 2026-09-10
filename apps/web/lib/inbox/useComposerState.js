@@ -48,6 +48,7 @@ export function useComposerState({
   inboundMessageCount,
   mailboxEmails,
   newTicketMailboxId,
+  newTicketSubject,
   onLocalThreadCreated,
   currentSupabaseUserId,
   currentUserName,
@@ -1241,6 +1242,10 @@ export function useComposerState({
       toast.error("Select a mailbox before sending.");
       return;
     }
+    if (isNewTicket && !String(newTicketSubject || "").trim()) {
+      toast.error("Add a subject before sending.");
+      return;
+    }
     if (
       isNewTicket &&
       (!Array.isArray(payload?.toRecipients) || !payload.toRecipients.length)
@@ -1273,7 +1278,7 @@ export function useComposerState({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             mailbox_id: newTicketMailboxId,
-            subject: selectedThread?.subject || "New ticket",
+            subject: newTicketSubject,
             to_emails: payload.toRecipients,
             cc_emails: payload.ccRecipients,
             bcc_emails: payload.bccRecipients,
@@ -1412,7 +1417,7 @@ export function useComposerState({
           bcc_emails: payload.bccRecipients,
           attachments: attachmentsPayload,
           sender_name: currentUserName,
-          subject: isNewTicket ? selectedThread?.subject || "New ticket" : undefined,
+          subject: isNewTicket ? newTicketSubject : undefined,
           new_ticket: isNewTicket,
           draft_message_id: draftMessage?.id || activeDraftId || null,
           draft_preview_id: null,

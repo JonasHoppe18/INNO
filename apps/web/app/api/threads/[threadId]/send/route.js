@@ -1352,8 +1352,15 @@ export async function POST(request, { params }) {
   const toEmails = normalizeEmailList(body?.to_emails);
   const ccEmails = normalizeEmailList(body?.cc_emails);
   const bccEmails = normalizeEmailList(body?.bcc_emails);
+  const subjectRaw = String(body?.subject || thread.subject || "").trim();
   const isNewTicket = body?.new_ticket === true;
   if (isNewTicket) {
+    if (!subjectRaw) {
+      return NextResponse.json(
+        { error: "Subject is required for a new ticket." },
+        { status: 400 },
+      );
+    }
     const recipients = [...toEmails, ...ccEmails, ...bccEmails];
     if (!toEmails.length) {
       return NextResponse.json(
@@ -1397,9 +1404,8 @@ export async function POST(request, { params }) {
   const deliveryCc = isTestModeActive ? [] : ccEmails;
   const deliveryBcc = isTestModeActive ? [] : bccEmails;
 
-  const subjectRaw = String(body?.subject || thread.subject || "").trim();
   const subject = isNewTicket
-    ? subjectRaw || "New ticket"
+    ? subjectRaw
     : subjectRaw.toLowerCase().startsWith("re:")
       ? subjectRaw
       : subjectRaw

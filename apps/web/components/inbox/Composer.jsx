@@ -466,6 +466,8 @@ function ComposerComponent({
   mailboxes = [],
   selectedMailboxId = "",
   onMailboxChange = null,
+  newTicketSubject = "",
+  onNewTicketSubjectChange = null,
 }) {
   const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -1697,6 +1699,26 @@ function ComposerComponent({
           <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+          {isNewTicket ? (
+            <div className="flex w-full items-center gap-2 border-b border-border pb-1.5">
+              <label
+                htmlFor="new-ticket-subject"
+                className="font-medium text-muted-foreground"
+              >
+                Subject:
+              </label>
+              <input
+                id="new-ticket-subject"
+                value={newTicketSubject}
+                onChange={(event) =>
+                  onNewTicketSubjectChange?.(event.target.value)
+                }
+                placeholder="Subject"
+                disabled={disabled || isSending}
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               {isNewTicket ? (

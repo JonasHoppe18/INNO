@@ -198,6 +198,8 @@ function TicketDetailComponent({
   mailboxes = [],
   selectedMailboxId = "",
   onMailboxChange = null,
+  newTicketSubject = "",
+  onNewTicketSubjectChange = null,
   isSending = false,
   isWorkspaceTestMode = false,
   headerActions = null,
@@ -970,6 +972,8 @@ function TicketDetailComponent({
               mailboxes={mailboxes}
               selectedMailboxId={selectedMailboxId}
               onMailboxChange={onMailboxChange}
+              newTicketSubject={newTicketSubject}
+              onNewTicketSubjectChange={onNewTicketSubjectChange}
               mentionUsers={mentionUsers}
               onBlur={() => onDraftBlur?.(thread?.id || null)}
               isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}

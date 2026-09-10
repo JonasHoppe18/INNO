@@ -1009,6 +1009,16 @@ export function InboxSplitView({
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [newTicketMailboxId, setNewTicketMailboxId] = useState("");
+  const [newTicketSubject, setNewTicketSubject] = useState("");
+  const connectedMailboxes = useMemo(
+    () =>
+      (Array.isArray(mailboxes) ? mailboxes : []).filter(
+        (mailbox) =>
+          String(mailbox?.status || "").trim().toLowerCase() !== "disconnected" &&
+          String(mailbox?.provider_email || mailbox?.email || "").trim(),
+      ),
+    [mailboxes],
+  );
   const [sentDraftStatsByThread, setSentDraftStatsByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState(
@@ -2725,6 +2735,7 @@ export function InboxSplitView({
     inboundMessageCount,
     mailboxEmails,
     newTicketMailboxId,
+    newTicketSubject,
     onLocalThreadCreated: handleLocalThreadCreated,
     currentSupabaseUserId,
     currentUserName,
@@ -2950,7 +2961,7 @@ export function InboxSplitView({
     const id = `local-new-ticket-${Date.now()}`;
     const nextThread = {
       id,
-      subject: "New ticket",
+      subject: "",
       snippet: "",
       status: "New",
       unread_count: 0,
@@ -2962,7 +2973,12 @@ export function InboxSplitView({
       is_local: true,
     };
     setLocalNewThread(nextThread);
-    setNewTicketMailboxId("");
+    setNewTicketMailboxId(
+      connectedMailboxes.length === 1
+        ? String(connectedMailboxes[0]?.id || "")
+        : "",
+    );
+    setNewTicketSubject("");
     setOpenThreadIds((prev) => [...prev, id]);
     setSelectedThreadId(id);
     setDraftValue("");
@@ -2971,7 +2987,7 @@ export function InboxSplitView({
     setDraftReady(true);
     setComposerMode("reply");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
-  }, []);
+  }, [connectedMailboxes]);
 
   // Sidebar's "New Ticket" row (visible from every page, not just /inbox)
   // links to /inbox?new=1 rather than calling handleCreateTicket directly —
@@ -3750,7 +3766,8 @@ export function InboxSplitView({
           }
           canSend={
             Boolean(selectedThreadId) &&
-            (!isLocalThreadId(selectedThreadId) || Boolean(newTicketMailboxId))
+            (!isLocalThreadId(selectedThreadId) ||
+              (Boolean(newTicketMailboxId) && Boolean(newTicketSubject.trim())))
           }
           onSend={handleSendDraftWithQueueAdvance}
           pendingOrderUpdate={selectedPendingOrderUpdate}
@@ -3780,9 +3797,11 @@ export function InboxSplitView({
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}
           isNewTicket={isLocalThreadId(selectedThreadId)}
-          mailboxes={mailboxes}
+          mailboxes={connectedMailboxes}
           selectedMailboxId={newTicketMailboxId}
           onMailboxChange={setNewTicketMailboxId}
+          newTicketSubject={newTicketSubject}
+          onNewTicketSubjectChange={setNewTicketSubject}
           isWorkspaceTestMode={isWorkspaceTestMode}
 	          conversationScrollTop={
 	            selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0

@@ -59,12 +59,19 @@ export async function POST(request) {
 
   const body = await request.json().catch(() => ({}));
   const mailboxId = String(body?.mailbox_id || "").trim();
+  const subject = String(body?.subject || "").trim();
   const toEmails = normalizeEmailList(body?.to_emails);
   const ccEmails = normalizeEmailList(body?.cc_emails);
   const bccEmails = normalizeEmailList(body?.bcc_emails);
   if (!mailboxId) {
     return NextResponse.json(
       { error: "mailbox_id is required." },
+      { status: 400 },
+    );
+  }
+  if (!subject) {
+    return NextResponse.json(
+      { error: "Subject is required." },
       { status: 400 },
     );
   }
@@ -135,7 +142,6 @@ export async function POST(request) {
     );
   }
 
-  const subject = String(body?.subject || "New ticket").trim() || "New ticket";
   const { data: thread, error: threadError } = await serviceClient
     .from("mail_threads")
     .insert({
