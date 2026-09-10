@@ -55,7 +55,7 @@ const STOP_WORDS = new Set(
 // the customer's requested task. They remain in the original semantic and
 // lexical queries; this set is only for the bounded task signal.
 const TASK_CONTEXT_WORDS = new Set(
-  "adapter audio bluetooth computer console device dongle headset headphones pc usb wireless work working problem issue help try tried need".split(" "),
+  "adapter audio bluetooth computer console device dongle headset headphones pc usb wireless work working problem issue help try tried need broken fix right support steps troubleshooting troubleshoot something wrong".split(" "),
 );
 
 function cleanText(value: unknown): string {

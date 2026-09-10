@@ -122,6 +122,22 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(result.data.results[0].evidence_sections).toEqual([]);
   });
 
+  it("fails closed for generic support wording even when retrieval returns a bundled procedure", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "bundled", "AceZone FAQ and support procedures", "Review the available support procedures for this product.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "My Product A has a problem. Can you help me find the right support steps?",
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+  });
+
   it("clarifies when a retrieved specific procedure has no discriminating task term", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
