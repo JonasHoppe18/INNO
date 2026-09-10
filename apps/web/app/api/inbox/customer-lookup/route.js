@@ -4,6 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
+import {
+  isExternalCustomerEmail,
+  loadWorkspaceInternalEmails,
+  normalizeCustomerEmail,
+  resolveWorkspaceCustomer,
+} from "@/lib/server/customer-identity";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -130,30 +136,53 @@ function buildEmailVariants(email) {
   return Array.from(variants).filter(Boolean);
 }
 
-async function loadPreviousTickets(serviceClient, scope, { customerEmail, currentThreadId = "" }) {
+async function loadPreviousTickets(serviceClient, scope, {
+  customerId = "",
+  customerEmail = "",
+  currentThreadId = "",
+} = {}) {
   const normalizedEmail = normalizeEmail(customerEmail);
-  if (!normalizedEmail) return [];
+  const queries = [];
+  if (customerId) {
+    queries.push(
+      serviceClient
+        .from("mail_threads")
+        .select("id, ticket_number, subject, status, last_message_at")
+        .eq("customer_id", customerId),
+    );
+  }
+  if (normalizedEmail) {
+    queries.push(
+      serviceClient
+        .from("mail_threads")
+        .select("id, ticket_number, subject, status, last_message_at")
+        .ilike("customer_email", normalizedEmail),
+    );
+  }
+  if (!queries.length) return [];
 
-  let query = serviceClient
-    .from("mail_threads")
-    .select("id, ticket_number, subject, status, last_message_at")
-    .ilike("customer_email", normalizedEmail)
-    .not("ticket_number", "is", null)
-    .or("classification_key.is.null,classification_key.neq.notification")
-    .order("last_message_at", { ascending: false, nullsLast: true })
-    .limit(12);
-  query = applyScope(query, scope);
-  if (currentThreadId) {
-    query = query.neq("id", currentThreadId);
+  const results = await Promise.all(queries.map(async (query) => {
+    let scopedQuery = query
+      .not("ticket_number", "is", null)
+      .or("classification_key.is.null,classification_key.neq.notification")
+      .order("last_message_at", { ascending: false, nullsLast: true })
+      .limit(12);
+    scopedQuery = applyScope(scopedQuery, scope);
+    if (currentThreadId) scopedQuery = scopedQuery.neq("id", currentThreadId);
+    return scopedQuery;
+  }));
+  const failed = results.find((result) => result?.error);
+  if (failed) {
+    console.warn("customer-lookup: failed to load previous tickets", failed.error?.message || failed.error);
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.warn("customer-lookup: failed to load previous tickets", error?.message || error);
-    return [];
+  const uniqueRows = new Map();
+  for (const result of results) {
+    for (const row of Array.isArray(result?.data) ? result.data : []) {
+      if (row?.id && !uniqueRows.has(row.id)) uniqueRows.set(row.id, row);
+    }
   }
-
-  return (Array.isArray(data) ? data : []).map((row) => ({
+  return Array.from(uniqueRows.values()).map((row) => ({
     thread_id: String(row?.id || ""),
     ticket_number: Number.isFinite(Number(row?.ticket_number))
       ? Number(row.ticket_number)
@@ -161,7 +190,19 @@ async function loadPreviousTickets(serviceClient, scope, { customerEmail, curren
     subject: String(row?.subject || "").trim() || "Untitled ticket",
     status: String(row?.status || "").trim() || "open",
     last_message_at: row?.last_message_at || null,
-  }));
+  })).sort((left, right) =>
+    String(right?.last_message_at || "").localeCompare(String(left?.last_message_at || ""))
+  ).slice(0, 12);
+}
+
+function publicCustomer(customer) {
+  if (!customer?.id || !customer?.normalized_email) return null;
+  return {
+    id: customer.id,
+    name: String(customer.name || "").trim() || null,
+    email: customer.normalized_email,
+    phone: String(customer.phone || "").trim() || null,
+  };
 }
 
 function matchesOrderNumber(order, candidate) {
@@ -316,15 +357,20 @@ export async function POST(request) {
   }
 
   let effectiveInputEmail = inputEmail;
-  if (!effectiveInputEmail && sourceMessageId) {
+  let sourceMessage = null;
+  if (sourceMessageId) {
     let sourceMessageQuery = serviceClient
       .from("mail_messages")
-      .select("id, from_email, extracted_customer_email")
+      .select("id, from_email, extracted_customer_email, from_me")
       .eq("id", sourceMessageId)
       .limit(1);
     sourceMessageQuery = applyScope(sourceMessageQuery, scope);
-    const { data: sourceMessage } = await sourceMessageQuery.maybeSingle();
-    effectiveInputEmail = normalizeEmail(getEffectiveSenderEmail(sourceMessage));
+    const { data } = await sourceMessageQuery.maybeSingle();
+    sourceMessage = data || null;
+    const sourceMessageEmail = normalizeEmail(getEffectiveSenderEmail(sourceMessage));
+    if (!effectiveInputEmail || sourceMessage?.from_me === false) {
+      effectiveInputEmail = sourceMessageEmail || effectiveInputEmail;
+    }
   }
 
   if (!effectiveInputEmail && !derivedOrderNumber) {
@@ -332,6 +378,62 @@ export async function POST(request) {
       { error: "Missing email or order number." },
       { status: 400 }
     );
+  }
+
+  let sonaCustomer = null;
+  const normalizedInputEmail = normalizeCustomerEmail(effectiveInputEmail);
+  let internalEmails = [];
+  if (workspaceId) {
+    try {
+      internalEmails = await loadWorkspaceInternalEmails(serviceClient, workspaceId);
+    } catch (error) {
+      await logCustomerLookup(serviceClient, {
+        status: "error",
+        detail: {
+          thread_id: threadId || null,
+          source_message_id: sourceMessageId || null,
+          stage: "workspace_internal_email_load_failed",
+          error: error instanceof Error ? error.message : "Could not load workspace members.",
+        },
+      });
+      return NextResponse.json(
+        { error: "Could not verify the customer scope." },
+        { status: 500 },
+      );
+    }
+  }
+  if (workspaceId && isExternalCustomerEmail(normalizedInputEmail, { internalEmails })) {
+    try {
+      if (sourceMessageId && sourceMessage?.from_me === false) {
+        sonaCustomer = await resolveWorkspaceCustomer(serviceClient, {
+          workspaceId,
+          email: normalizedInputEmail,
+        });
+      } else {
+        const { data: existingCustomer, error: customerError } = await serviceClient
+          .from("workspace_customers")
+          .select("id, workspace_id, normalized_email, name, phone, created_at, updated_at")
+          .eq("workspace_id", workspaceId)
+          .eq("normalized_email", normalizedInputEmail)
+          .maybeSingle();
+        if (customerError) throw new Error(customerError.message);
+        sonaCustomer = existingCustomer || null;
+      }
+    } catch (error) {
+      await logCustomerLookup(serviceClient, {
+        status: "error",
+        detail: {
+          thread_id: threadId || null,
+          source_message_id: sourceMessageId || null,
+          stage: "sona_customer_resolution_failed",
+          error: error instanceof Error ? error.message : "Could not resolve Sona customer.",
+        },
+      });
+      return NextResponse.json(
+        { error: "Could not resolve Sona customer." },
+        { status: 500 },
+      );
+    }
   }
 
   const cacheKey = buildCacheKey({
@@ -376,17 +478,21 @@ export async function POST(request) {
         },
       });
       const cachedCustomerEmail =
+        normalizeCustomerEmail(sonaCustomer?.normalized_email) ||
         normalizeEmail(cached?.data?.customer?.email) ||
         normalizeEmail(cached?.data?.email) ||
         effectiveInputEmail;
       // Always refresh previous tickets from DB to avoid stale ticket numbers in cached payloads.
       const cachedPreviousTickets = await loadPreviousTickets(serviceClient, scope, {
+        customerId: sonaCustomer?.id || "",
         customerEmail: cachedCustomerEmail,
         currentThreadId: threadId,
       });
       return NextResponse.json(
         {
           ...(cached?.data || {}),
+          customer: publicCustomer(sonaCustomer) || cached?.data?.customer || null,
+          sonaCustomer: publicCustomer(sonaCustomer),
           previousTickets: cachedPreviousTickets,
           cached: true,
           fetchedAt: cached.fetched_at,
@@ -400,6 +506,7 @@ export async function POST(request) {
 
   let shopAccessToken = null;
   let shopCreds = null;
+  let shopifyLookupError = null;
   try {
     shopCreds = await resolveShopifyCredentialsWithDiagnostics(serviceClient, scope, {
       reason: "customer_lookup",
@@ -407,7 +514,7 @@ export async function POST(request) {
         detail: { ...logContext, stage: "shop_credentials_debug", message },
       }),
     });
-    shopAccessToken = shopCreds.access_token;
+    shopAccessToken = shopCreds?.access_token || null;
   } catch (error) {
     await logCustomerLookup(serviceClient, {
       status: "error",
@@ -417,24 +524,39 @@ export async function POST(request) {
         error: error instanceof Error ? error.message : "Could not resolve Shopify credentials.",
       },
     });
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not decrypt Shopify token." },
-      { status: 500 }
-    );
+    shopifyLookupError = error instanceof Error ? error.message : "Could not resolve Shopify credentials.";
   }
-  const shopDomain = shopCreds.shop_domain;
-  await logCustomerLookup(serviceClient, {
-    detail: {
-      ...logContext,
-      stage: "shop_credentials_resolved",
-      selected_row_id: shopCreds.shop_id,
-      selected_shop_domain: shopCreds.shop_domain,
-      selected_shopify_client_id: shopCreds.shopify_client_id,
-      token_fingerprint: shopCreds.token_fingerprint,
-      candidate_rows: shopCreds.candidates,
-    },
-  });
+  let shopDomain = shopCreds?.shop_domain || "";
+  let mappedOrders = [];
+  let shopifyCustomer = null;
+  let shopifyFilterSummary = {
+    raw_orders_count: 0,
+    email_filtered_count: 0,
+    order_filtered_count: 0,
+    order_email_filtered_count: 0,
+    final_orders_count: 0,
+  };
+  let shopifyDebug = null;
   const lookupAttempts = [];
+
+  const primaryParams = {
+    email: effectiveInputEmail || "",
+    name: toShopifyOrderName(derivedOrderNumber),
+  };
+
+  if (shopCreds) {
+    await logCustomerLookup(serviceClient, {
+      detail: {
+        ...logContext,
+        stage: "shop_credentials_resolved",
+        selected_row_id: shopCreds.shop_id,
+        selected_shop_domain: shopCreds.shop_domain,
+        selected_shopify_client_id: shopCreds.shopify_client_id,
+        token_fingerprint: shopCreds.token_fingerprint,
+        candidate_rows: shopCreds.candidates,
+      },
+    });
+    try {
 
   const fetchOrders = async (params, label = "lookup") => {
     const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
@@ -497,10 +619,6 @@ export async function POST(request) {
     return matched;
   };
 
-  const primaryParams = {
-    email: effectiveInputEmail || "",
-    name: toShopifyOrderName(derivedOrderNumber),
-  };
   const primaryResult = await fetchOrders(primaryParams, "primary_email_order_lookup");
   if (!primaryResult.response.ok) {
     const message =
@@ -515,12 +633,13 @@ export async function POST(request) {
         error: message,
       },
     });
-    return NextResponse.json({ error: message }, { status: primaryResult.response.status });
+    shopifyLookupError = message;
+    throw new Error(message);
   }
 
   let payload = primaryResult.json || {};
   let rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
-  const lookupDebug = payload?.debug || null;
+  shopifyDebug = payload?.debug || null;
 
   if (!rawOrders.length && effectiveInputEmail) {
     const emailVariants = buildEmailVariants(effectiveInputEmail);
@@ -589,62 +708,104 @@ export async function POST(request) {
     .is("uninstalled_at", null)
     .eq("shop_domain", shopDomain)
     .maybeSingle();
-  const finalShopDomain = shopRow?.shop_domain
+  shopDomain = shopRow?.shop_domain
     ? String(shopRow.shop_domain).replace(/^https?:\/\//, "").replace(/\/+$/, "")
     : shopDomain;
 
-  const mappedOrders = ordersToUse.map((order) => {
+  mappedOrders = ordersToUse.map((order) => {
     const mapped = mapOrder(order);
-    if (finalShopDomain && mapped?.adminId) {
-      mapped.adminUrl = `https://${finalShopDomain}/admin/orders/${mapped.adminId}`;
+    if (shopDomain && mapped?.adminId) {
+      mapped.adminUrl = `https://${shopDomain}/admin/orders/${mapped.adminId}`;
     }
     return mapped;
   });
-  const customer = ordersToUse.length ? mapCustomer(ordersToUse, effectiveInputEmail) : null;
+  shopifyCustomer = ordersToUse.length ? mapCustomer(ordersToUse, effectiveInputEmail) : null;
+  shopifyFilterSummary = {
+    raw_orders_count: rawOrders.length,
+    email_filtered_count: emailFilteredOrders.length,
+    order_filtered_count: orderMatches.length,
+    order_email_filtered_count: orderMatchesWithEmail.length,
+    final_orders_count: ordersToUse.length,
+  };
+    } catch (error) {
+      shopifyLookupError = error instanceof Error ? error.message : "Shopify enrichment failed.";
+      await logCustomerLookup(serviceClient, {
+        status: "error",
+        detail: {
+          ...logContext,
+          stage: "shopify_enrichment_failed",
+          error: shopifyLookupError,
+        },
+      });
+    }
+  } else if (!shopifyLookupError) {
+    shopifyLookupError = "Shopify enrichment is not connected.";
+  }
+
+  if (sonaCustomer && shopifyCustomer) {
+    try {
+      sonaCustomer = await resolveWorkspaceCustomer(serviceClient, {
+        workspaceId,
+        email: sonaCustomer.normalized_email,
+        name: shopifyCustomer.name,
+        phone: shopifyCustomer.phone,
+      }) || sonaCustomer;
+    } catch (error) {
+      await logCustomerLookup(serviceClient, {
+        status: "error",
+        detail: {
+          ...logContext,
+          stage: "sona_customer_enrichment_failed",
+          error: error instanceof Error ? error.message : "Could not enrich Sona customer.",
+        },
+      });
+    }
+  }
+
+  const customer = publicCustomer(sonaCustomer) || shopifyCustomer;
   const previousTickets = await loadPreviousTickets(serviceClient, scope, {
-    customerEmail: customer?.email || effectiveInputEmail,
+    customerId: sonaCustomer?.id || "",
+    customerEmail: sonaCustomer?.normalized_email || shopifyCustomer?.email || effectiveInputEmail,
     currentThreadId: threadId,
   });
 
   const data = {
     customer,
+    sonaCustomer: publicCustomer(sonaCustomer),
+    shopifyCustomer,
+    shopify: {
+      available: Boolean(shopCreds),
+      error: shopifyLookupError ? "Shopify enrichment unavailable." : null,
+    },
     orders: mappedOrders,
     previousTickets,
     matchedOrderNumber: derivedOrderNumber,
     source: platform,
-    shopDomain: finalShopDomain,
+    shopDomain,
     ...(debug
       ? {
           debug: {
             lookup_attempts: lookupAttempts,
             filter_summary: {
-              raw_orders_count: rawOrders.length,
-              email_filtered_count: emailFilteredOrders.length,
-              order_filtered_count: orderMatches.length,
-              order_email_filtered_count: orderMatchesWithEmail.length,
-              final_orders_count: ordersToUse.length,
+              ...shopifyFilterSummary,
             },
-            shopify_debug: lookupDebug || null,
+            shopify_debug: shopifyDebug,
           },
         }
       : {}),
   };
 
-  const ttlMinutes = ordersToUse.length ? DEFAULT_TTL_MINUTES : NEGATIVE_TTL_MINUTES;
+  const ttlMinutes = mappedOrders.length ? DEFAULT_TTL_MINUTES : NEGATIVE_TTL_MINUTES;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
 
   await logCustomerLookup(serviceClient, {
     detail: {
       ...logContext,
-      stage: ordersToUse.length ? "lookup_succeeded" : "lookup_no_match",
+      stage: mappedOrders.length ? "lookup_succeeded" : "lookup_no_match",
       request_params: primaryParams,
       lookup_attempts: lookupAttempts,
-      raw_orders_count: rawOrders.length,
-      email_filtered_count: emailFilteredOrders.length,
-      order_filtered_count: orderMatches.length,
-      order_email_filtered_count: orderMatchesWithEmail.length,
-      final_orders_count: ordersToUse.length,
+      ...shopifyFilterSummary,
       matched_order_ids: mappedOrders.map((order) => order?.id).filter(Boolean),
       customer_email: customer?.email || null,
       customer_name: customer?.name || null,
