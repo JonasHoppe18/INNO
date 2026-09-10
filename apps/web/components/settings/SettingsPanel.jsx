@@ -35,6 +35,10 @@ import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
+  normalizeSignatureImageUrl,
+  uploadEmailSignatureImage,
+} from "@/lib/email-signature-image";
+import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
   SUPPORT_LANGUAGE_LABELS,
   normalizeSupportLanguage,
@@ -1265,7 +1269,7 @@ function buildSignatureTemplateFromBuilder(builder = DEFAULT_SIGNATURE_BUILDER) 
     jobTitle: String(builder?.jobTitle || "").trim(),
     phone: String(builder?.phone || "").trim(),
     email: String(builder?.email || "").trim(),
-    logoUrl: String(builder?.logoUrl || "").trim(),
+    logoUrl: normalizeSignatureImageUrl(builder?.logoUrl),
     companyName: String(builder?.companyName || "").trim(),
     accentColor: String(builder?.accentColor || "").trim(),
     layout: String(builder?.layout || "logo_left").trim() || "logo_left",
@@ -1654,29 +1658,25 @@ function EmailSettings({
     });
   }, []);
 
-  const handleLogoUpload = useCallback((event) => {
+  const handleLogoUpload = useCallback(async (event) => {
     const file = event?.target?.files?.[0];
     if (!file) return;
-    if (!String(file.type || "").toLowerCase().startsWith("image/")) {
-      setSignatureLogoUploadError("Please upload an image file.");
+    if (!["image/png", "image/jpeg"].includes(String(file.type || "").toLowerCase())) {
+      setSignatureLogoUploadError("Please upload a PNG or JPEG image.");
       return;
     }
     if (Number(file.size || 0) > 5 * 1024 * 1024) {
       setSignatureLogoUploadError("Logo must be 5 MB or smaller.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      if (!result) {
-        setSignatureLogoUploadError("Could not read logo file.");
-        return;
-      }
+    try {
+      setSignatureLogoUploadError("Uploading logo…");
+      const result = await uploadEmailSignatureImage(file);
       setSignatureLogoUploadError("");
       setSignatureDraft((prev) => ({ ...prev, logoUrl: result }));
-    };
-    reader.onerror = () => setSignatureLogoUploadError("Could not read logo file.");
-    reader.readAsDataURL(file);
+    } catch (error) {
+      setSignatureLogoUploadError(error?.message || "Could not upload logo file.");
+    }
   }, []);
 
   const handleApplySignatureBuilder = useCallback(() => {
@@ -2429,8 +2429,8 @@ function EmailSettings({
               ))}
               <label className="space-y-1.5 sm:col-span-2">
                 <span className="text-sm font-medium text-foreground">Logo</span>
-                <Input type="file" accept="image/*" onChange={handleLogoUpload} />
-                <span className="block text-xs text-muted-foreground">PNG, JPG or WebP up to 5 MB.</span>
+                <Input type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} />
+                <span className="block text-xs text-muted-foreground">PNG or JPG up to 5 MB.</span>
               </label>
               <label className="space-y-1.5 sm:col-span-2">
                 <span className="text-sm font-medium text-foreground">Accent color</span>

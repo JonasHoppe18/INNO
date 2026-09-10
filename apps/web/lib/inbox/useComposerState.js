@@ -47,6 +47,9 @@ export function useComposerState({
   latestRealMessageIsOutbound,
   inboundMessageCount,
   mailboxEmails,
+  newTicketMailboxId,
+  newTicketSubject,
+  onLocalThreadCreated,
   currentSupabaseUserId,
   currentUserName,
   draftCacheRef,
@@ -1224,16 +1227,32 @@ export function useComposerState({
       toast.error("No thread selected.");
       return;
     }
-    if (isLocalThreadId(selectedThreadId)) {
-      toast.error("Saving/sending brand new tickets is not ready yet.");
-      return;
-    }
+    const isNewTicket = isLocalThreadId(selectedThreadId);
     const composeMode =
       payload?.mode === "note" || composerMode === "note"
         ? "note"
         : payload?.mode === "forward" || composerMode === "forward"
           ? "forward"
           : "reply";
+    if (isNewTicket && composeMode !== "reply") {
+      toast.error("New tickets must start with an email reply.");
+      return;
+    }
+    if (isNewTicket && !String(newTicketMailboxId || "").trim()) {
+      toast.error("Select a mailbox before sending.");
+      return;
+    }
+    if (isNewTicket && !String(newTicketSubject || "").trim()) {
+      toast.error("Add a subject before sending.");
+      return;
+    }
+    if (
+      isNewTicket &&
+      (!Array.isArray(payload?.toRecipients) || !payload.toRecipients.length)
+    ) {
+      toast.error("Add at least one recipient before sending.");
+      return;
+    }
     const composeBody = String(
       composeMode === "note" ? activeNoteValue : draftValue || "",
     );
@@ -1251,7 +1270,39 @@ export function useComposerState({
           ? "Forwarding email..."
           : "Sending draft...",
     );
+    let threadIdForSend = selectedThreadId;
     try {
+      if (isNewTicket) {
+        const createResponse = await fetch("/api/threads/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mailbox_id: newTicketMailboxId,
+            subject: newTicketSubject,
+            to_emails: payload.toRecipients,
+            cc_emails: payload.ccRecipients,
+            bcc_emails: payload.bccRecipients,
+          }),
+        });
+        const createData = await createResponse.json().catch(() => ({}));
+        if (!createResponse.ok) {
+          throw new Error(createData?.error || "Could not create new ticket.");
+        }
+        const createdThread = createData?.thread;
+        threadIdForSend = String(createdThread?.id || "").trim();
+        if (!threadIdForSend) {
+          throw new Error("Could not create new ticket.");
+        }
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [threadIdForSend]: composeBody,
+        }));
+        onLocalThreadCreated?.({
+          localThreadId: selectedThreadId,
+          thread: createdThread,
+        });
+      }
+
       if (composeMode === "note") {
         const res = await fetch(`/api/threads/${selectedThreadId}/notes`, {
           method: "POST",
@@ -1356,7 +1407,7 @@ export function useComposerState({
       );
       const attachmentsPayload = serializedAttachments.filter(Boolean);
 
-      const res = await fetch(`/api/threads/${selectedThreadId}/send`, {
+      const res = await fetch(`/api/threads/${threadIdForSend}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1366,6 +1417,8 @@ export function useComposerState({
           bcc_emails: payload.bccRecipients,
           attachments: attachmentsPayload,
           sender_name: currentUserName,
+          subject: isNewTicket ? newTicketSubject : undefined,
+          new_ticket: isNewTicket,
           draft_message_id: draftMessage?.id || activeDraftId || null,
           draft_preview_id: null,
         }),
@@ -1375,10 +1428,10 @@ export function useComposerState({
         throw new Error(data?.error || "Could not send reply.");
       }
       // Set edit badge directly from send response — no separate DB query needed
-      if (data?.edit_classification && selectedThreadId) {
+      if (data?.edit_classification && threadIdForSend) {
         setSentDraftStatsByThread((prev) => ({
           ...prev,
-          [selectedThreadId]: {
+          [threadIdForSend]: {
             edit_classification: data.edit_classification,
             edit_delta_pct: data.edit_delta_pct ?? null,
           },
@@ -1419,11 +1472,11 @@ export function useComposerState({
       const localBcc = redirectedTo ? [] : payload.bccRecipients || [];
       setLocalSentMessagesByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: [
-          ...(prev[selectedThreadId] || []),
+        [threadIdForSend]: [
+          ...(prev[threadIdForSend] || []),
           {
             id: localMessageId,
-            thread_id: selectedThreadId,
+            thread_id: threadIdForSend,
             user_id: currentSupabaseUserId || null,
             from_name: currentUserName,
             from_email: mailboxEmails[0] || "",
@@ -1480,14 +1533,14 @@ export function useComposerState({
       if (composeMode !== "note") {
         setTicketStateByThread((prev) => ({
           ...prev,
-          [selectedThreadId]: {
-            ...(prev[selectedThreadId] || DEFAULT_TICKET_STATE),
+          [threadIdForSend]: {
+            ...(prev[threadIdForSend] || DEFAULT_TICKET_STATE),
             status: "Pending",
           },
         }));
         setLiveThreads((prev) =>
           (prev || []).map((thread) =>
-            thread?.id === selectedThreadId
+            thread?.id === threadIdForSend
               ? { ...thread, status: "pending", updated_at: nowIso }
               : thread,
           ),
@@ -1496,31 +1549,31 @@ export function useComposerState({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            threadId: selectedThreadId,
+            threadId: threadIdForSend,
             status: "Pending",
           }),
         }).catch(() => null);
       }
-      if (selectedThreadIdRef.current === selectedThreadId) {
+      if (selectedThreadIdRef.current === threadIdForSend) {
         setDraftValue("");
       }
       setDraftValueByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: "",
+        [threadIdForSend]: "",
       }));
       setActiveDraftId(null);
-      draftLastSavedRef.current[selectedThreadId] = "";
+      draftLastSavedRef.current[threadIdForSend] = "";
       setSystemDraftUneditedByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: false,
+        [threadIdForSend]: false,
       }));
       setSuppressAutoDraftByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: true,
+        [threadIdForSend]: true,
       }));
       reportClientEvent({
         event: "send_completed",
-        threadId: selectedThreadId,
+        threadId: threadIdForSend,
         status: composeMode,
         durationMs:
           (typeof performance !== "undefined" ? performance.now() : Date.now()) -
@@ -1532,7 +1585,7 @@ export function useComposerState({
     } catch (err) {
       reportClientEvent({
         event: "send_completed",
-        threadId: selectedThreadId,
+        threadId: threadIdForSend,
         status: "error",
         errorCode: err?.message || "unknown",
         durationMs:

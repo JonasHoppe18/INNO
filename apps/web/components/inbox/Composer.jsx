@@ -463,6 +463,12 @@ function ComposerComponent({
   onReplyLanguageChange = null,
   onRefineDraft = null,
   isRefiningDraft = false,
+  isNewTicket = false,
+  mailboxes = [],
+  selectedMailboxId = "",
+  onMailboxChange = null,
+  newTicketSubject = "",
+  onNewTicketSubjectChange = null,
 }) {
   const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -478,10 +484,13 @@ function ComposerComponent({
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
   const isEmptyReply =
     !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
+  const newTicketHeaderHeight = isNewTicket ? 34 : 0;
   // The composer height includes the recipient row, the action footer and the
   // editor's vertical padding. Keep the minimums in sync with those actual
   // layout primitives so a draft is never rendered underneath the footer.
-  const MIN_COMPOSER_HEIGHT_PX = isNote ? 224 : isEmptyReply ? 164 : 140;
+  const MIN_COMPOSER_HEIGHT_PX = isNote
+    ? 224
+    : (isEmptyReply ? 164 : 140) + newTicketHeaderHeight;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -1589,14 +1598,21 @@ function ComposerComponent({
           : estimatedEditorHeight;
       // `chromeHeight` includes the resize handle (reply only), recipient
       // row, footer and the editor's 20px vertical padding.
-      const chromeHeight = isNote ? 128 : isEmptyReply ? 128 : 138;
+      const chromeHeight =
+        (isNote ? 128 : isEmptyReply ? 128 : 138) + newTicketHeaderHeight;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
       return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
     },
-    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isEmptyReply, isNote]
+    [
+      MAX_COMPOSER_VIEWPORT_RATIO,
+      MIN_COMPOSER_HEIGHT_PX,
+      isEmptyReply,
+      isNote,
+      newTicketHeaderHeight,
+    ]
   );
 
   const syncComposerHeight = useCallback(
@@ -1737,8 +1753,46 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1.5 pt-3">
+          {isNewTicket ? (
+            <div className="flex w-full min-w-0 items-center gap-2 border-b border-border/60 pb-1.5">
+              <label htmlFor="new-ticket-subject" className="shrink-0 font-medium text-muted-foreground">
+                Subject
+              </label>
+              <input
+                id="new-ticket-subject"
+                value={newTicketSubject}
+                onChange={(event) => onNewTicketSubjectChange?.(event.target.value)}
+                placeholder="Add a subject"
+                disabled={disabled || isSending}
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
+              {isNewTicket ? (
+                <label className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-medium text-muted-foreground">From</span>
+                  <select
+                    aria-label="Send from mailbox"
+                    value={selectedMailboxId || ""}
+                    onChange={(event) => onMailboxChange?.(event.target.value)}
+                    disabled={disabled || isSending}
+                    className="h-7 max-w-[220px] rounded-lg border border-border/70 bg-background/80 px-2 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                  >
+                    <option value="">Select mailbox</option>
+                    {mailboxes.map((mailbox) => {
+                      const email = String(mailbox?.provider_email || mailbox?.email || "").trim();
+                      if (!mailbox?.id || !email) return null;
+                      return (
+                        <option key={mailbox.id} value={mailbox.id}>
+                          {email}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              ) : null}
               <span className="font-medium text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span

@@ -37,7 +37,13 @@ export default async function InboxPage({ searchParams }) {
     console.error("Inbox mail lookup failed:", error);
   }
 
-  if (!mailboxes.length) {
+  const connectedMailboxes = mailboxes.filter(
+    (mailbox) =>
+      String(mailbox?.status || "").trim().toLowerCase() !== "disconnected" &&
+      String(mailbox?.provider_email || "").trim(),
+  );
+
+  if (!connectedMailboxes.length) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="max-w-md text-center">
@@ -53,5 +59,12 @@ export default async function InboxPage({ searchParams }) {
     );
   }
 
-  return <InboxPageClientOnly threads={threads} messages={messages} attachments={attachments} />;
+  return (
+    <InboxPageClientOnly
+      threads={threads}
+      messages={messages}
+      attachments={attachments}
+      mailboxes={connectedMailboxes}
+    />
+  );
 }

@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
+import {
+  normalizeSignatureImageUrl,
+  uploadEmailSignatureImage,
+} from "@/lib/email-signature-image";
 
 const SIGNATURE_BUILDER_MARKER_PREFIX = "sona_signature_builder:";
 const SIGNATURE_TEXT_FIELD_KEYS = ["fullName", "jobTitle", "phone", "email", "companyName"];
@@ -193,7 +197,7 @@ function buildSignatureTemplateFromBuilder(builder = DEFAULT_SIGNATURE_BUILDER) 
     jobTitle: String(builder?.jobTitle || "").trim(),
     phone: String(builder?.phone || "").trim(),
     email: String(builder?.email || "").trim(),
-    logoUrl: String(builder?.logoUrl || "").trim(),
+    logoUrl: normalizeSignatureImageUrl(builder?.logoUrl),
     companyName: String(builder?.companyName || "").trim(),
     accentColor: String(builder?.accentColor || "").trim(),
     layout: String(builder?.layout || "logo_left").trim() || "logo_left",
@@ -453,35 +457,31 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     logoFileInputRef.current?.click();
   }, []);
 
-  const handleLogoUpload = useCallback((event) => {
+  const handleLogoUpload = useCallback(async (event) => {
     const file = event?.target?.files?.[0];
     const scrollTop = builderScrollRef.current?.scrollTop ?? 0;
     if (event?.target) event.target.value = "";
     if (!file) return;
-    if (!String(file.type || "").toLowerCase().startsWith("image/")) {
-      setLogoUploadError("Please upload an image file.");
+    if (!["image/png", "image/jpeg"].includes(String(file.type || "").toLowerCase())) {
+      setLogoUploadError("Please upload a PNG or JPEG image.");
       return;
     }
     if (Number(file.size || 0) > 5 * 1024 * 1024) {
       setLogoUploadError("Logo must be 5 MB or smaller.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      if (!result) {
-        setLogoUploadError("Could not read logo file.");
-        return;
-      }
+    try {
+      setLogoUploadError("Uploading logo…");
+      const result = await uploadEmailSignatureImage(file, member?.user_id);
       setLogoUploadError("");
       setBuilderDraft((prev) => ({ ...prev, logoUrl: result }));
       requestAnimationFrame(() => {
         if (builderScrollRef.current) builderScrollRef.current.scrollTop = scrollTop;
       });
-    };
-    reader.onerror = () => setLogoUploadError("Could not read logo file.");
-    reader.readAsDataURL(file);
-  }, []);
+    } catch (error) {
+      setLogoUploadError(error?.message || "Could not upload logo file.");
+    }
+  }, [member?.user_id]);
 
   const handleSave = async () => {
     if (!supabase || !member?.user_id || saving) return;
@@ -902,7 +902,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                   <input
                     ref={logoFileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/png,image/jpeg"
                     onChange={handleLogoUpload}
                     className="hidden"
                     tabIndex={-1}
@@ -915,7 +915,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     >
                       Choose file
                     </button>
-                    <span className="text-xs text-slate-400">PNG, SVG, or JPG · max 5 MB</span>
+                    <span className="text-xs text-slate-400">PNG or JPG · max 5 MB</span>
                   </div>
                   {logoUploadError ? (
                     <p className="text-xs text-red-500">{logoUploadError}</p>

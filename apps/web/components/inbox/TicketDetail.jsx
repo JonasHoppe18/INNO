@@ -240,6 +240,12 @@ function TicketDetailComponent({
   composerMode,
   onComposerModeChange,
   mailboxEmails,
+  isNewTicket = false,
+  mailboxes = [],
+  selectedMailboxId = "",
+  onMailboxChange = null,
+  newTicketSubject = "",
+  onNewTicketSubjectChange = null,
   isSending = false,
   isWorkspaceTestMode = false,
   headerActions = null,
@@ -794,6 +800,12 @@ function TicketDetailComponent({
           isGeneratingDraft={isGeneratingDraft}
           onRefineDraft={onRefineDraft}
           isRefiningDraft={isRefiningDraft}
+          isNewTicket={isNewTicket}
+          mailboxes={mailboxes}
+          selectedMailboxId={selectedMailboxId}
+          onMailboxChange={onMailboxChange}
+          newTicketSubject={newTicketSubject}
+          onNewTicketSubjectChange={onNewTicketSubjectChange}
           disabled={disabled}
           disabledPlaceholder="Action awaiting approval"
         />
