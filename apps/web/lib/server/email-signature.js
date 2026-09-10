@@ -1,3 +1,5 @@
+import { getEmailSignatureImagePublicBaseUrl } from "./email-signature-assets.js";
+
 function asString(value) {
   return String(value || "");
 }
@@ -33,7 +35,51 @@ function sanitizeInlineStyle(style = "") {
     .join("; ");
 }
 
-export function sanitizeEmailTemplateHtml(value = "") {
+function getConfiguredEmailSignatureImageBaseUrl() {
+  try {
+    return getEmailSignatureImagePublicBaseUrl();
+  } catch {
+    return "";
+  }
+}
+
+export function isAllowedEmailSignatureImageUrl(src, publicImageBaseUrl = getConfiguredEmailSignatureImageBaseUrl()) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(String(src || "").trim());
+  } catch {
+    return false;
+  }
+  if (
+    parsedUrl.protocol !== "https:" ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash
+  ) {
+    return false;
+  }
+
+  const baseUrl = String(publicImageBaseUrl || "").trim();
+  if (!baseUrl) return true;
+  let parsedBaseUrl;
+  try {
+    parsedBaseUrl = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  const basePath = parsedBaseUrl.pathname.replace(/\/+$/, "");
+  return (
+    parsedBaseUrl.protocol === "https:" &&
+    parsedUrl.origin === parsedBaseUrl.origin &&
+    parsedUrl.pathname.startsWith(`${basePath}/`)
+  );
+}
+
+export function sanitizeEmailTemplateHtml(
+  value = "",
+  { publicImageBaseUrl = getConfiguredEmailSignatureImageBaseUrl() } = {}
+) {
   const allowedTags = new Set([
     "a",
     "img",
@@ -96,10 +142,7 @@ export function sanitizeEmailTemplateHtml(value = "") {
         );
         const srcRaw = srcMatch?.[2] || srcMatch?.[3] || srcMatch?.[4] || "";
         const src = asString(srcRaw).trim();
-        const safeSrc =
-          /^https?:\/\//i.test(src) || /^data:image\//i.test(src) || /^cid:/i.test(src)
-            ? src
-            : "";
+        const safeSrc = isAllowedEmailSignatureImageUrl(src, publicImageBaseUrl) ? src : "";
         if (!safeSrc) return "";
         const altMatch = asString(rawAttrs).match(/\salt\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
         const altRaw = altMatch?.[2] || altMatch?.[3] || altMatch?.[4] || "";

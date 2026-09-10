@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveEmailSignatureTargetUserId } from "@/lib/server/email-signature-auth";
+import { getEmailSignatureImagePublicBaseUrl } from "@/lib/server/email-signature-assets";
 import {
   htmlToPlainText,
   loadEmailSignatureConfig,
@@ -18,8 +20,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -43,70 +43,6 @@ function isMissingTableError(error) {
   );
 }
 
-function isAdminLikeRole(role) {
-  const normalized = String(role || "").toLowerCase();
-  return normalized.includes("admin") || normalized.includes("owner");
-}
-
-async function resolveTargetUserId(serviceClient, scope, clerkUserId, requestedUserId) {
-  const fallback = scope?.supabaseUserId || null;
-  const candidate = String(requestedUserId || "").trim();
-  if (!candidate || !UUID_REGEX.test(candidate) || candidate === fallback) {
-    return fallback;
-  }
-  if (!scope?.workspaceId || !clerkUserId) {
-    const error = new Error("Workspace scope is required.");
-    error.status = 400;
-    throw error;
-  }
-
-  const { data: requesterMembership, error: requesterMembershipError } = await serviceClient
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", scope.workspaceId)
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (requesterMembershipError) {
-    throw new Error(requesterMembershipError.message);
-  }
-  if (!isAdminLikeRole(requesterMembership?.role)) {
-    const error = new Error("Only admins can edit another member signature template.");
-    error.status = 403;
-    throw error;
-  }
-
-  const { data: targetProfile, error: targetProfileError } = await serviceClient
-    .from("profiles")
-    .select("user_id, clerk_user_id")
-    .eq("user_id", candidate)
-    .maybeSingle();
-  if (targetProfileError) {
-    throw new Error(targetProfileError.message);
-  }
-  if (!targetProfile?.user_id || !targetProfile?.clerk_user_id) {
-    const error = new Error("Target member not found.");
-    error.status = 404;
-    throw error;
-  }
-
-  const { data: targetMembership, error: targetMembershipError } = await serviceClient
-    .from("workspace_members")
-    .select("clerk_user_id")
-    .eq("workspace_id", scope.workspaceId)
-    .eq("clerk_user_id", targetProfile.clerk_user_id)
-    .maybeSingle();
-  if (targetMembershipError) {
-    throw new Error(targetMembershipError.message);
-  }
-  if (!targetMembership?.clerk_user_id) {
-    const error = new Error("Target member is not part of this workspace.");
-    error.status = 404;
-    throw error;
-  }
-
-  return targetProfile.user_id;
-}
-
 export async function GET(request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -127,7 +63,7 @@ export async function GET(request) {
     }
 
     const requestedUserId = String(request.nextUrl.searchParams.get("user_id") || "").trim();
-    const targetUserId = await resolveTargetUserId(
+    const targetUserId = await resolveEmailSignatureTargetUserId(
       serviceClient,
       scope,
       clerkUserId,
@@ -182,7 +118,7 @@ export async function PUT(request) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const targetUserId = await resolveTargetUserId(
+    const targetUserId = await resolveEmailSignatureTargetUserId(
       serviceClient,
       scope,
       clerkUserId,
@@ -191,7 +127,9 @@ export async function PUT(request) {
 
     const legacySignature = await loadLegacySignature(serviceClient, targetUserId);
     const closingText = normalizePlainText(body?.closing_text || "");
-    const sanitizedTemplateHtml = sanitizeEmailTemplateHtml(body?.template_html || "");
+    const sanitizedTemplateHtml = sanitizeEmailTemplateHtml(body?.template_html || "", {
+      publicImageBaseUrl: getEmailSignatureImagePublicBaseUrl(SUPABASE_URL),
+    });
     const templateTextFallbackRaw = normalizePlainText(body?.template_text_fallback || "");
     const templateTextFallback = templateTextFallbackRaw || htmlToPlainText(sanitizedTemplateHtml);
     const isActive = body?.is_active !== false;
@@ -229,7 +167,9 @@ export async function PUT(request) {
         signature: {
           user_id: targetUserId,
           closing_text: normalizePlainText(data?.closing_text || ""),
-          template_html: sanitizeEmailTemplateHtml(data?.template_html || ""),
+          template_html: sanitizeEmailTemplateHtml(data?.template_html || "", {
+            publicImageBaseUrl: getEmailSignatureImagePublicBaseUrl(SUPABASE_URL),
+          }),
           template_text_fallback: normalizePlainText(data?.template_text_fallback || ""),
           is_active: data?.is_active !== false,
           legacy_signature: legacySignature || "",
