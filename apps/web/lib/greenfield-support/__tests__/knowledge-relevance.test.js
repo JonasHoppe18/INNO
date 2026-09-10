@@ -79,6 +79,7 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(hits[0].taskTitleMatches).toBe(0);
     expect(hits[0].taskBodyMatches).toBeGreaterThan(0);
     expect(hits[0].record.content).toContain("returned within 30 days");
+    expect(hits[0].evidenceSections.some((section) => section.content.includes("returned within 30 days"))).toBe(true);
   });
 
   it("matches policy topics by canonical content while excluding unrelated policy records", async () => {
@@ -98,12 +99,15 @@ describe("generic greenfield knowledge task relevance", () => {
     });
 
     expect((await search("Can I return this item?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Can I return this item?")).map((hit) => hit.record.sourceId)).not.toContain("privacy-policy");
     expect((await search("I want my money back for this purchase"))[0].record.sourceId).toBe("returns-policy");
     expect((await search("Can you deliver my order to Japan?"))[0].record.sourceId).toBe("shipping-policy");
     expect((await search("What warranty coverage applies to a manufacturing defect?"))[0].record.sourceId).toBe("warranty-policy");
     expect((await search("What is your privacy policy?"))[0].record.sourceId).toBe("privacy-policy");
     expect(await search("What loyalty program do you offer?")).toEqual([]);
     expect((await search("Can you deliver my order to Japan?")).some((hit) => hit.record.sourceId === "privacy-policy")).toBe(false);
+    expect((await search("Can I return this item and what shipping options are available?"))
+      .map((hit) => hit.record.sourceId)).toEqual(expect.arrayContaining(["refund-policy", "shipping-policy"]));
   });
 
   it("keeps policy type boundaries when other knowledge shares the requested wording", async () => {

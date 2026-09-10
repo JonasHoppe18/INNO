@@ -532,6 +532,21 @@ function splitIntoChunks(content: string, maxLength = 900): string[] {
   return chunks.length ? chunks : [content];
 }
 
+function boundedEvidenceChunks(content: string, maxLength = 900): string[] {
+  const normalized = cleanText(content);
+  if (!normalized) return [];
+  const chunks: string[] = [];
+  let remaining = normalized;
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf(" ", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.5)) splitAt = maxLength;
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 const MAX_EVIDENCE_CHARS = 3_600;
 const MAX_EVIDENCE_SECTIONS = 4;
 
@@ -1124,10 +1139,7 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
     const hasTaskTerms = Array.from(ranked.signals.values()).some((signal) => signal.queryTerms > 0);
     const taskRelevant = hasTaskTerms
       ? knowledgeTypes?.length === 1 && knowledgeTypes[0] === "policy"
-        ? ranked.rows.filter((row) => {
-            const signal = ranked.signals.get(rowRelevanceKey(row));
-            return (signal?.titleMatches ?? 0) > 0 || (signal?.bodyMatches ?? 0) > 0;
-          })
+        ? selectPolicyRows(ranked.rows, ranked.signals, finalLimit)
         : ranked.rows.filter((row) => (ranked.signals.get(rowRelevanceKey(row))?.score ?? 0) > 0)
       : ranked.rows;
     return { rows: taskRelevant.slice(0, finalLimit), signals: ranked.signals };
@@ -1158,6 +1170,28 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
       && (signal >= topSignal * 0.75 || separateTask);
   });
   return { rows: selected.slice(0, finalLimit), signals: ranked.signals, ...procedureInfo };
+}
+
+function selectPolicyRows(rows: any[], signals: Map<string, TaskRelevanceSignals>, finalLimit: number): any[] {
+  const relevant = rows.filter((row) => {
+    const signal = signals.get(rowRelevanceKey(row));
+    return (signal?.titleMatches ?? 0) > 0 || (signal?.bodyMatches ?? 0) > 0;
+  });
+  if (relevant.length <= 1) return relevant;
+
+  // A single customer intent should not cause an incidental body word in a
+  // second policy to become customer-facing evidence. Keep additional policy
+  // records only when they contribute a distinct task term; this still
+  // preserves genuinely useful multi-intent answers such as return + shipping.
+  const primary = relevant[0];
+  const primarySignal = signals.get(rowRelevanceKey(primary));
+  const primaryTerms = new Set(primarySignal?.matchedTerms ?? []);
+  const selected = relevant.filter((row, index) => {
+    if (index === 0) return true;
+    const signal = signals.get(rowRelevanceKey(row));
+    return (signal?.matchedTerms ?? []).some((term) => !primaryTerms.has(term));
+  });
+  return selected.slice(0, finalLimit);
 }
 
 function relevantToExplicitQuery(row: any, request: KnowledgeSearchRequest, productContext: KnowledgeProductContext | null): boolean {
@@ -1332,15 +1366,29 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
       Math.max(1, Math.min(request.limit ?? 5, 20)),
       request.knowledgeTypes,
     );
-    return selected.rows.map((row, index) => ({
-      ...row.record,
-      taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,
-      taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
-      taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
-      rank: index + 1,
-      taskSpecificity: selected.taskSpecificity,
-      procedureCandidates: selected.procedureCandidates,
-    }));
+    return selected.rows.map((row, index) => {
+      const hit = row.record;
+      const canonicalRecord = hit?.record ?? hit ?? row;
+      const canonicalChunks = boundedEvidenceChunks(canonicalRecord.content);
+      return {
+        ...hit,
+        taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,
+        taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
+        taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
+        evidenceSections: selectEvidenceSections(
+          canonicalChunks.map((content, chunkIndex) => ({
+            chunkId: `${canonicalRecord.id}:canonical:${chunkIndex}`,
+            chunkIndex,
+            content,
+          })),
+          0,
+          request.query,
+        ),
+        rank: index + 1,
+        taskSpecificity: selected.taskSpecificity,
+        procedureCandidates: selected.procedureCandidates,
+      };
+    });
   }
 }
 
@@ -1430,6 +1478,24 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       chunksByRecord.set(recordId, chunks);
     }
 
+    const canonicalContentById = new Map<string, string>();
+    const missingCanonicalIds = recordIds.filter((recordId) => {
+      const chunks = chunksByRecord.get(recordId) ?? [];
+      return !chunks.some((chunk) => cleanText(chunk.content));
+    });
+    if (missingCanonicalIds.length) {
+      const canonical = await this.serviceClient
+        .from("greenfield_knowledge_records")
+        .select("id,content")
+        .eq("workspace_id", workspaceId)
+        .in("id", missingCanonicalIds);
+      if (canonical.error) throw new Error(canonical.error.message);
+      for (const row of Array.isArray(canonical.data) ? canonical.data : []) {
+        const content = cleanText(row.content);
+        if (content) canonicalContentById.set(String(row.id), content);
+      }
+    }
+
     const sections = new Map<string, KnowledgeEvidenceSection[]>();
     for (const row of rows) {
       const recordId = String(row.id ?? "");
@@ -1443,8 +1509,25 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           content: String(row.chunk_content ?? ""),
         });
       }
+      const nonEmptyChunks = chunks.filter((chunk) => cleanText(chunk.content));
+      const canonicalContent = canonicalContentById.get(recordId) || cleanText(row.content) || "";
+      if (!nonEmptyChunks.length && canonicalContent) {
+        nonEmptyChunks.push(...boundedEvidenceChunks(canonicalContent).map((content, index) => ({
+          id: `${recordId}:canonical:${index}`,
+          index,
+          content,
+        })));
+      }
+      const boundedChunks = nonEmptyChunks.flatMap((chunk) => {
+        const contentChunks = boundedEvidenceChunks(chunk.content);
+        return contentChunks.map((content, index) => ({
+          id: contentChunks.length === 1 ? chunk.id : `${chunk.id}:bounded:${index}`,
+          index: chunk.index + index,
+          content,
+        }));
+      });
       sections.set(recordId, selectEvidenceSections(
-        chunks.map((chunk) => ({ chunkId: chunk.id, chunkIndex: chunk.index, content: chunk.content })),
+        boundedChunks.map((chunk) => ({ chunkId: chunk.id, chunkIndex: chunk.index, content: chunk.content })),
         selectedIndex,
         query,
       ));
@@ -1759,7 +1842,24 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     for (const row of lexicalRows) {
       if (!isPublished({ metadata: row.metadata ?? {} })) continue;
       if (!relevantToExplicitQuery(row, request, productContext)) continue;
-      if (!rowsById.has(String(row.id))) rowsById.set(String(row.id), row);
+      const id = String(row.id);
+      const existing = rowsById.get(id);
+      if (!existing) {
+        rowsById.set(id, row);
+        continue;
+      }
+      // Semantic rows can be intentionally sparse (for example, an older
+      // RPC may return the score but omit canonical content). Preserve the
+      // semantic ranking while filling missing source fields from the bounded
+      // lexical fallback for the same tenant-scoped record.
+      rowsById.set(id, {
+        ...existing,
+        content: cleanText(existing.content) ? existing.content : row.content,
+        chunk_content: cleanText(existing.chunk_content) ? existing.chunk_content : row.chunk_content,
+        title: cleanText(existing.title) ? existing.title : row.title,
+        metadata: Object.keys(existing.metadata ?? {}).length ? existing.metadata : row.metadata,
+        structured_data: Object.keys(existing.structured_data ?? {}).length ? existing.structured_data : row.structured_data,
+      });
     }
     const mergedRows = Array.from(rowsById.values());
     const explicitProductScores = mergedRows.map((row) => applicableProductScore(row, request.query));
