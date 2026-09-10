@@ -1203,6 +1203,59 @@ describe("structured response contract", () => {
     expect(rendered).not.toMatch(/retrieval|database|system/i);
   });
 
+  it("uses customer-facing wording when procedure retrieval returns only weak legacy evidence", async () => {
+    const dependencies = await createDemoDependencies();
+    const record = {
+      id: "legacy-procedure",
+      workspaceId: dependencies.tenant.workspaceId,
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      title: "[DEV lifecycle] Procedure",
+      content: "Open the test workflow and confirm the expected result.",
+      structuredData: { procedure_steps: [{ text: "Open the test workflow and confirm the expected result." }] },
+      sourceKind: "merchant_authored",
+      sourceId: "legacy-procedure",
+      sourceUri: null,
+      sourceLabel: "Legacy procedure",
+      contentHash: "legacy-procedure",
+      publishedAt: null,
+      observedAt: null,
+      expiresAt: null,
+      metadata: {},
+      chunks: ["Open the test workflow and confirm the expected result."],
+      taskKey: null,
+    };
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      knowledge: {
+        ingest: async () => record,
+        search: async () => [{
+          record,
+          score: 0.0864,
+          taskRelevance: 0,
+          taskTitleMatches: 0,
+          taskBodyMatches: 0,
+          matchReason: "lexical",
+          rank: 1,
+          evidenceSections: [{ heading: "Source context", content: record.content, chunkIds: ["legacy-procedure"] }],
+          taskSpecificity: "sufficient",
+        }],
+      },
+    });
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "headset keeps disconnecting from the dongle" }));
+    const result = validate(registry, {
+      type: "limitation",
+      text: "The procedure lookup returned no usable support guidance.",
+      basis: { result_id: procedure.resultId, field_paths: [] },
+    });
+
+    expect(procedure.status).toBe("not_found");
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("couldn’t verify a support procedure");
+    expect(rendered).not.toMatch(/technical|retrieval|database|system/i);
+  });
+
   it("states the useful partial-fulfillment distinction without inventing item allocation", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({

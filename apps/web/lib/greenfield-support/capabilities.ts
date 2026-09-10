@@ -108,13 +108,31 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
     ? procedureHit?.taskSpecificity
       ?? (result.some(({ taskTitleMatches = 0 }) => taskTitleMatches > 0) ? "sufficient" : "insufficient")
     : "not_applicable";
+  // A procedural row is not usable evidence merely because retrieval returned
+  // a row. Keep weak legacy/irrelevant rows visible as candidates, but make
+  // the tool result fail closed so the response layer cannot turn them into
+  // instructions or a technical fallback.
+  const taskRelevance = procedureHit?.taskRelevance ?? (procedureHit?.taskTitleMatches ? 1 : 0);
+  const procedureStructuredData = procedureHit ? structuredKnowledgeData(procedureHit.record) : null;
+  const hasProcedureBlocks = Boolean(
+    procedureStructuredData
+    && Array.isArray(procedureStructuredData.procedure_steps)
+    && procedureStructuredData.procedure_steps.length,
+  );
+  const procedureEvidenceUsable = !procedural || (
+    taskSpecificity === "sufficient"
+    && taskRelevance > 0
+    && (Boolean(procedureHit?.evidenceSections?.length) || hasProcedureBlocks)
+  );
+  const effectiveTaskSpecificity = procedural && !procedureEvidenceUsable ? "insufficient" : taskSpecificity;
   const procedureCandidates = procedureHit?.procedureCandidates ?? [];
   return {
-    status: result.length ? "ok" : "not_found",
+    status: result.length && procedureEvidenceUsable ? "ok" : "not_found",
     data: {
       query,
-      task_specificity: taskSpecificity,
-      ...(procedural && taskSpecificity === "insufficient" && procedureCandidates.length
+      task_specificity: effectiveTaskSpecificity,
+      ...(procedural ? { procedure_evidence_quality: procedureEvidenceUsable ? "usable" : "insufficient" } : {}),
+      ...(procedural && effectiveTaskSpecificity === "insufficient" && procedureCandidates.length
         ? { possible_tasks: procedureCandidates.map(({ taskKey, title }) => ({ task_key: taskKey, title })) }
         : {}),
       results: result.map(({ record, score, taskRelevance = 0, taskTitleMatches = 0, taskBodyMatches = 0, matchReason, rank, evidenceSections }, index) => ({
@@ -141,10 +159,10 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
           observed_at: record.observedAt,
           expires_at: record.expiresAt,
         },
-        structured_data: taskSpecificity === "insufficient" && record.knowledgeType === "procedural"
+        structured_data: effectiveTaskSpecificity === "insufficient" && record.knowledgeType === "procedural"
           ? { task_candidate_only: true, task_key: record.taskKey, task_title: record.title }
           : structuredKnowledgeData(record),
-        ...(taskSpecificity === "insufficient" && record.knowledgeType === "procedural" ? { evidence_sections: [] } : {}),
+        ...(effectiveTaskSpecificity === "insufficient" && record.knowledgeType === "procedural" ? { evidence_sections: [] } : {}),
       })),
     },
   };

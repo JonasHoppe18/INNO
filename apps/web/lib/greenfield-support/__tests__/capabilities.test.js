@@ -103,6 +103,54 @@ describe("greenfield capabilities", () => {
     expect(result.data.results[0].knowledge_type).toBe("procedural");
   });
 
+  it("fails closed when a procedural row has no usable task evidence", async () => {
+    const dependencies = await createDemoDependencies();
+    const record = {
+      id: "legacy-procedure",
+      workspaceId: dependencies.tenant.workspaceId,
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      title: "[DEV lifecycle] Procedure",
+      content: "Open the test workflow and confirm the expected result.",
+      structuredData: { procedure_steps: [{ text: "Open the test workflow and confirm the expected result." }] },
+      sourceKind: "merchant_authored",
+      sourceId: "legacy-procedure",
+      sourceUri: null,
+      sourceLabel: "Legacy procedure",
+      contentHash: "legacy-procedure",
+      publishedAt: null,
+      observedAt: null,
+      expiresAt: null,
+      metadata: {},
+      chunks: ["Open the test workflow and confirm the expected result."],
+      taskKey: null,
+    };
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      knowledge: {
+        ingest: async () => record,
+        search: async () => [{
+          record,
+          score: 0.0864,
+          taskRelevance: 0,
+          taskTitleMatches: 0,
+          taskBodyMatches: 0,
+          matchReason: "lexical",
+          rank: 1,
+          evidenceSections: [{ heading: "Source context", content: record.content, chunkIds: ["legacy-procedure"] }],
+          taskSpecificity: "sufficient",
+        }],
+      },
+    });
+
+    const result = await registry.execute("search_procedures", JSON.stringify({ query: "headset keeps disconnecting from the dongle" }));
+
+    expect(result.status).toBe("not_found");
+    expect(result.data).toMatchObject({ task_specificity: "insufficient", procedure_evidence_quality: "insufficient" });
+    expect(result.data.results[0].structured_data).toMatchObject({ task_candidate_only: true });
+    expect(result.data.results[0].evidence_sections).toEqual([]);
+  });
+
   it("uses customer-provided product continuity only to enrich follow-up lookup queries", async () => {
     const dependencies = await createDemoDependencies();
     const requests = [];

@@ -2084,10 +2084,14 @@ function renderLimitation(
       return locale === "da" ? "Jeg kan ikke tjekke den aktuelle lagerstatus lige nu." : "I can’t check the current availability right now.";
     }
   }
-  if (evidence?.toolName === "get_product" && ["unavailable", "error", "unknown"].includes(status ?? "")) {
+  if (evidence?.toolName === "get_product" && ["not_found", "unavailable", "error", "unknown"].includes(status ?? "")) {
     return locale === "da"
-      ? "Jeg kan ikke bekræfte produktet i butikkens katalog lige nu."
-      : "I can’t verify this product in the store catalog right now.";
+      ? status === "not_found"
+        ? "Jeg kunne ikke bekræfte et aktuelt produkt i butikkens katalog."
+        : "Jeg kan ikke bekræfte produktet i butikkens katalog lige nu."
+      : status === "not_found"
+        ? "I couldn’t verify a current product record in the store catalog."
+        : "I can’t verify this product in the store catalog right now.";
   }
   if (evidence?.toolName === "get_tracking") {
     const source = options.includeVerifiedTrackingSource ? renderVerifiedTrackingSource(evidence, locale) : "";
