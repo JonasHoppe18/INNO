@@ -282,7 +282,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
           ))
         ) : (
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
-            Ingen ordrer fundet.
+            No orders found.
           </div>
         )}
       </div>
