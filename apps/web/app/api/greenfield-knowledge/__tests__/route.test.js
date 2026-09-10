@@ -169,11 +169,11 @@ describe("greenfield knowledge API", () => {
     expect(mocks.ingest).not.toHaveBeenCalled();
   });
 
-  it("I: keeps imported provenance read-only", async () => {
+  it("I: keeps imported content read-only while allowing lifecycle review", async () => {
     const imported = { ...merchantRecord, source_kind: "website", source_id: "website:returns", metadata: {} };
     const service = makeSupabase({ records: [imported] });
     mocks.createServiceSupabase.mockReturnValue(service);
-    const response = await PATCH(new Request("http://localhost/api/greenfield-knowledge/record-a", { method: "PATCH", body: "{}" }), { params: { id: "record-a" } });
+    const response = await PATCH(new Request("http://localhost/api/greenfield-knowledge/record-a", { method: "PATCH", body: JSON.stringify({ status: "published", content: "Attempted overwrite" }) }), { params: { id: "record-a" } });
     expect(response.status).toBe(403);
     expect(mocks.replaceSource).not.toHaveBeenCalled();
   });

@@ -15,6 +15,7 @@ import {
   Package,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Sparkles,
@@ -240,7 +241,7 @@ function ProductChooser({ products, value, onChange, disabled }) {
   );
 }
 
-function SourcesView({ records, onAddSource }) {
+function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopifyLoading }) {
   const sources = useMemo(() => {
     const grouped = new Map();
     records.forEach((record) => {
@@ -261,23 +262,31 @@ function SourcesView({ records, onAddSource }) {
     return Array.from(grouped.values()).sort((left, right) => String(right.latest || "").localeCompare(String(left.latest || "")));
   }, [records]);
 
-  if (!sources.length) {
-    return (
-      <div className="flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-500"><FileText className="size-5" /></span>
-        <h2 className="mt-4 text-sm font-semibold text-gray-800">No sources yet</h2>
-        <p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Add a document or create knowledge manually to see where Sona learns from.</p>
-        <Button size="sm" className="mt-5" onClick={onAddSource}><FileText className="size-4" /> Add a source</Button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">Sources</h2>
         <p className="mt-1 text-xs leading-5 text-gray-500">See where Sona&apos;s knowledge comes from and which records each source created.</p>
       </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white p-4 shadow-sm shadow-gray-100/70 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Package className="size-4" /></span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-gray-800">Shopify</span><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700">{shopifySource?.connected === false ? "Not connected" : "Connected"}</Badge></div>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Import policies and product information as drafts for review. Shopify remains the source of truth.</p>
+            {shopifySource?.source ? <p className="mt-1 text-[11px] text-gray-400">{shopifySource.source.counts.total} item{shopifySource.source.counts.total === 1 ? "" : "s"} · {shopifySource.source.counts.published} published · {shopifySource.source.counts.draft} draft</p> : null}
+          </div>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onSyncShopify} disabled={shopifyLoading || shopifySource?.connected === false} className="shrink-0"><RefreshCw className={cn("size-4", shopifyLoading && "animate-spin")} />{shopifyLoading ? "Syncing…" : "Sync from Shopify"}</Button>
+      </div>
+      {!sources.length ? (
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-500"><FileText className="size-5" /></span>
+          <h2 className="mt-4 text-sm font-semibold text-gray-800">No other sources yet</h2>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Add a document or create knowledge manually to see where Sona learns from.</p>
+          <Button size="sm" className="mt-5" onClick={onAddSource}><FileText className="size-4" /> Add a source</Button>
+        </div>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-2">
         {sources.map((source) => {
           const published = source.records.filter((record) => record.status === "published").length;
@@ -320,6 +329,8 @@ export function GreenfieldKnowledgePageClient() {
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
   const [sourceSaving, setSourceSaving] = useState(false);
   const [sourceForm, setSourceForm] = useState({ title: "", knowledge_type: "procedural", content: "" });
+  const [shopifySource, setShopifySource] = useState({ connected: null, source: null });
+  const [shopifyLoading, setShopifyLoading] = useState(false);
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -337,6 +348,19 @@ export function GreenfieldKnowledgePageClient() {
   }, []);
 
   useEffect(() => { loadRecords(); }, [loadRecords]);
+
+  const loadShopifySource = useCallback(async () => {
+    try {
+      const response = await fetch("/api/greenfield-knowledge/shopify", { credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load Shopify source.");
+      setShopifySource({ connected: payload.connected === true, source: payload.source || null });
+    } catch {
+      setShopifySource({ connected: false, source: null });
+    }
+  }, []);
+
+  useEffect(() => { loadShopifySource(); }, [loadShopifySource]);
 
   const loadProducts = useCallback(async () => {
     try {
@@ -395,11 +419,13 @@ export function GreenfieldKnowledgePageClient() {
     setSaving(true);
     try {
       const content = form.type === "procedure" ? procedureContent(form.procedure_blocks) : form.content;
+      const importedStatusOnly = Boolean(selected && !isEditable);
+      const payloadBody = importedStatusOnly ? { status: nextStatus } : { ...form, content, status: nextStatus, task_key: form.task_key, customer_aliases: form.customer_aliases };
       const response = await fetch(selected ? `/api/greenfield-knowledge/${selected.id}` : "/api/greenfield-knowledge", {
         method: selected ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ ...form, content, status: nextStatus, task_key: form.task_key, customer_aliases: form.customer_aliases }),
+        body: JSON.stringify(payloadBody),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Could not save knowledge.");
@@ -410,6 +436,25 @@ export function GreenfieldKnowledgePageClient() {
       toast.error(saveError instanceof Error ? saveError.message : "Could not save knowledge.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const syncShopify = async () => {
+    setShopifyLoading(true);
+    try {
+      const response = await fetch("/api/greenfield-knowledge/shopify", { method: "POST", credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not sync Shopify knowledge.");
+      if (payload.imported) {
+        toast.success(`${payload.candidate_count || 0} Shopify knowledge items are ready for review`);
+      } else {
+        toast.message(payload.message || "No new Shopify knowledge was found.");
+      }
+      await Promise.all([loadRecords(), loadShopifySource()]);
+    } catch (syncError) {
+      toast.error(syncError instanceof Error ? syncError.message : "Could not sync Shopify knowledge.");
+    } finally {
+      setShopifyLoading(false);
     }
   };
 
@@ -444,8 +489,9 @@ export function GreenfieldKnowledgePageClient() {
       : form.status === "archived"
         ? "Archived knowledge stays saved but is hidden from normal Sona retrieval until you publish it again."
       : "Draft knowledge is saved but never used in normal Sona retrieval.";
-  const saveLabel = form.status === "published" ? "Save changes" : form.status === "unpublished" ? "Save unpublished" : form.status === "archived" ? "Save archived" : "Save draft";
+  const saveLabel = selected && !isEditable ? "Save status" : form.status === "published" ? "Save changes" : form.status === "unpublished" ? "Save unpublished" : form.status === "archived" ? "Save archived" : "Save draft";
   const formCanSave = Boolean(form.title.trim()) && (form.type === "procedure" ? form.procedure_blocks.some((block) => block.text.trim()) : Boolean(form.content.trim())) && !(form.applies_to.kind === "products" && !form.applies_to.product_ids.length);
+  const canSave = isEditable ? formCanSave : Boolean(selected);
 
   return (
     <div className="mx-auto w-full max-w-[1240px]">
@@ -506,7 +552,7 @@ export function GreenfieldKnowledgePageClient() {
               }) : null}
               {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-sm font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
             </div>
-          </> : <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} />}
+          </> : <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} onSyncShopify={syncShopify} shopifySource={shopifySource} shopifyLoading={shopifyLoading} />}
         </div>
       </Tabs>
 
@@ -515,7 +561,7 @@ export function GreenfieldKnowledgePageClient() {
           <SheetHeader className="border-b border-gray-100 px-6 py-5 text-left">
             <div className="flex items-center gap-2 text-indigo-600"><Icon className="size-4" /><span className="text-xs font-medium">{selected ? selected.type_label : "New knowledge"}</span></div>
             <SheetTitle className="mt-1">{selected ? (isEditable ? "Edit knowledge" : "Knowledge details") : "Add knowledge"}</SheetTitle>
-            <SheetDescription>{selected && !isEditable ? "Imported knowledge is shown here as read-only." : "Write the guidance Sona should use. You can publish it when it is ready."}</SheetDescription>
+            <SheetDescription>{selected && !isEditable ? "Imported content is read-only. Review it here and publish it when it is ready." : "Write the guidance Sona should use. You can publish it when it is ready."}</SheetDescription>
           </SheetHeader>
           <div className="flex flex-1 flex-col gap-5 px-6 py-5">
             {selected && !isEditable ? <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs leading-5 text-blue-800"><FileText className="size-4 shrink-0" />This source is imported from {selected.source?.label || "an external source"}. Create a merchant entry if you need to add a correction.</div> : null}
@@ -527,10 +573,10 @@ export function GreenfieldKnowledgePageClient() {
               <div className="grid gap-2"><Label htmlFor="greenfield-aliases">How customers might describe it <span className="font-normal text-gray-400">(optional)</span></Label><Input id="greenfield-aliases" value={form.customer_aliases.join(", ")} onChange={(event) => updateForm("customer_aliases", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))} disabled={!isEditable || saving} placeholder="mic not working, nobody can hear me" /></div>
               <div className="grid gap-2"><Label>Instructions</Label><ProcedureBlockEditor blocks={form.procedure_blocks} onChange={updateProcedureBlocks} disabled={!isEditable || saving} /></div>
             </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">{form.type === "policy" ? "Policy content" : form.type === "product" ? "Product information" : "Brand information"}</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder={form.type === "policy" ? "Explain the policy in plain language..." : form.type === "product" ? "Describe the product information Sona should use..." : "Describe the brand guidance Sona should follow..."} className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
-            <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={!isEditable || saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
+            <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
             {selected ? <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-3 text-xs text-gray-500"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-gray-700"><SourceIcon source={selected.source} />{displaySourceLabel(selected.source)}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-gray-700">{formatDate(selected.updated_at)}</span></div></div> : null}
           </div>
-          {isEditable ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" variant="outline" size="sm" onClick={() => save(form.status)} disabled={saving || !formCanSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}{saveLabel}</Button><Button type="button" size="sm" onClick={() => save("published")} disabled={saving || !formCanSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}Publish</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
+          {isEditable || selected ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" variant="outline" size="sm" onClick={() => save(form.status)} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}{saveLabel}</Button><Button type="button" size="sm" onClick={() => save("published")} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}Publish</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
         </SheetContent>
       </Sheet>
 

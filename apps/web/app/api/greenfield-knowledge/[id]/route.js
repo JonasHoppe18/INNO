@@ -4,6 +4,7 @@ import { createServiceSupabase } from "@/lib/server/shopify-oauth";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import { SupabaseKnowledgeStore } from "@/lib/greenfield-support";
 import {
+  GREENFIELD_KNOWLEDGE_STATUSES,
   buildMerchantKnowledgeSource,
   productIdsFromPayload,
   serializeGreenfieldKnowledge,
@@ -86,10 +87,33 @@ export async function PATCH(request, { params }) {
     const scoped = await scopedRecord(params?.id);
     if (scoped.error) return scoped.error;
     const { supabase, scope, record } = scoped;
-    if (String(record.source_kind || "").toLowerCase() !== "merchant_authored") {
-      return NextResponse.json({ error: "Imported knowledge is read-only. Create a merchant-authored entry for corrections." }, { status: 403 });
-    }
     const body = await request.json().catch(() => ({}));
+    if (String(record.source_kind || "").toLowerCase() !== "merchant_authored") {
+      const keys = Object.keys(body || {});
+      const status = String(body?.status || "").trim().toLowerCase();
+      if (keys.some((key) => key !== "status")) {
+        return NextResponse.json({ error: "Imported knowledge content is read-only; only lifecycle status can be changed." }, { status: 403 });
+      }
+      if (!GREENFIELD_KNOWLEDGE_STATUSES.includes(status)) {
+        return NextResponse.json({ error: "Choose a supported knowledge status." }, { status: 400 });
+      }
+      const now = new Date().toISOString();
+      const metadata = { ...(record.metadata || {}), lifecycle_status: status };
+      const updatedResult = await supabase
+        .from("greenfield_knowledge_records")
+        .update({
+          metadata,
+          published_at: status === "published" ? (record.published_at || now) : null,
+          observed_at: now,
+          expires_at: status === "published" ? null : now,
+        })
+        .eq("workspace_id", scope.workspaceId)
+        .eq("id", record.id)
+        .select(RECORD_FIELDS)
+        .single();
+      if (updatedResult.error || !updatedResult.data) throw new Error(updatedResult.error?.message || "Could not update imported knowledge status.");
+      return NextResponse.json({ record: serializeGreenfieldKnowledge(updatedResult.data) });
+    }
     const validation = validateKnowledgePayload(body, { existing: record });
     if (!validation.valid) return NextResponse.json({ error: validation.errors[0], errors: validation.errors }, { status: 400 });
     const productResult = await resolveProducts(supabase, scope, productIdsFromPayload(validation.value));

@@ -115,6 +115,7 @@ export interface KnowledgeSourceDocumentInput {
   content: string;
   sourceUri?: string | null;
   sourceLabel?: string | null;
+  observedAt?: string | null;
   sourceVersion?: number | null;
   metadata?: JsonObject;
   candidates: KnowledgeSourceCandidateInput[];

@@ -23,6 +23,7 @@ import {
   fetchShopCurrency,
 } from "@/lib/server/commerce/shopify-presentment";
 import { COMMERCE_WEBHOOK_TOPICS, ensureShopifyWebhooks } from "@/lib/server/commerce/shopify-webhooks";
+import { fetchShopifyProducts, SHOPIFY_API_VERSION } from "@/lib/server/shopify-product-fetch";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -33,7 +34,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -58,53 +58,6 @@ async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
     public_storefront_domain: data.public_storefront_domain ?? null,
     access_token: decryptString(data.access_token_encrypted),
   };
-}
-
-async function fetchShopifyProducts({ domain, accessToken }) {
-  const products = [];
-  let pageInfo = null;
-  const limit = 50;
-  for (let i = 0; i < 5; i++) {
-    const url = new URL(`https://${domain}/admin/api/${SHOPIFY_API_VERSION}/products.json`);
-    url.searchParams.set("status", "active");
-    url.searchParams.set("limit", String(limit));
-    if (pageInfo) url.searchParams.set("page_info", pageInfo);
-    const res = await fetch(url.toString(), {
-      headers: {
-        Accept: "application/json",
-        "X-Shopify-Access-Token": accessToken,
-      },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `Shopify products returned ${res.status}`);
-    }
-    const payload = await res.json().catch(() => null);
-    const items = Array.isArray(payload?.products) ? payload.products : [];
-    products.push(...items);
-    const linkHeader = res.headers.get("link") ?? "";
-    const next = extractNextPageInfo(linkHeader);
-    if (!next) break;
-    pageInfo = next;
-  }
-  return products;
-}
-
-function extractNextPageInfo(linkHeader = "") {
-  const parts = linkHeader.split(",");
-  for (const part of parts) {
-    if (part.includes('rel="next"')) {
-      const match = part.match(/<([^>]+)>/);
-      if (!match?.[1]) continue;
-      try {
-        const url = new URL(match[1]);
-        return url.searchParams.get("page_info");
-      } catch {
-        continue;
-      }
-    }
-  }
-  return null;
 }
 
 async function loadExistingProductHashes(serviceClient, shopId) {

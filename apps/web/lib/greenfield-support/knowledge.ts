@@ -802,6 +802,7 @@ export async function normalizeKnowledgeSourceDocument(
     content: normalizedContent,
     sourceUri: source.sourceUri,
     sourceLabel: source.sourceLabel,
+    observedAt: source.observedAt,
     sourceVersion: source.sourceVersion ?? 1,
     sourceContentHash,
     metadata: source.metadata,
@@ -1515,25 +1516,26 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     let existingContentHash: string | null = null;
     let matchedBySourceKey = false;
     if (record.sourceRecordKey) {
-      const existingByKey = await this.serviceClient
+      const allowLegacyContentAdoption = !["shopify", "merchant_authored"].includes(cleanText(record.sourceKind).toLowerCase());
+      let existing = await this.serviceClient
         .from("greenfield_knowledge_records")
         .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
         .eq("workspace_id", record.workspaceId)
         .eq("source_id", record.sourceId)
         .eq("source_record_key", record.sourceRecordKey)
         .maybeSingle();
-      if (existingByKey.error) throw new Error(existingByKey.error.message);
-      existingId = existingByKey.data?.id ? String(existingByKey.data.id) : null;
-      existingContentHash = existingByKey.data?.content_hash ? String(existingByKey.data.content_hash) : null;
-      matchedBySourceKey = Boolean(existingId);
-      const existing = existingId ? existingByKey : await this.serviceClient
-        .from("greenfield_knowledge_records")
-        .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
-        .eq("workspace_id", record.workspaceId)
-        .eq("content_hash", record.contentHash)
-        .maybeSingle();
       if (existing.error) throw new Error(existing.error.message);
-      if (!existingId) {
+      existingId = existing.data?.id ? String(existing.data.id) : null;
+      existingContentHash = existing.data?.content_hash ? String(existing.data.content_hash) : null;
+      matchedBySourceKey = Boolean(existingId);
+      if (!existingId && allowLegacyContentAdoption) {
+        existing = await this.serviceClient
+          .from("greenfield_knowledge_records")
+          .select("id,content_hash,metadata,source_kind,source_id,source_uri,source_label")
+          .eq("workspace_id", record.workspaceId)
+          .eq("content_hash", record.contentHash)
+          .maybeSingle();
+        if (existing.error) throw new Error(existing.error.message);
         existingId = existing.data?.id ? String(existing.data.id) : null;
         existingContentHash = existing.data?.content_hash ? String(existing.data.content_hash) : null;
       }
@@ -1619,7 +1621,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     const normalized = await normalizeKnowledgeSourceDocument(workspaceId, source);
     const sourceLookup = await this.serviceClient
       .from("greenfield_knowledge_sources")
-      .select("id,source_version,content_hash")
+      .select("id,source_version,content_hash,status")
       .eq("workspace_id", workspaceId)
       .eq("source_kind", source.sourceKind)
       .eq("source_id", source.sourceId)
@@ -1642,7 +1644,11 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         source_label: cleanText(source.sourceLabel) || null,
         content_hash: normalized.sourceContentHash,
         source_version: sourceVersion,
-        status: "draft",
+        // A re-sync refreshes source content but must not silently move a
+        // merchant-reviewed source back to draft.
+        status: ["draft", "review", "published", "archived"].includes(sourceLookup.data?.status)
+          ? sourceLookup.data.status
+          : "draft",
         metadata: source.metadata ?? {},
       }, { onConflict: "workspace_id,source_kind,source_id" })
       .select("id")
