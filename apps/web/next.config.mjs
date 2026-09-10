@@ -29,6 +29,18 @@ const nextConfig = {
       },
     ],
   },
+  webpack(config) {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      // Templatical's local editor dynamically references optional Cloud/media
+      // peers. Those features are intentionally not used here; keeping the
+      // modules unresolved would make Next's webpack fail the production build.
+      "@templatical/media-library": false,
+      "@templatical/quality": false,
+      "pusher-js": false,
+    };
+    return config;
+  },
 };
 
 export default withNextIntl(nextConfig);
