@@ -281,6 +281,19 @@ export function useThreadSelection({
     [isLocalThreadId, selectedThreadId],
   );
 
+  const replaceThreadId = useCallback((previousThreadId, nextThreadId) => {
+    const previousId = String(previousThreadId || "").trim();
+    const nextId = String(nextThreadId || "").trim();
+    if (!previousId || !nextId || previousId === nextId) return;
+
+    setOpenThreadIds((prev) =>
+      prev.map((threadId) => (threadId === previousId ? nextId : threadId)),
+    );
+    setSelectedThreadId((currentId) =>
+      currentId === previousId ? nextId : currentId,
+    );
+  }, []);
+
   // Prefetch on hover. CACHE-RACE SAFETY INVARIANT:
   //
   // The prefetched `draftCacheRef` entry could in theory go stale if the user
@@ -353,6 +366,7 @@ export function useThreadSelection({
     prefetchingRef,
     openThreadInWorkspace,
     closeThreadTab,
+    replaceThreadId,
     handlePrefetchThread,
     selectNext,
   };

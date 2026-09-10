@@ -462,6 +462,10 @@ function ComposerComponent({
   onReplyLanguageChange = null,
   onRefineDraft = null,
   isRefiningDraft = false,
+  isNewTicket = false,
+  mailboxes = [],
+  selectedMailboxId = "",
+  onMailboxChange = null,
 }) {
   const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -1695,6 +1699,31 @@ function ComposerComponent({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
+              {isNewTicket ? (
+                <label className="flex items-center gap-1.5">
+                  <span className="font-medium text-muted-foreground">From:</span>
+                  <select
+                    aria-label="Send from mailbox"
+                    value={selectedMailboxId || ""}
+                    onChange={(event) => onMailboxChange?.(event.target.value)}
+                    disabled={disabled || isSending}
+                    className="h-7 max-w-[220px] rounded-md border border-border bg-background px-2 text-[13px] text-foreground outline-none"
+                  >
+                    <option value="">Select mailbox</option>
+                    {mailboxes.map((mailbox) => {
+                      const email = String(
+                        mailbox?.provider_email || mailbox?.email || "",
+                      ).trim();
+                      if (!mailbox?.id || !email) return null;
+                      return (
+                        <option key={mailbox.id} value={mailbox.id}>
+                          {email}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              ) : null}
               <span className="font-medium text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span

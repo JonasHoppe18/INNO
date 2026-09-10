@@ -57,6 +57,10 @@ function normalizeEmailList(value) {
   return [];
 }
 
+function isValidEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
 function stripHtml(html) {
   return String(html || "")
     .replace(/<[^>]*>/g, " ")
@@ -1348,6 +1352,25 @@ export async function POST(request, { params }) {
   const toEmails = normalizeEmailList(body?.to_emails);
   const ccEmails = normalizeEmailList(body?.cc_emails);
   const bccEmails = normalizeEmailList(body?.bcc_emails);
+  const isNewTicket = body?.new_ticket === true;
+  if (isNewTicket) {
+    const recipients = [...toEmails, ...ccEmails, ...bccEmails];
+    if (!toEmails.length) {
+      return NextResponse.json(
+        { error: "At least one recipient is required for a new ticket." },
+        { status: 400 },
+      );
+    }
+    const invalidRecipient = recipients.find(
+      (recipient) => !isValidEmailAddress(recipient),
+    );
+    if (invalidRecipient) {
+      return NextResponse.json(
+        { error: `Invalid recipient: ${invalidRecipient}` },
+        { status: 400 },
+      );
+    }
+  }
   const hasExplicitTo = Object.prototype.hasOwnProperty.call(
     body || {},
     "to_emails",
@@ -1375,11 +1398,13 @@ export async function POST(request, { params }) {
   const deliveryBcc = isTestModeActive ? [] : bccEmails;
 
   const subjectRaw = String(body?.subject || thread.subject || "").trim();
-  const subject = subjectRaw.toLowerCase().startsWith("re:")
-    ? subjectRaw
-    : subjectRaw
-      ? `Re: ${subjectRaw}`
-      : "Re:";
+  const subject = isNewTicket
+    ? subjectRaw || "New ticket"
+    : subjectRaw.toLowerCase().startsWith("re:")
+      ? subjectRaw
+      : subjectRaw
+        ? `Re: ${subjectRaw}`
+        : "Re:";
   const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
     workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
     shopId: mailbox?.shop_id || null,

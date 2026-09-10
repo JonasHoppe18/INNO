@@ -1001,12 +1001,14 @@ export function InboxSplitView({
   messages = [],
   threads = [],
   attachments = [],
+  mailboxes = [],
 }) {
   const DRAFT_WAIT_TIMEOUT_MS = 12_000;
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
   const [localNewThread, setLocalNewThread] = useState(null);
+  const [newTicketMailboxId, setNewTicketMailboxId] = useState("");
   const [sentDraftStatsByThread, setSentDraftStatsByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState(
@@ -1857,6 +1859,7 @@ export function InboxSplitView({
     prefetchingRef,
     openThreadInWorkspace,
     closeThreadTab,
+    replaceThreadId,
     handlePrefetchThread,
     selectNext,
   } = useThreadSelection({
@@ -2635,6 +2638,28 @@ export function InboxSplitView({
     DEFAULT_TICKET_STATE,
   });
 
+  const handleLocalThreadCreated = useCallback(
+    ({ localThreadId, thread }) => {
+      const localId = String(localThreadId || "").trim();
+      const realId = String(thread?.id || "").trim();
+      if (!localId || !realId || !thread) return;
+      setLocalNewThread((previous) =>
+        previous?.id === localId ? null : previous,
+      );
+      setLiveThreads((previous) => {
+        const existing = Array.isArray(previous) ? previous : [];
+        return [
+          thread,
+          ...existing.filter(
+            (existingThread) => String(existingThread?.id || "") !== realId,
+          ),
+        ];
+      });
+      replaceThreadId(localId, realId);
+    },
+    [replaceThreadId],
+  );
+
   const {
     composerMode,
     setComposerMode,
@@ -2699,6 +2724,8 @@ export function InboxSplitView({
     latestRealMessageIsOutbound,
     inboundMessageCount,
     mailboxEmails,
+    newTicketMailboxId,
+    onLocalThreadCreated: handleLocalThreadCreated,
     currentSupabaseUserId,
     currentUserName,
     draftCacheRef,
@@ -2935,6 +2962,7 @@ export function InboxSplitView({
       is_local: true,
     };
     setLocalNewThread(nextThread);
+    setNewTicketMailboxId("");
     setOpenThreadIds((prev) => [...prev, id]);
     setSelectedThreadId(id);
     setDraftValue("");
@@ -3721,7 +3749,8 @@ export function InboxSplitView({
             Boolean(systemDraftUneditedByThread[selectedThreadId])
           }
           canSend={
-            Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)
+            Boolean(selectedThreadId) &&
+            (!isLocalThreadId(selectedThreadId) || Boolean(newTicketMailboxId))
           }
           onSend={handleSendDraftWithQueueAdvance}
           pendingOrderUpdate={selectedPendingOrderUpdate}
@@ -3750,6 +3779,10 @@ export function InboxSplitView({
           composerMode={composerMode}
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}
+          isNewTicket={isLocalThreadId(selectedThreadId)}
+          mailboxes={mailboxes}
+          selectedMailboxId={newTicketMailboxId}
+          onMailboxChange={setNewTicketMailboxId}
           isWorkspaceTestMode={isWorkspaceTestMode}
 	          conversationScrollTop={
 	            selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0

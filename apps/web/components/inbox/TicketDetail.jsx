@@ -194,6 +194,10 @@ function TicketDetailComponent({
   composerMode,
   onComposerModeChange,
   mailboxEmails,
+  isNewTicket = false,
+  mailboxes = [],
+  selectedMailboxId = "",
+  onMailboxChange = null,
   isSending = false,
   isWorkspaceTestMode = false,
   headerActions = null,
@@ -962,6 +966,10 @@ function TicketDetailComponent({
               mode={composerMode}
               onModeChange={onComposerModeChange}
               toLabel={toLabel}
+              isNewTicket={isNewTicket}
+              mailboxes={mailboxes}
+              selectedMailboxId={selectedMailboxId}
+              onMailboxChange={onMailboxChange}
               mentionUsers={mentionUsers}
               onBlur={() => onDraftBlur?.(thread?.id || null)}
               isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}

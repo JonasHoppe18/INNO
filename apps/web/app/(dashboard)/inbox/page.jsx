@@ -53,5 +53,12 @@ export default async function InboxPage({ searchParams }) {
     );
   }
 
-  return <InboxPageClientOnly threads={threads} messages={messages} attachments={attachments} />;
+  return (
+    <InboxPageClientOnly
+      threads={threads}
+      messages={messages}
+      attachments={attachments}
+      mailboxes={mailboxes}
+    />
+  );
 }
