@@ -110,6 +110,39 @@ describe("response contract expressiveness", () => {
     expect(rendered).toContain("Bluetooth");
   });
 
+  it("keeps a verified policy answer alongside a clarification for another request", async () => {
+    const dependencies = await createDemoDependencies();
+    const knowledge = {
+      ingest: (...args) => dependencies.knowledge.ingest(...args),
+      search: async (request) => request.knowledgeTypes?.includes("procedural")
+        ? []
+        : dependencies.knowledge.search(request),
+    };
+    const registry = createCapabilityRegistry({ ...dependencies, knowledge });
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "headset will not connect" }));
+    const warranty = await registry.execute("search_policy", JSON.stringify({ query: "warranty period" }));
+    const result = validate(registry,
+      {
+        type: "question",
+        purpose: "clarify_task",
+        text: "Which headset model are you using, and what device are you connecting it to?",
+        capability: null,
+        missing_arguments: [],
+      },
+      {
+        type: "knowledge_guidance",
+        text: "The warranty covers manufacturing defects for 24 months.",
+        basis: { result_id: warranty.resultId, field_paths: ["results"] },
+      },
+    );
+
+    expect(procedure.status).toBe("not_found");
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("Which headset model");
+    expect(rendered).toContain("24 months");
+  });
+
   it("keeps static product knowledge when a separate live product lookup is not found", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({
