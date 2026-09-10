@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
 import type { CapabilityManifest, ConversationContext, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
+import { isExplicitAddressChangeRequest } from "./tool-contracts";
 import type { StrictToolDefinition } from "./tool-contracts";
 
 const BasisSchema = z.object({
@@ -857,7 +858,16 @@ function canClarifyMissingCustomerContext(
   if (segment.purpose !== "clarify_task" || segment.basis || segment.capability !== null || segment.missing_arguments.length) return false;
   const results = context.getResults?.();
   if (!results || results.length) return false;
-  return asksForMissingCustomerContext(segment.text ?? "", context);
+  const productMissing = !meaningful(context.customerProvidedContext?.product);
+  const taskMissing = !hasSpecificCustomerIssue(context);
+  if (!productMissing && !taskMissing) return false;
+  // A safe clarification may be phrased naturally by the model; the
+  // deterministic boundary is the missing customer context, not a brittle
+  // list of question templates. Still prevent it from asking for a product
+  // that the customer already supplied.
+  const supportContextQuestion = /\b(?:product|model|device|headset|issue|problem|help|wrong|trouble|symptom|happening|working|connect|pair|power|sound|audio|microphone|charging|firmware|reset)\b/i.test(segment.text ?? "");
+  return !asksForKnownProduct(segment.text ?? "", context)
+    && (asksForMissingCustomerContext(segment.text ?? "", context) || supportContextQuestion);
 }
 
 /**
@@ -993,6 +1003,11 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
   if (!segment.capability) {
     return [{ index, code: "question_capability_required", message: "A capability-enabling question must name one capability." }];
   }
+  if (segment.capability === "update_address"
+    && context.customerMessage?.trim()
+    && !isExplicitAddressChangeRequest(context.customerMessage)) {
+    return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
+  }
   if (!availableCapability(segment.capability, context)) {
     return [{ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." }];
   }
@@ -1028,6 +1043,11 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       return issues;
     }
     case "action_offer": {
+      if (segment.capability === "update_address"
+        && context.customerMessage?.trim()
+        && !isExplicitAddressChangeRequest(context.customerMessage)) {
+        return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
+      }
       const definition = definitionFor(segment.capability, context);
       if (!context.manifest.proposalOnlyTools.includes(segment.capability) || definition?.sensitivity !== "proposed_action") {
         return [{ index, code: "unknown_action_capability", message: "The offered action is not a current proposal-only capability." }];
@@ -1773,6 +1793,53 @@ function procedureStepListStyle(source: JsonObject | null): ProcedureStepPresent
   return declared === "ordered" || declared === "unordered" ? declared : null;
 }
 
+function procedureStepPresentation(
+  value: unknown,
+  path: string,
+  blockId: string,
+  sourceIndex: number,
+  source: JsonObject | null,
+) {
+  const text = removeLeadingProcedureHeadings(normalizeProcedureText(value), sourceIndex);
+  return text ? {
+    text,
+    path,
+    blockId,
+    sourceIndex,
+    kind: procedureStepKind(text, source),
+    listStyle: procedureStepListStyle(source),
+  } satisfies ProcedureStepPresentation : null;
+}
+
+/**
+ * Conditions and warnings are source-bound blocks, but rendering one without
+ * its adjacent instruction makes the customer-facing answer look truncated.
+ * Complete only the local source block boundary; do not merge records or
+ * invent any text.
+ */
+function completeProcedureSteps(
+  selectedSteps: ProcedureStepPresentation[],
+  allSteps: ProcedureStepPresentation[],
+) {
+  const available = new Map(allSteps.map((step) => [step.sourceIndex, step]));
+  const selected = new Map(selectedSteps.map((step) => [step.sourceIndex, step]));
+  for (const step of [...selected.values()]) {
+    if (step.kind === "condition") {
+      const child = available.get(step.sourceIndex + 1);
+      if (child && ["instruction", "expected_result", "alternative", "note"].includes(child.kind)) {
+        selected.set(child.sourceIndex, child);
+      }
+    }
+    if (step.kind === "warning" || step.kind === "expected_result") {
+      const preceding = available.get(step.sourceIndex - 1);
+      if (preceding && preceding.kind === "instruction") selected.set(preceding.sourceIndex, preceding);
+    }
+  }
+  return [...selected.values()]
+    .filter((step) => step.kind !== "condition" || selected.has(step.sourceIndex + 1))
+    .sort((left, right) => left.sourceIndex - right.sourceIndex);
+}
+
 function procedureStepValues(
   segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
   context: ResponseValidationContext,
@@ -1782,39 +1849,49 @@ function procedureStepValues(
   const citedResultIndex = segment.basis.field_paths
     .map(resultIndexFromPath)
     .find((value): value is number => value != null);
-  if (segment.block_ids?.length && citedResultIndex != null) {
-    const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
-    const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
-    return segment.block_ids.flatMap((blockId) => {
-      const entry = blocksById.get(blockId);
-      if (!entry || !meaningful(entry.block.text)) return [];
-      const text = removeLeadingProcedureHeadings(normalizeProcedureText(entry.block.text), entry.index);
-      return text ? [{
-        text,
-        path: `structured_data.procedure_steps[${entry.index}]`,
-        blockId: entry.blockId,
-        sourceIndex: entry.index,
-        kind: procedureStepKind(text, entry.block),
-        listStyle: procedureStepListStyle(entry.block),
-      }] : [];
-    });
-  }
-  return (segment.step_paths ?? []).flatMap((path) => {
-    const value = procedureStepValue(evidence.result, path, citedResultIndex ?? undefined);
-    if (!meaningful(value)) return [];
-    const parsed = procedureStepPath(path, citedResultIndex ?? undefined);
-    if (!parsed) return [];
-    const source = procedureStepObject(evidence.result, path, citedResultIndex ?? undefined);
-    const text = removeLeadingProcedureHeadings(normalizeProcedureText(value), parsed.stepIndex);
-    return text ? [{
-      text,
-      path,
-      blockId: String(source?.block_id ?? source?.id ?? `block_${parsed.stepIndex + 1}`),
-      sourceIndex: parsed.stepIndex,
-      kind: procedureStepKind(text, source),
-      listStyle: procedureStepListStyle(source),
-    }] : [];
+  if (citedResultIndex == null) return [];
+  const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
+  const allSteps = availableBlocks.flatMap((entry) => {
+    const step = procedureStepPresentation(
+      entry.block.text,
+      `structured_data.procedure_steps[${entry.index}]`,
+      entry.blockId,
+      entry.index,
+      entry.block,
+    );
+    return step ? [step] : [];
   });
+  const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
+  const selectedSteps = segment.block_ids?.length
+    ? segment.block_ids.flatMap((blockId) => {
+        const entry = blocksById.get(blockId);
+        const step = entry
+          ? procedureStepPresentation(
+              entry.block.text,
+              `structured_data.procedure_steps[${entry.index}]`,
+              entry.blockId,
+              entry.index,
+              entry.block,
+            )
+          : null;
+        return step ? [step] : [];
+      })
+    : (segment.step_paths ?? []).flatMap((path) => {
+        const value = procedureStepValue(evidence.result, path, citedResultIndex);
+        if (!meaningful(value)) return [];
+        const parsed = procedureStepPath(path, citedResultIndex);
+        if (!parsed) return [];
+        const source = procedureStepObject(evidence.result, path, citedResultIndex);
+        const step = procedureStepPresentation(
+          value,
+          path,
+          String(source?.block_id ?? source?.id ?? `block_${parsed.stepIndex + 1}`),
+          parsed.stepIndex,
+          source,
+        );
+        return step ? [step] : [];
+      });
+  return completeProcedureSteps(selectedSteps, allSteps);
 }
 
 function normalizedProcedurePhrase(value: unknown) {

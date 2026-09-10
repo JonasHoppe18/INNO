@@ -1,4 +1,4 @@
-import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contracts";
+import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
 import { structuredKnowledgeData } from "./knowledge";
 import type {
@@ -547,6 +547,15 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           case "cancel_order":
             return validatedProposedAction("cancel_order", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "update_address":
+            if (context.customerMessage?.trim() && !isExplicitAddressChangeRequest(context.customerMessage)) {
+              return {
+                status: "invalid_request",
+                error: {
+                  code: "address_change_request_required",
+                  message: "An address proposal requires an explicit request to change the existing order address.",
+                },
+              };
+            }
             return validatedProposedAction("update_address", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "create_return":
             return validatedProposedAction("create_return", args, stringArg(args, "reason"), context, manifest, orderFocus);

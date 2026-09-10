@@ -65,6 +65,67 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("send the order number from your order confirmation");
   });
 
+  it("allows product clarification before any lookup when the product is missing", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "Which product or model are you having trouble with, and what is happening?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, {
+      ...registry,
+      customerMessage: "My headset is broken. What can you help with?",
+      customerProvidedContext: { issue: "My headset is broken" },
+    });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerMessage: "My headset is broken. What can you help with?",
+      customerProvidedContext: { issue: "My headset is broken" },
+    })).toContain("Which product or model");
+  });
+
+  it("allows task clarification when the product is known but the issue is broad", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "What problem are you experiencing with it?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, {
+      ...registry,
+      customerMessage: "My A-Spire Wireless is broken.",
+      customerProvidedContext: { product: "A-Spire Wireless", issue: "My A-Spire Wireless is broken" },
+    });
+
+    expect(result.allValid).toBe(true);
+  });
+
+  it("allows a clarification for missing context without fabricating a tool result", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "Which product are you using, and what would you like help with?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, { ...registry, customerMessage: "I need help with my headset." });
+
+    expect(result.allValid).toBe(true);
+  });
+
   it("uses a trusted first-name greeting only on the first substantive response", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -647,6 +708,33 @@ describe("structured response contract", () => {
     expect(unknownCapability.issues[0].code).toBe("unknown_question_capability");
     expect(unknownArgument.allValid).toBe(false);
     expect(unknownArgument.issues[0].code).toBe("question_argument_not_in_schema");
+  });
+
+  it("does not turn a shipping destination question into an address action", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policyQuestion = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Send the order number and new address.",
+        capability: "update_address",
+        missing_arguments: ["order_id", "address"],
+      }],
+    }, { ...registry, customerMessage: "Can you ship my order to Japan?" });
+    const explicitChange = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Send the order number and new address.",
+        capability: "update_address",
+        missing_arguments: ["order_id", "address"],
+      }],
+    }, { ...registry, customerMessage: "Please change the shipping address on order #10232." });
+
+    expect(policyQuestion.allValid).toBe(false);
+    expect(policyQuestion.issues[0].code).toBe("address_change_request_required");
+    expect(explicitChange.allValid).toBe(true);
   });
 
   it("keeps pure clarification separate from capability commitments", async () => {

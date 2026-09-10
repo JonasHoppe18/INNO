@@ -149,6 +149,33 @@ describe("greenfield capabilities", () => {
     expect(result.proposedAction).toMatchObject({ action: "cancel_order", requiresConfirmation: true, status: "proposed" });
   });
 
+  it("keeps address proposals behind an explicit address-change request", async () => {
+    const dependencies = await createDemoDependencies();
+    const policyRegistry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "Can you ship my order to another country?",
+    });
+    const blocked = await policyRegistry.execute("update_address", JSON.stringify({
+      order_id: "10232",
+      address: "1 Main Street",
+      reason: "Customer asks about destination availability",
+    }));
+
+    const changeRegistry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "Please change the shipping address on order #10232.",
+    });
+    await changeRegistry.execute("get_order", JSON.stringify({ order_id: "10232" }));
+    const allowed = await changeRegistry.execute("update_address", JSON.stringify({
+      order_id: "10232",
+      address: "1 Main Street",
+      reason: "Customer entered the wrong address",
+    }));
+
+    expect(blocked).toMatchObject({ status: "invalid_request", error: { code: "address_change_request_required" } });
+    expect(allowed).toMatchObject({ status: "proposed", proposedAction: { action: "update_address" } });
+  });
+
   it("fails closed for live order data without verified customer identity", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry({

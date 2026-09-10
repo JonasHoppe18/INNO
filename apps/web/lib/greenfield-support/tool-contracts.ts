@@ -35,6 +35,20 @@ function proposed(name: string, description: string, properties: Record<string, 
 
 const stringProperty = (description: string): Property => ({ type: "string", description });
 
+/**
+ * A destination/country question is not an address-change request. Keep this
+ * boundary deterministic so the model cannot turn a policy question into a
+ * proposed order mutation just because the customer says "my order".
+ */
+export function isExplicitAddressChangeRequest(message: string): boolean {
+  const text = String(message ?? "").replace(/[\u2019]/g, "'").trim();
+  if (!text) return false;
+  return /\b(?:change|modify|update|correct|edit|fix|replace|switch|set|move|amend)\b[\s\S]{0,100}\b(?:shipping|delivery|mailing|billing)?\s*address\b/i.test(text)
+    || /\b(?:shipping|delivery|mailing|billing)?\s*address\b[\s\S]{0,100}\b(?:change|modify|update|correct|edit|fix|replace|switch|set|move|amend)\b/i.test(text)
+    || /\b(?:wrong|incorrect)\s+(?:shipping|delivery|mailing|billing)?\s*address\b/i.test(text)
+    || /\b(?:entered|typed|gave|provided)\b[\s\S]{0,40}\b(?:wrong|incorrect)\b[\s\S]{0,40}\b(?:shipping|delivery|mailing|billing)?\s*address\b/i.test(text);
+}
+
 export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   readOnly("search_policy", "Find authoritative tenant policy relevant to the customer question.", { query: stringProperty("The policy question in customer language.") }),
   readOnly("search_product_knowledge", "Search product and reference knowledge: specifications, features, compatibility, usage, manuals, and descriptive facts. Do not use this for troubleshooting, setup, pairing, reset, or other step-by-step support procedures; use search_procedures instead.", { query: stringProperty("The product fact, specification, compatibility, or descriptive question in customer language; exclude troubleshooting and how-to procedures.") }),
@@ -49,7 +63,7 @@ export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   readOnly("inspect_fulfillment", "For item-level questions about which item shipped, was fulfilled, or was delivered, read current fulfillment details after verifying the order. This includes source-bound order-line-item membership and quantity for each fulfillment when Shopify provides it; get_order and get_tracking alone cannot identify the item. Fulfillment mapping does not by itself prove physical delivery.", { order_id: stringProperty("The order number or order ID.") }),
   readOnly("get_tracking", "Read current shipment tracking for a tracking number verified against the current customer's Shopify order.", { tracking_number: stringProperty("The tracking number from a verified current-customer order or an explicitly supplied customer tracking reference.") }),
   proposed("cancel_order", "Propose cancellation of an order. This capability never executes the cancellation.", { order_id: stringProperty("The order number or order ID."), reason: stringProperty("Customer's stated reason for requesting cancellation.") }),
-  proposed("update_address", "Propose an address update. This capability never changes customer or order data.", { order_id: stringProperty("The order number or order ID."), address: stringProperty("The complete new address supplied by the customer."), reason: stringProperty("Why the address needs to change.") }),
+  proposed("update_address", "Propose an address update for an existing order. Use only when the customer explicitly asks to change or correct that address; do not use this for shipping-country, destination, or delivery-policy questions. This capability never changes customer or order data.", { order_id: stringProperty("The order number or order ID."), address: stringProperty("The complete new address supplied by the customer."), reason: stringProperty("Why the address needs to change.") }),
   proposed("create_return", "Propose a return. This capability never creates a return.", { order_id: stringProperty("The order number or order ID."), item_ids: { type: "array", description: "Line item IDs to return.", items: stringProperty("A line item ID.") }, reason: stringProperty("Customer's stated return reason.") }),
   proposed("create_refund", "Propose a refund. This capability never issues money or modifies an order.", { order_id: stringProperty("The order number or order ID."), amount: stringProperty("Requested amount, if known; do not invent an amount."), reason: stringProperty("Reason for the requested refund.") }),
   proposed("send_replacement", "Propose a replacement. This capability never creates a shipment.", { order_id: stringProperty("The order number or order ID."), item_id: stringProperty("Line item ID to replace."), reason: stringProperty("Reason a replacement is requested.") }),

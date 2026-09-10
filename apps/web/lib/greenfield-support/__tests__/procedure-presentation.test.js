@@ -126,6 +126,20 @@ describe("source-bound procedure presentation", () => {
     expect(rendered).not.toContain("Repeat step 2.");
   });
 
+  it("H2: completes a selected condition with its adjacent source instruction", async () => {
+    const { rendered } = await renderedProcedure(resetContent, "How do I reset my A-Spire Wireless?", [4]);
+    expect(rendered).toContain("If the LED does not turn purple, repeat step 2.");
+    expect(rendered).toContain("Connect the USB-C cable.");
+  });
+
+  it("H3: drops a dangling condition when the source has no child instruction", async () => {
+    const { rendered } = await renderedProcedure([
+      "Reset checks.",
+      "If the LED does not turn purple:",
+    ].join("\n\n"), "How do I reset my A-Spire Wireless?", [1]);
+    expect(rendered).not.toContain("If the LED does not turn purple:");
+  });
+
   it("I: answers a single-fact duration question without dumping neighboring steps", async () => {
     const { rendered } = await renderedProcedure(resetContent, "How long should I hold the Power button when resetting my A-Spire Wireless?", [0, 1, 2]);
     expect(rendered).toBe("Press and hold the Power button for at least 15 seconds.");
