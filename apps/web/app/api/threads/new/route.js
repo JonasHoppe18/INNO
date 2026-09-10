@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  isExternalCustomerEmail,
+  loadWorkspaceInternalEmails,
+  normalizeCustomerEmail,
+  resolveWorkspaceCustomer,
+} from "@/lib/server/customer-identity";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -142,16 +148,53 @@ export async function POST(request) {
     );
   }
 
+  const workspaceId = mailbox.workspace_id || scope.workspaceId || null;
+  const primaryRecipient = normalizeCustomerEmail(toEmails[0]);
+  let internalEmails = [mailbox.provider_email];
+  if (workspaceId) {
+    try {
+      internalEmails = await loadWorkspaceInternalEmails(serviceClient, workspaceId);
+    } catch {
+      return NextResponse.json(
+        { error: "Could not verify the recipient scope." },
+        { status: 500 },
+      );
+    }
+  }
+  if (!isExternalCustomerEmail(primaryRecipient, { internalEmails })) {
+    return NextResponse.json(
+      { error: "The first recipient must be an external customer email." },
+      { status: 400 },
+    );
+  }
+
+  let customer = null;
+  if (workspaceId) {
+    try {
+      customer = await resolveWorkspaceCustomer(serviceClient, {
+        workspaceId,
+        email: primaryRecipient,
+      });
+      if (!customer?.id) throw new Error("Customer profile was not created.");
+    } catch {
+      return NextResponse.json(
+        { error: "Could not resolve the customer profile." },
+        { status: 500 },
+      );
+    }
+  }
+
   const { data: thread, error: threadError } = await serviceClient
     .from("mail_threads")
     .insert({
       user_id: mailbox.user_id,
-      workspace_id: mailbox.workspace_id || scope.workspaceId || null,
+      workspace_id: workspaceId,
       mailbox_id: mailbox.id,
       provider,
       subject,
       snippet: "",
-      customer_email: toEmails[0],
+      customer_id: customer?.id || null,
+      customer_email: primaryRecipient,
       status: "new",
       priority: "normal",
       tags: [],
@@ -159,7 +202,7 @@ export async function POST(request) {
       is_read: true,
     })
     .select(
-      "id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, ticket_number, subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at",
+      "id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, ticket_number, subject, snippet, customer_id, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at",
     )
     .single();
   if (threadError || !thread) {

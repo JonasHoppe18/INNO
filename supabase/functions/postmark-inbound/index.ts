@@ -32,6 +32,11 @@ import {
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
+import {
+  loadWorkspaceInternalEmails,
+  resolveInboundCustomerIdentity,
+  resolveWorkspaceCustomer,
+} from "../_shared/customer-identity.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -1623,6 +1628,44 @@ Deno.serve(async (req) => {
   });
   const isBlockedSender = Boolean(blockedSender?.id);
 
+  let inboundCustomer = null;
+  if (mailbox.workspace_id) {
+    let internalEmails = mailbox.provider_email ? [mailbox.provider_email] : [];
+    try {
+      internalEmails = await loadWorkspaceInternalEmails(supabase, mailbox.workspace_id);
+    } catch (error) {
+      console.warn(
+        "postmark-inbound: failed to load workspace internal emails",
+        (error as Error)?.message || error,
+      );
+    }
+    const customerIdentity = resolveInboundCustomerIdentity({
+      workspaceId: mailbox.workspace_id,
+      fromEmail,
+      extractedCustomerEmail: shopifyContact.customerEmail,
+      isBlockedSender,
+      isAutomated: isAutomatedSender({ fromEmail, headers }),
+      internalEmails,
+    });
+    if (customerIdentity) {
+      try {
+        inboundCustomer = await resolveWorkspaceCustomer(supabase, {
+          workspaceId: customerIdentity.workspaceId,
+          email: customerIdentity.normalizedEmail,
+          name: shopifyContact.customerName || fromName,
+        });
+        if (!inboundCustomer?.id) throw new Error("Customer profile was not created.");
+      } catch (error) {
+        await logAgent(
+          "postmark_inbound_received",
+          { messageId, slug, error: (error as Error)?.message || "Customer resolution failed" },
+          "error",
+        );
+        return jsonResponse(500, { error: "Customer profile resolution failed" });
+      }
+    }
+  }
+
   if (isBlockedSender) {
     routingClassification = {
       category: "blocked",
@@ -1831,6 +1874,7 @@ Deno.serve(async (req) => {
         provider_thread_id: null,
         subject,
         snippet,
+        customer_id: inboundCustomer?.id ?? null,
         customer_name: shopifyContact.customerName || fromName || null,
         customer_email: (shopifyContact.customerEmail || fromEmail || "").toLowerCase() || null,
         customer_last_inbound_at: receivedAt,
@@ -1985,6 +2029,9 @@ Deno.serve(async (req) => {
   if (senderRuleInboxSlug) {
     const currentTags = updatePayload.tags ?? existingThread?.tags;
     updatePayload.tags = withInboxTag(currentTags, senderRuleInboxSlug);
+  }
+  if (inboundCustomer?.id) {
+    updatePayload.customer_id = inboundCustomer.id;
   }
   await supabase
     .from("mail_threads")
