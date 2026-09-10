@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveScopedShop: vi.fn(),
   ingest: vi.fn(),
   replaceSource: vi.fn(),
+  ensureEmbeddings: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
@@ -19,6 +20,7 @@ vi.mock("@/lib/greenfield-support", () => ({
   SupabaseKnowledgeStore: class {
     ingest(...args) { return mocks.ingest(...args); }
     replaceSource(...args) { return mocks.replaceSource(...args); }
+    ensureEmbeddings(...args) { return mocks.ensureEmbeddings(...args); }
   },
 }));
 
@@ -28,6 +30,7 @@ function queryBuilder(resolveRows) {
     select() { return this; },
     eq(key, value) { filters[key] = value; return this; },
     in(key, value) { filters[key] = value; return this; },
+    update() { return this; },
     ilike() { return this; },
     is() { return this; },
     order() { return this; },
@@ -176,5 +179,19 @@ describe("greenfield knowledge API", () => {
     const response = await PATCH(new Request("http://localhost/api/greenfield-knowledge/record-a", { method: "PATCH", body: JSON.stringify({ status: "published", content: "Attempted overwrite" }) }), { params: { id: "record-a" } });
     expect(response.status).toBe(403);
     expect(mocks.replaceSource).not.toHaveBeenCalled();
+  });
+
+  it("re-indexes imported chunks when lifecycle moves to published", async () => {
+    const imported = { ...merchantRecord, source_kind: "shopify", source_id: "shopify:shop-a", metadata: { lifecycle_status: "draft" } };
+    const service = makeSupabase({ records: [imported] });
+    mocks.createServiceSupabase.mockReturnValue(service);
+
+    const response = await PATCH(new Request("http://localhost/api/greenfield-knowledge/record-a", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "published" }),
+    }), { params: { id: "record-a" } });
+
+    expect(response.status).toBe(200);
+    expect(mocks.ensureEmbeddings).toHaveBeenCalledWith("workspace-a", "record-a");
   });
 });

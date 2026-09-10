@@ -1484,6 +1484,10 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     }
   }
 
+  async ensureEmbeddings(workspaceId: string, recordId: string): Promise<void> {
+    await this.ensureChunkEmbeddings(workspaceId, recordId);
+  }
+
   private async persistRecord(record: KnowledgeRecord, sourceUuid?: string | null): Promise<KnowledgeRecord> {
     let payload = {
       workspace_id: record.workspaceId,

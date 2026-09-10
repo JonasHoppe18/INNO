@@ -112,6 +112,9 @@ export async function PATCH(request, { params }) {
         .select(RECORD_FIELDS)
         .single();
       if (updatedResult.error || !updatedResult.data) throw new Error(updatedResult.error?.message || "Could not update imported knowledge status.");
+      if (status === "published") {
+        await new SupabaseKnowledgeStore(supabase).ensureEmbeddings(scope.workspaceId, String(record.id));
+      }
       return NextResponse.json({ record: serializeGreenfieldKnowledge(updatedResult.data) });
     }
     const validation = validateKnowledgePayload(body, { existing: record });
