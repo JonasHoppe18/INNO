@@ -74,7 +74,6 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
   it("preloads policy evidence so a mixed request can preserve both supported parts", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
-      modelResponse([functionCall("search_procedures", { query: "damaged item" }, { callId: "sdk-damage" })]),
       modelResponse([assistantMessage(structured(
         {
           type: "knowledge_guidance",
@@ -98,7 +97,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     });
 
     model.assertComplete();
-    expect(model.calls).toHaveLength(2);
+    expect(model.calls).toHaveLength(1);
     expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual([
       "search_policy",
       "search_procedures",
