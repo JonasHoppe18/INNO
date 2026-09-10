@@ -94,7 +94,7 @@ describe("generic greenfield knowledge task relevance", () => {
   it("matches policy topics by canonical content while excluding unrelated policy records", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Approved refunds are issued after inspection.");
-    await ingestPolicy(store, "returns-policy", "Returns policy", "Customers may receive money back after an eligible return is inspected.");
+    await ingestPolicy(store, "returns-policy", "Eligibility policy", "Customers may receive money back after an eligible return is inspected.");
     await ingestPolicy(store, "shipping-policy", "Shipping and delivery policy", "We deliver orders to supported destinations and publish delivery windows.");
     await ingestPolicy(store, "warranty-policy", "Legal coverage information", "Manufacturing defects are covered by the product warranty for the stated warranty period.");
     await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.");
@@ -117,6 +117,22 @@ describe("generic greenfield knowledge task relevance", () => {
     expect((await search("Can you deliver my order to Japan?")).some((hit) => hit.record.sourceId === "privacy-policy")).toBe(false);
     expect((await search("Can I return this item and what shipping options are available?"))
       .map((hit) => hit.record.sourceId)).toEqual(expect.arrayContaining(["refund-policy", "shipping-policy"]));
+  });
+
+  it("prefers an explicitly named policy topic over incidental body wording", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Shipping, shipping labels, and shipping costs are discussed in the return process.");
+    await ingestPolicy(store, "shipping-policy", "Shipping policy", "We ship orders to supported destinations, including Japan, subject to the available shipping options.");
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "Can you ship my order to Japan?",
+      taskQuery: "Can you ship my order to Japan?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["shipping-policy"]);
   });
 
   it("keeps policy type boundaries when other knowledge shares the requested wording", async () => {

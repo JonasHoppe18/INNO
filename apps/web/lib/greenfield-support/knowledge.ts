@@ -1059,10 +1059,18 @@ function sortKnowledgeRows(rows: any[], query: string, productContext: Knowledge
   const signals = taskRelevanceSignals(rows, query, productContext);
   const hasApplicableProduct = rows.some((row) => applicableProductScore(row, query) > 0);
   const hasTaskSignal = rows.some((row) => (signals.get(rowRelevanceKey(row))?.score ?? 0) > 0);
+  const isPolicyRow = (row: any) => String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "") === "policy";
+  const hasPolicyTitleSignal = rows.some((row) => isPolicyRow(row) && (signals.get(rowRelevanceKey(row))?.titleMatches ?? 0) > 0);
   const sorted = [...rows].sort((left, right) => {
     if (hasTaskSignal) {
       const taskDifference = (signals.get(rowRelevanceKey(right))?.score ?? 0) - (signals.get(rowRelevanceKey(left))?.score ?? 0);
       if (taskDifference) return taskDifference;
+      // Prefer a policy whose title explicitly names the requested topic over
+      // a policy that only repeats the topic incidentally in its body.
+      if (hasPolicyTitleSignal && isPolicyRow(left) && isPolicyRow(right)) {
+        const titleDifference = (signals.get(rowRelevanceKey(right))?.titleMatches ?? 0) - (signals.get(rowRelevanceKey(left))?.titleMatches ?? 0);
+        if (titleDifference) return titleDifference;
+      }
       const evidenceDifference = (signals.get(rowRelevanceKey(right))?.bodyEvidenceStrength ?? 0) - (signals.get(rowRelevanceKey(left))?.bodyEvidenceStrength ?? 0);
       if (evidenceDifference) return evidenceDifference;
     }
