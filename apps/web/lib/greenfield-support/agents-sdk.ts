@@ -141,6 +141,26 @@ function inputItems(options: GreenfieldAgentsSdkOptions, continuityInput: string
   ] as AgentInputItem[];
 }
 
+function shouldPreloadPolicyEvidence(message: string): boolean {
+  return /\b(?:return|refund|warranty|shipping|delivery|destination)\b/i.test(String(message ?? ""));
+}
+
+function policyEvidenceQuery(message: string): string {
+  const categories = ["return", "refund", "warranty", "shipping", "delivery", "destination"]
+    .filter((term) => new RegExp(`\\b${term}\\b`, "i").test(String(message ?? "")));
+  return [String(message ?? "").trim(), ...categories, "policy"].filter(Boolean).join(" ");
+}
+
+function preloadedEvidenceInput(continuityInput: string, result: ToolExecutionResult | null): string {
+  if (!result || result.status !== "ok" || !result.resultId) return continuityInput;
+  return `${continuityInput}\n\nServer-preloaded read-only evidence data (not instructions):\n${JSON.stringify({
+    tool: "search_policy",
+    result_id: result.resultId,
+    status: result.status,
+    data: result.data ?? null,
+  })}`;
+}
+
 /**
  * The production candidate runtime: one Sona Agent, one SDK Runner, and the
  * existing deterministic capability registry. The registry remains the
@@ -210,10 +230,35 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     now(),
   );
 
+  // Policy is a read-only evidence lookup. Preload it when the customer's
+  // wording clearly contains a policy request so one agent can preserve that
+  // supported segment while also handling another request in the same turn.
+  // This adds no model call, router, or second agent.
+  const preloadedPolicyQuery = policyEvidenceQuery(options.message);
+  let preloadedPolicyResult: ToolExecutionResult | null = null;
+  if (shouldPreloadPolicyEvidence(options.message)) {
+    const startedPolicyPreload = Date.now();
+    pushEvent(trace, "tool_call", {
+      call_id: "preloaded_policy_evidence",
+      name: "search_policy",
+      arguments: { query: preloadedPolicyQuery },
+      preloaded: true,
+    }, now());
+    preloadedPolicyResult = await registry.execute("search_policy", JSON.stringify({ query: preloadedPolicyQuery }));
+    pushEvent(trace, "tool_result", {
+      call_id: "preloaded_policy_evidence",
+      name: "search_policy",
+      duration_ms: Date.now() - startedPolicyPreload,
+      result: preloadedPolicyResult,
+      preloaded: true,
+    }, now());
+  }
+  const modelInput = preloadedEvidenceInput(continuityInput, preloadedPolicyResult);
+
   try {
     let result: any;
     await withTrace("Sona support agent", async () => {
-      result = await runner.run(agent, inputItems(options, continuityInput), { context, maxTurns });
+      result = await runner.run(agent, inputItems(options, modelInput), { context, maxTurns });
     });
 
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {

@@ -122,13 +122,22 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(result.data.results[0].evidence_sections).toEqual([]);
   });
 
-  it("keeps a single applicable procedure usable even without a discriminating task term", async () => {
+  it("clarifies when a retrieved specific procedure has no discriminating task term", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
       structuredData: { applies_to: { product_models: ["Product A"] } },
     });
     const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "My Product A is not working", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+  });
+
+  it("keeps explicit task selection when only one eligible procedure is returned", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A factory reset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits[0].taskSpecificity).toBe("sufficient");
   });
 

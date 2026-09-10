@@ -6,13 +6,13 @@ import { renderResponseSegments, validateStructuredResponse } from "../response-
 
 const WORKSPACE_ID = "greenfield-demo-workspace";
 
-async function procedureRegistry(content) {
+async function procedureRegistry(content, title = "Headset reset procedure") {
   const dependencies = await createDemoDependencies();
   const knowledge = new InMemoryKnowledgeStore();
   await knowledge.ingest(WORKSPACE_ID, {
     sourceKind: "merchant_authored",
     sourceId: "presentation-procedure",
-    title: "Headset reset procedure",
+    title,
     content,
     knowledgeType: "procedural",
     authority: "authoritative",
@@ -22,8 +22,8 @@ async function procedureRegistry(content) {
   return createCapabilityRegistry({ ...dependencies, knowledge });
 }
 
-async function renderedProcedure(content, customerMessage, stepIndexes) {
-  const registry = await procedureRegistry(content);
+async function renderedProcedure(content, customerMessage, stepIndexes, title) {
+  const registry = await procedureRegistry(content, title);
   const lookup = await registry.execute("search_procedures", JSON.stringify({ query: customerMessage }));
   const resultIndex = lookup.data.results.findIndex((item) => item.provenance.source_id === "presentation-procedure");
   const segment = {
@@ -110,11 +110,11 @@ describe("source-bound procedure presentation", () => {
 
   it("G: keeps guidance with no ordered metadata as bullets rather than inventing numbering", async () => {
     const { rendered } = await renderedProcedure([
-      "Troubleshooting checks",
+      "# Microphone troubleshooting checks",
       "Check the mute switch.",
       "Check the app permissions.",
       "Try another device.",
-    ].join("\n\n"), "What should I check for a microphone problem on my A-Spire Wireless?", [0, 1, 2]);
+    ].join("\n\n"), "What should I check for a microphone problem on my A-Spire Wireless?", [1, 2, 3], "Microphone troubleshooting procedure");
     expect(rendered).toContain("- Check the mute switch.");
     expect(rendered).toContain("- Check the app permissions.");
     expect(rendered).not.toMatch(/\n1\. Check/);

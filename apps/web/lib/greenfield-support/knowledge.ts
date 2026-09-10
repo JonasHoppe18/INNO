@@ -1064,12 +1064,12 @@ function procedureSelectionInfo(rows: any[], signals: Map<string, TaskRelevanceS
   if (procedureRows.length <= 1) {
     if (!procedureRows.length) return { taskSpecificity: "insufficient", procedureCandidates };
     const onlySignal = signals.get(rowRelevanceKey(procedureRows[0]));
-    const canonicalTask = rowProcedureMetadata(procedureRows[0]).taskKey;
     return {
-      // A canonical single procedure can answer a broad query. A legacy
-      // bundled row without a task identity cannot: it must not become a
-      // back door for arbitrary procedural disclosure.
-      taskSpecificity: canonicalTask || (onlySignal?.titleMatches ?? 0) > 0 ? "sufficient" : "insufficient",
+      // A canonical task identity is not evidence that the customer asked for
+      // that task. Retrieval can surface one specific procedure even when
+      // several eligible tasks exist, so a broad query must still clarify
+      // unless the customer's wording matches the task identity.
+      taskSpecificity: (onlySignal?.titleMatches ?? 0) > 0 ? "sufficient" : "insufficient",
       procedureCandidates,
     };
   }

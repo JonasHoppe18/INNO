@@ -71,6 +71,42 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.at(-1).type).toBe("final_response");
   });
 
+  it("preloads policy evidence so a mixed request can preserve both supported parts", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([functionCall("search_procedures", { query: "damaged item" }, { callId: "sdk-damage" })]),
+      modelResponse([assistantMessage(structured(
+        {
+          type: "knowledge_guidance",
+          text: "A return can be requested within 30 days of delivery when the item is unused and in its original packaging.",
+          basis: { result_id: "tool_result_1", field_paths: ["results"] },
+        },
+        {
+          type: "procedure_guidance",
+          text: "For a damaged item, collect the details needed for review.",
+          basis: { result_id: "tool_result_2", field_paths: ["data.results[0].structured_data.procedure_steps"] },
+          block_ids: ["block_1"],
+        },
+      ))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "My item is damaged and I also want to return it.",
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(model.calls).toHaveLength(2);
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual([
+      "search_policy",
+      "search_procedures",
+    ]);
+    expect(result.response).toContain("30 days");
+    expect(result.response).toContain("clear photos");
+  });
+
   it("turns an unusable procedure result into a normal knowledge-gap response", async () => {
     const dependencies = await createDemoDependencies();
     const knowledge = {
