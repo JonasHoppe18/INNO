@@ -992,17 +992,24 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
   const taskTerms = queryTokens.filter((token) => (documentFrequency.get(token) ?? 0) < genericThreshold);
   const signals = new Map<string, TaskRelevanceSignals>();
   for (const row of rows) {
+    const knowledgeType = String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "");
     const relevanceText = rowRelevanceText(row);
     const relevanceTokens = new Set(tokens(relevanceText).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
-    const matchingTerms = taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
     const bodyTokens = new Set(tokens(cleanText(row?.content ?? row?.chunk_content ?? "")).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
+    const titleMatchedTerms = taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
     const bodyMatches = taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
+    const matchingTerms = knowledgeType === "policy"
+      ? taskTerms.filter((queryToken) => (
+          titleMatchedTerms.includes(queryToken)
+          || Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))
+        ))
+      : titleMatchedTerms;
     const coverage = matchingTerms.length / Math.max(taskTerms.length, 1);
-    const boundedBodySupport = Math.min(0.2, bodyMatches * 0.05);
+    const boundedBodySupport = knowledgeType === "policy" ? 0 : Math.min(0.2, bodyMatches * 0.05);
     signals.set(rowRelevanceKey(row), {
       score: Math.min(1, coverage + boundedBodySupport),
       matches: matchingTerms.length,
-      titleMatches: matchingTerms.length,
+      titleMatches: titleMatchedTerms.length,
       bodyMatches,
       matchedTerms: matchingTerms,
       queryTerms: taskTerms.length,
@@ -1117,7 +1124,10 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
     const hasTaskTerms = Array.from(ranked.signals.values()).some((signal) => signal.queryTerms > 0);
     const taskRelevant = hasTaskTerms
       ? knowledgeTypes?.length === 1 && knowledgeTypes[0] === "policy"
-        ? ranked.rows.filter((row) => (ranked.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0) > 0)
+        ? ranked.rows.filter((row) => {
+            const signal = ranked.signals.get(rowRelevanceKey(row));
+            return (signal?.titleMatches ?? 0) > 0 || (signal?.bodyMatches ?? 0) > 0;
+          })
         : ranked.rows.filter((row) => (ranked.signals.get(rowRelevanceKey(row))?.score ?? 0) > 0)
       : ranked.rows;
     return { rows: taskRelevant.slice(0, finalLimit), signals: ranked.signals };

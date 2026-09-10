@@ -31,6 +31,19 @@ async function ingest(store, sourceId, title, content, options = {}) {
   });
 }
 
+async function ingestPolicy(store, sourceId, title, content, options = {}) {
+  return store.ingest(WORKSPACE_ID, {
+    sourceKind: options.sourceKind ?? "policy",
+    sourceId,
+    title,
+    content,
+    knowledgeType: "policy",
+    authority: options.authority ?? "authoritative",
+    structuredData: options.structuredData,
+    metadata: { lifecycle_status: "published", ...(options.metadata ?? {}) },
+  });
+}
+
 async function competingProcedures() {
   const store = new InMemoryKnowledgeStore();
   await ingest(store, "pairing", "Product A USB dongle pairing", "Pair the headset and dongle until the connection is established.", {
@@ -49,6 +62,67 @@ async function competingProcedures() {
 }
 
 describe("generic greenfield knowledge task relevance", () => {
+  it("selects relevant policy body content when the canonical title uses different terminology", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Unused products may be returned within 30 days of delivery. Start the return through support.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.");
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "I would like to return my order 1063?",
+      taskQuery: "I would like to return my order 1063?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+    expect(hits[0].taskTitleMatches).toBe(0);
+    expect(hits[0].taskBodyMatches).toBeGreaterThan(0);
+    expect(hits[0].record.content).toContain("returned within 30 days");
+  });
+
+  it("matches policy topics by canonical content while excluding unrelated policy records", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Approved refunds are issued after inspection.");
+    await ingestPolicy(store, "returns-policy", "Returns policy", "Customers may receive money back after an eligible return is inspected.");
+    await ingestPolicy(store, "shipping-policy", "Shipping and delivery policy", "We deliver orders to supported destinations and publish delivery windows.");
+    await ingestPolicy(store, "warranty-policy", "Legal coverage information", "Manufacturing defects are covered by the product warranty for the stated warranty period.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.");
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect((await search("Can I return this item?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("I want my money back for this purchase"))[0].record.sourceId).toBe("returns-policy");
+    expect((await search("Can you deliver my order to Japan?"))[0].record.sourceId).toBe("shipping-policy");
+    expect((await search("What warranty coverage applies to a manufacturing defect?"))[0].record.sourceId).toBe("warranty-policy");
+    expect((await search("What is your privacy policy?"))[0].record.sourceId).toBe("privacy-policy");
+    expect(await search("What loyalty program do you offer?")).toEqual([]);
+    expect((await search("Can you deliver my order to Japan?")).some((hit) => hit.record.sourceId === "privacy-policy")).toBe(false);
+  });
+
+  it("keeps policy type boundaries when other knowledge shares the requested wording", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days.");
+    await ingest(store, "return-procedure", "How to return a device", "Pack the device and send it to support.", {
+      structuredData: { procedure: { task: { key: "return_device", title: "Return a device" } } },
+    });
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "How can I return this item?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+  });
+
   it("A: exact task/title match outranks a same-product unrelated procedure", async () => {
     const hits = await (await competingProcedures()).search({ workspaceId: WORKSPACE_ID, query: "Product A factory reset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits[0].record.sourceId).toBe("reset");
