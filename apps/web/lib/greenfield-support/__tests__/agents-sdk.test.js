@@ -71,6 +71,35 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.at(-1).type).toBe("final_response");
   });
 
+  it("turns an unusable procedure result into a normal knowledge-gap response", async () => {
+    const dependencies = await createDemoDependencies();
+    const knowledge = {
+      ingest: (...args) => dependencies.knowledge.ingest(...args),
+      search: async () => [],
+    };
+    const model = new ScriptedModel([
+      modelResponse([functionCall("search_procedures", { query: "headset troubleshooting" }, { callId: "missing-procedure" })]),
+      modelResponse([assistantMessage(structured({
+        type: "procedure_guidance",
+        text: "Follow the returned support procedure.",
+        basis: { result_id: "tool_result_1", field_paths: ["results[0]"] },
+        block_ids: ["missing-block"],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "My headset will not connect and I need help.",
+      model,
+      capabilities: { ...dependencies, knowledge },
+    });
+
+    model.assertComplete();
+    expect(result.response).toContain("couldn’t verify a support procedure");
+    expect(result.response).not.toContain("couldn’t safely complete that lookup");
+    expect(result.trace.events.at(-1).data.validation.all_valid).toBe(false);
+  });
+
   it("keeps proposal-only actions unexecuted while the SDK continues", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

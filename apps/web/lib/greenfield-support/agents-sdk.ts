@@ -273,7 +273,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           firstResponse: !(options.history?.length) && !(conversationContext?.turn),
           proposedActions,
         })
-      : fallbackResponse({ activeOrder: responseContext.activeOrder, locale: inferResponseLocale(options.message) });
+      : fallbackResponse({
+          activeOrder: responseContext.activeOrder,
+          locale: inferResponseLocale(options.message),
+          customerMessage: options.message,
+          customerProvidedContext: responseContext.customerProvidedContext,
+          getResults: registry.getResults,
+        });
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
@@ -293,7 +299,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
+  const response = fallbackResponse({
+    activeOrder: registry.getActiveOrderFocus(),
+    locale: inferResponseLocale(options.message),
+    customerMessage: options.message,
+    customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    getResults: registry.getResults,
+  });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {

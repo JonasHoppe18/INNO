@@ -621,7 +621,7 @@ function buildEvidenceSections(chunks: KnowledgeEvidenceChunk[]): EvidenceSectio
 }
 
 function compatibleToken(left: string, right: string): boolean {
-  return left === right || (left.length >= 5 && right.length >= 5 && (left.startsWith(right) || right.startsWith(left)));
+  return left === right || (left.length >= 4 && right.length >= 4 && (left.startsWith(right) || right.startsWith(left)));
 }
 
 function queryOverlap(queryTokens: Set<string>, value: string): number {
@@ -859,7 +859,20 @@ function lexicalQueryVariants(query: string): string[] {
     }
     variants.add(phrase.join(" "));
   }
-  return Array.from(variants).slice(0, 4);
+  const meaningfulWords = words
+    .map((word) => word.toLowerCase().replace(/[^a-z0-9]+/g, ""))
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+  for (const word of meaningfulWords) {
+    variants.add(word);
+    if (word.endsWith("ing") && word.length > 5) {
+      const stem = word.slice(0, -3).replace(/([a-z])\1$/, "$1");
+      if (stem.length > 2) variants.add(stem);
+    }
+    if (word.length >= 4 && /[aeiou][^aeiou]$/.test(word)) {
+      variants.add(`${word}${word.at(-1)}ing`);
+    }
+  }
+  return Array.from(variants).slice(0, 12);
 }
 
 function applicableProductScore(row: any, query: string): number {
@@ -1097,7 +1110,17 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
 } {
   const ranked = sortKnowledgeRows(rows, query, productContext);
   if (!knowledgeTypes?.includes("procedural") || !ranked.rows.length) {
-    return { rows: ranked.rows.slice(0, finalLimit), signals: ranked.signals };
+    // Semantic similarity is useful for recall, but it is not sufficient
+    // evidence for a customer-facing answer. If none of the requested task
+    // terms overlap the candidate titles/content, return an honest miss
+    // instead of handing unrelated policy or reference records to the model.
+    const hasTaskTerms = Array.from(ranked.signals.values()).some((signal) => signal.queryTerms > 0);
+    const taskRelevant = hasTaskTerms
+      ? knowledgeTypes?.length === 1 && knowledgeTypes[0] === "policy"
+        ? ranked.rows.filter((row) => (ranked.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0) > 0)
+        : ranked.rows.filter((row) => (ranked.signals.get(rowRelevanceKey(row))?.score ?? 0) > 0)
+      : ranked.rows;
+    return { rows: taskRelevant.slice(0, finalLimit), signals: ranked.signals };
   }
 
   const procedureInfo = procedureSelectionInfo(ranked.rows, ranked.signals, query);

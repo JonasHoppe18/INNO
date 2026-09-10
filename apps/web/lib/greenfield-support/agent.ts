@@ -15,7 +15,14 @@ import type {
 } from "./types";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { inferResponseLocale, renderResponseSegments, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import {
+  composeSafeKnowledgeGapResponse,
+  inferResponseLocale,
+  renderResponseSegments,
+  summarizeResponseValidation,
+  validateStructuredResponse,
+} from "./response-contract";
+import type { ResponseEvidenceRecord, ResponseValidationContext } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext } from "./conversation-context";
 
 export interface ConversationMessage {
@@ -82,7 +89,13 @@ export function keepActionStatusHonest(response: string, actions: ProposedAction
     : `${safeResponse}\n\n${reminder}`;
 }
 
-export function fallbackResponse(context?: { activeOrder?: ConversationContext["activeOrder"]; locale?: "da" | "en" }) {
+export function fallbackResponse(context?: {
+  activeOrder?: ConversationContext["activeOrder"];
+  locale?: "da" | "en";
+  customerMessage?: string;
+  customerProvidedContext?: ResponseValidationContext["customerProvidedContext"];
+  getResults?: () => ResponseEvidenceRecord[];
+}) {
   const requestedOrderId = context?.activeOrder?.requestedOrderId;
   if (context?.activeOrder?.state === "unresolved" && requestedOrderId) {
     const reference = ` #${requestedOrderId.replace(/^#/, "")}`;
@@ -90,6 +103,13 @@ export function fallbackResponse(context?: { activeOrder?: ConversationContext["
       ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
       : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
   }
+  const knowledgeGap = composeSafeKnowledgeGapResponse({
+    locale: context?.locale,
+    customerMessage: context?.customerMessage,
+    customerProvidedContext: context?.customerProvidedContext,
+    getResults: context?.getResults,
+  });
+  if (knowledgeGap) return knowledgeGap;
   return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
 }
 
@@ -178,7 +198,13 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
               firstResponse: !(options.history?.length) && !(conversationContext?.turn),
               proposedActions,
             })
-          : fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
+          : fallbackResponse({
+              activeOrder: registry.getActiveOrderFocus(),
+              locale: inferResponseLocale(options.message),
+              customerMessage: options.message,
+              customerProvidedContext: responseContext.customerProvidedContext,
+              getResults: registry.getResults,
+            });
         pushEvent(trace, "final_response", {
           response: finalResponse,
           proposed_actions: proposedActions,
@@ -214,7 +240,13 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
+  const response = fallbackResponse({
+    activeOrder: registry.getActiveOrderFocus(),
+    locale: inferResponseLocale(options.message),
+    customerMessage: options.message,
+    customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    getResults: registry.getResults,
+  });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {

@@ -125,6 +125,13 @@ export interface ResponseValidationResult {
   parsed: StructuredResponse | null;
 }
 
+export type ResponseFailureClass =
+  | "system_tool_failure"
+  | "insufficient_knowledge"
+  | "insufficient_specificity"
+  | "valid_not_found"
+  | "model_response_invalid";
+
 export interface ResponseValidationContext {
   manifest: CapabilityManifest;
   getResult: (resultId: string) => ResponseEvidenceRecord | undefined;
@@ -824,12 +831,12 @@ function productVariantChoices(evidence: ResponseEvidenceRecord | undefined) {
   });
 }
 
-function asksForKnownProduct(value: string, context: ResponseValidationContext) {
+function asksForKnownProduct(value: string, context: Pick<ResponseValidationContext, "customerProvidedContext">) {
   if (!context.customerProvidedContext?.product) return false;
   return /\b(?:which|what)\s+(?:exact\s+)?(?:product|headset|device)\b|\b(?:exact\s+)?model\s+number\b/i.test(value);
 }
 
-function hasSpecificCustomerIssue(context: ResponseValidationContext) {
+function hasSpecificCustomerIssue(context: Pick<ResponseValidationContext, "customerProvidedContext">) {
   const issue = String(context.customerProvidedContext?.issue ?? "").trim();
   if (!issue) return false;
   if (/\b(?:pair|connect|disconnect|power|sound|audio|microphone|mic|charge|charging|detected|detection|firmware|reset|button|volume|static|noise|echo)\b/i.test(issue)) return true;
@@ -885,6 +892,101 @@ function canClarifyInsufficientTaskResult(
     const data = objectValue(record.result.data);
     return effectiveResultStatus(record) === "not_found" || data?.task_specificity === "insufficient";
   });
+}
+
+function knowledgeTool(toolName: string) {
+  return ["search_procedures", "search_product_knowledge", "search_policy", "get_brand_guidance"].includes(toolName);
+}
+
+function latestKnowledgeEvidence(context: Pick<ResponseValidationContext, "getResults">) {
+  return [...(context.getResults?.() ?? [])].reverse().find((record) => knowledgeTool(record.toolName));
+}
+
+/**
+ * Keep safe customer-facing gaps separate from transport/provider failures.
+ * This classification is intentionally derived only from server-recorded tool
+ * results; it never treats model text or retrieved content as instructions.
+ */
+export function classifyResponseFailure(
+  context: Pick<ResponseValidationContext, "getResults">,
+): ResponseFailureClass {
+  const results = context.getResults?.() ?? [];
+  if (results.some((record) => ["error", "unavailable"].includes(record.result.status))) return "system_tool_failure";
+  const knowledge = latestKnowledgeEvidence(context);
+  if (knowledge) {
+    const status = effectiveResultStatus(knowledge);
+    const data = objectValue(knowledge.result.data);
+    if (["error", "unavailable"].includes(status ?? "") || knowledge.result.status === "error") return "system_tool_failure";
+    if (knowledge.toolName === "search_procedures" && data?.task_specificity === "insufficient") return "insufficient_specificity";
+    if (knowledge.toolName === "search_procedures" && status === "not_found") return "insufficient_knowledge";
+    if (status === "not_found") return "valid_not_found";
+    if (knowledge.toolName === "search_procedures" && !Array.isArray(data?.results)) return "insufficient_knowledge";
+  }
+  return "model_response_invalid";
+}
+
+function hasCustomerProduct(context: Pick<ResponseValidationContext, "customerProvidedContext">) {
+  return meaningful(context.customerProvidedContext?.product);
+}
+
+function customerFacingKnowledgeGap(
+  context: Pick<ResponseValidationContext, "locale" | "customerMessage" | "customerProvidedContext" | "getResults">,
+): string | null {
+  const evidence = latestKnowledgeEvidence(context);
+  if (!evidence) return null;
+  const failureClass = classifyResponseFailure(context);
+  const locale = context.locale ?? "en";
+  if (failureClass === "system_tool_failure" || failureClass === "model_response_invalid") return null;
+
+  if (evidence.toolName === "search_procedures" && failureClass === "insufficient_specificity") {
+    if (!hasCustomerProduct(context) && !hasSpecificCustomerIssue(context)) {
+      return locale === "da"
+        ? "Hvilket produkt eller hvilken model drejer det sig om, og hvad er det præcist, der er galt?"
+        : "Which product or model is this about, and what exactly is going wrong?";
+    }
+    if (!hasSpecificCustomerIssue(context)) {
+      return locale === "da"
+        ? "Hvad er det præcist, der sker med produktet — for eksempel lyd, mikrofon, strøm, forbindelse eller opladning?"
+        : "What exactly is happening with the product—for example, is it audio, microphone, power, connection, or charging?";
+    }
+    return locale === "da"
+      ? "Jeg kunne ikke identificere én bestemt supportprocedure ud fra den nuværende beskrivelse. Hvilken model bruger du, og hvad har du allerede prøvet?"
+      : "I couldn’t identify one specific support procedure from the current description. Which model are you using, and what have you already tried?";
+  }
+
+  if (evidence.toolName === "search_procedures" && failureClass === "insufficient_knowledge") {
+    return locale === "da"
+      ? "Jeg kunne ikke bekræfte en supportprocedure for dette problem ud fra den aktuelle vejledning. Hvilken model bruger du, og hvad har du allerede prøvet?"
+      : "I couldn’t verify a support procedure for this issue from the current guidance. Which model are you using, and what have you already tried?";
+  }
+
+  if (failureClass === "valid_not_found") {
+    if (evidence.toolName === "search_product_knowledge") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte den produktoplysning ud fra vores aktuelle produktinformation. Hvis du sender et produktlink, SKU eller det præcise modelnavn, kan jeg prøve igen."
+        : "I couldn’t verify that product detail from our current product information. If you share a product link, SKU, or exact model name, I can try again.";
+    }
+    if (evidence.toolName === "search_policy") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte den politikoplysning ud fra vores aktuelle politikoplysninger."
+        : "I couldn’t verify that policy detail from our current policy information.";
+    }
+    if (evidence.toolName === "get_brand_guidance") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte yderligere vejledning til denne henvendelse."
+        : "I couldn’t verify any additional guidance for this request.";
+    }
+  }
+
+  // Keep this branch intentionally narrow. A future knowledge result must not
+  // silently become a claim merely because it has an unfamiliar shape.
+  return null;
+}
+
+export function composeSafeKnowledgeGapResponse(
+  context: Pick<ResponseValidationContext, "locale" | "customerMessage" | "customerProvidedContext" | "getResults">,
+): string | null {
+  return customerFacingKnowledgeGap(context);
 }
 
 function validateGroundedQuestion(
