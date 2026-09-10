@@ -8,6 +8,7 @@ import {
   Inbox,
   Plus,
   Settings2,
+  UserRound,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -24,7 +25,7 @@ import {
   dispatchThreadMove,
 } from "@/lib/inbox/thread-drag-bridge"
 
-// Task 11, Plan 2: TICKETS / INBOXES sidebar sections. Replaces the old
+// Task 11, Plan 2: ticket and inbox sidebar sections. Replaces the old
 // single INBOXES block in app-sidebar.jsx. Links target `/inbox?view=...`
 // per the routing scheme owned by useThreadFilters.js (Task 6, Plan 1):
 // needs_attention (default, param omitted), mine, waiting, resolved,
@@ -47,8 +48,8 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   return (
     <span
       className={cn(
-        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-normal leading-none tabular-nums transition-opacity duration-150",
-        muted ? "text-muted-foreground" : "bg-muted text-foreground",
+        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-medium leading-none tabular-nums transition-[background-color,color,opacity] duration-150",
+        muted ? "bg-muted/55 text-muted-foreground" : "bg-muted text-foreground",
         fadeOnHover && "group-hover/inbox:opacity-0"
       )}
     >
@@ -64,9 +65,10 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
         asChild
         tooltip={label}
         className={cn(
-          "justify-start cursor-pointer text-foreground",
+          "relative cursor-pointer justify-start text-foreground transition-[background-color,color,box-shadow] duration-150",
           pl,
-          active && "bg-accent text-foreground hover:bg-accent hover:text-foreground",
+          active &&
+            "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
           isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
           isDropPulse && "animate-inbox-drop"
         )}
@@ -92,6 +94,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
 }
 
 export function NavQueue({
+  contextual = false,
   counts = {},
   inboxes = [],
   activeView = "",
@@ -99,11 +102,11 @@ export function NavQueue({
   onConfigureInbox,
   onConfigureNotifications,
 }) {
-  const { state } = useSidebar()
-  const isCollapsed = state === "collapsed"
+  const { state, isMobile } = useSidebar()
+  const isCollapsed = !isMobile && !contextual && state === "collapsed"
   const [contextMenu, setContextMenu] = useState(null)
-  // Inbox is a collapsible parent; Assigned to me / Waiting / Resolved nest
-  // under it (iconless, indented). Default expanded.
+  // Inbox is a collapsible parent; Waiting / Resolved / All tickets nest under
+  // it (iconless, indented). Default expanded.
   const [ticketsOpen, setTicketsOpen] = useState(true)
   // Which drop target (if any) a dragged ticket is currently hovering. Keys:
   // "inbox" | "spam" | `inbox:${slug}`. See makeDropProps below.
@@ -190,14 +193,9 @@ export function NavQueue({
 
   return (
     <>
-      <SidebarGroup className="pt-0">
-        <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Tickets
-          </span>
-        </div>
-        <SidebarGroupContent>
-          <SidebarMenu>
+      <SidebarGroup className={cn("pt-1", contextual && "pt-2")}>
+      <SidebarGroupContent>
+        <SidebarMenu>
             {/* Inbox parent. Collapsed (icon) sidebar: fall back to the plain
                 QueueRow/SidebarMenuButton, which handles icon-only mode (our
                 custom chevron row below is a bare div that would leak the
@@ -224,8 +222,9 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-foreground",
-                    activeView === "" && "bg-accent text-foreground",
+                    "group/inbox relative flex items-center rounded-md text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    activeView === "" &&
+                      "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                     dragOverKey === "inbox" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "inbox" && "animate-inbox-drop"
@@ -275,21 +274,7 @@ export function NavQueue({
               <>
                 <QueueRow
                   hideIcon
-                  pl="pl-8"
-                  label="Assigned to me"
-                  href="/inbox?view=mine"
-                  active={isViewActive("mine")}
-                  count={mineCount}
-                  isDropActive={dragOverKey === "mine"}
-                  isDropPulse={justDroppedKey === "mine"}
-                  dropProps={makeDropProps("mine", {
-                    kind: "assign",
-                    assigneeId: "__me__",
-                  })}
-                />
-                <QueueRow
-                  hideIcon
-                  pl="pl-8"
+                  pl="pl-7"
                   label="Waiting on customer"
                   href="/inbox?view=waiting_customer"
                   active={isViewActive("waiting_customer")}
@@ -305,7 +290,7 @@ export function NavQueue({
                 />
                 <QueueRow
                   hideIcon
-                  pl="pl-8"
+                  pl="pl-7"
                   label="Waiting on third party"
                   href="/inbox?view=waiting_third_party"
                   active={isViewActive("waiting_third_party")}
@@ -319,28 +304,39 @@ export function NavQueue({
                     waitingReason: "third_party",
                   })}
                 />
-                <QueueRow
-                  hideIcon
-                  pl="pl-8"
-                  label="Resolved"
-                  href="/inbox?view=resolved"
-                  active={isViewActive("resolved")}
-                  isDropActive={dragOverKey === "resolved"}
-                  isDropPulse={justDroppedKey === "resolved"}
-                  dropProps={makeDropProps("resolved", {
-                    kind: "status",
-                    status: "resolved",
-                  })}
-                />
               </>
             )}
+          {!isCollapsed && ticketsOpen ? (
+            <>
+              <QueueRow
+                hideIcon
+                pl="pl-7"
+                label="Resolved"
+                href="/inbox?view=resolved"
+                active={isViewActive("resolved")}
+                isDropActive={dragOverKey === "resolved"}
+                isDropPulse={justDroppedKey === "resolved"}
+                dropProps={makeDropProps("resolved", {
+                  kind: "status",
+                  status: "resolved",
+                })}
+              />
+              <QueueRow
+                hideIcon
+                pl="pl-7"
+                label="All tickets"
+                href="/inbox/tickets"
+                active={isViewActive("all")}
+              />
+            </>
+          ) : null}
           </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      </SidebarGroupContent>
+    </SidebarGroup>
 
-      <SidebarGroup className="pt-0 relative">
-        <div className="mb-1 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+      <SidebarGroup className="relative pt-2">
+        <div className="mb-1.5 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
             INBOXES
           </span>
           <button
@@ -370,8 +366,9 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-foreground",
-                        active && "bg-accent text-foreground",
+                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        active &&
+                          "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                         dragOverKey === dropKey &&
                           "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                         justDroppedKey === dropKey && "animate-inbox-drop"
@@ -416,11 +413,25 @@ export function NavQueue({
                   </SidebarMenuItem>
                 )
               })}
+              <QueueRow
+                icon={UserRound}
+                label="Assigned to me"
+                href="/inbox?view=mine"
+                active={isViewActive("mine")}
+                count={mineCount}
+                isDropActive={dragOverKey === "mine"}
+                isDropPulse={justDroppedKey === "mine"}
+                dropProps={makeDropProps("mine", {
+                  kind: "assign",
+                  assigneeId: "__me__",
+                })}
+              />
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-foreground",
-                    isViewActive("automated") && "bg-accent text-foreground",
+                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    isViewActive("automated") &&
+                      "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                     dragOverKey === "spam" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "spam" && "animate-inbox-drop"

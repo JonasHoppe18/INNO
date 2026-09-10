@@ -2,7 +2,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva } from "class-variance-authority";
-import { PanelLeft } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -44,7 +44,7 @@ function useSidebar() {
 
 const SidebarProvider = React.forwardRef((
   {
-    defaultOpen = true,
+    defaultOpen = false,
     open: openProp,
     onOpenChange: setOpenProp,
     className,
@@ -159,6 +159,7 @@ const Sidebar = React.forwardRef((
     collapsible = "offcanvas",
     className,
     children,
+    style: sidebarStyle,
     ...props
   },
   ref
@@ -168,13 +169,32 @@ const Sidebar = React.forwardRef((
   if (collapsible === "none") {
     return (
       <div
+        ref={ref}
         className={cn(
-          "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+          "group peer hidden min-h-svh text-sidebar-foreground transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)] md:block",
           className
         )}
-        ref={ref}
+        style={sidebarStyle}
         {...props}>
-        {children}
+        {/* Keep the sidebar's width in the document flow while the panel stays viewport-anchored. */}
+        <div className="relative min-h-svh w-[--sidebar-width] shrink-0 bg-transparent transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)]" />
+        <div
+          className={cn(
+            "fixed z-10 hidden w-[--sidebar-width] transition-[width] duration-200 [transition-timing-function:cubic-bezier(0.77,0,0.175,1)] md:flex",
+            side === "left" ? "left-0" : "right-0"
+          )}
+          style={{
+            top: "var(--app-top-offset, 0px)",
+            height: "calc(100svh - var(--app-top-offset, 0px))",
+          }}
+        >
+          <div
+            data-sidebar="sidebar"
+            className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground"
+          >
+            {children}
+          </div>
+        </div>
       </div>
     );
   }
@@ -233,6 +253,7 @@ const Sidebar = React.forwardRef((
           className
         )}
         style={{
+          ...sidebarStyle,
           top: "var(--app-top-offset, 0px)",
           height: "calc(100svh - var(--app-top-offset, 0px))",
         }}
@@ -249,12 +270,19 @@ const Sidebar = React.forwardRef((
 Sidebar.displayName = "Sidebar"
 
 const SidebarTrigger = React.forwardRef(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, open, openMobile, isMobile } = useSidebar()
+  const expanded = isMobile ? openMobile : open
+  const label = expanded ? "Close navigation" : "Open navigation"
+  const Icon = expanded ? PanelLeftClose : PanelLeftOpen
 
   return (
     <Button
       ref={ref}
       data-sidebar="trigger"
+      type="button"
+      aria-label={label}
+      aria-expanded={expanded}
+      title={label}
       variant="ghost"
       size="icon"
       className={cn("h-7 w-7", className)}
@@ -263,8 +291,8 @@ const SidebarTrigger = React.forwardRef(({ className, onClick, ...props }, ref) 
         toggleSidebar()
       }}
       {...props}>
-      <PanelLeft />
-      <span className="sr-only">Toggle Sidebar</span>
+      <Icon aria-hidden="true" />
+      <span className="sr-only">{label}</span>
     </Button>
   );
 })
@@ -473,6 +501,7 @@ const SidebarMenuButton = React.forwardRef((
     variant = "default",
     size = "default",
     tooltip,
+    tooltipAlways = false,
     className,
     ...props
   },
@@ -507,7 +536,7 @@ const SidebarMenuButton = React.forwardRef((
       <TooltipContent
         side="right"
         align="center"
-        hidden={state !== "collapsed" || isMobile}
+        hidden={isMobile || (!tooltipAlways && state !== "collapsed")}
         {...tooltip} />
     </Tooltip>
   );

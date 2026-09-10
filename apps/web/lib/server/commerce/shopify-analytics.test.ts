@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { assertEquals } from "jsr:@std/assert@1";
-import { mapShopifyOrderFact, mapShopifyRefundFact } from "./shopify-analytics.js";
+import { mapShopifyOrderFact, mapShopifyRefundFact, mapShopifyReturnFact, shopifyGidToId } from "./shopify-analytics.js";
 
 Deno.test("mapShopifyOrderFact keeps only non-customer analytics fields", () => {
   const row = mapShopifyOrderFact({
@@ -63,6 +63,43 @@ Deno.test("mapShopifyRefundFact sums successful refund transactions and maps pro
       external_product_id: "88",
       quantity: 1,
       amount: 125.5,
+    }],
+  });
+});
+
+Deno.test("mapShopifyReturnFact stores reason definitions without customer notes", () => {
+  const result = mapShopifyReturnFact({
+    id: "gid://shopify/Return/9001",
+    createdAt: "2026-07-21T10:00:00Z",
+    status: "OPEN",
+    orderId: "gid://shopify/Order/42",
+    customerNote: "Free text must not be stored",
+    returnLineItems: {
+      edges: [{ node: {
+        id: "gid://shopify/ReturnLineItem/77",
+        quantity: 2,
+        customerNote: "Also excluded",
+        returnReasonDefinition: { handle: "defective", name: "Defective" },
+      } }],
+    },
+  }, { workspaceId: "workspace", shopId: "shop", syncedAt: "2026-07-22T10:00:00Z" });
+
+  assertEquals(shopifyGidToId("gid://shopify/Order/42"), "42");
+  assertEquals(result, {
+    return: {
+      workspace_id: "workspace",
+      shop_id: "shop",
+      external_return_id: "9001",
+      external_order_id: "42",
+      returned_at: "2026-07-21T10:00:00Z",
+      status: "open",
+      synced_at: "2026-07-22T10:00:00Z",
+    },
+    items: [{
+      external_line_item_id: "77",
+      quantity: 2,
+      reason_handle: "defective",
+      reason: "Defective",
     }],
   });
 });

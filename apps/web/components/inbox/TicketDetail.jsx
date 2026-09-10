@@ -1,11 +1,10 @@
-import { Component, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Loader2, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
-import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { ThreadTagsBar } from "@/components/inbox/ThreadTagsBar";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { formatTicketReference } from "@/lib/tickets/reference";
@@ -30,12 +29,6 @@ const APPROVAL_ACTION_TYPES = new Set([
   "add_internal_note_or_tag",
 ]);
 
-const TRACKING_KEYWORD_PATTERN =
-  /\b(track|tracking|trace|shipment|shipping|delivery|delivered|out for delivery|parcel|package|pakke|pakken|forsendelse|levering|leveret|spor|sporing|track and trace|track&trace)\b/i;
-
-const TRACKING_STATUS_QUESTION_PATTERN =
-  /\b(where is my order|order status|shipping status|delivery status|when will .*arriv|estimated delivery|not received|still haven'?t received|hvor er min ordre|hvor bliver .* af|hvornår .* lever|leveringstid|forventet levering|ikke modtaget)\b/i;
-
 const SATISFACTION_CLOSURE_PATTERN =
   /\b(?:thanks?(?:\s+a\s+lot)?|thank you(?:\s+so\s+much)?|tak(?:\s+for\s+hjælpen)?|perfekt|super|awesome|great|issue(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|problem(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it works(?:\s+now)?|works(?:\s+perfectly|fine|great)?(?:\s+now)?|alt(?:\s+er)?\s+løst|det(?:\s+er)?\s+løst|det virker(?:\s+nu)?|virker\s+nu|fungerer(?:\s+nu)?|all good(?:\s+now)?|all set|you can close(?:\s+the\s+ticket)?|close\s+the\s+ticket)\b/i;
 const EXPLICIT_CLOSE_CONFIRMATION_PATTERN =
@@ -44,6 +37,72 @@ const QUESTION_SIGNAL_PATTERN =
   /(?:\?|\b(?:can|could|would|should|how|what|why|where|when|hvor|hvornår|hvordan|hvad|hvorfor|kan|skal)\b)/i;
 const OPEN_ISSUE_PATTERN =
   /\b(?:problem|issue|doesn'?t|does not|not\s+work(?:ing)?|still|however|but|cost|price|who\s+needs\s+to\s+pay|hvem\s+skal\s+betale)\b/i;
+
+const MESSAGE_DISPLAY_TIMEZONE = "Europe/Copenhagen";
+const MESSAGE_GROUP_WINDOW_MS = 15 * 60 * 1000;
+
+function getMessageTimestampValue(message = null) {
+  return message?.received_at || message?.sent_at || message?.created_at || "";
+}
+
+function getDayKeyForDate(date, timeZone = MESSAGE_DISPLAY_TIMEZONE) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year || ""}-${values.month || ""}-${values.day || ""}`;
+}
+
+function shiftDayKey(dayKey, days) {
+  const [year, month, day] = String(dayKey).split("-").map(Number);
+  if (![year, month, day].every(Number.isFinite)) return "";
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
+}
+
+function getMessageDayKey(message = null) {
+  const timestampValue = getMessageTimestampValue(message);
+  if (!timestampValue) return "";
+  const date = new Date(timestampValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return getDayKeyForDate(date);
+}
+
+function formatMessageDayLabel(message = null) {
+  const timestampValue = getMessageTimestampValue(message);
+  if (!timestampValue) return "";
+  const date = new Date(timestampValue);
+  if (Number.isNaN(date.getTime())) return "";
+  const messageDayKey = getMessageDayKey(message);
+  const todayDayKey = getDayKeyForDate(new Date());
+  if (messageDayKey === todayDayKey) return "Today";
+  if (messageDayKey === shiftDayKey(todayDayKey, -1)) return "Yesterday";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    timeZone: MESSAGE_DISPLAY_TIMEZONE,
+    year: "numeric",
+  });
+}
+
+function canGroupMessages(previousMessage, message, mailboxEmails = []) {
+  if (!previousMessage || !message) return false;
+  const previousDirection = isOutboundMessage(previousMessage, mailboxEmails) ? "outbound" : "inbound";
+  const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
+  if (previousDirection !== direction) return false;
+  if (getMessageDayKey(previousMessage) !== getMessageDayKey(message)) return false;
+  const previousSender = String(getSenderLabel(previousMessage) || "").trim().toLowerCase();
+  const sender = String(getSenderLabel(message) || "").trim().toLowerCase();
+  if (previousSender !== sender) return false;
+  const previousTimestamp = Date.parse(getMessageTimestampValue(previousMessage));
+  const timestamp = Date.parse(getMessageTimestampValue(message));
+  if (!Number.isFinite(previousTimestamp) || !Number.isFinite(timestamp)) return false;
+  return Math.abs(timestamp - previousTimestamp) <= MESSAGE_GROUP_WINDOW_MS;
+}
 
 class TicketRenderBoundary extends Component {
   constructor(props) {
@@ -84,20 +143,6 @@ function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
     return message;
   }
   return null;
-}
-
-function messageLooksLikeTrackingQuestion(message = null) {
-  if (!message) return false;
-  const haystack = [message?.clean_body_text, message?.body_text, message?.snippet]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join("\n");
-  if (!haystack) return false;
-  const hasTrackingKeyword = TRACKING_KEYWORD_PATTERN.test(haystack);
-  if (!hasTrackingKeyword) return false;
-  if (TRACKING_STATUS_QUESTION_PATTERN.test(haystack)) return true;
-  const hasQuestionSignal = /\?|\b(where|when|how long|hvor|hvornår|hvordan)\b/i.test(haystack);
-  return hasQuestionSignal;
 }
 
 function messageLooksLikeSatisfactionClosure(message = null) {
@@ -176,6 +221,7 @@ function TicketDetailComponent({
   ticketState,
   onTicketStateChange,
   onOpenInsights,
+  onBackToInbox = null,
   showThinkingCard = false,
   isDraftFetching = false,
   isPostApprovalDraftLoading = false,
@@ -218,9 +264,12 @@ function TicketDetailComponent({
   onReturnTrackingActionStateChange = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [draftActivityLogs, setDraftActivityLogs] = useState([]);
+  const [draftActivityLoading, setDraftActivityLoading] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [returnTrackingSubmitting, setReturnTrackingSubmitting] = useState("");
   const [returnTrackingError, setReturnTrackingError] = useState("");
   const [createdReturnTrackingByThread, setCreatedReturnTrackingByThread] = useState({});
@@ -228,8 +277,41 @@ function TicketDetailComponent({
   const [returnTrackingStateByThread, setReturnTrackingStateByThread] = useState({});
   const closeSuggestionEnabled = false; // Temporarily disabled until heuristics are reworked.
   const conversationRef = useRef(null);
+  const actionCardRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
+  const isConversationNearBottomRef = useRef(true);
+  const shouldShowJumpToLatestForNode = useCallback((node) => {
+    if (!node) return false;
+
+    // A long latest message can fill the viewport while the agent scrolls
+    // through it. In that case there is nothing newer to jump to, even though
+    // the scroll position is not at the container's absolute bottom.
+    const latestMessage = node.querySelector('[data-latest-message="true"]');
+    if (latestMessage) {
+      const containerRect = node.getBoundingClientRect();
+      const latestMessageRect = latestMessage.getBoundingClientRect();
+      return latestMessageRect.top > containerRect.bottom - 24;
+    }
+
+    return node.scrollHeight - node.scrollTop - node.clientHeight > 96;
+  }, []);
+  const todayMessageDayKey = useMemo(() => getDayKeyForDate(new Date()), []);
+  const firstUnreadMessageIndex = useMemo(() => {
+    if (
+      !Array.isArray(messages) ||
+      thread?.is_read === true ||
+      Number(thread?.unread_count ?? 0) <= 0
+    ) {
+      return -1;
+    }
+    return messages.findIndex(
+      (message, index) =>
+        index > 0 &&
+        message?.is_read === false &&
+        !isOutboundMessage(message, mailboxEmails),
+    );
+  }, [mailboxEmails, messages, thread?.is_read, thread?.unread_count]);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
@@ -322,6 +404,9 @@ function TicketDetailComponent({
       });
     return Boolean(lowered) || isApprovalPending;
   })();
+  const handleReviewPendingAction = () => {
+    actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
   const detailSuggestsTestMode = (() => {
     const detailText = String(pendingOrderUpdate?.detail || "").toLowerCase();
     return detailText.includes("test mode") || detailText.includes("simulated");
@@ -356,7 +441,6 @@ function TicketDetailComponent({
     () => getLatestInboundCustomerMessage(messages, mailboxEmails),
     [mailboxEmails, messages]
   );
-  const latestInboundCustomerMessageId = String(latestInboundCustomerMessage?.id || "");
   const shouldSuggestCloseFromCustomerReply = useMemo(() => {
     const normalizedTicketStatus = String(ticketState?.status || "").trim().toLowerCase();
     if (normalizedTicketStatus === "solved" || normalizedTicketStatus === "resolved") return false;
@@ -364,31 +448,57 @@ function TicketDetailComponent({
     if (threadId && dismissedCloseSuggestionByThread[threadId]) return false;
     return messageLooksLikeSatisfactionClosure(latestInboundCustomerMessage);
   }, [dismissedCloseSuggestionByThread, latestInboundCustomerMessage, thread?.id, ticketState?.status]);
-  const shouldShowTrackingCard = useMemo(() => {
-    const hasTrackingData = Boolean(
-      selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
-    );
-    if (!hasTrackingData) return false;
-    // Never show when an action card is pending — avoids visual clutter
-    if (shouldShowActionCard) return false;
-    // Never show for return/exchange/complaint tickets — tracking is not the focus
-    const classKey = String(thread?.classification_key || "").toLowerCase();
-    const isReturnOrExchange = classKey === "return" || classKey === "exchange" || classKey === "complaint";
-    const tags = Array.isArray(thread?.tags) ? thread.tags : [];
-    const hasReturnTag = tags.some((t) => /^return/i.test(String(t || "")));
-    if (isReturnOrExchange || hasReturnTag) return false;
-    // Show only for explicitly tracking-tagged threads or clear tracking questions
-    const threadIsTracking = tags.includes("Tracking");
-    return threadIsTracking || messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
-  }, [
-    thread?.tags,
-    thread?.classification_key,
-    latestInboundCustomerMessage,
-    selectedOrderSummary?.tracking?.number,
-    selectedOrderSummary?.tracking?.url,
-    shouldShowActionCard,
-  ]);
   const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
+  const shouldLoadDraftActivity = Boolean(
+    thread?.id &&
+      !String(thread.id).startsWith("local-") &&
+      (draftLoaded || showThinkingCard),
+  );
+
+  useEffect(() => {
+    const threadId = String(thread?.id || "").trim();
+    if (!shouldLoadDraftActivity || !threadId) {
+      setDraftActivityLogs([]);
+      setDraftActivityLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setDraftActivityLoading(Boolean(showThinkingCard));
+    fetch(`/api/threads/${encodeURIComponent(threadId)}/insights`, {
+      method: "GET",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setDraftActivityLogs(Array.isArray(payload?.logs) ? payload.logs : []);
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setDraftActivityLogs([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDraftActivityLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [draftLoaded, shouldLoadDraftActivity, showThinkingCard, thread?.id]);
+
+  const draftActivitySteps = useMemo(() => {
+    const logs = Array.isArray(draftActivityLogs) ? draftActivityLogs : [];
+    if (!logs.length) return [];
+
+    const draftLogs = logs.filter((log) => log?.draft_id);
+    const latestDraftId = draftLogs[draftLogs.length - 1]?.draft_id;
+    const latestLogs = latestDraftId
+      ? draftLogs.filter((log) => String(log?.draft_id) === String(latestDraftId))
+      : logs;
+
+    return latestLogs
+      .filter((log) => log?.step_name || log?.step_detail)
+      .slice(-8);
+  }, [draftActivityLogs]);
+
   let actionCardInserted = false;
   const processReturnExtraContent =
     isProcessReturnAction && pendingUpdateState === "proposed" ? (
@@ -423,19 +533,31 @@ function TicketDetailComponent({
 
   useEffect(() => {
     const node = conversationRef.current;
-    if (!node) return;
-    const threadId = String(thread?.id || "");
-    if (!threadId) return;
-    if (restoredThreadIdRef.current === threadId) return;
+    const threadId = String(thread?.id || "").trim();
+    const hasLoadedConversation = !isConversationLoading || messages.length > 0;
+    if (!node || !threadId || !hasLoadedConversation) return undefined;
+
     const initialScrollTop = Number(initialScrollTopRef.current) || 0;
-    // Restore saved scroll position if available, otherwise scroll to bottom (newest messages)
-    if (Number.isFinite(initialScrollTop) && initialScrollTop > 0) {
-      node.scrollTop = initialScrollTop;
-    } else {
-      node.scrollTop = node.scrollHeight;
-    }
-    restoredThreadIdRef.current = threadId;
-  }, [thread?.id]);
+    const shouldRestoreThread = restoredThreadIdRef.current !== threadId;
+    const shouldKeepLatestVisible = !shouldRestoreThread && isConversationNearBottomRef.current;
+    if (!shouldRestoreThread && !shouldKeepLatestVisible) return undefined;
+
+    // Wait for message content to paint before measuring scrollHeight. This keeps
+    // a newly opened ticket at the latest message even when messages load async.
+    const frameId = requestAnimationFrame(() => {
+      if (shouldRestoreThread && initialScrollTop > 0) {
+        node.scrollTop = initialScrollTop;
+      } else {
+        node.scrollTop = node.scrollHeight;
+      }
+      const shouldShowJumpToLatest = shouldShowJumpToLatestForNode(node);
+      isConversationNearBottomRef.current = !shouldShowJumpToLatest;
+      setShowJumpToLatest(shouldShowJumpToLatest);
+      if (shouldRestoreThread) restoredThreadIdRef.current = threadId;
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [isConversationLoading, messages.length, shouldShowJumpToLatestForNode, thread?.id]);
 
   useEffect(() => {
     const threadId = String(thread?.id || "").trim();
@@ -608,8 +730,18 @@ function TicketDetailComponent({
 
   if (!thread) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
-        Select a ticket to view the conversation.
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-muted/[0.18] px-6 text-center">
+        <div className="flex max-w-[320px] flex-col items-center gap-3 rounded-2xl border border-border/70 bg-card/80 px-8 py-9 shadow-[0_8px_28px_hsl(var(--foreground)/0.035)]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-500 dark:bg-violet-500/10 dark:text-violet-300">
+            <Inbox className="h-5 w-5" />
+          </span>
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold text-foreground">Select a ticket</h2>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Choose a conversation from the inbox to view the thread.
+            </p>
+          </div>
+        </div>
       </section>
     );
   }
@@ -620,27 +752,93 @@ function TicketDetailComponent({
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
   const threadTicketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketNumber = threadTicketRef !== "No ticket ID";
+  const ticketNumberLabel = hasTicketNumber
+    ? `#${threadTicketRef.replace(/^T-/, "")}`
+    : threadTicketRef;
+  const threadSubject = String(
+    thread?.subject || thread?.title || firstMessage?.subject || "",
+  ).trim();
+
+  const renderComposer = (disabled = false) => (
+    <div className="relative z-20 bg-transparent px-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4">
+      <TicketRenderBoundary
+        section="composer"
+        resetKey={`${thread?.id || ""}:${composerMode}:composer`}
+        fallback={
+          <div className="mx-auto w-full max-w-[900px] rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Composer could not be rendered for this ticket.
+          </div>
+        }
+      >
+        <Composer
+          key={`${thread?.id || "thread"}:${composerMode}`}
+          value={draftValue}
+          onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
+          collapsed={composerCollapsed}
+          onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
+          draftLoaded={draftLoaded}
+          canSend={canSend}
+          onSend={onSend}
+          isSending={isSending}
+          mode={composerMode}
+          onModeChange={onComposerModeChange}
+          toLabel={toLabel}
+          mentionUsers={mentionUsers}
+          onBlur={() => onDraftBlur?.(thread?.id || null)}
+          isDraftLoading={
+            disabled
+              ? false
+              : showThinkingCard || isDraftFetching || isPostApprovalDraftLoading
+          }
+          onGenerateDraft={onGenerateDraft}
+          isGeneratingDraft={isGeneratingDraft}
+          onRefineDraft={onRefineDraft}
+          isRefiningDraft={isRefiningDraft}
+          disabled={disabled}
+          disabledPlaceholder="Action awaiting approval"
+        />
+      </TicketRenderBoundary>
+    </div>
+  );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
-      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={`rounded px-2 py-0.5 font-mono text-[11px] tabular-nums ${
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0 lg:bg-muted/30">
+      <header className="flex min-h-[52px] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[56px] sm:px-3 lg:px-2.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {onBackToInbox ? (
+            <button
+              type="button"
+              onClick={onBackToInbox}
+              aria-label="Back to inbox"
+              className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 lg:hidden"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <span>Inbox</span>
+            </button>
+          ) : null}
+          <span
+            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-mono text-[12px] tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
-                ? "bg-slate-100 font-medium text-slate-600"
-                : "text-slate-400"
+                ? "font-medium text-muted-foreground"
+                : "text-muted-foreground/60"
             }`}
           >
-            {threadTicketRef}
-          </div>
+            {ticketNumberLabel}
+          </span>
           {headerActions ? (
             <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
-              <div className="flex shrink-0 items-center gap-2">{headerActions}</div>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">{headerActions}</div>
             </TicketRenderBoundary>
           ) : null}
+          {threadSubject ? (
+            <span className="hidden min-w-0 items-center gap-2 2xl:inline-flex">
+              <span className="min-w-0 max-w-[min(38vw,360px)] truncate text-[12px] font-semibold tracking-[-0.01em] text-foreground">
+                {threadSubject}
+              </span>
+            </span>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <TicketRenderBoundary section="rightHeaderActions" resetKey={`${thread?.id || ""}:rightHeader`}>
             {rightHeaderActions}
           </TicketRenderBoundary>
@@ -651,10 +849,47 @@ function TicketDetailComponent({
 
       <div
         ref={conversationRef}
-        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
+        className="relative min-h-0 flex-1 overflow-y-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          const shouldShowJumpToLatest = shouldShowJumpToLatestForNode(node);
+          isConversationNearBottomRef.current = !shouldShowJumpToLatest;
+          setShowJumpToLatest(shouldShowJumpToLatest);
+          onConversationScroll?.(node.scrollTop);
+        }}
       >
-        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
+        {isConversationLoading ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center"
+          >
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+              <Loader2 className="size-3 animate-spin text-violet-500" aria-hidden="true" />
+              Loading conversation
+            </span>
+          </div>
+        ) : null}
+        {showJumpToLatest ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Jump to latest message"
+            onClick={() => {
+              const node = conversationRef.current;
+              if (!node) return;
+              node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+              isConversationNearBottomRef.current = true;
+              setShowJumpToLatest(false);
+            }}
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border-border/80 bg-background/95 px-3 text-xs font-medium shadow-md backdrop-blur-sm hover:bg-background"
+          >
+            <ArrowDown className="mr-1.5 h-3.5 w-3.5" />
+            Jump to latest
+          </Button>
+        ) : null}
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-3 px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
               <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
@@ -675,11 +910,22 @@ function TicketDetailComponent({
             </div>
           ) : null}
           {orderUpdateError && !shouldShowActionCard ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
               {orderUpdateError}
             </div>
           ) : null}
-          {!isConversationLoading || messages.length ? messages.map((message) => {
+          {!isConversationLoading || messages.length ? messages.map((message, messageIndex) => {
+            const previousMessage = messageIndex > 0 ? messages[messageIndex - 1] : null;
+            const groupedWithPrevious = canGroupMessages(previousMessage, message, mailboxEmails);
+            const messageDayKey = getMessageDayKey(message);
+            const previousMessageDayKey = getMessageDayKey(previousMessage);
+            const shouldShowDaySeparator =
+              Boolean(previousMessage) &&
+              Boolean(messageDayKey) &&
+              messageDayKey !== previousMessageDayKey;
+            const shouldShowNewMessagesDivider = messageIndex === firstUnreadMessageIndex;
+            const showMessageTimestamp =
+              Boolean(messageDayKey) && messageDayKey === todayMessageDayKey;
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
@@ -729,24 +975,32 @@ function TicketDetailComponent({
             if (shouldInsertActionCardBeforeMessage) {
               actionCardInserted = true;
             }
-            const primaryLog =
-              Array.isArray(message.ai_logs) && message.ai_logs.length
-                ? message.ai_logs[0]
-                : null;
-            const thinkingData = isDraft
-              ? primaryLog
-                ? {
-                    type: primaryLog.step_name,
-                    detail: primaryLog.step_detail,
-                  }
-                : message?.ai_context || message?.context || {
-                    summary: "Analyzed request using Store Policies.",
-                  }
-              : null;
             return (
-              <div key={message.id} className="space-y-3">
+              <Fragment key={message.id}>
+                {shouldShowDaySeparator ? (
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-muted-foreground/80">
+                    <span className="h-px flex-1 bg-border/60" />
+                    <span className="rounded-full border border-border/70 bg-background/80 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
+                      {formatMessageDayLabel(message)}
+                    </span>
+                    <span className="h-px flex-1 bg-border/60" />
+                  </div>
+                ) : null}
+                {shouldShowNewMessagesDivider ? (
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-violet-700/80">
+                    <span className="h-px flex-1 bg-violet-200/80" />
+                    <span className="rounded-full border border-violet-200/80 bg-violet-50 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
+                      New messages
+                    </span>
+                    <span className="h-px flex-1 bg-violet-200/80" />
+                  </div>
+                ) : null}
+              <div
+                data-latest-message={messageIndex === messages.length - 1 ? "true" : undefined}
+                className={`space-y-3 ${groupedWithPrevious ? "!mt-1" : ""}`}
+              >
                 {shouldInsertActionCardBeforeMessage ? (
-                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                  <div ref={actionCardRef} className="ml-auto flex w-full max-w-[480px] justify-end">
                     <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                       <ActionCard
                         status={pendingUpdateState}
@@ -776,42 +1030,28 @@ function TicketDetailComponent({
                     </TicketRenderBoundary>
                   </div>
                 ) : null}
-                {isDraft ? (
-                  <div className="ml-auto w-full max-w-[520px]">
-                    <TicketRenderBoundary section="thinkingCard" resetKey={`${thread?.id || ""}:${messageId}:thinking`}>
-                      <ThinkingCard
-                        data={thinkingData}
-                        onClick={() => onOpenInsights?.(true)}
-                      />
-                    </TicketRenderBoundary>
-                  </div>
-                ) : null}
                 <MessageRenderBoundary messageId={messageId || message?.id}>
                   <MessageBubble
                     message={message}
                     direction={direction}
                     attachments={messageAttachments}
                     outboundSenderName={currentUserName}
+                    showMeta={!groupedWithPrevious}
+                    compactTimestamp
+                    showTimestamp={showMessageTimestamp}
+                    grouped={groupedWithPrevious}
                     editStats={direction === "outbound" ? sentDraftStats : null}
                     translatedText={getMessageTranslationText(message, translationItems)}
                     translationLoading={translationLoading}
                     onRequestTranslation={onRequestTranslation}
                   />
                 </MessageRenderBoundary>
-                {shouldShowTrackingCard &&
-                  latestInboundCustomerMessageId &&
-                  String(message?.id || "") === latestInboundCustomerMessageId ? (
-                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
-                    <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
-                      <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} direction="outbound" />
-                    </TicketRenderBoundary>
-                  </div>
-                ) : null}
               </div>
+              </Fragment>
             );
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto flex w-full max-w-[520px] justify-end">
+            <div ref={actionCardRef} className="ml-auto flex w-full max-w-[480px] justify-end">
               <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
                 <ActionCard
                   status={pendingUpdateState}
@@ -845,10 +1085,21 @@ function TicketDetailComponent({
       </div>
 
       {isActionPending ? (
-        <div className="flex-none border-t border-violet-100 bg-violet-50/60 px-4 py-2.5">
-          <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 text-[13px] text-violet-700">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-500" />
-            <span>Review the action above to proceed</span>
+        <div className="relative flex-none">
+          {renderComposer(true)}
+          <div className="absolute inset-x-2.5 bottom-2 top-2 z-10 flex items-center justify-center px-3">
+            <button
+              type="button"
+              onClick={handleReviewPendingAction}
+              aria-label="Review action above"
+              className="group inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-background/75 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+            >
+              <span className="truncate">Review action above</span>
+              <ChevronUp
+                className="size-3 shrink-0 text-violet-500/80 transition-transform duration-150 ease-out group-hover:-translate-y-0.5"
+                aria-hidden="true"
+              />
+            </button>
           </div>
         </div>
       ) : (
@@ -939,39 +1190,25 @@ function TicketDetailComponent({
             </div>
           </div>
         ) : (
-        <div className="relative px-3 pb-1.5">
-          <TicketRenderBoundary
-            section="composer"
-            resetKey={`${thread?.id || ""}:${composerMode}:composer`}
-            fallback={
-              <div className="mx-auto w-full max-w-[900px] rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Composer could not be rendered for this ticket.
-              </div>
-            }
-          >
-            <Composer
-              key={`${thread?.id || "thread"}:${composerMode}`}
-              value={draftValue}
-              onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
-              collapsed={composerCollapsed}
-              onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
-              draftLoaded={draftLoaded}
-              canSend={canSend}
-              onSend={onSend}
-              isSending={isSending}
-              mode={composerMode}
-              onModeChange={onComposerModeChange}
-              toLabel={toLabel}
-              mentionUsers={mentionUsers}
-              onBlur={() => onDraftBlur?.(thread?.id || null)}
-              isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
-              onGenerateDraft={onGenerateDraft}
-              isGeneratingDraft={isGeneratingDraft}
-              onRefineDraft={onRefineDraft}
-              isRefiningDraft={isRefiningDraft}
-            />
-          </TicketRenderBoundary>
-        </div>
+        <>
+        {draftActivityLoading ? (
+          <div className="px-3 pb-0.5">
+            <div className="mx-auto w-full max-w-[900px]">
+              <TicketRenderBoundary
+                section="thinkingCard"
+                resetKey={`${thread?.id || ""}:${draftActivitySteps.length}:${draftActivityLoading}`}
+              >
+                <ThinkingCard
+                  steps={draftActivitySteps}
+                  loading={draftActivityLoading}
+                  onClick={() => onOpenInsights?.(true)}
+                />
+              </TicketRenderBoundary>
+            </div>
+          </div>
+        ) : null}
+        {renderComposer(false)}
+        </>
         )}
         </>
       )}

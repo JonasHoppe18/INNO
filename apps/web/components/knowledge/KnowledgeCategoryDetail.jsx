@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
-  ChevronDown,
   ChevronRight,
   MessageSquare,
   Package,
   Pencil,
   Plus,
   RotateCcw,
+  Search,
   Tag,
   Trash2,
   Truck,
@@ -30,13 +30,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
 import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-types";
 import { buildStarters } from "@/lib/knowledge/starters";
 import { SnippetEditor } from "./SnippetEditor";
 import { KnowledgeDocumentEditorCard } from "./KnowledgeDocumentEditorCard";
+import { KnowledgeDocumentOutline } from "./KnowledgeDocumentOutline";
+import { KnowledgeDocsCanvas } from "./KnowledgeDocsCanvas";
+import { KnowledgeDocsToolbar } from "./KnowledgeDocsToolbar";
+import { useKnowledgeDocsEditor } from "@/lib/knowledge/use-knowledge-docs-editor";
+import { parseKnowledgeDocumentOutline } from "@/lib/knowledge/knowledge-doc-outline";
 
 const KNOWLEDGE_TYPE_LABELS = {
   fact: "Fact",
@@ -104,32 +107,44 @@ function ProductCard({ product, onClick }) {
   const initials = getInitials(product.title);
   const count = Number(product.snippet_count) || 0;
   return (
-    <Card className="group cursor-pointer transition-colors hover:bg-muted/50" onClick={onClick}>
-      <CardContent className="p-4">
+    <Card
+      role="link"
+      tabIndex={0}
+      aria-label={`${product.title}: ${count > 0 ? `${count} ${count === 1 ? "snippet" : "snippets"}` : "needs content"}`}
+      className="group cursor-pointer rounded-xl border-border/70 shadow-sm transition-[transform,border-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-md active:scale-[0.99]"
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
+    >
+      <CardContent className="p-3.5">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium truncate">{product.title}</p>
             {product.price && (
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {Number(product.price).toLocaleString("da-DK", { minimumFractionDigits: 2 })}
                 {product.currency ? ` ${product.currency}` : ""}
               </p>
             )}
           </div>
           <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+            className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
               count > 0
                 ? "bg-primary/10 text-primary"
                 : "bg-muted text-muted-foreground"
             }`}
-            title={count === 1 ? "1 snippet" : `${count} snippets`}
+            title={count > 0 ? `${count} ${count === 1 ? "snippet" : "snippets"}` : "Needs content"}
           >
-            {count}
+            {count > 0 ? `${count} ${count === 1 ? "snippet" : "snippets"}` : "Needs content"}
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-[transform,color] duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
         </div>
       </CardContent>
     </Card>
@@ -227,7 +242,7 @@ function ProductsSection({ shopId, categorySlug }) {
       variant="outline"
       onClick={handleSyncProducts}
       disabled={syncing}
-      className="gap-1.5"
+      className="h-9 gap-1.5"
     >
       <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
       {syncing ? "Syncing..." : "Sync products"}
@@ -248,69 +263,75 @@ function ProductsSection({ shopId, categorySlug }) {
   return (
     <div className="space-y-4">
       {/* General — promoted to the top so brand-wide knowledge is the obvious first stop */}
-      <div
+      <button
+        type="button"
         onClick={() => router.push(`/knowledge/${categorySlug}/general`)}
-        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3.5 transition-all hover:border-indigo-300 hover:bg-indigo-50 active:scale-[0.99] dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/50"
+        className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-indigo-200/80 bg-indigo-50/50 px-4 py-3.5 text-left transition-[transform,border-color,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-sm active:scale-[0.99] dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/50"
       >
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-          </svg>
+          <BookOpen className="size-4" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold text-indigo-900 dark:text-indigo-100">General product knowledge</div>
           <div className="text-[11px] text-indigo-500 mt-0.5 dark:text-indigo-400">Applies across all products — start here for brand-wide guides, FAQs, and shared procedures</div>
         </div>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+          className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
             generalCount > 0
               ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"
               : "border border-indigo-200 bg-white text-indigo-400 dark:border-indigo-700 dark:bg-transparent dark:text-indigo-500"
           }`}
         >
-          {generalCount}
+          {generalCount > 0 ? `${generalCount} ${generalCount === 1 ? "snippet" : "snippets"}` : "Add content"}
         </span>
-        <svg className="h-4 w-4 text-indigo-400 transition-transform group-hover:translate-x-0.5 dark:text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="m9 18 6-6-6-6"/>
-        </svg>
-      </div>
+        <ChevronRight className="size-4 text-indigo-400 transition-transform duration-150 ease-out group-hover:translate-x-0.5 dark:text-indigo-500" />
+      </button>
 
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <h3 className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Product-specific knowledge</h3>
-        <div className="flex items-center gap-2">
-          {missingCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setOnlyMissing((v) => !v)}
-              className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-                onlyMissing
-                  ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
-                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600"
-              }`}
-            >
-              {onlyMissing ? `Showing ${missingCount} without snippets` : `Show only without snippets (${missingCount})`}
-            </button>
-          )}
-          {syncButton}
+      <div className="flex flex-col gap-3 pt-1">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Product-specific knowledge</h3>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">{products.length}</span>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {products.length > 8 && (
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search products..."
+                  aria-label="Search products"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-9 w-full rounded-lg pl-9"
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {missingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOnlyMissing((v) => !v)}
+                  className={`h-9 rounded-lg border px-3 text-[11px] transition-[border-color,background-color,color] duration-150 ease-out ${
+                    onlyMissing
+                      ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600"
+                  }`}
+                >
+                  {onlyMissing ? `Showing ${missingCount} needing content` : `Needs content (${missingCount})`}
+                </button>
+              )}
+              {syncButton}
+            </div>
+          </div>
         </div>
       </div>
-
-      {products.length > 8 && (
-        <Input
-          placeholder="Search products..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
-      )}
 
       {filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
           {onlyMissing ? "Every product has at least one snippet." : "No products match your search."}
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((product) => (
             <ProductCard
               key={product.id}
@@ -461,9 +482,12 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  // Start expanded so the policy is readable/editable immediately; the
-  // collapse toggle below still lets the admin tuck it away if they want to.
-  const [expanded, setExpanded] = useState(true);
+  const [activeSectionId, setActiveSectionId] = useState(null);
+  const { editor } = useKnowledgeDocsEditor({
+    value,
+    onChange: setValue,
+  });
+  const sections = useMemo(() => parseKnowledgeDocumentOutline(value), [value]);
 
   useEffect(() => {
     const decoded = decodeEntities(initialContent);
@@ -474,12 +498,14 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   const syncedAgo = formatRelativeTimestamp(syncedAt);
 
   const isDirty = value !== saved;
-  // Short policies (or empty) don't benefit from collapse — just render inline.
-  const SHORT_POLICY_THRESHOLD = 320;
-  const isShort = (value || "").length <= SHORT_POLICY_THRESHOLD;
-  const isEffectivelyExpanded = expanded || isDirty || isShort;
-  const previewText = (value || "").trim().replace(/\s+/g, " ").slice(0, 240);
   const wordCount = (value || "").trim().split(/\s+/).filter(Boolean).length;
+
+  useEffect(() => {
+    setActiveSectionId((current) => {
+      if (current && sections.some((section) => section.id === current)) return current;
+      return sections[0]?.id || null;
+    });
+  }, [sections]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -519,90 +545,93 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
     }
   };
 
+  const scrollToSection = (sectionId) => {
+    const target = window.document.getElementById(sectionId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveSectionId(sectionId);
+  };
+
   return (
     <>
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold">{title}</h2>
-              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
-                Pinned
-              </span>
+      <div className="flex gap-6">
+        <div className="hidden w-60 shrink-0 md:block">
+          <KnowledgeDocumentOutline
+            sections={sections}
+            activeSectionId={activeSectionId}
+            onSelectSection={scrollToSection}
+          />
+        </div>
+        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card">
+          <div className="max-h-[75vh] min-h-[420px] overflow-y-auto">
+            <div className="sticky top-0 z-20 bg-card/95 shadow-[0_1px_0_hsl(var(--border)/0.7)] backdrop-blur supports-[backdrop-filter]:bg-card/85">
+              <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full bg-primary/10 px-2 py-1 font-medium text-primary">
+                      Category knowledge
+                    </span>
+                    <span className="text-muted-foreground">
+                      Applies to <span className="font-medium text-foreground">Shipping &amp; Delivery</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold">{title}</h2>
+                    <span
+                      aria-live="polite"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                    >
+                      {isDirty ? "Unsaved changes" : "Pinned"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-start gap-1 md:items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={handleSync}
+                    disabled={syncing}
+                  >
+                    <RotateCcw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+                    {syncing ? "Syncing…" : "Sync from Shopify"}
+                  </Button>
+                  {syncedAgo && (
+                    <p className="text-[10.5px] text-muted-foreground">
+                      Last synced {syncedAgo}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <KnowledgeDocsToolbar editor={editor} />
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={handleSync}
-              disabled={syncing}
-            >
-              <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing…" : "Sync from Shopify"}
-            </Button>
-            {syncedAgo && (
-              <p className="text-[10.5px] text-gray-400">
-                Last synced {syncedAgo}
-              </p>
-            )}
+            <div className="px-6 py-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Use section headings to organise delivery times, exceptions, and address changes.
+                </p>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
+                </span>
+              </div>
+              <KnowledgeDocsCanvas
+                editor={editor}
+                emptyState={
+                  editor && !value.trim() ? (
+                    <div className="mx-auto max-w-md rounded-xl border border-dashed border-border/80 bg-muted/20 px-5 py-5 text-center shadow-sm">
+                      <p className="text-sm font-medium text-foreground">Add your shipping policy</p>
+                      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        Add section headings for delivery times, shipping exceptions, and address changes.
+                      </p>
+                    </div>
+                  ) : null
+                }
+              />
+            </div>
           </div>
         </div>
-        {isEffectivelyExpanded ? (
-          <div className="px-6 py-5">
-            <Textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              rows={16}
-              placeholder="Click here to write your policy…"
-              className="min-h-[240px] max-h-[480px] resize-y overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed border-0 shadow-none p-0 focus-visible:ring-0 bg-transparent"
-            />
-            {!isShort && (
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-[11px] text-gray-400">
-                  {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
-                </p>
-                {!isDirty && (
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(false)}
-                    className="inline-flex items-center gap-1 text-[11.5px] text-gray-500 hover:text-gray-800"
-                  >
-                    <ChevronDown className="h-3 w-3 rotate-180" />
-                    Collapse
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="group flex w-full items-start justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-gray-50/60 dark:hover:bg-gray-800/30"
-          >
-            <div className="min-w-0 flex-1">
-              {previewText ? (
-                <>
-                  <p className="line-clamp-3 text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
-                    {previewText}
-                    {(value || "").length > previewText.length ? "…" : ""}
-                  </p>
-                  <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-                    {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"} · click to expand and edit
-                  </p>
-                </>
-              ) : (
-                <p className="text-[12.5px] text-gray-400 dark:text-gray-500">
-                  No policy yet — click to add one, or sync from Shopify.
-                </p>
-              )}
-            </div>
-            <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400" />
-          </button>
-        )}
       </div>
 
       <StickySaveBar
@@ -764,6 +793,8 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             documentType="returns_refunds"
             title="Returns & Refunds"
             description="Define your return policy and how refunds work"
+            scopeLabel="Category knowledge"
+            scopeValue="Returns & Refunds"
           />
         ) : (
           <PolicyEditor
@@ -787,6 +818,8 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
           documentType="general"
           title="General Knowledge"
           description="Define store-wide procedures, contact details, and merchant-specific handling."
+          scopeLabel="All categories"
+          scopeValue="Your workspace"
         />
       )}
 

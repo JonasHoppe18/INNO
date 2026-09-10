@@ -2,11 +2,14 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import LocaleSwitcher from "./LocaleSwitcher";
-import BookDemoButton from "./BookDemoButton";
 import MobileNavMenu from "./MobileNavMenu";
 
 export default async function LandingNav({ locale }) {
   const t = await getTranslations("landing.nav");
+  const dashboardUrl = String(
+    process.env.NEXT_PUBLIC_DASHBOARD_URL || ""
+  ).replace(/\/$/, "");
+  const loginHref = dashboardUrl ? `${dashboardUrl}/sign-in` : "/sign-in";
   const links = [
     { href: `/${locale}/product`, label: t("product") },
     { href: `/${locale}/integrations`, label: t("integrations") },
@@ -36,16 +39,12 @@ export default async function LandingNav({ locale }) {
           <MobileNavMenu
             links={links}
             loginLabel={t("login")}
+            loginHref={loginHref}
             menuLabel={t("menu")}
             closeMenuLabel={t("closeMenu")}
           />
           <LocaleSwitcher locale={locale} />
-          <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
-          <BookDemoButton
-            label={t("bookDemo")}
-            fallbackHref={`/${locale}#book-demo`}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
-          />
+          <Link href={loginHref} className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
         </div>
       </div>
     </header>

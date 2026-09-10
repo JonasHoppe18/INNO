@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveClerkOrgId, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -25,7 +25,9 @@ function isInternalAudience(value: unknown) {
 }
 
 export async function GET() {
-  const { userId: clerkUserId, orgId } = await auth();
+  const authState = await auth();
+  const clerkUserId = authState.userId;
+  const orgId = resolveClerkOrgId(authState);
   if (!clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -37,7 +39,9 @@ export async function GET() {
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null };
   try {
-    scope = await resolveAuthScope(supabase, { clerkUserId, orgId });
+    scope = await resolveAuthScope(supabase, { clerkUserId, orgId }, {
+      requireExplicitWorkspace: true,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

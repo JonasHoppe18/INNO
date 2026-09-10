@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { buildTrackingTimeline, normalizeTrackingStatusLabel } from "@/components/inbox/tracking-utils";
+import bringLogo from "../../../../assets/Bring logo.png";
 import glsLogo from "../../../../assets/GLS logo.png";
 import postNordLogo from "../../../../assets/PostNord_logo.png";
 
@@ -31,12 +32,13 @@ function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
       </svg>
     );
   }
-  if (lower === "bring") {
+  if (lower.includes("bring")) {
     return (
-      <svg viewBox="0 0 48 48" className={`${className} flex-none`} aria-label="Bring">
-        <rect width="48" height="48" rx="10" fill="#E8001B" />
-        <text x="50%" y="56%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="10" fontWeight="700" fontFamily="system-ui,sans-serif">BRING</text>
-      </svg>
+      <Image
+        src={bringLogo}
+        alt="Bring"
+        className={`${className} flex-none object-contain`}
+      />
     );
   }
   if (lower === "dhl") {
@@ -141,6 +143,7 @@ export function TrackingCard({
   order = null,
   threadId = null,
   fullWidth = false,
+  compact = false,
   title = "Track shipment",
   descriptionPrefix = "Live tracking for order",
   direction = "unknown",
@@ -255,25 +258,29 @@ export function TrackingCard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`group inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 text-left ${
+        className={`group inline-flex items-center border border-border/70 bg-card/80 shadow-none transition-[border-color,background-color,transform] duration-150 ease-out hover:border-border hover:bg-muted/25 active:scale-[0.995] text-left ${
+          compact ? "gap-2 rounded-lg bg-background/60 px-2.5 py-2" : "gap-2.5 rounded-xl px-3 py-2.5"
+        } ${
           fullWidth
             ? "w-full min-w-0 max-w-none"
-            : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[360px]"
+            : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[340px]"
         }`}
       >
-        <CarrierLogo carrier={carrier} className="h-8 w-8" />
+        <span className={`flex flex-none items-center justify-center rounded-lg border border-border/60 bg-muted/35 ${compact ? "h-7 w-7 rounded-md" : "h-8 w-8"}`}>
+          <CarrierLogo carrier={carrier} className={compact ? "h-5 w-5" : "h-6 w-6"} />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
-          <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+          <div className={`font-semibold text-foreground ${compact ? "text-[12px] leading-4" : "text-[13px] leading-5"}`}>{title}</div>
+          <div className={`mt-0.5 flex min-w-0 items-center gap-1 text-muted-foreground ${compact ? "text-[10px]" : "text-[11px]"}`}>
             <span>{carrier}</span>
-            <span className="text-slate-300 mx-0.5">·</span>
-            <span className={`font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
+            <span className="mx-0.5 text-muted-foreground/45">·</span>
+            <span className={`truncate font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-400 font-mono">
+          <div className={`mt-0.5 truncate font-mono text-muted-foreground/70 ${compact ? "text-[9px]" : "text-[10px]"}`}>
             {trackingNumber || "No tracking number"}
           </div>
         </div>
-        <ChevronRight className="h-4 w-4 flex-none text-slate-300 group-hover:text-slate-500 transition-colors" />
+        <ChevronRight className="h-4 w-4 flex-none text-muted-foreground/45 transition-[color,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
       </button>
 
       {/* Detail modal */}

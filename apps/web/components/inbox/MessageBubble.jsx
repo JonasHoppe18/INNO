@@ -205,9 +205,9 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[13px] leading-[1.5] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_*]:font-[inherit] [&_*]:text-[13px] [&_*]:leading-[1.5] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 const EMAIL_MODAL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
 
 const IMAGE_FILENAME_RE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 
@@ -417,6 +417,10 @@ function MessageBubbleComponent({
   direction = "inbound",
   attachments = [],
   outboundSenderName,
+  showMeta = true,
+  compactTimestamp = false,
+  showTimestamp = true,
+  grouped = false,
   editStats = null,
   translatedText = null,
   translationLoading = false,
@@ -460,16 +464,32 @@ function MessageBubbleComponent({
     senderLower === "sona" ||
     senderLower === "sona ai";
   const senderDisplayName = isAiMessage ? "Sona" : senderLabel || "Unknown sender";
+  const displaySenderName = isAuthoredByCurrentUser ? "You" : senderDisplayName;
   const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
-  const timestamp = timestampValue
+  const fullTimestamp = timestampValue
     ? new Date(timestampValue).toLocaleString("da-DK", {
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      month: "short",
-      timeZone: DISPLAY_TIMEZONE,
-    })
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        timeZone: DISPLAY_TIMEZONE,
+      })
+    : "";
+  const timestamp = showTimestamp && timestampValue
+    ? new Date(timestampValue).toLocaleString("da-DK", compactTimestamp
+      ? {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: DISPLAY_TIMEZONE,
+      }
+      : {
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "short",
+        timeZone: DISPLAY_TIMEZONE,
+      })
     : "";
   const toList = Array.isArray(message.to_emails) ? message.to_emails : [];
   const ccList = Array.isArray(message.cc_emails) ? message.cc_emails : [];
@@ -604,39 +624,62 @@ function MessageBubbleComponent({
     ? formattedStructuredHtml
     : safeModalBodyHtml;
   const shouldShowBcc = isOutbound && bccList.length > 0;
+  const bubbleRadiusClass = grouped
+    ? isOutbound
+      ? "rounded-xl rounded-tr-md"
+      : "rounded-xl rounded-tl-md"
+    : "rounded-2xl";
 
   return (
     <>
       <div className={cn("animate-in fade-in slide-in-from-bottom-1 duration-200 group/bubble w-full", isOutbound ? "flex justify-end" : "flex justify-start")}>
         <div className={cn("w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]")}>
           <div className="min-w-0 space-y-0.5">
-            <div className="flex flex-wrap items-center gap-2 px-1">
-              <div className="text-[13px] font-semibold text-foreground">
-                {senderDisplayName}{" "}
-                <span className="text-[12px] font-normal text-muted-foreground">
-                  {timestamp}
+            {showMeta ? (
+              <div className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1", isOutbound && "justify-end text-right")}>
+                <span
+                  className={cn(
+                    "text-[13px] font-semibold leading-5",
+                    isInternalNote
+                      ? "text-amber-800 dark:text-amber-200"
+                      : isOutbound
+                        ? "text-violet-800 dark:text-violet-200"
+                        : "text-foreground"
+                  )}
+                >
+                  {displaySenderName}
                 </span>
+                {timestamp ? (
+                  <span className="text-[12px] font-normal tabular-nums text-muted-foreground">
+                    {timestamp}
+                  </span>
+                ) : null}
+                {isInternalNote ? (
+                  <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    Internal note
+                  </span>
+                ) : null}
+                {isDraft ? (
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium leading-4 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300">
+                    Draft
+                  </span>
+                ) : null}
+                {!isDraft && isOutbound ? <AiEditBadge editStats={editStats} /> : null}
               </div>
-              {isDraft ? (
-                <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
-                  Draft
-                </span>
-              ) : null}
-              {!isDraft && isOutbound ? <AiEditBadge editStats={editStats} /> : null}
-            </div>
+            ) : null}
 
             <div
               className={cn(
-                "overflow-hidden rounded-xl border text-xs",
+                `overflow-hidden ${bubbleRadiusClass} border text-xs`,
                 isInternalNote
-                  ? "border-yellow-200 bg-yellow-50 dark:border-yellow-300/40 dark:bg-yellow-500/10"
+                  ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : isOutbound
-                  ? "border-violet-200 bg-violet-50/55 dark:border-violet-400/30 dark:bg-violet-500/10"
-                  : "border-border bg-card"
+                  ? "border-violet-200/80 bg-violet-50/70 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
+                  : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
               )}
             >
               <div
-                className={cn("px-4 py-3 text-[14px] leading-[1.55] text-foreground", isOutbound && "text-[14px]")}
+                className={cn("px-3.5 py-2.5 text-[13px] leading-[1.5] text-foreground", isOutbound && "text-[13px]")}
                 onClick={(e) => {
                   if (e.target.tagName !== "IMG") return;
                   const src = e.target.getAttribute("src");
@@ -645,7 +688,7 @@ function MessageBubbleComponent({
                 }}
               >
                 {showTranslation ? (
-                  <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-foreground">
+                  <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-foreground">
                     {translatedText}
                   </p>
                 ) : !isOutbound && translationLoading ? (
@@ -702,14 +745,14 @@ function MessageBubbleComponent({
               </div>
             ) : null}
 
-            {!isInternalNote ? (
-              <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground">
+            {!isInternalNote && !grouped ? (
+              <div className={cn("flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground", isOutbound && "justify-end")}>
                 <button
                   type="button"
                   onClick={() => {
                     startEmailOpenTransition(() => setViewEmailOpen(true));
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                 >
                   <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
@@ -718,7 +761,7 @@ function MessageBubbleComponent({
                   <button
                     type="button"
                     onClick={handleToggleTranslation}
-                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                   >
                     <Globe className="h-3.5 w-3.5" />
                     <span>{showTranslation ? "Show original" : "Translate"}</span>
@@ -760,7 +803,7 @@ function MessageBubbleComponent({
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Date</span>
-                <span className="text-[13px] text-foreground">{timestamp || "-"}</span>
+                <span className="text-[13px] text-foreground">{fullTimestamp || "-"}</span>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
@@ -887,6 +930,10 @@ const arePropsEqual = (prev, next) => {
   }
   if (prev.direction !== next.direction) return false;
   if (prev.outboundSenderName !== next.outboundSenderName) return false;
+  if (prev.showMeta !== next.showMeta) return false;
+  if (prev.compactTimestamp !== next.compactTimestamp) return false;
+  if (prev.showTimestamp !== next.showTimestamp) return false;
+  if (prev.grouped !== next.grouped) return false;
   if (prev.translatedText !== next.translatedText) return false;
   if (prev.translationLoading !== next.translationLoading) return false;
   const prevEdit = prev.editStats || null;

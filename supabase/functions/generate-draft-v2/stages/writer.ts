@@ -509,7 +509,14 @@ export function stripGenericClosers(text: string): string {
 }
 
 export function applySendReadyStyleCleanup(text: string): string {
-  return stripGenericClosers(stripDuplicateGreeting(String(text ?? "").trim()));
+  const cleaned = stripGenericClosers(
+    stripDuplicateGreeting(String(text ?? "").trim()),
+  );
+  return cleaned.replace(
+    /^((?:hi|hello|hej|hallo|bonjour|hola|ciao)[^\n]*,\s*\n\n)([\p{Ll}])/u,
+    (_match, greeting, firstLetter) =>
+      `${greeting}${String(firstLetter).toLocaleUpperCase()}`,
+  );
 }
 
 function greetingPrefix(language: string): string {
@@ -592,7 +599,9 @@ export function normalizeOpeningGreeting(
       `${expected}\n\n`,
     );
   }
-  return draft;
+  // The model may omit the greeting, but a verified customer name should
+  // still produce a send-ready, personalized opening.
+  return `${expected}\n\n${draft}`;
 }
 
 function factValue(facts: FactResolverResult, label: string): string {
@@ -833,6 +842,10 @@ export function buildTrackingDirective(
     "- Generelt: opfind ALDRIG en leveringsdato/ETA (oplys kun ETA hvis den er angivet i fakta). " +
       "Tilbyd IKKE proaktiv opfølgning på forsendelsen, lov ingen besked/notifikation, og beskriv ingen automatisk refunderings-proces. " +
       "Bland ALDRIG outbound- og retur-tracking sammen.",
+  );
+  lines.push(
+    "- Kundevendt struktur: start med en personlig hilsen hvis kunden kan navngives, giv den aktuelle status i første sætning, og skriv derefter kun den vigtigste konkrete detalje (fx leveringssted eller tracking-link). " +
+      "Skriv som en hjælpsom medarbejder — ikke som en rå statusrapport med carrier/state/verification-labels.",
   );
   return lines.join("\n");
 }
@@ -1998,6 +2011,8 @@ ${commonFacts}
 Regler:
 - Bekræft kun det udførte og de kundesikre fakta ovenfor. Brug datid/perfektum.
 - Hold svaret kort og naturligt. Ingen intern proces, signatur, support-email eller generisk fyld.
+- Ved update_shipping_address: bekræft ændringen og gengiv den nye adresse fra execution_detail eller customer_safe_facts — brug ikke den gamle adresse fra ordre-fakta.
+- Ved cancel_order: start med at bekræfte, at den konkrete ordre er annulleret. Nævn ikke refundering, medmindre den er dokumenteret i amount_display eller verificerede fakta.
 - Ved refund/cancel: nævn kun et refunderet beløb, hvis amount_display eller verificerede fakta faktisk indeholder beløbet. Angiv 3-5 hverdages normal banktid efter en verificeret refundering.`;
   }
 
@@ -2078,6 +2093,100 @@ export const RESOLUTION_STAGE_DIRECTIVES: Record<string, string> = {
   escalate_human:
     "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
 };
+
+function actionOrderName(action: ActionProposal): string {
+  return String(
+    action.params?.order_name ?? action.params?.order_number ?? "",
+  ).trim();
+}
+
+function actionAddress(action: ActionProposal): string {
+  const raw = action.params?.shipping_address ??
+    action.params?.shippingAddress;
+  if (!raw || typeof raw !== "object") return "";
+  const address = raw as Record<string, unknown>;
+  return [
+    address.address1,
+    address.address2,
+    address.zip ?? address.postal_code,
+    address.city,
+    address.country,
+  ]
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * Customer-facing guardrails for the draft that accompanies a proposed
+ * mutation. The action-decision stage has already verified the order and the
+ * target data, but its `reason` is intentionally internal and too vague to
+ * be a good email brief on its own.
+ */
+export function buildActionProposalDirective(
+  actionProposals: ActionProposal[] | null | undefined,
+): string {
+  if (!Array.isArray(actionProposals) || actionProposals.length === 0) {
+    return "";
+  }
+
+  const lines = [
+    "# KUNDEVENDT SVAR VED PLANLAGT HANDLING",
+    "Skriv selve kundesvaret — ikke en beskrivelse af action-systemet.",
+    "Handlingen er planlagt, men er ikke verificeret udført i dette trin: skriv derfor ikke at den allerede er ændret eller annulleret.",
+    "Led med den konkrete løsning, brug kundens navn hvis det er kendt, skriv \"Jeg\" med stort efter hilsenen, og hold svaret på 2-3 korte sætninger.",
+  ];
+
+  for (const action of actionProposals) {
+    const orderName = actionOrderName(action);
+    if (action.type === "update_shipping_address") {
+      const address = actionAddress(action);
+      lines.push(
+        "## Adresseændring",
+        `- Ordre: ${orderName || "(se verificerede fakta)"}`,
+        `- Ny leveringsadresse: ${address || "(se verificerede fakta)"}`,
+        "- Svar naturligt, at du sørger for at ændre leveringsadressen til den nye adresse. Gentag ikke den gamle adresse, og skriv ikke intern godkendelse, workflow eller systemstatus.",
+        "- Hvis det står i de verificerede fakta, må du tilføje, at ordren endnu ikke er afsendt.",
+        "- Afslut efter løsningen og den eventuelle afsendelsesstatus. Lov ikke at give en senere besked eller vende tilbage.",
+      );
+    } else if (action.type === "cancel_order") {
+      lines.push(
+        "## Annullering",
+        `- Ordre: ${orderName || "(se verificerede fakta)"}`,
+        "- Svar naturligt, at du sørger for at annullere ordren. Nævn kun at ordren endnu ikke er afsendt, hvis det står i de verificerede fakta.",
+        "- Lov ikke refundering, beløb eller behandlingstid, medmindre det er verificeret i fakta eller action-resultatet.",
+        "- Afslut efter løsningen og den eventuelle afsendelsesstatus. Lov ikke at give en senere besked, vende tilbage eller beskrive en annulleringsproces.",
+        "- Skriv ikke intern godkendelse, workflow, action-type eller systemstatus.",
+      );
+    }
+  }
+
+  return lines.length > 4 ? lines.join("\n") : "";
+}
+
+export function buildUnavailableCancelDraft(input: {
+  orderName?: string | null;
+  customerName?: string | null;
+  orderAlreadyCancelled?: boolean;
+  orderNotShipped?: boolean;
+  language?: string | null;
+}): string {
+  const language = String(input.language || "da").trim().toLowerCase();
+  const greeting = input.customerName?.trim()
+    ? `${greetingPrefix(language)} ${input.customerName.trim()},`
+    : `${greetingPrefix(language)},`;
+  const order = input.orderName?.trim()
+    ? `ordre ${input.orderName.trim()}`
+    : "ordren";
+
+  if (input.orderAlreadyCancelled) {
+    return `${greeting}\n\n${order[0].toLocaleUpperCase()}${order.slice(1)} er allerede annulleret.`;
+  }
+  if (input.orderNotShipped) {
+    return `${greeting}\n\n${order[0].toLocaleUpperCase()}${order.slice(1)} er endnu ikke afsendt, men leveringsstatus er ukendt, så jeg kan ikke bekræfte annulleringen endnu.`;
+  }
+  return `${greeting}\n\nJeg kan ikke bekræfte, at ${order} kan annulleres endnu, fordi ordrestatus ikke er tilgængelig.`;
+}
 
 export async function runWriter(
   {
@@ -2415,6 +2524,14 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
 
   // --- Foreslåede actions fra deterministisk action-decision ---
   const actionsBlock = buildActionCapabilityBlock(actionProposals);
+  const hasCancelProposal = Boolean(
+    actionProposals?.some((action) => action.type === "cancel_order"),
+  );
+  const unavailableCancelActionBlock = plan.primary_intent === "cancel" &&
+      !actionResult && !hasCancelProposal
+    ? `# ANNULLERING UDEN PLANLAGT ACTION
+Der er ingen verificeret cancel_order-action i denne kørsel. Skriv derfor ikke at ordren annulleres, at annulleringen startes, at du vender tilbage med en bekræftelse, eller at en refundering sker. Spørg ikke kunden om at bekræfte annulleringen igen, når kunden allerede har bedt om den. Brug kun den verificerede ordrestatus; hvis status ikke dokumenterer at annullering er mulig eller udført, sig det klart og kort uden at foreslå en retur som standardløsning.`
+    : "";
   const actionAmountDisplay = formatActionAmountDisplay(
     actionResult,
     replyLanguage,
@@ -2439,6 +2556,9 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     actionResult,
     resolvedAmountDisplay,
   );
+  const actionProposalBlock = actionResult
+    ? ""
+    : buildActionProposalDirective(actionProposals);
 
   // --- Viden fra vidensbase ---
   // Concise mode caps each chunk hard — the writer should extract one fact, not
@@ -2670,6 +2790,8 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     suppress(decisionsMade),
     suppress(pendingAsks),
     suppress(actionResultBlock),
+    suppress(actionProposalBlock),
+    suppress(unavailableCancelActionBlock),
     suppress(actionsBlock),
     suppress(openQBlock),
     suppress(knowledgeBlock),
@@ -2819,8 +2941,26 @@ Returner JSON:
       ),
       { latestCustomerMessage, language: replyLanguage },
     );
+    const orderRecord = facts.order && typeof facts.order === "object"
+      ? facts.order as unknown as Record<string, unknown>
+      : null;
+    const orderTrackingFact = facts.facts.find((fact) =>
+      /tracking|afsendt|leveringsstatus/i.test(fact.label)
+    )?.value ?? "";
+    const unavailableCancelDraft = plan.primary_intent === "cancel" &&
+        !actionResult && !hasCancelProposal
+      ? buildUnavailableCancelDraft({
+        orderName: typeof orderRecord?.name === "string"
+          ? orderRecord.name
+          : null,
+        customerName: salutationName.name,
+        orderAlreadyCancelled: Boolean(orderRecord?.cancelled_at),
+        orderNotShipped: /ikke afsendt|unfulfilled/i.test(orderTrackingFact),
+        language: replyLanguage,
+      })
+      : "";
     return {
-      draft_text: applySendReadyStyleCleanup(
+      draft_text: unavailableCancelDraft || applySendReadyStyleCleanup(
         normalizeOpeningGreeting(
           cleanedDraft,
           salutationName.name,

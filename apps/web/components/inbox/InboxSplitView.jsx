@@ -10,7 +10,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { TicketList } from "@/components/inbox/TicketList";
+import { TicketList, TicketListToolbar } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
@@ -49,7 +49,7 @@ import {
   waitTimestamp,
   waitingGroup,
 } from "@/lib/inbox/view-model";
-import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
+import { useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import {
   publishLiveSidebarCounts,
 } from "@/lib/inbox/live-sidebar-counts";
@@ -80,7 +80,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  ArrowUpRight,
   Bell,
   CheckCircle,
   CheckCircle2,
@@ -213,7 +212,10 @@ function FirstTagPill({ threadId, refreshTrigger }) {
   if (!tag) return null;
 
   return (
-    <span className="inline-flex items-center rounded-md border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-600">
+    <span
+      title={tag.name}
+      className="hidden h-7 max-w-[9rem] shrink-0 items-center truncate rounded-md border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[11px] font-medium leading-none text-violet-700 transition-colors lg:inline-flex dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-300"
+    >
       {tag.name}
     </span>
   );
@@ -327,21 +329,21 @@ function InboxHeaderActions({
     CANONICAL_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ||
     "Needs attention";
   const statusStylesByStatus = {
-    needs_attention: "bg-blue-50 text-blue-700 border-blue-200",
-    waiting_customer: "bg-violet-50 text-violet-700 border-violet-200",
-    waiting_third_party: "bg-amber-50 text-amber-700 border-amber-200",
-    resolved: "bg-green-50 text-green-700 border-green-200",
+    needs_attention: "border-blue-200/80 bg-blue-50/90 text-blue-700",
+    waiting_customer: "border-violet-200/80 bg-violet-50/90 text-violet-700",
+    waiting_third_party: "border-amber-200/80 bg-amber-50/90 text-amber-700",
+    resolved: "border-green-200/80 bg-green-50/90 text-green-700",
   };
   const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Select
         value={currentStatus}
         onValueChange={(value) => onTicketStateChange({ status: value })}
       >
         <SelectTrigger
           aria-label="Ticket status"
-          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1 text-xs font-medium ${statusStyles}`}
+          className={`h-7 max-w-[10.5rem] w-auto cursor-pointer gap-1 rounded-lg border px-2 py-1 text-[12px] font-semibold leading-none shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
         >
           {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -364,7 +366,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket assignee"
-          className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+          className="h-7 max-w-[7.75rem] w-auto cursor-pointer gap-1 rounded-lg border border-border/70 bg-muted/30 px-2 py-1 text-[12px] font-medium leading-none text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/70 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
         >
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
@@ -377,12 +379,13 @@ function InboxHeaderActions({
           ))}
         </SelectContent>
       </Select>
+      <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             aria-label="More ticket actions"
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
+            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-border/70 bg-background px-2 py-1 text-[12px] font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
           >
             More
             <ChevronDown className="h-3.5 w-3.5" />
@@ -397,7 +400,6 @@ function InboxHeaderActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
       {/* The current-inbox chip used to render here; removed per feedback —
           the inbox a ticket lives in is shown by the sidebar (it sits under
           that inbox), and it's moved via drag-and-drop or More > Move, so the
@@ -528,17 +530,14 @@ function WorkspaceTabsRow({
     <div
       className={
         inline
-          ? "relative min-w-0 flex-1 bg-background"
+          ? "relative h-full min-w-0 flex-1 bg-background"
           : "border-b border-border bg-background"
       }
     >
-      {inline ? (
-        <div className="absolute inset-y-0 left-0 z-10 w-2 bg-background" />
-      ) : null}
       <div
         className={
           inline
-            ? "flex min-w-0 items-end overflow-x-auto pr-3 pt-0.5"
+            ? "flex h-full min-w-0 items-stretch overflow-x-auto pr-2"
             : "mx-auto flex w-full max-w-[900px] items-center gap-1 overflow-x-auto px-4 py-1"
         }
       >
@@ -552,11 +551,11 @@ function WorkspaceTabsRow({
           return (
             <div
               key={threadId}
-              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 px-4 py-1.5 transition ${
+              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-1.5 px-3 transition-colors ${
                 inline
                   ? isActive
-                    ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
-                    : "rounded-t-[12px] rounded-b-none bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-background text-foreground"
+                    : "bg-transparent text-muted-foreground hover:bg-muted/45 hover:text-foreground"
                   : isActive
                     ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
                     : "rounded-t-lg rounded-b-none border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
@@ -564,7 +563,7 @@ function WorkspaceTabsRow({
             >
               {isActive ? (
                 <span
-                  className={`absolute inset-x-0 bottom-0 h-[3px] ${inline ? "rounded-b-[12px]" : "rounded-b-lg"} bg-indigo-500`}
+                  className={`absolute inset-x-2 bottom-0 h-0.5 ${inline ? "rounded-full" : "rounded-b-lg"} bg-indigo-500`}
                 />
               ) : null}
               <button
@@ -576,7 +575,7 @@ function WorkspaceTabsRow({
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
                 ) : null}
                 <div className="min-w-0 pr-1">
-                  <span className="block min-w-0 truncate text-[12px] font-semibold leading-[16px]">
+                  <span className={`block min-w-0 truncate text-[12px] leading-4 ${isActive ? "font-semibold" : "font-medium"}`}>
                     {subject}
                   </span>
                 </div>
@@ -584,7 +583,7 @@ function WorkspaceTabsRow({
               <button
                 type="button"
                 onClick={() => onCloseTab?.(threadId)}
-                className={`rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground ${
+                className={`rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] ${
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 }`}
                 aria-label={`Close ${subject}`}
@@ -597,7 +596,7 @@ function WorkspaceTabsRow({
         <button
           type="button"
           onClick={() => onAddTab?.()}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          className="inline-flex h-full w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
           aria-label="Open new tab"
         >
           <Plus className="h-4 w-4" />
@@ -2290,14 +2289,6 @@ export function InboxSplitView({
     },
     [knownUserLabelById, memberLookupById],
   );
-  const unreadThreadCount = useMemo(() => {
-    return filteredThreads.filter((thread) => {
-      const threadId = String(thread?.id || "").trim();
-      if (!threadId) return false;
-      if (readOverrides[threadId] || thread?.is_read) return false;
-      return Number(thread?.unread_count ?? 0) > 0;
-    }).length;
-  }, [filteredThreads, readOverrides]);
   const unreadByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
@@ -2588,6 +2579,7 @@ export function InboxSplitView({
     keepWaiting,
   } = useThreadActions({
     derivedThreads,
+    setLiveThreads,
     ticketStateByThread,
     setTicketStateByThread,
     pendingUpdateThreadIds,
@@ -2840,9 +2832,9 @@ export function InboxSplitView({
     }
   }, []);
 
-  const handleFiltersChange = (updates) => {
+  const handleFiltersChange = useCallback((updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));
-  };
+  }, [setFilters]);
 
   // Live sidebar counts: computed from the same client-side thread list the
   // tabs use (exact + optimistic-aware, works pre-migration where the
@@ -2907,16 +2899,6 @@ export function InboxSplitView({
     publishLiveSidebarCounts(liveSidebarCounts);
   }, [liveSidebarCounts]);
 
-  const handleViewAllTickets = useCallback(() => {
-    setFilters(DEFAULT_FILTERS);
-    if (typeof window !== "undefined") {
-      window.open("/inbox/tickets", "_blank", "noopener,noreferrer");
-      return;
-    }
-    router.push("/inbox/tickets");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is the stable setter returned by useThreadFilters (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
-  }, [router]);
-
   const handleCreateTicket = useCallback(() => {
     const nowIso = new Date().toISOString();
     const id = `local-new-ticket-${Date.now()}`;
@@ -2961,28 +2943,22 @@ export function InboxSplitView({
   useEffect(() => {
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
-        <div className="flex min-w-0 flex-1 items-center">
-          <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
-            <button
-              type="button"
-              onClick={handleViewAllTickets}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition hover:text-foreground"
-            >
-              View all
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </button>
-            {unreadThreadCount > 0 ? (
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
-                {unreadThreadCount}
-              </span>
-            ) : null}
+        <div className="flex h-full min-w-0 flex-1 items-center">
+          <div className="hidden h-10 shrink-0 items-center bg-background lg:flex lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:border-l lg:border-border/90">
+            <TicketListToolbar
+              filters={filters}
+              onFiltersChange={handleFiltersChange}
+            />
           </div>
           <WorkspaceTabsRow
             tabs={openThreads}
             activeThreadId={selectedThreadId}
             unreadByThread={unreadByThread}
             onSelectTab={(threadId) =>
-              handleSelectThreadInWorkspace(threadId, { newTab: false })
+              handleSelectThreadInWorkspace(threadId, {
+                newTab: false,
+                preserveScroll: true,
+              })
             }
             onCloseTab={(threadId) => {
               const closingId = String(threadId || "").trim();
@@ -3005,14 +2981,15 @@ export function InboxSplitView({
     return () => setTitleContent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSelectThreadInWorkspace is declared below this title effect because it depends on composer state. The callback is created only when the effect runs, after the full render has initialized it.
   }, [
+    activeView,
     closeThreadTab,
-    handleViewAllTickets,
+    filters,
     handleCreateTicket,
+    handleFiltersChange,
     openThreads,
     selectedThreadId,
     setTitleContent,
     unreadByThread,
-    unreadThreadCount,
   ]);
 
   useEffect(() => {
@@ -3405,11 +3382,35 @@ export function InboxSplitView({
           valueOverride: previousDraftValue,
         });
       }
+      if (nextThreadId && options?.preserveScroll !== true) {
+        scrollPositionByThreadRef.current[nextThreadId] = 0;
+        setScrollPositionByThread((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, nextThreadId)) return prev;
+          if (!prev[nextThreadId]) return prev;
+          return { ...prev, [nextThreadId]: 0 };
+        });
+      }
       openThreadInWorkspace(threadId, options);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef and selectedThreadIdRef are refs returned by useThreadSelection (backed by useRef); identity never changes.
     [openThreadInWorkspace, saveThreadDraft],
   );
+
+  const handleBackToInbox = useCallback(() => {
+    const currentThreadId = String(selectedThreadIdRef.current || "").trim();
+    if (currentThreadId) {
+      void saveThreadDraft({
+        immediate: true,
+        threadIdOverride: currentThreadId,
+        valueOverride: draftValueRef.current,
+      });
+    }
+    // Clear the mobile workspace selection so the inbox list is immediately
+    // reachable again. The ticket remains in the source inbox and can be
+    // reopened normally from the list.
+    setOpenThreadIds([]);
+    setSelectedThreadId(null);
+  }, [saveThreadDraft, selectedThreadIdRef, setOpenThreadIds, setSelectedThreadId]);
 
   const handleOpenPreviousTicket = useCallback(
     (threadId) => {
@@ -3637,11 +3638,12 @@ export function InboxSplitView({
   ]);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-sidebar lg:flex-row">
+    <div className="relative flex h-full flex-1 flex-col overflow-hidden bg-muted/20 lg:flex-row">
       <TicketList
         key={activeView}
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
+        className={selectedThreadId ? "hidden lg:flex" : "flex"}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
         onSelectThread={handleSelectThreadInWorkspace}
@@ -3650,12 +3652,10 @@ export function InboxSplitView({
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
-        onCreateTicket={handleCreateTicket}
         onOpenInNewTab={(threadId) =>
           handleSelectThreadInWorkspace(threadId, { newTab: true })
         }
         onDeleteThread={deleteThreadById}
-        hideSolvedFilter={activeView === ""}
         resolvedView={resolvedView}
         isNeedsAttentionRoute={isNeedsAttentionRoute}
         groups={waitingGroups || needsAttentionGroups}
@@ -3670,7 +3670,11 @@ export function InboxSplitView({
         getAssigneeLabel={getAssigneeLabelForId}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
+      <div
+        className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 bg-background ${
+          selectedThreadId ? "flex" : "hidden lg:flex"
+        }`}
+      >
         <InboxContentBoundary resetKey={selectedThreadId || "no-thread"}>
           <TicketDetail
           thread={selectedThread}
@@ -3686,6 +3690,7 @@ export function InboxSplitView({
           }
           onTicketStateChange={handleTicketStateChange}
           onOpenInsights={() => setInsightsOpen(true)}
+          onBackToInbox={handleBackToInbox}
           showThinkingCard={isDraftGenerating}
           isDraftFetching={
             !draftReady &&
@@ -3777,13 +3782,14 @@ export function InboxSplitView({
             ) : null
           }
           rightHeaderActions={
-            selectedThreadId ? (
+            selectedThreadId && !insightsOpen ? (
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
-                className="relative cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
+                aria-label="View ticket details"
+                className="relative inline-flex h-7 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-lg border border-border/70 bg-background px-2 py-1 text-[12px] font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
               >
-                View actions
+                View details
                 {hasActionableReturnTrackingAction ? (
                   <span
                     className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-violet-500 ring-2 ring-white"

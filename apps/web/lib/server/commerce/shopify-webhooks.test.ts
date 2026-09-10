@@ -32,7 +32,7 @@ Deno.test("ensureShopifyWebhooks POSTs one create per topic", async () => {
   };
   try {
     await ensureShopifyWebhooks({
-      domain: "x.myshopify.com", accessToken: "t", apiVersion: "2024-07",
+      domain: "x.myshopify.com", accessToken: "t", apiVersion: "2026-07",
       appUrl: "https://app.example.com", topics: ["products/create", "products/delete"],
     });
   } finally { globalThis.fetch = origFetch; }

@@ -62,9 +62,66 @@ export type KnowledgeDocumentResponse = {
 
 export type Embedder = (input: string) => Promise<number[]>;
 
+export type KnowledgeDocumentIndexingResult = {
+  environment: KnowledgeDocumentChunkEnvironment;
+  status: "ready" | "error";
+  message?: string;
+};
+
 function asNonEmpty(value: unknown, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function asMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function withIndexingStatus(
+  metadata: unknown,
+  environment: KnowledgeDocumentChunkEnvironment,
+  result: KnowledgeDocumentIndexingResult,
+) {
+  const current = asMetadata(metadata);
+  const currentIndex = asMetadata(current.knowledge_index);
+  return {
+    ...current,
+    knowledge_index: {
+      ...currentIndex,
+      [environment]: {
+        status: result.status,
+        ...(result.message ? { message: result.message } : {}),
+        updated_at: new Date().toISOString(),
+      },
+    },
+  };
+}
+
+function publicIndexingError(error: unknown) {
+  const message = String((error as any)?.message || error || "");
+  if (/OPENAI_API_KEY/i.test(message)) {
+    return "AI indexing is not configured. Your changes were saved, but preview and publishing are unavailable until it is configured.";
+  }
+  return "AI indexing failed. Your changes were saved, but preview and publishing are unavailable until indexing succeeds.";
+}
+
+async function recordIndexingStatus(options: {
+  serviceClient: any;
+  shopId: string;
+  documentId: string;
+  metadata: unknown;
+  result: KnowledgeDocumentIndexingResult;
+}) {
+  const metadata = withIndexingStatus(options.metadata, options.result.environment, options.result);
+  const { error } = await options.serviceClient
+    .from("knowledge_documents")
+    .update({ metadata })
+    .eq("id", options.documentId)
+    .eq("shop_id", options.shopId);
+  if (error) throw new Error(error.message);
+  return metadata;
 }
 
 function requireProductScopeIfProductSupport(category: string, documentType: string): string {
@@ -169,15 +226,6 @@ async function replaceDocumentChunks(options: {
   environment: KnowledgeDocumentChunkEnvironment;
   productScope?: string;
 }) {
-  const { error: deleteError } = await options.serviceClient
-    .from("agent_knowledge")
-    .delete()
-    .eq("shop_id", options.shopId)
-    .eq("source_provider", "knowledge_document")
-    .eq("metadata->>document_id", options.documentId)
-    .eq("metadata->>environment", options.environment);
-  if (deleteError) throw new Error(deleteError.message);
-
   const chunkPayloads = buildKnowledgeDocumentChunks({
     shopId: options.shopId,
     documentId: options.documentId,
@@ -200,6 +248,18 @@ async function replaceDocumentChunks(options: {
   }
   if (!rows.length) return 0;
 
+  // Build every embedding before deleting the previous version. If the AI
+  // provider is unavailable, the last usable index stays intact while the
+  // document draft can still be saved.
+  const { error: deleteError } = await options.serviceClient
+    .from("agent_knowledge")
+    .delete()
+    .eq("shop_id", options.shopId)
+    .eq("source_provider", "knowledge_document")
+    .eq("metadata->>document_id", options.documentId)
+    .eq("metadata->>environment", options.environment);
+  if (deleteError) throw new Error(deleteError.message);
+
   const { error: insertError } = await options.serviceClient
     .from("agent_knowledge")
     .insert(rows);
@@ -215,7 +275,11 @@ export async function saveKnowledgeDocumentDraft(options: {
   documentType: string;
   title: string;
   draftMarkdown: string;
-}): Promise<KnowledgeDocumentResponse & { preview_chunks: number }> {
+}): Promise<KnowledgeDocumentResponse & {
+  preview_chunks: number;
+  indexing: KnowledgeDocumentIndexingResult;
+  warning?: string;
+}> {
   const category = asNonEmpty(options.category);
   const documentType = asNonEmpty(options.documentType);
   const productScope = requireProductScopeIfProductSupport(category, documentType);
@@ -240,18 +304,71 @@ export async function saveKnowledgeDocumentDraft(options: {
     .single();
   if (error) throw new Error(error.message);
 
-  const previewChunks = await replaceDocumentChunks({
-    serviceClient: options.serviceClient,
-    embedder: options.embedder,
-    shopId: options.shopId,
-    documentId: data.id,
-    documentType,
-    category,
-    title,
-    sections,
+  let previewChunks = 0;
+  let indexing: KnowledgeDocumentIndexingResult = {
     environment: "preview",
-    productScope,
-  });
+    status: "ready",
+  };
+  let metadata = data.metadata ?? {};
+  try {
+    previewChunks = await replaceDocumentChunks({
+      serviceClient: options.serviceClient,
+      embedder: options.embedder,
+      shopId: options.shopId,
+      documentId: data.id,
+      documentType,
+      category,
+      title,
+      sections,
+      environment: "preview",
+      productScope,
+    });
+  } catch (error) {
+    indexing = {
+      environment: "preview",
+      status: "error",
+      message: publicIndexingError(error),
+    };
+    console.warn("Knowledge document preview indexing failed", {
+      documentId: data.id,
+      error: String((error as any)?.message || error),
+    });
+    try {
+      metadata = await recordIndexingStatus({
+        serviceClient: options.serviceClient,
+        shopId: options.shopId,
+        documentId: data.id,
+        metadata,
+        result: indexing,
+      });
+    } catch (statusError) {
+      console.warn("Could not record knowledge document indexing status", {
+        documentId: data.id,
+        error: String((statusError as any)?.message || statusError),
+      });
+    }
+  }
+
+  if (indexing.status === "ready") {
+    metadata = withIndexingStatus(metadata, "preview", indexing);
+    try {
+      metadata = await recordIndexingStatus({
+        serviceClient: options.serviceClient,
+        shopId: options.shopId,
+        documentId: data.id,
+        metadata,
+        result: indexing,
+      });
+    } catch (statusError) {
+      // Indexing succeeded. A metadata status write must not turn a successful
+      // save into an error; the next GET can still derive readiness from the
+      // generated preview chunks.
+      console.warn("Could not record knowledge document indexing status", {
+        documentId: data.id,
+        error: String((statusError as any)?.message || statusError),
+      });
+    }
+  }
 
   const response = await getKnowledgeDocument({
     serviceClient: options.serviceClient,
@@ -259,7 +376,13 @@ export async function saveKnowledgeDocumentDraft(options: {
     category,
     documentType,
   });
-  return { ...response, preview_chunks: previewChunks };
+  return {
+    ...response,
+    document: { ...response.document, metadata },
+    preview_chunks: previewChunks,
+    indexing,
+    ...(indexing.message ? { warning: indexing.message } : {}),
+  };
 }
 
 export async function publishKnowledgeDocument(options: {
@@ -292,12 +415,55 @@ export async function publishKnowledgeDocument(options: {
     throw new Error("Knowledge document must contain at least one H2 section.");
   }
 
+  let productionChunks = 0;
+  try {
+    productionChunks = await replaceDocumentChunks({
+      serviceClient: options.serviceClient,
+      embedder: options.embedder,
+      shopId: options.shopId,
+      documentId: existing.id,
+      documentType: existing.document_type,
+      category: existing.category,
+      title: existing.title,
+      sections,
+      environment: "production",
+      productScope,
+    });
+  } catch (error) {
+    const message = publicIndexingError(error);
+    console.warn("Knowledge document production indexing failed", {
+      documentId: existing.id,
+      error: String((error as any)?.message || error),
+    });
+    try {
+      await recordIndexingStatus({
+        serviceClient: options.serviceClient,
+        shopId: options.shopId,
+        documentId: existing.id,
+        metadata: existing.metadata,
+        result: { environment: "production", status: "error", message },
+      });
+    } catch (statusError) {
+      console.warn("Could not record knowledge document publish status", {
+        documentId: existing.id,
+        error: String((statusError as any)?.message || statusError),
+      });
+    }
+    throw new Error(message);
+  }
+
+  const publishedAt = new Date().toISOString();
+  const metadata = withIndexingStatus(existing.metadata, "production", {
+    environment: "production",
+    status: "ready",
+  });
   const { error: updateError } = await options.serviceClient
     .from("knowledge_documents")
     .update({
       published_markdown: existing.draft_markdown,
       has_unpublished_changes: false,
-      published_at: new Date().toISOString(),
+      published_at: publishedAt,
+      metadata,
     })
     .eq("id", existing.id)
     .eq("shop_id", options.shopId)
@@ -305,24 +471,15 @@ export async function publishKnowledgeDocument(options: {
     .single();
   if (updateError) throw new Error(updateError.message);
 
-  const productionChunks = await replaceDocumentChunks({
-    serviceClient: options.serviceClient,
-    embedder: options.embedder,
-    shopId: options.shopId,
-    documentId: existing.id,
-    documentType: existing.document_type,
-    category: existing.category,
-    title: existing.title,
-    sections,
-    environment: "production",
-    productScope,
-  });
-
   const response = await getKnowledgeDocument({
     serviceClient: options.serviceClient,
     shopId: options.shopId,
     category,
     documentType,
   });
-  return { ...response, production_chunks: productionChunks };
+  return {
+    ...response,
+    document: { ...response.document, metadata },
+    production_chunks: productionChunks,
+  };
 }

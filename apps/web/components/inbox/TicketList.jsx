@@ -3,25 +3,14 @@ import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
-import { ArrowDownUp, Filter, Inbox } from "lucide-react";
+import { ArrowDownUp, Inbox, Search, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
 
-const STATUS_FILTERS = [
-  { value: "All", label: "All" },
-  { value: "New", label: "New" },
-  { value: "Open", label: "Open" },
-  { value: "Pending", label: "Pending" },
-  { value: "Waiting", label: "Waiting" },
-  { value: "Solved", label: "Solved" },
-];
 const SORT_OPTIONS = [
   { value: "unread_first", label: "Unread" },
   { value: "newest_activity", label: "Newest" },
@@ -32,11 +21,79 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 84;
+const VIRTUAL_ROW_HEIGHT_PX = 68;
 const VIRTUAL_OVERSCAN_ROWS = 6;
+
+export function TicketListToolbar({
+  filters,
+  onFiltersChange,
+  className = "",
+}) {
+  const hasActiveSearch = Boolean(String(filters.query || "").trim());
+  const selectedSortLabel =
+    SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
+      ?.label || "Newest";
+
+  return (
+    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-3 ${className}`}>
+      <div className="relative min-w-0 flex-1">
+        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
+        <Input
+          value={filters.query}
+          onChange={(event) => onFiltersChange({ query: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && hasActiveSearch) {
+              event.preventDefault();
+              onFiltersChange({ query: "" });
+            }
+          }}
+          aria-label="Search tickets"
+          placeholder="Search..."
+          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-[12px] shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
+        />
+        {hasActiveSearch ? (
+          <button
+            type="button"
+            onClick={() => onFiltersChange({ query: "" })}
+            aria-label="Clear search"
+            title="Clear search"
+            className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35"
+          >
+            <X className="size-3" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Sort tickets: ${selectedSortLabel}`}
+            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-[12px] text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+            title={`Sort: ${selectedSortLabel}`}
+          >
+            <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{selectedSortLabel}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          {SORT_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={option.value}
+              onClick={() => onFiltersChange({ sortBy: option.value })}
+            >
+              {option.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 export function TicketList({
   threads,
   selectedThreadId,
+  className = "",
   ticketStateByThread,
   customerByThread,
   onSelectThread,
@@ -44,10 +101,8 @@ export function TicketList({
   onFiltersChange,
   getTimestamp,
   getUnreadCount,
-  onCreateTicket,
   onOpenInNewTab,
   onDeleteThread,
-  hideSolvedFilter = false,
   onPrefetchThread,
   resolvedView = "",
   isNeedsAttentionRoute = false,
@@ -107,9 +162,6 @@ export function TicketList({
   });
   const [newThreadIds, setNewThreadIds] = useState(new Set());
   const newTimersRef = useRef(new Map());
-  const statusOptions = hideSolvedFilter
-    ? STATUS_FILTERS.filter((option) => option.value !== "Solved")
-    : STATUS_FILTERS;
   const selectedStatuses = Array.isArray(filters.statuses)
     ? filters.statuses
     : filters.status && filters.status !== "All"
@@ -117,15 +169,8 @@ export function TicketList({
         : [];
   const activeFilterCount =
     selectedStatuses.length + (filters.unreadsOnly ? 1 : 0);
-  const selectedSortLabel =
-    SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
-      ?.label || "Newest";
-  const handleStatusToggle = (status, checked) => {
-    const next = checked
-      ? [...new Set([...selectedStatuses, status])]
-      : selectedStatuses.filter((value) => value !== status);
-    onFiltersChange({ statuses: next, status: "All" });
-  };
+  const hasActiveSearch = Boolean(String(filters.query || "").trim());
+  const hasActiveListFilters = hasActiveSearch || activeFilterCount > 0;
 
   const updateVirtualViewport = useCallback(() => {
     const node = scrollContainerRef.current;
@@ -338,96 +383,12 @@ export function TicketList({
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
   return (
-    <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="border-b border-border px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <Input
-            value={filters.query}
-            onChange={(event) => onFiltersChange({ query: event.target.value })}
-            placeholder="Search..."
-            className="h-8 min-w-0 flex-1 text-[13px]"
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={`relative flex h-8 w-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-                  activeFilterCount
-                    ? "border-primary/35 bg-primary/10 text-primary"
-                    : "border-input bg-background"
-                }`}
-                title="Filters"
-              >
-                <Filter className="h-4 w-4" />
-                {activeFilterCount ? (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                    {activeFilterCount}
-                  </span>
-                ) : null}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Status
-              </DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={selectedStatuses.length === 0}
-                onSelect={(event) => event.preventDefault()}
-                onCheckedChange={() =>
-                  onFiltersChange({ statuses: [], status: "All" })
-                }
-              >
-                All
-              </DropdownMenuCheckboxItem>
-              {statusOptions
-                .filter((option) => option.value !== "All")
-                .map((option) => (
-                  <DropdownMenuCheckboxItem
-                    key={option.value}
-                    checked={selectedStatuses.includes(option.value)}
-                    onSelect={(event) => event.preventDefault()}
-                    onCheckedChange={(checked) =>
-                      handleStatusToggle(option.value, checked)
-                    }
-                  >
-                    {option.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={filters.unreadsOnly}
-                onSelect={(event) => event.preventDefault()}
-                onCheckedChange={(checked) =>
-                  onFiltersChange({ unreadsOnly: checked })
-                }
-              >
-                Unread only
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex h-8 max-w-[128px] shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-[13px] text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                title={`Sort: ${selectedSortLabel}`}
-              >
-                <ArrowDownUp className="h-4 w-4 shrink-0" />
-                <span className="truncate">{selectedSortLabel}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {SORT_OPTIONS.map((option) => (
-                <DropdownMenuItem
-                  key={option.value}
-                  onClick={() => onFiltersChange({ sortBy: option.value })}
-                >
-                  {option.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-background lg:border-l lg:border-border/90 lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:flex-none ${className}`}>
+      <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background lg:hidden">
+        <TicketListToolbar
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+        />
       </div>
       <div
         ref={scrollContainerRef}
@@ -435,7 +396,7 @@ export function TicketList({
         onScroll={updateVirtualViewport}
       >
         {renderedThreads.length ? (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/50">
             {virtualWindow.before ? (
               <div style={{ height: virtualWindow.before }} aria-hidden="true" />
             ) : null}
@@ -468,7 +429,7 @@ export function TicketList({
               return (
                 <div key={thread.id}>
                   {groupHeaderLabel ? (
-                    <div className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <div className="px-3.5 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                       {groupHeaderLabel}
                     </div>
                   ) : null}
@@ -520,7 +481,7 @@ export function TicketList({
               <div style={{ height: virtualWindow.after }} aria-hidden="true" />
             ) : null}
           </div>
-        ) : isNeedsAttentionRoute ? (
+        ) : isNeedsAttentionRoute && !hasActiveListFilters ? (
           // Task 10, Plan 2: quiet inbox-zero state for the needs-attention
           // queue (default view, "mine", or an inbox-scoped needs_attention
           // tab) when it has no threads — no confetti, Sona-quiet.
@@ -534,20 +495,29 @@ export function TicketList({
             </div>
           </div>
         ) : (
-          <div className="px-4 py-8 text-[13px] text-muted-foreground">
-            No tickets found yet.
+          <div className="flex min-h-[260px] flex-col items-center justify-center px-6 py-10 text-center">
+            <span className="flex size-10 items-center justify-center rounded-2xl bg-muted/70 text-muted-foreground/70">
+              {hasActiveListFilters ? <SearchX className="size-4" /> : <Inbox className="size-4" />}
+            </span>
+            <p className="mt-3 text-[13px] font-medium text-foreground">
+              {hasActiveListFilters ? "No matching tickets" : "No tickets in this inbox"}
+            </p>
+            <p className="mt-1 max-w-[220px] text-[12px] leading-5 text-muted-foreground">
+              {hasActiveListFilters
+                ? "Try a different search or clear the active filters."
+                : "New conversations will appear here when they arrive."}
+            </p>
+            {hasActiveListFilters ? (
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ query: "", statuses: [], status: "All", unreadsOnly: false })}
+                className="mt-4 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:text-violet-300 dark:hover:bg-violet-500/10"
+              >
+                Clear search and filters
+              </button>
+            ) : null}
           </div>
         )}
-      </div>
-      <div className="border-t border-border px-3 pb-2 pt-2">
-        <button
-          type="button"
-          onClick={onCreateTicket}
-          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md px-3 text-[13px] text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          <span className="text-base leading-none">+</span>
-          New ticket
-        </button>
       </div>
       {contextMenu && contextMenuRoot
         ? createPortal(

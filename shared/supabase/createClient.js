@@ -5,7 +5,6 @@ export function createClerkSupabaseClient({
   supabaseAnonKey,
   getToken,
   storage,
-  tokenTemplate = "supabase",
 }) {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error("Supabase konfiguration mangler. Kontrollér URL og ANON key.");
@@ -15,30 +14,13 @@ export function createClerkSupabaseClient({
     throw new Error("Clerk getToken funktion mangler.");
   }
 
-  const resolveAccessToken = async () => {
-    try {
-      const templateToken = await getToken({ template: tokenTemplate });
-      if (templateToken) {
-        return templateToken;
-      }
-      console.warn(
-        `Clerk token template '${tokenTemplate}' returnerede intet token. Fald tilbage til default token.`
-      );
-      return getToken();
-    } catch (error) {
-      console.warn(
-        `Kunne ikke hente Clerk token med templaten '${tokenTemplate}'. Fald tilbage til standard-token.`,
-        error
-      );
-      return getToken();
-    }
-  };
-
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       storage,
     },
-    accessToken: resolveAccessToken,
+    // Supabase's native Clerk integration validates the regular Clerk
+    // session token through Clerk's OIDC/JWKS endpoint.
+    accessToken: () => getToken(),
   });
 }

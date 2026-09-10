@@ -14,7 +14,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const SOURCE_PROVIDER = "shopify_blog_article";

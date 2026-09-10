@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       await ensureShopifyWebhooks({
         domain: shop.shop_domain,
         accessToken,
-        apiVersion: process.env.SHOPIFY_API_VERSION || "2024-07",
+        apiVersion: process.env.SHOPIFY_API_VERSION || "2026-07",
         appUrl: process.env.APP_URL || "",
         topics: COMMERCE_WEBHOOK_TOPICS,
       });

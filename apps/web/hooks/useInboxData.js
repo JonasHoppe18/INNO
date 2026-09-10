@@ -56,9 +56,6 @@ const decodeJwtPayload = (token) => {
   }
 };
 
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
-
 const makeListKey = (list = [], key = "id") =>
   list.map((item) => item?.[key] ?? "").join("|");
 
@@ -80,8 +77,8 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
 
   if (!supabaseUserId && typeof getToken === "function") {
     try {
-      const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-      const payload = decodeJwtPayload(templateToken);
+      const sessionToken = await getToken();
+      const payload = decodeJwtPayload(sessionToken);
       const claimUuid =
         typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
       const sub = typeof payload?.sub === "string" ? payload.sub : null;

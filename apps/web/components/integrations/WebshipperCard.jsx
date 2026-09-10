@@ -1,91 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
-import { useUser } from "@clerk/nextjs";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
+import { useWorkspaceIntegration } from "@/hooks/useWorkspaceIntegration";
 import WebshipperLogo from "../../../../assets/Webshipper_logo.png";
 import { WebshipperSheet } from "./WebshipperSheet";
 
 export function WebshipperCard() {
-  const supabase = useClerkSupabase();
-  const { user } = useUser();
-
-  const [integration, setIntegration] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const resolveScope = useCallback(async () => {
-    if (!supabase || !user?.id) return { workspaceId: null, userId: null };
-
-    let authUserId = null;
-    try {
-      const { data: authData } = await supabase.auth.getUser();
-      authUserId = authData?.user?.id ?? null;
-    } catch (_error) {
-      authUserId = null;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("clerk_user_id", user.id)
-      .maybeSingle();
-
-    const userId = authUserId ?? profile?.user_id ?? null;
-
-    const { data: membership } = await supabase
-      .from("workspace_members")
-      .select("workspace_id")
-      .eq("clerk_user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    return {
-      workspaceId: membership?.workspace_id ?? null,
-      userId,
-    };
-  }, [supabase, user?.id]);
-
-  const loadIntegration = useCallback(async () => {
-    if (!supabase || !user?.id) return;
-    setLoading(true);
-    const { workspaceId, userId } = await resolveScope();
-
-    let data = null;
-    let loadError = null;
-    if (workspaceId) {
-      const response = await supabase
-        .from("integrations")
-        .select("*")
-        .eq("provider", "webshipper")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-      data = response.data;
-      loadError = response.error;
-    } else if (userId) {
-      const response = await supabase
-        .from("integrations")
-        .select("*")
-        .eq("provider", "webshipper")
-        .eq("user_id", userId)
-        .maybeSingle();
-      data = response.data;
-      loadError = response.error;
-    }
-
-    if (!loadError) {
-      setIntegration(data ?? null);
-    }
-    setLoading(false);
-  }, [resolveScope, supabase, user?.id]);
-
-  useEffect(() => {
-    loadIntegration();
-  }, [loadIntegration]);
+  const { integration, loading, loadStatus: loadIntegration } = useWorkspaceIntegration("webshipper");
 
   const isConnected = Boolean(integration?.is_active);
   const buttonLabel = isConnected ? "Manage" : "Connect";

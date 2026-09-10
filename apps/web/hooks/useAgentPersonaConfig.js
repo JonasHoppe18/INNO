@@ -54,9 +54,6 @@ const decodeJwtPayload = (token) => {
   }
 };
 
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
-
 export function useAgentPersonaConfig(options = {}) {
   const { lazy = false, userId: providedUserId } = options;
   const supabase = useClerkSupabase();
@@ -98,8 +95,8 @@ export function useAgentPersonaConfig(options = {}) {
 
     if (typeof getToken === "function") {
       try {
-        const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-        const payload = decodeJwtPayload(templateToken);
+        const sessionToken = await getToken();
+        const payload = decodeJwtPayload(sessionToken);
         const claimUuid =
           typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
         const sub = typeof payload?.sub === "string" ? payload.sub : null;

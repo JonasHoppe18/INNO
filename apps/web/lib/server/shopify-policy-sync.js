@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { mapPoliciesFromShopify, summarizePolicies } from "@/lib/server/policy-summary";
 
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 export const SOURCE_PROVIDER = "shopify_policy";

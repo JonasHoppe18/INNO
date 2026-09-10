@@ -1,0 +1,771 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Search,
+  Send,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+const STARTER_MESSAGES = [
+  "Where is my order?",
+  "Can I return this item?",
+  "Is this product compatible with my setup?",
+];
+
+function formatTime(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5" aria-label="Sona is typing">
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.3s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.15s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80" />
+    </div>
+  );
+}
+
+function actionLabel(value) {
+  return String(value || "Action")
+    .split("_")
+    .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+    .join(" ");
+}
+
+function humanize(value) {
+  return String(value || "unknown")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function toolLabel(value) {
+  const labels = {
+    search_policy: "Merchant policy",
+    search_product_knowledge: "Product knowledge",
+    search_historical_cases: "Previous support cases",
+    get_brand_guidance: "Brand guidance",
+    get_procedure: "Merchant procedure",
+    get_order: "Order details",
+    get_order_history: "Order history",
+    get_customer: "Customer details",
+    get_product: "Live product details",
+    get_fulfillment: "Fulfillment details",
+    get_tracking: "Tracking details",
+    get_shipment: "Shipment details",
+  };
+  return labels[value] || humanize(value);
+}
+
+function resultForTool(trace, event) {
+  return (trace?.events || []).find((candidate) => (
+    candidate?.type === "tool_result" &&
+    ((event?.call_id && candidate.call_id === event.call_id) || candidate.name === event?.name)
+  ));
+}
+
+function buildReasoningSteps(trace) {
+  const events = Array.isArray(trace?.events) ? trace.events : [];
+  const toolCalls = events.filter((event) => event?.type === "tool_call");
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const steps = toolCalls.slice(0, 6).map((event) => {
+    const result = resultForTool(trace, event);
+    const resultData = result?.result?.data;
+    const resultCount = Array.isArray(resultData?.results) ? resultData.results.length : 0;
+    const status = result?.result?.status;
+    const detail = resultCount
+      ? `${resultCount} relevant result${resultCount === 1 ? "" : "s"} returned.`
+      : status && status !== "ok"
+        ? `Result: ${humanize(status)}.`
+        : "Checked and continued with the available result.";
+    return { title: toolLabel(event.name), detail, status: status === "ok" || resultCount > 0 ? "complete" : "neutral" };
+  });
+
+  if (!steps.length && sources.length) {
+    steps.push({ title: "Supporting knowledge", detail: `${sources.length} source${sources.length === 1 ? "" : "s"} was attached to the response.`, status: "complete" });
+  }
+  if (!steps.length) {
+    steps.push({ title: "Safe fallback", detail: "No supporting tool result was recorded, so the response stayed within the verified information available.", status: "neutral" });
+  }
+  steps.push({
+    title: "Composed the reply",
+    detail: sources.length ? "The answer was written from the evidence and checks shown below." : "The answer was written without inventing an unsupported fact.",
+    status: "complete",
+  });
+  return steps;
+}
+
+function SourceCard({ source, index }) {
+  const provenance = source?.provenance || {};
+  const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
+  const preview = sections[0]?.content || "No excerpt captured in the trace.";
+  return (
+    <details className="group overflow-hidden rounded-lg bg-muted/[0.22] pb-1 transition-colors duration-150 ease-out open:bg-muted/40" open={index === 0}>
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-2.5 py-3 transition-colors duration-150 ease-out hover:bg-muted/35">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+        <span className="min-w-0 flex-1">
+          <span className="mb-1 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
+            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
+          </span>
+          <span className="block truncate text-[13px] font-semibold text-foreground">{source?.title || "Untitled source"}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
+        </span>
+        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
+      </summary>
+      <div className="px-3 pb-3 pt-1 text-xs leading-relaxed text-muted-foreground">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
+          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
+          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">{humanize(provenance.source_kind)}</span> : null}
+        </div>
+        <div className="flex flex-col gap-3">
+          {sections.length ? sections.map((section, sectionIndex) => (
+            <div key={`${section.heading || "excerpt"}-${sectionIndex}`}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
+              <p className="whitespace-pre-wrap text-foreground/80">{section.content || "No excerpt captured."}</p>
+            </div>
+          )) : <p className="text-foreground/70">{preview}</p>}
+        </div>
+        {(provenance.source_id || provenance.source_uri) ? (
+          <p className="mt-3 pt-2 text-[10.5px] text-muted-foreground/80">
+            {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri ? provenance.source_uri : ""}
+          </p>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function ProviderCheck({ result }) {
+  const successful = result?.status === "ok" || result?.status === "success";
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/35 px-3 py-2.5">
+      <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${successful ? "bg-emerald-500" : result?.status ? "bg-amber-500" : "bg-muted-foreground/50"}`} aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
+        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
+      </div>
+    </div>
+  );
+}
+
+function AnswerInspector({ message }) {
+  const trace = message?.trace;
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const providerResults = Array.isArray(trace?.provider_results) ? trace.provider_results : [];
+  const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
+  const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
+  return (
+    <aside className="flex min-h-0 flex-col overflow-hidden px-4 pb-4 pt-4 lg:border-l lg:border-border/60 lg:pl-5 lg:pt-5 lg:max-h-full" aria-label="Answer evidence">
+      <div className="shrink-0 px-0 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer details</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Why Sona replied</h2>
+          </div>
+          {trace ? <span className="rounded-full bg-muted/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {trace ? "The verified information and checks behind the selected reply." : "The information behind a reply will appear here."}
+        </p>
+      </div>
+      {!trace ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center">
+          <p className="text-[13px] font-semibold text-foreground">No answer selected</p>
+          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message and select a reply to see its sources and checks.</p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-0 py-2">
+          <div className="mb-4 grid grid-cols-3 gap-1.5">
+            <InspectorStat label="Checks" value={toolCalls.length} />
+            <InspectorStat label="Sources" value={sources.length} />
+            <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
+          </div>
+
+          <InspectorSection title="What informed the reply">
+            <ol className="relative ml-1 flex flex-col gap-4 border-l border-border pl-4">
+              {buildReasoningSteps(trace).map((step, index) => (
+                <li key={`${step.title}-${index}`} className="relative">
+                  <span className={`absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-foreground" : "bg-muted-foreground/50"}`} />
+                  <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </InspectorSection>
+
+          <InspectorSection title="Knowledge sources" count={sources.length}>
+            {sources.length ? (
+              <div className="flex flex-col gap-2">
+                {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-muted/35 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+            )}
+          </InspectorSection>
+
+          {providerResults.length ? (
+            <InspectorSection title="Live checks" count={providerResults.length}>
+              <div className="flex flex-col gap-2">{providerResults.map((result, index) => <ProviderCheck key={`${result?.tool || "provider"}-${index}`} result={result} />)}</div>
+            </InspectorSection>
+          ) : null}
+
+          {simulatedActions.length ? (
+            <InspectorSection title="Proposed actions" count={simulatedActions.length}>
+              <div className="flex flex-col gap-2">
+                {simulatedActions.map((action, index) => (
+                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{actionLabel(action?.action)}</p>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                    </div>
+                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
+                    {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </InspectorSection>
+          ) : null}
+
+          <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+            Only verified facts, provenance and high-level steps are shown.
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function InspectorSection({ title, count, children }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <div className="mb-2.5 flex items-center gap-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InspectorStat({ label, value }) {
+  return (
+    <div className="rounded-lg bg-muted/45 px-2 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onInspect, inspected }) {
+  const isUser = message.role === "user";
+  const comparisonOnly = message.comparison_only === true;
+  const canInspect = !isUser && !comparisonOnly && message.trace;
+  return (
+    <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
+      <div className="w-full max-w-[min(78%,44rem)]">
+        <div className={`flex items-center gap-2 ${isUser ? "" : "justify-end"}`}>
+          <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
+            {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
+            {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
+          </p>
+        </div>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-sky-50 text-foreground dark:bg-sky-950/30"}`}>
+          {message.content}
+        </p>
+        {canInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect?.(message.id)}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            aria-pressed={inspected}
+          >
+            {inspected ? "Viewing evidence" : "View evidence"}
+            <ChevronRight className="size-3" />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [loadingTicketId, setLoadingTicketId] = useState(null);
+  const [pickerError, setPickerError] = useState("");
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setPickerError("");
+      const params = new URLSearchParams({ view: "tickets", limit: "50" });
+      if (query.trim()) params.set("search", query.trim());
+      fetch(`/api/agent-playground?${params.toString()}`, { credentials: "include", cache: "no-store" })
+        .then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data?.error || "Could not load previous tickets.");
+          if (!cancelled) setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setTickets([]);
+          setPickerError(error instanceof Error ? error.message : "Could not load previous tickets.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, query.trim() ? 250 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, query]);
+
+  const filteredTickets = useMemo(() => tickets, [tickets]);
+
+  const handlePick = async (ticket) => {
+    setLoadingTicketId(ticket.thread_id);
+    setPickerError("");
+    try {
+      await onPick(ticket);
+      onOpenChange(false);
+    } catch (error) {
+      setPickerError(error instanceof Error ? error.message : "Could not import this ticket.");
+    } finally {
+      setLoadingTicketId(null);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
+        <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
+          <DialogTitle className="text-[14px] font-semibold">{productionMode ? "Choose a production ticket" : "Choose a previous ticket"}</DialogTitle>
+          <DialogDescription className="sr-only">
+            Choose a scoped ticket to load its raw conversation into the read-only playground.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex max-h-[65vh] flex-col">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-2.5 dark:border-gray-800">
+            <Search className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search ticket number, subject, customer..."
+              className="flex-1 bg-transparent text-[12px] text-gray-700 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
+              autoFocus
+            />
+          </div>
+          {pickerError ? <p className="border-b border-red-100 bg-red-50/60 px-5 py-2.5 text-[11.5px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{pickerError}</p> : null}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="space-y-1.5 p-3">
+                {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-14 w-full rounded-md" />)}
+              </div>
+            ) : filteredTickets.length === 0 ? (
+              <p className="px-5 py-10 text-center text-[12px] text-gray-400 dark:text-gray-500">{query ? "No tickets match your search." : "No previous tickets found."}</p>
+            ) : (
+              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+                {filteredTickets.map((ticket) => (
+                  <li key={ticket.thread_id}>
+                    <button
+                      type="button"
+                      disabled={loadingTicketId !== null}
+                      onClick={() => handlePick(ticket)}
+                      className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800/50"
+                    >
+                      <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">{ticket.ticket_number ? `#${ticket.ticket_number} · ` : ""}{ticket.subject || "(no subject)"}</span>
+                      {ticket.customer_email ? <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">{ticket.customer_email}</span> : null}
+                      {ticket.preview ? <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">{ticket.preview}</span> : null}
+                      {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-slate-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function GreenfieldPlayground() {
+  const scrollRef = useRef(null);
+  const [sessions, setSessions] = useState([]);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [context, setContext] = useState(null);
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState(null);
+  const [error, setError] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [inspectedMessageId, setInspectedMessageId] = useState(null);
+  const [ticketRequired, setTicketRequired] = useState(true);
+
+  const load = useCallback(async (sessionId = "") => {
+    setLoading(true);
+    setError("");
+    const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+    const response = await fetch(`/api/agent-playground${query}`, { cache: "no-store", credentials: "include" }).catch(() => null);
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok) {
+      setError(payload?.error || "Could not load the playground.");
+      setLoading(false);
+      return;
+    }
+    setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+    setTicketRequired(payload.ticket_required === true);
+    setSelectedSession(payload.selected_session || null);
+    setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    setPendingUserMessage(null);
+    setInspectedMessageId(null);
+    setContext(payload.context || null);
+    setCustomerEmail(payload.selected_session?.customer_email || "");
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load().catch(() => setError("Could not load the playground."));
+  }, [load]);
+
+  const newConversation = () => {
+    setSelectedSession(null);
+    setMessages([]);
+    setPendingUserMessage(null);
+    setContext(null);
+    setDraft("");
+    setError("");
+    setInspectedMessageId(null);
+  };
+
+  const createSession = async () => {
+    const response = await fetch("/api/agent-playground", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "create", customer_email: customerEmail }),
+    }).catch(() => null);
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok) throw new Error(payload?.error || "Could not create a playground session.");
+    setSelectedSession(payload.session);
+    setMessages([]);
+    setContext(null);
+    setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
+    return payload.session;
+  };
+
+  const runImportedTicket = async (sessionToRun = selectedSession) => {
+    if (!sessionToRun?.source_thread_id || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/agent-playground", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "run_ticket", session_id: sessionToRun.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
+      setSelectedSession(payload.session);
+      setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
+      const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((message) => message.role === "assistant" && message.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
+      setContext(payload.context || null);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "The read-only agent run failed.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const importTicket = async (ticket) => {
+    const response = await fetch("/api/agent-playground", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "import_ticket", thread_id: ticket.thread_id }),
+    }).catch(() => null);
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok) throw new Error(payload?.error || "Could not import this ticket.");
+    setSelectedSession(payload.session);
+    setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    setPendingUserMessage(null);
+    setContext(payload.context || null);
+    setCustomerEmail(payload.session?.customer_email || "");
+    setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
+    setDraft("");
+    setError("");
+    await runImportedTicket(payload.session);
+  };
+
+  const send = async (event) => {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || sending) return;
+    setPendingUserMessage({
+      id: `pending-${Date.now()}`,
+      role: "user",
+      content: message,
+      created_at: new Date().toISOString(),
+    });
+    setDraft("");
+    setSending(true);
+    setError("");
+    try {
+      let session = selectedSession;
+      if (!session || (customerEmail.trim().toLowerCase() !== String(session.customer_email || "").toLowerCase())) {
+        session = await createSession();
+      }
+      const response = await fetch("/api/agent-playground", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "send", session_id: session.id, message }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
+      setSelectedSession(payload.session);
+      setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
+      const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((item) => item.role === "assistant" && item.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
+      setContext(payload.context || null);
+      setPendingUserMessage(null);
+    } catch (sendError) {
+      setPendingUserMessage(null);
+      setDraft(message);
+      setError(sendError instanceof Error ? sendError.message : "The read-only agent run failed.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const deleteSession = async () => {
+    if (!selectedSession || sending) return;
+    setError("");
+    const response = await fetch(`/api/agent-playground?session_id=${encodeURIComponent(selectedSession.id)}`, {
+      method: "DELETE",
+      credentials: "include",
+    }).catch(() => null);
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok) {
+      setError(payload?.error || "Could not delete the session.");
+      return;
+    }
+    setSessions((current) => current.filter((item) => item.id !== selectedSession.id));
+    newConversation();
+  };
+
+  const currentTurn = context?.turn || 0;
+  const displayedMessages = pendingUserMessage ? [...messages, pendingUserMessage] : messages;
+  const hasMessages = displayedMessages.length > 0;
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.trace);
+  const inspectedMessage = messages.find((message) => message.id === inspectedMessageId && message.role === "assistant" && message.trace) || latestAssistant || null;
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, pendingUserMessage, sending]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[22px] font-semibold tracking-[-0.025em] text-foreground">Playground</h1>
+          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-gray-500 dark:text-gray-400">
+            {ticketRequired ? "Test how Sona would handle a real support ticket in a safe, read-only workspace." : "Test a customer conversation with Sona in a safe, read-only workspace."}
+          </p>
+        </div>
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <span className="text-[11px] font-medium text-muted-foreground">Read-only</span>
+          {selectedSession ? (
+            <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
+              New conversation
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
+            {ticketRequired ? "Choose ticket" : "Load previous ticket"}
+          </Button>
+          {!ticketRequired ? (
+            <Button type="button" size="sm" onClick={newConversation} className="gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+              New conversation
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {error ? <div role="alert" className="shrink-0 rounded-xl bg-red-50/80 px-3.5 py-2.5 text-[12px] text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
+
+      <details className="group shrink-0 overflow-hidden rounded-lg bg-muted/35">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/55">
+          <span>Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
+        </summary>
+        <div className="px-2 pb-2">
+          {sessions.length ? (
+            <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+              {sessions.map((session) => (
+                <button
+                  type="button"
+                  key={session.id}
+                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-sky-50/70 dark:bg-sky-950/25" : ""}`}
+                  onClick={() => load(session.id)}
+                >
+                  <span className="truncate font-medium text-foreground">{session.title}</span>
+                  <span className="truncate text-muted-foreground">{session.customer_email || "No email"}</span>
+                </button>
+              ))}
+            </div>
+          ) : <p className="px-2 py-2 text-[11.5px] text-muted-foreground">No saved conversations yet.</p>}
+        </div>
+      </details>
+
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden bg-card lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
+              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Customer conversation"}</p>
+            </div>
+            {!ticketRequired ? (
+              <label className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/45 px-2.5 py-1.5 sm:max-w-[240px]">
+                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Customer</span>
+                <input
+                  id="playground-customer-email"
+                  type="email"
+                  value={customerEmail}
+                  onChange={(event) => setCustomerEmail(event.target.value)}
+                  placeholder="Optional email"
+                  disabled={sending}
+                  className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+                />
+              </label>
+            ) : null}
+          </div>
+
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-muted/[0.12] px-5 py-5 sm:px-8">
+            {loading ? <p className="text-[12px] text-muted-foreground">Loading playground…</p> : null}
+            {!loading && !hasMessages ? (
+              <div className="flex h-full min-h-[240px] flex-col items-center justify-center py-12 text-center animate-in fade-in-0 duration-300">
+                <div className="max-w-[30rem] space-y-1.5">
+                  <p className="text-[15px] font-semibold text-foreground">{ticketRequired ? "Choose a ticket to begin" : "Write the first message"}</p>
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Sona will create a candidate reply here without sending anything to the customer." : "Your messages and Sona's replies will appear here as a conversation."}</p>
+                  {!ticketRequired ? (
+                    <div className="mt-5 flex flex-wrap justify-center gap-2">
+                      {STARTER_MESSAGES.map((starterMessage) => (
+                        <button
+                          key={starterMessage}
+                          type="button"
+                          onClick={() => setDraft(starterMessage)}
+                          className="rounded-lg bg-background px-3 py-2 text-[11px] text-muted-foreground shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-900 hover:text-white active:scale-[0.98] dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                        >
+                          {starterMessage}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="mt-5 rounded-lg bg-background text-[11px] shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-transform active:scale-[0.98]">
+                      Choose ticket
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : null}
+            {displayedMessages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onInspect={setInspectedMessageId}
+                inspected={inspectedMessage?.id === message.id}
+              />
+            ))}
+            {sending ? (
+              <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
+                <div className="w-full max-w-[min(88%,42rem)]">
+                  <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
+                  <div className="ml-auto mt-1 inline-flex min-w-[3.5rem] justify-center rounded-[16px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30"><TypingDots /></div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <form className="shrink-0 bg-background px-4 pb-4 pt-3 sm:px-5" onSubmit={send}>
+            <div className="mx-auto flex w-full flex-col overflow-hidden rounded-xl bg-muted/[0.42] transition-[background-color,box-shadow] duration-150 ease-out focus-within:bg-muted/55 focus-within:shadow-[0_0_0_2px_hsl(var(--foreground)/0.08)]">
+              <div className="flex items-center justify-between gap-3 px-4 pb-0 pt-3">
+                <span className="text-[11px] font-medium text-foreground/70">Customer message</span>
+                <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘ Enter to send</span>
+              </div>
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && draft.trim()) {
+                    event.preventDefault();
+                    send(event);
+                  }
+                }}
+                placeholder={sending ? "Sona is thinking…" : ticketRequired && !selectedSession ? "Choose a ticket first..." : hasMessages ? "Write the customer's next message..." : "Write the customer's first message..."}
+                rows={3}
+                maxLength={12000}
+                disabled={sending || (ticketRequired && !selectedSession)}
+                aria-label="Customer message"
+                className="min-h-[68px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+              />
+              <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-0.5">
+                <p className="truncate text-[10.5px] text-muted-foreground">{sending ? "Sona is replying…" : `Turn ${currentTurn} · read-only · nothing will be sent`}</p>
+                <Button
+                  type="submit"
+                  disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)}
+                  aria-label={sending ? "Thinking" : "Send message"}
+                  title={sending ? "Thinking…" : "Send message (⌘↵ / Ctrl+↵)"}
+                  aria-busy={sending}
+                  aria-keyshortcuts="Meta+Enter Control+Enter"
+                  className="h-9 w-9 shrink-0 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-2"
+                >
+                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <AnswerInspector message={inspectedMessage} />
+      </div>
+
+      <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={ticketRequired} />
+    </div>
+  );
+}

@@ -19,12 +19,7 @@ const SUPABASE_SERVICE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  process.env.EXPO_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  "supabase";
-
-const SHOPIFY_API_VERSION = "2024-01";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 
 function normalizeDomain(input = "") {
   const trimmed = input.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
@@ -150,8 +145,7 @@ export async function POST(request) {
   const bodyDomain = body?.shop_domain || body?.shopDomain || body?.domain || null;
   const bodyToken = body?.access_token || body?.accessToken || body?.token || null;
 
-  const supabaseToken =
-    (await getToken({ template: SUPABASE_TEMPLATE })) || (await getToken());
+  const supabaseToken = await getToken();
 
   let shop = null;
   let shopError = null;

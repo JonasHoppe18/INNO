@@ -4,12 +4,24 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock3,
   LoaderCircle,
+  MailCheck,
   Plus,
   X,
   XCircle,
 } from "lucide-react";
 import Image from "next/image";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogClose,
@@ -43,17 +55,13 @@ import {
   ACTION_DECLINE_REASONS,
   actionDeclineReasonNeedsNote,
 } from "@/lib/action-decline";
+import {
+  getForwardActionResult,
+  getForwardTargetEmail,
+} from "@/lib/inbox/action-result";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function getForwardTargetEmail(payload = {}, detail = "") {
-  const payloadEmail = String(payload?.target_email || payload?.forward_to_email || "")
-    .trim()
-    .toLowerCase();
-  if (payloadEmail) return payloadEmail;
-  return String(detail || "").match(/[^\s@]+@[^\s@]+\.[^\s@.,;:!?]+/i)?.[0]?.toLowerCase() || "";
-}
 
 function getForwardSentenceParts(detail = "", targetEmail = "") {
   const fallback = { lead: "Forward this email to", tail: "." };
@@ -275,7 +283,7 @@ function getAppliedChangeLabel(actionType = "") {
 
 function shouldShowAppliedChange(actionType = "") {
   const normalizedAction = String(actionType || "").trim().toLowerCase();
-  return normalizedAction !== "cancel_order";
+  return normalizedAction !== "cancel_order" && normalizedAction !== "forward_email";
 }
 
 function getActionStatusLabel(actionType = "") {
@@ -485,9 +493,23 @@ export function ActionCard({
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
+  const [showForwardApprovalDialog, setShowForwardApprovalDialog] =
+    useState(false);
   const [nowMs, setNowMs] = useState(null);
   const normalizedAction = String(actionType || "").trim().toLowerCase();
+  // Keep the result presentation tied to the action's intent. Older action
+  // records/API responses may use a forwarding alias, but should never fall
+  // through to the Shopify order card (and its endless loading state).
+  const isForwardAction =
+    normalizedAction === "forward_email" ||
+    normalizedAction === "forward-email" ||
+    normalizedAction === "forward" ||
+    normalizedAction.endsWith("_forward") ||
+    normalizedAction.includes("forward_email");
   const initialForwardEmail = getForwardTargetEmail(payload, detail);
+  const forwardActionResult = isForwardAction
+    ? getForwardActionResult({ actionType: "forward_email", payload, detail })
+    : null;
   const [forwardTargetEmail, setForwardTargetEmail] = useState(initialForwardEmail);
   const [customForwardEmail, setCustomForwardEmail] = useState("");
   const [isCustomForwardTarget, setIsCustomForwardTarget] = useState(false);
@@ -655,39 +677,47 @@ export function ActionCard({
   if (isResultState) {
     return (
       <>
-        <div className="inline-flex w-[360px] max-w-full flex-col items-end">
+        <div className="inline-flex w-[340px] max-w-full flex-col items-end">
           {resultMeta ? (
             <div className="mb-1 px-1 text-right text-xs text-muted-foreground">{resultMeta}</div>
           ) : null}
-          <div className="inline-flex w-full items-center rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="flex h-12 w-12 flex-none items-center justify-center">
-                <Image src={shopifyLogo} alt="" className="h-24 w-24 object-contain" />
+          <div className="inline-flex w-full items-center rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-9 w-9 flex-none items-center justify-center">
+                {forwardActionResult ? (
+                  <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <MailCheck className="size-4" aria-hidden="true" />
+                  </div>
+                ) : (
+                  <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[15px] font-semibold text-foreground">
-                  {hasResolvedOrderNumber ? (
+                <div className="truncate text-sm font-semibold text-foreground">
+                  {forwardActionResult ? (
+                    forwardActionResult.title
+                  ) : hasResolvedOrderNumber ? (
                     orderTitle
                   ) : (
-                    <span className="inline-flex items-center gap-2 text-muted-foreground">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                       Loading order...
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <span>{resultStatusText}</span>
-                  {orderTotal ? <span>&bull; {orderTotal}</span> : null}
+                  {!forwardActionResult && orderTotal ? <span>&bull; {orderTotal}</span> : null}
                 </div>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setShowApprovedDetail(true)}
-              className="ml-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-accent-foreground active:scale-90"
+              className="ml-2 inline-flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-accent-foreground active:scale-90"
               aria-label={`View ${actionName} details`}
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -697,7 +727,11 @@ export function ActionCard({
               <div className="flex items-start justify-between gap-3">
                 <DialogTitle className="flex items-center gap-1.5 text-xl font-medium text-foreground">
                   <span className="inline-flex h-8 w-8 items-center justify-center">
-                    <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+                    {forwardActionResult ? (
+                      <MailCheck className="size-5 text-muted-foreground" aria-hidden="true" />
+                    ) : (
+                      <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+                    )}
                   </span>
                   <span>{resultModalTitle}</span>
                 </DialogTitle>
@@ -715,21 +749,36 @@ export function ActionCard({
               </div>
             </DialogHeader>
             <div className="space-y-5">
-              <div className="rounded-md border border-border bg-muted/50 p-3.5">
-                <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
-                  <div className="text-muted-foreground">Order</div>
-                  <div className="text-right font-semibold text-foreground">
-                    {orderDisplayNumber ||
-                      (hasResolvedOrderNumber ? `#${resolvedOrderNumber}` : "—")}
+              {forwardActionResult ? (
+                <div className="rounded-md border border-border bg-muted/50 p-3.5">
+                  <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
+                    <div className="text-muted-foreground">Recipient</div>
+                    <div className="truncate text-right font-semibold text-foreground">
+                      {forwardActionResult.recipient || "—"}
+                    </div>
+                    <div className="text-muted-foreground">Status</div>
+                    <div className="text-right font-medium text-foreground">
+                      {resultStatusText}
+                    </div>
                   </div>
-                  <div className="text-muted-foreground">Customer</div>
-                  <div className="truncate text-right font-medium text-foreground">{orderCustomer || "—"}</div>
-                  <div className="text-muted-foreground">Date</div>
-                  <div className="text-right font-medium text-foreground">{orderDate || "—"}</div>
-                  <div className="text-muted-foreground">Total</div>
-                  <div className="text-right font-semibold text-foreground">{orderTotal || "—"}</div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-md border border-border bg-muted/50 p-3.5">
+                  <div className="grid grid-cols-[110px_1fr] gap-y-2.5 text-sm">
+                    <div className="text-muted-foreground">Order</div>
+                    <div className="text-right font-semibold text-foreground">
+                      {orderDisplayNumber ||
+                        (hasResolvedOrderNumber ? `#${resolvedOrderNumber}` : "—")}
+                    </div>
+                    <div className="text-muted-foreground">Customer</div>
+                    <div className="truncate text-right font-medium text-foreground">{orderCustomer || "—"}</div>
+                    <div className="text-muted-foreground">Date</div>
+                    <div className="text-right font-medium text-foreground">{orderDate || "—"}</div>
+                    <div className="text-muted-foreground">Total</div>
+                    <div className="text-right font-semibold text-foreground">{orderTotal || "—"}</div>
+                  </div>
+                </div>
+              )}
 
               {showAppliedChange ? (
                 <div className="space-y-2">
@@ -742,7 +791,7 @@ export function ActionCard({
                 </div>
               ) : null}
 
-              {orderItems.length ? (
+              {!forwardActionResult && orderItems.length ? (
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-muted-foreground">Items</div>
                   <div className="space-y-1.5">
@@ -766,10 +815,10 @@ export function ActionCard({
 
   if (isExecuting) {
     return (
-      <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
+      <div className="w-full max-w-[480px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-foreground">{actionName}</div>
@@ -782,15 +831,15 @@ export function ActionCard({
 
   if (isDeclined) {
     return (
-      <div className="rounded-lg border border-border bg-muted/50 px-4 opacity-75">
+      <div className="rounded-lg border border-border bg-muted/50 px-3 opacity-75">
         <button
           type="button"
-          className="flex h-12 w-full items-center gap-3 text-left"
+          className="flex h-10 w-full items-center gap-2.5 text-left"
           onClick={() => canExpand && setExpanded((prev) => !prev)}
           disabled={!canExpand}
         >
           <XCircle className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground line-through">{actionName} declined.</span>
+          <span className="text-xs text-muted-foreground line-through">{actionName} declined.</span>
           {canExpand ? (
             expanded ? (
               <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
@@ -819,10 +868,10 @@ export function ActionCard({
       error || detail || "Order is Fulfilled and cannot be changed"
     );
     return (
-      <div className="rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-4">
-        <div className="flex h-12 w-full items-center gap-3 text-left">
+      <div className="rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-3">
+        <div className="flex h-10 w-full items-center gap-2.5 text-left">
           <XCircle className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-          <span className="text-sm font-medium text-violet-900 dark:text-violet-200">{failedDetail}</span>
+          <span className="text-xs font-medium text-violet-900 dark:text-violet-200">{failedDetail}</span>
         </div>
       </div>
     );
@@ -830,26 +879,26 @@ export function ActionCard({
 
   return (
     <>
-      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
-        <div className="p-3">
-          <div className="flex items-center justify-between gap-4">
+      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[480px] overflow-hidden rounded-xl border border-violet-200/80 bg-card shadow-[0_8px_24px_hsl(var(--foreground)/0.06)] duration-300 dark:border-violet-500/30">
+        <div className="px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center">
-                <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center">
+                <Image src={shopifyLogo} alt="" className="h-8 w-8 object-contain" />
               </div>
-              <div className="truncate text-l font-semibold leading-tight text-foreground">
+              <div className="truncate text-sm font-semibold leading-tight text-foreground">
                 {proposedTitle}
               </div>
             </div>
-            <div className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-violet-600 dark:text-violet-400">
-              <LoaderCircle className="h-5 w-5 animate-spin" />
+            <div className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Awaiting approval</span>
             </div>
           </div>
 
         {normalizedAction === "forward_email" ? (
-          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
-            <div className="flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-foreground/80">
+          <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-[13px] text-foreground/80">
               <span>{forwardSentence.lead}</span>
               <DropdownMenu>
                 {isCustomForwardTarget ? (
@@ -863,7 +912,7 @@ export function ActionCard({
                       placeholder="name@company.com"
                       aria-label="Forwarding email address"
                       aria-invalid={Boolean(selectedForwardEmail && !hasValidForwardEmail)}
-                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-sm shadow-none focus-visible:ring-0"
+                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-[13px] shadow-none focus-visible:ring-0"
                     />
                     <DropdownMenuTrigger asChild>
                       <button
@@ -879,7 +928,7 @@ export function ActionCard({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
+                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
                     >
                       <span className="truncate">{forwardTargetEmail || "Choose recipient"}</span>
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -927,8 +976,8 @@ export function ActionCard({
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
-            <div className="space-y-0.5 text-sm text-foreground/80">
+          <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
+            <div className="space-y-0.5 text-[13px] text-foreground/80">
               {impactSummaryLines.map((line, index) => (
                 <div key={`impact-line-${index}`}>{line}</div>
               ))}
@@ -945,10 +994,10 @@ export function ActionCard({
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-violet-200/70 dark:border-violet-500/20 px-3 py-2">
+      <div className="flex items-center justify-end gap-1.5 border-t border-violet-200/70 px-2.5 py-1.5 dark:border-violet-500/20">
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => setShowDeclineDialog(true)}
           disabled={loading}
         >
@@ -956,14 +1005,14 @@ export function ActionCard({
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={() =>
-            onApprove?.(
-              normalizedAction === "forward_email"
-                ? { target_email: selectedForwardEmail }
-                : undefined
-            )
-          }
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => {
+            if (normalizedAction === "forward_email") {
+              setShowForwardApprovalDialog(true);
+              return;
+            }
+            onApprove?.();
+          }}
           disabled={loading || Boolean(displayedValidationError)}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -979,6 +1028,51 @@ export function ActionCard({
         loading={loading}
         onConfirm={onDecline}
       />
+
+      <AlertDialog
+        open={showForwardApprovalDialog}
+        onOpenChange={(open) => {
+          if (!loading) setShowForwardApprovalDialog(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve forwarding</AlertDialogTitle>
+            <AlertDialogDescription>
+              The email will be forwarded to {selectedForwardEmail}. Should Sona
+              also mark this ticket as resolved after forwarding?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading}
+              onClick={() => {
+                setShowForwardApprovalDialog(false);
+                onApprove?.({
+                  target_email: selectedForwardEmail,
+                  closeTicket: false,
+                });
+              }}
+            >
+              Approve only
+            </Button>
+            <AlertDialogAction
+              disabled={loading}
+              onClick={() =>
+                onApprove?.({
+                  target_email: selectedForwardEmail,
+                  closeTicket: true,
+                })
+              }
+            >
+              Approve &amp; resolve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

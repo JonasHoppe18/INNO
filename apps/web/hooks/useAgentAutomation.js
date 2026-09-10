@@ -59,9 +59,6 @@ const DEFAULT_AUTOMATION = {
   minConfidence: 0.6,
 };
 
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
-
 export function useAgentAutomation(options = {}) {
   const { lazy = false, userId: providedUserId } = options;
   const supabase = useClerkSupabase();
@@ -76,8 +73,8 @@ export function useAgentAutomation(options = {}) {
   const resolveUserIdFromToken = useCallback(async () => {
     if (typeof getToken !== "function") return null;
     try {
-      const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-      const payload = decodeJwtPayload(templateToken);
+      const sessionToken = await getToken();
+      const payload = decodeJwtPayload(sessionToken);
       if (!payload) return null;
       const claim = payload?.supabase_user_id;
       if (isValidUuid(claim)) return claim;

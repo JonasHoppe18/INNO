@@ -235,7 +235,7 @@ Deno.test("product listing uses status=active (not status=any) on both calls", (
   }) as typeof fetch;
   return (async () => {
     try {
-      const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+      const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2026-07" });
       await provider.searchProductInventory("A-Spire Wireless");
       assertEquals(calls.length, 2);
       for (const url of calls) {
@@ -259,7 +259,7 @@ Deno.test("demo AirPods: title query zero but list returns products → matched 
     return Promise.resolve(new Response(JSON.stringify({ products }), { status: 200, headers: { "Content-Type": "application/json" } }));
   }) as typeof fetch;
   try {
-    const provider = new ShopifyProvider({ shopDomain: "test-app-store-ai-mailer.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+    const provider = new ShopifyProvider({ shopDomain: "test-app-store-ai-mailer.myshopify.com", accessToken: "t", apiVersion: "2026-07" });
     const { facts, diagnostics } = await provider.searchProductInventoryWithDiagnostics("airpods");
     assertEquals(diagnostics.matched_products.map((p) => p.title), ["Apple Airpods 4"]);
     assertEquals(facts[0]?.state, "in_stock");
@@ -278,7 +278,7 @@ Deno.test("matched product without inventory_quantity → missing_read_inventory
     return Promise.resolve(new Response(JSON.stringify({ products }), { status: 200, headers: { "Content-Type": "application/json" } }));
   }) as typeof fetch;
   try {
-    const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+    const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2026-07" });
     const { facts, diagnostics } = await provider.searchProductInventoryWithDiagnostics("airpods");
     assertEquals(diagnostics.matched_products.length, 1);
     assertEquals(diagnostics.error_reason, "missing_read_inventory_scope");

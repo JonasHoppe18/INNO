@@ -176,9 +176,6 @@ export function MailboxesSettingsTab() {
         </div>
       </section>
 
-      <p className="text-xs leading-5 text-muted-foreground">
-        Additional channel types, including chat and social, will appear here when available.
-      </p>
     </div>
   );
 }

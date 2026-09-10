@@ -6,21 +6,14 @@ import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
 import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 import { formatTicketReference } from "@/lib/tickets/reference";
 
-const STATUS_TEXT_STYLES = {
-  New: "text-green-600 dark:text-green-400",
-  Open: "text-blue-600 dark:text-blue-400",
-  Pending: "text-orange-500 dark:text-orange-400",
-  Waiting: "text-violet-500 dark:text-violet-400",
-  Solved: "text-muted-foreground",
+const STATUS_DOT_STYLES = {
+  New: "bg-emerald-500",
+  Open: "bg-blue-500",
+  Pending: "bg-orange-500",
+  Waiting: "bg-violet-500",
+  Solved: "bg-muted-foreground/60",
 };
 
-const CLASSIFICATION_LABELS = {
-  support: "Support",
-  notification: "Notification",
-  partnership: "Partnership",
-  job: "Job",
-  invoice: "Invoice",
-};
 const PREFETCH_HOVER_DELAY_MS = 700;
 
 function TicketListItemComponent({
@@ -56,60 +49,24 @@ function TicketListItemComponent({
   const assigneeDisplay = assigneeLabel ? assigneeInitials(assigneeLabel) : null;
   const wakeCountdownText = formatWakeCountdown(wakeDays);
 
-  const classificationKey = String(thread?.classification_key || "").toLowerCase();
-  const classificationLabel =
-    classificationKey && classificationKey !== "support"
-      ? CLASSIFICATION_LABELS[classificationKey] || null
-      : null;
   const ticketRef = formatTicketReference(thread?.ticket_number);
+  const hasTicketRef = ticketRef !== "No ticket ID";
+  const ticketNumberLabel = hasTicketRef
+    ? `#${ticketRef.replace(/^T-/, "")}`
+    : null;
+  const statusLabel = status === "Solved" ? "Resolved" : status;
 
-  // One flat meta line instead of a variable-height stack — a ticket with a
-  // classification label used to render a whole extra <div> below this one,
-  // making rows with vs. without it visibly different heights in the list.
-  // Built as an array (rather than a hand-chained "show a dot if the
-  // previous thing rendered" conditional) so a dot only ever appears before
-  // a real entry — no dangling/missing separators possible by construction.
-  // ticketRef always renders here (not conditional like the rest), so this
-  // line is never actually empty. inboxName is deliberately NOT included —
-  // dropped per direct feedback that the card shouldn't show its inbox.
-  const metaEntries = [
-    <span key="ticket-ref" className="shrink-0 font-mono text-[10px] tabular-nums">
-      {ticketRef}
-    </span>,
-    hasAiDraft ? (
-      <span key="draft" className="text-purple-700 dark:text-purple-400">
-        Draft ready
-      </span>
-    ) : null,
-    // Unassigned is the common case pre-migration/for new threads — showing it
-    // on every row was just noise; an assignee is only worth surfacing once
-    // someone actually owns the ticket.
-    assigneeDisplay ? (
-      <span key="assignee" className="truncate">
-        {assigneeDisplay}
-      </span>
-    ) : null,
-    wakeCountdownText ? (
-      <span key="wake" className="truncate">
-        {wakeCountdownText}
-      </span>
-    ) : null,
-    classificationLabel ? (
-      <span key="classification" className="truncate">
-        {classificationLabel}
-      </span>
-    ) : null,
-  ].filter(Boolean);
-  const metaChildren = metaEntries.flatMap((entry, index) =>
-    index === 0
-      ? [entry]
-      : [
-          <span key={`${entry.key}-dot`} aria-hidden="true">
-            &middot;
-          </span>,
-          entry,
-        ],
-  );
+  // Keep the compact two-line mail rhythm: sender/time first, subject and
+  // ticket ID second. Ticket type belongs in the full ticket view, where it
+  // can be read without competing with the subject in this narrow list.
+  const metadataTitle = [
+    ticketRef,
+    hasAiDraft ? "Draft ready" : null,
+    assigneeDisplay,
+    wakeCountdownText,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const prefetchTimerRef = useRef(null);
 
@@ -176,14 +133,14 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
         // lavender surface and stronger brand rail.
-        isUnread && "hover:bg-violet-50/60 dark:hover:bg-violet-500/[0.08]",
-        isActive && "bg-violet-100/80 ring-1 ring-inset ring-violet-200/70 hover:bg-violet-100 dark:bg-violet-500/[0.18] dark:ring-violet-300/20 dark:hover:bg-violet-500/[0.22] before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-violet-600 dark:before:bg-violet-400",
+        isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
+        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19]",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -210,54 +167,75 @@ function TicketListItemComponent({
       aria-pressed={isActive}
       aria-current={isActive ? "page" : undefined}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {isUnread ? (
           <span
             aria-label="Unread"
             className="size-2 shrink-0 rounded-full bg-violet-600 ring-2 ring-violet-100 dark:bg-violet-400 dark:ring-violet-500/20"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium text-foreground", isUnread && "font-bold")}>
+        <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
-        <span className={cn("shrink-0 text-[12px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
+        <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
           {formatMessageTime(timestamp)}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
-          <span className={cn("truncate", isUnread && "font-semibold text-foreground")}>
+      <div
+        className="flex min-w-0 items-center gap-2"
+        title={metadataTitle || undefined}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground">
+          <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
-          {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
+          {hasAiDraft ? (
+            <span title="Draft ready" aria-label="Draft ready" className="shrink-0">
+              <Sparkles className="h-3 w-3 text-amber-400" />
+            </span>
+          ) : null}
         </div>
-        {reason ? (
-          <span
-            className={
-              "shrink-0 whitespace-nowrap text-xs " +
-              (reason.key === "customer_replied"
-                ? "text-amber-700 dark:text-amber-500"
-                : reason.key === "approve_close"
-                  ? "text-purple-700 dark:text-purple-400"
-                  : "text-green-700 dark:text-green-500")
-            }
-          >
-            {reason.label}
-          </span>
-        ) : showLegacyStatus ? (
-          <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
-            {status === "Solved" ? "Resolved" : status}
-          </span>
-        ) : waitAge ? (
-          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {metaChildren}
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
+          {ticketNumberLabel ? (
+            <span className="shrink-0 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground/70">
+              {ticketNumberLabel}
+            </span>
+          ) : null}
+          {reason && reason.key !== "new" ? (
+            <span
+              className={
+                "max-w-[96px] truncate whitespace-nowrap text-[11px] " +
+                (reason.key === "customer_replied"
+                  ? "text-amber-700 dark:text-amber-500"
+                  : reason.key === "approve_close"
+                    ? "text-purple-700 dark:text-purple-400"
+                    : "text-green-700 dark:text-green-500")
+              }
+            >
+              {reason.label}
+            </span>
+          ) : showLegacyStatus ? (
+            <span
+              title={statusLabel}
+              aria-label={`Status: ${statusLabel}`}
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full ring-2 ring-background",
+                STATUS_DOT_STYLES[status] || "bg-muted-foreground/50",
+              )}
+            >
+              <span className="sr-only">{statusLabel}</span>
+            </span>
+          ) : waitAge ? (
+            <span className="max-w-[90px] truncate whitespace-nowrap text-[11px] text-muted-foreground/70">{waitAge}</span>
+          ) : null}
+          {!hasTicketRef ? (
+            <span className="sr-only">No ticket ID</span>
+          ) : null}
+        </div>
       </div>
     </button>
     {showApproveCloseActions ? (
-      <div className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5">
+      <div className="flex items-center gap-3 border-t border-border/60 px-3.5 py-1">
         <button
           type="button"
           onClick={(event) => {

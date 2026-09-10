@@ -378,6 +378,115 @@ function normalizeStatusText(raw: string): string {
   return raw;
 }
 
+function decodeBringTrackingHtml(html: string): string {
+  return String(html || "")
+    .replace(/\\"/g, '"')
+    .replace(/\\u([0-9a-f]{4})/gi, (_match, hex) =>
+      String.fromCharCode(Number.parseInt(hex, 16))
+    );
+}
+
+function firstBringMatch(input: string, pattern: RegExp): string {
+  return input.match(pattern)?.[1]?.trim() || "";
+}
+
+// Bring exposes the current shipment state and event history in the public
+// tracking page's server-rendered HTML. Keep this parser deliberately narrow:
+// it extracts only the status, delivery timestamp, pickup point, and delivery
+// address that are already visible on Bring's own page.
+export function parseBringPublicTrackingHtml(
+  html: string,
+  context: { trackingNumber: string; trackingUrl: string },
+): TrackingDetail | null {
+  const decoded = decodeBringTrackingHtml(html);
+  const heading = firstBringMatch(
+    decoded,
+    /data-testid="parcel-status-heading"[^>]*>\s*([^<]+?)\s*<\/h2>/i,
+  );
+  const currentStatus = firstBringMatch(
+    decoded,
+    /"currentStatus","([^"]+)"/i,
+  ).toUpperCase();
+  if (!heading && !currentStatus) return null;
+
+  const statusCode = currentStatus === "DELIVERED"
+    ? "delivered"
+    : currentStatus === "OUT_FOR_DELIVERY"
+    ? "out_for_delivery"
+    : currentStatus === "READY_FOR_PICKUP"
+    ? "pickup_ready"
+    : currentStatus === "IN_TRANSIT"
+    ? "in_transit"
+    : currentStatus === "EXCEPTION"
+    ? "exception"
+    : null;
+  const statusText = heading || currentStatus || "Shipment status available.";
+  const statusIndex = decoded.indexOf('"currentStatus"');
+  const statusWindow = statusIndex >= 0 ? decoded.slice(statusIndex) : decoded;
+  const eventIso = firstBringMatch(statusWindow, /"dateIso","([^"]+)"/i);
+  const pickupName = firstBringMatch(
+    decoded,
+    /"expectedPickupUnitName","([^"]+)"/i,
+  );
+  const deliveryAddress = firstBringMatch(
+    decoded,
+    /data-testid="parcel-details-delivery-address"[^>]*>\s*([^<]+?)\s*<\//i,
+  );
+  const deliveryAddressParts = deliveryAddress.split(",").map((part) => part.trim()).filter(Boolean);
+  const deliveryCity = deliveryAddressParts[0] || "";
+  const deliveryCountry = deliveryAddressParts[1] || "";
+  const snapshot = buildSnapshotFromStatusText(statusText);
+  snapshot.statusCode = statusCode || snapshot.statusCode;
+  snapshot.deliveredAt = statusCode === "delivered" ? normalizeIso(eventIso) : null;
+  if (pickupName || deliveryCity || deliveryCountry) {
+    snapshot.pickupPoint = {
+      name: pickupName || null,
+      city: deliveryCity || null,
+      country: deliveryCountry || null,
+    };
+  }
+  if (eventIso || pickupName) {
+    snapshot.lastEvent = {
+      code: currentStatus || null,
+      description: statusText,
+      occurredAt: normalizeIso(eventIso),
+      pickupPoint: snapshot.pickupPoint || null,
+    };
+  }
+
+  return {
+    carrier: "Bring",
+    statusText,
+    trackingNumber: context.trackingNumber,
+    trackingUrl: context.trackingUrl,
+    lookupSource: "bring_public_page",
+    lookupDetail: "public_page_parse",
+    snapshot,
+  };
+}
+
+async function fetchBringPublicStatus(
+  trackingNumber: string,
+  trackingUrl: string,
+): Promise<TrackingDetail | null> {
+  try {
+    const response = await fetch(trackingUrl, {
+      method: "GET",
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "Sona tracking lookup",
+      },
+    });
+    if (!response.ok) return null;
+    return parseBringPublicTrackingHtml(await response.text(), {
+      trackingNumber,
+      trackingUrl,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function toCarrierLabel(carrier: CarrierCode | string): string {
   const value = String(carrier || "").toLowerCase();
   if (value === "gls") return "GLS";
@@ -1034,9 +1143,10 @@ async function fetchBringStatus(
   trackingNumber: string,
   trackingUrl?: string | null,
 ): Promise<TrackingDetail> {
-  const publicUrl = asString(trackingUrl) || `https://sporing.bring.no/sporing/${trackingNumber}`;
+  const publicUrl = asString(trackingUrl) || `https://tracking.bring.com/tracking/${trackingNumber}`;
   if (!BRING_API_UID || !BRING_API_KEY) {
-    return {
+    const publicResult = await fetchBringPublicStatus(trackingNumber, publicUrl);
+    return publicResult || {
       carrier: "Bring",
       statusText: "Shipped - follow the parcel via tracking link.",
       trackingNumber,
@@ -1061,6 +1171,8 @@ async function fetchBringStatus(
     );
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload) {
+      const publicResult = await fetchBringPublicStatus(trackingNumber, publicUrl);
+      if (publicResult) return publicResult;
       return {
         carrier: "Bring",
         statusText: "Shipped - follow the parcel via tracking link.",
@@ -1091,6 +1203,8 @@ async function fetchBringStatus(
       snapshot: buildSnapshotFromStatusText(statusText),
     };
   } catch {
+    const publicResult = await fetchBringPublicStatus(trackingNumber, publicUrl);
+    if (publicResult) return publicResult;
     return {
       carrier: "Bring",
       statusText: "Shipped - follow the parcel via tracking link.",
@@ -1235,9 +1349,11 @@ export async function fetchTrackingDetailForCandidate(
     };
   }
   if (carrier === "postnord") return await fetchPostNordStatus(trackingNumber, trackingUrl);
+  if (carrier === "bring") return await fetchBringStatus(trackingNumber, trackingUrl);
 
-  // All non-GLS/PostNord carriers route through Ship24 when configured. Ship24
-  // auto-detects the courier from the tracking number.
+  // Other non-GLS/PostNord carriers route through Ship24 when configured.
+  // Bring has its own public-page adapter above because that page exposes
+  // delivery location and timestamp that Ship24 does not reliably return.
   const ship24Enabled = deps?.ship24Configured ?? isShip24Configured;
   const ship24 = deps?.fetchShip24 ?? fetchShip24Status;
   if (ship24Enabled()) {

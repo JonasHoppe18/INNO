@@ -2,7 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from "https://deno.land/x/jose@v5.2.0/i
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getShopCredentialsForUser } from "../_shared/shopify-credentials.ts";
 
-const SHOPIFY_API_VERSION = "2024-07"; // Samme version som i de andre endpoints
+const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2026-07";
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =

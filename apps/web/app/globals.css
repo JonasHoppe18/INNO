@@ -54,6 +54,32 @@
   }
 }
 
+/* The scripted hero demo types replies character by character. Keep its
+   mobile frame fixed so that the growing reply cannot change document height
+   and move the page while someone is scrolling. The extra room below 380px
+   covers the additional line wrapping on narrow phones. */
+.landing-demo-panel {
+  height: 44rem;
+  min-height: 44rem;
+  overflow: hidden;
+  overflow-anchor: none;
+}
+
+@media (max-width: 380px) {
+  .landing-demo-panel {
+    height: 48rem;
+    min-height: 48rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .landing-demo-panel {
+    height: auto;
+    min-height: 460px;
+    overflow: visible;
+  }
+}
+
 /* Demo scenario crossfade: the tabbed product demo swaps its inner panel with
    a soft blur-assisted crossfade so the two states blend rather than snap. */
 .demo-panel {

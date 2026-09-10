@@ -1,21 +1,60 @@
-import Image from "next/image";
-import shopifyLogo from "../../../../assets/Shopify-Logo.png";
-import { memo } from "react";
-import { ExternalLink, RefreshCw, Truck } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { ChevronRight, ExternalLink, RefreshCw, ShoppingBag, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTicketReference } from "@/lib/tickets/reference";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 
-const formatTimestamp = (value) => {
+const DISPLAY_LOCALE = "en-GB";
+const DISPLAY_TIMEZONE = "Europe/Copenhagen";
+
+const getDateKey = (date) => {
+  const parts = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
+    timeZone: DISPLAY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+const getCalendarDayDistance = (fromKey, toKey) => {
+  const [fromYear, fromMonth, fromDay] = String(fromKey).split("-").map(Number);
+  const [toYear, toMonth, toDay] = String(toKey).split("-").map(Number);
+  if (![fromYear, fromMonth, fromDay, toYear, toMonth, toDay].every(Number.isFinite)) {
+    return null;
+  }
+  return Math.round(
+    (Date.UTC(fromYear, fromMonth - 1, fromDay) - Date.UTC(toYear, toMonth - 1, toDay)) /
+      (24 * 60 * 60 * 1000),
+  );
+};
+
+const formatHistoryTimestamp = (value) => {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString("da-DK", {
-    day: "2-digit",
+  const daysAgo = getCalendarDayDistance(getDateKey(new Date()), getDateKey(date));
+  if (daysAgo === 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return `${daysAgo} days ago`;
+  return date.toLocaleDateString(DISPLAY_LOCALE, {
+    timeZone: DISPLAY_TIMEZONE,
+    day: "numeric",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
+};
+
+const getTicketTimeGroup = (value) => {
+  if (!value) return "Earlier";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Earlier";
+  const daysAgo = getCalendarDayDistance(getDateKey(new Date()), getDateKey(date));
+  if (daysAgo === 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return "This week";
+  return "Earlier";
 };
 
 const parseAmount = (value) => {
@@ -27,11 +66,11 @@ const parseAmount = (value) => {
 const formatCurrency = (value, currency) => {
   if (value === null || value === undefined) return "—";
   if (typeof value !== "number") return String(value);
-  if (!currency) return String(value);
+  if (!currency) return value.toLocaleString(DISPLAY_LOCALE);
   try {
-    return new Intl.NumberFormat("da-DK", { style: "currency", currency }).format(value);
+    return new Intl.NumberFormat(DISPLAY_LOCALE, { style: "currency", currency }).format(value);
   } catch {
-    return `${value} ${currency}`;
+    return `${currency} ${value.toLocaleString(DISPLAY_LOCALE)}`;
   }
 };
 
@@ -47,26 +86,270 @@ const getInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-const formatTicketStatus = (value) => {
+const getTicketStatusMeta = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "solved" || normalized === "resolved") return "Resolved";
-  if (normalized === "pending") return "Pending";
-  if (normalized === "waiting") return "Waiting";
-  if (normalized === "new") return "New";
-  return "Open";
+  if (normalized === "solved" || normalized === "resolved") {
+    return {
+      label: "Resolved",
+      className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+      dotClassName: "bg-emerald-500",
+    };
+  }
+  if (normalized === "pending" || normalized === "waiting") {
+    return {
+      label: normalized === "pending" ? "Pending" : "Waiting",
+      className: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+      dotClassName: "bg-amber-500",
+    };
+  }
+  if (normalized === "new") {
+    return {
+      label: "New",
+      className: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300",
+      dotClassName: "bg-blue-500",
+    };
+  }
+  return {
+    label: "Open",
+    className: "bg-muted text-muted-foreground",
+    dotClassName: "bg-muted-foreground/60",
+  };
 };
 
 const formatTicketRef = (ticketNumber) => formatTicketReference(ticketNumber);
 
-function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
+function SectionHeading({ title, description, count }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
+        {description ? <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p> : null}
+      </div>
+      {count !== undefined ? (
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+          {count}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function PreviousTicketCard({ ticket, onOpenTicket }) {
+  const threadId = String(ticket?.thread_id || "").trim();
+  const ticketRef = formatTicketRef(ticket?.ticket_number);
+  const subject = String(ticket?.subject || "").trim() || "Untitled ticket";
+  const status = getTicketStatusMeta(ticket?.status);
+  const timestamp = formatHistoryTimestamp(ticket?.last_message_at);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (threadId) onOpenTicket?.(threadId);
+      }}
+      disabled={!threadId}
+      className="group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-background/80 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
+      <div className="min-w-0 flex-1">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
+          <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{subject}</div>
+          <span className="shrink-0 text-right text-[10px] text-muted-foreground/70">{timestamp || "—"}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
+            {status.label}
+          </span>
+          <span className="truncate text-[10px] font-mono tracking-[0.04em] text-muted-foreground/70">
+            {ticketRef}
+          </span>
+        </div>
+      </div>
+      {threadId ? (
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+      ) : null}
+    </button>
+  );
+}
+
+function PreviousTicketsSection({ tickets, onOpenTicket }) {
+  const [visibleCount, setVisibleCount] = useState(5);
+  const firstTicketId = String(tickets[0]?.thread_id || "").trim();
+
+  useEffect(() => {
+    setVisibleCount(5);
+  }, [tickets.length, firstTicketId]);
+
+  const visibleTickets = tickets.slice(0, visibleCount);
+  const groups = visibleTickets.reduce((result, ticket) => {
+    const label = getTicketTimeGroup(ticket?.last_message_at);
+    const existingGroup = result.find((group) => group.label === label);
+    if (existingGroup) {
+      existingGroup.tickets.push(ticket);
+    } else {
+      result.push({ label, tickets: [ticket] });
+    }
+    return result;
+  }, []);
+
+  return (
+    <section className="space-y-2.5 border-t border-border/70 pt-5">
+      <SectionHeading
+        title="Previous conversations"
+        description="Previous conversations with this customer."
+        count={tickets.length}
+      />
+      {tickets.length ? (
+        <div className="space-y-3">
+          {groups.map((group) => (
+            <div key={group.label} className="space-y-1.5">
+              <div className="px-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
+                {group.label}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
+                {group.tickets.map((ticket) => (
+                  <PreviousTicketCard
+                    key={
+                      String(ticket?.thread_id || "").trim() ||
+                      `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
+                    }
+                    ticket={ticket}
+                    onOpenTicket={onOpenTicket}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          {visibleCount < tickets.length ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => Math.min(count + 5, tickets.length))}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+            >
+              <span>Load more conversations</span>
+              <span className="tabular-nums text-muted-foreground/70">{tickets.length - visibleCount} remaining</span>
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-[12px] text-muted-foreground">
+          No previous tickets found.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OrderCard({ order, shopDomain }) {
+  const orderUrl = order?.adminUrl || (shopDomain && order?.adminId)
+    ? order?.adminUrl || `https://${shopDomain}/admin/orders/${order.adminId}`
+    : "";
+  const total = order?.total ? formatCurrency(parseAmount(order.total) ?? order.total, order.currency) : "—";
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const visibleItems = items.slice(0, 2);
+  const remainingItemCount = items.length - visibleItems.length;
+
+  return (
+    <div className="px-3.5 py-3 transition-colors duration-150 hover:bg-background/80">
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+          <ShoppingBag className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 text-[13px] font-semibold text-foreground">
+              {orderUrl ? (
+                <a
+                  href={orderUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group/order inline-flex max-w-full items-center gap-1 hover:text-violet-700 dark:hover:text-violet-300"
+                >
+                  <span className="truncate">Order #{order.id}</span>
+                  <ExternalLink className="size-3 shrink-0 text-muted-foreground transition-colors group-hover/order:text-violet-600" />
+                </a>
+              ) : (
+                <>Order #{order.id}</>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-1">
+              {order?.financialStatus ? (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  order.financialStatus === "paid"
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {order.financialStatus === "paid" ? "Paid" : "Refunded"}
+                </span>
+              ) : null}
+              {order?.fulfillmentStatus ? (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  order.fulfillmentStatus === "fulfilled"
+                    ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                    : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                }`}>
+                  {order.fulfillmentStatus === "fulfilled" ? "Fulfilled" : "Unfulfilled"}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">{total}</div>
+        </div>
+      </div>
+
+      {visibleItems.length ? (
+        <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+          <span className="truncate">
+            {visibleItems.join(" · ")}
+            {remainingItemCount > 0 ? ` · +${remainingItemCount} more` : ""}
+          </span>
+        </div>
+      ) : null}
+
+      {order?.tracking?.url && order?.tracking?.number ? (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Truck className="size-3.5 shrink-0" />
+          <a href={order.tracking.url} target="_blank" rel="noreferrer" className="truncate hover:text-foreground hover:underline">
+            Tracking {order.tracking.number}
+          </a>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket }) {
+  const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
+  const orders = Array.isArray(data?.orders) ? data.orders : [];
+  const customer = data?.customer || {};
+  const shopDomain = data?.shopDomain || data?.shop?.domain || data?.shop?.shop_domain || null;
+  const totals = orders
+    .map((order) => parseAmount(order?.total))
+    .filter((value) => value !== null);
+  const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
+  const currency = orders.find((order) => order?.currency)?.currency || null;
+  const customerDisplayName = getCustomerDisplayName({
+    customer,
+    fallbackEmail: customer?.email,
+  });
+  const initials = getInitials(customerDisplayName, customer?.email);
+  const hasCustomerData = Boolean(data?.customer || orders.length);
+
   if (loading) {
     return (
-      <div className="space-y-4 text-sm text-slate-500">
-        <div className="flex items-center justify-between">
-          <span>Loading customer details...</span>
-          <Button variant="outline" size="sm" disabled>
-            Refresh
-          </Button>
+      <div className="space-y-5 px-0.5" aria-label="Loading customer history">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+          </div>
+          <Button variant="outline" size="sm" disabled>Refresh</Button>
+        </div>
+        <div className="space-y-3">
+          <div className="h-16 animate-pulse rounded-xl bg-muted" />
+          <div className="h-20 animate-pulse rounded-xl bg-muted" />
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
         </div>
       </div>
     );
@@ -74,260 +357,107 @@ function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, o
 
   if (error) {
     return (
-      <div className="space-y-4 text-sm text-slate-500">
-        <div className="flex items-center justify-between">
-          <span>{error.message || "Kunne ikke hente kunden."}</span>
-          <Button variant="outline" size="sm" onClick={onRefresh}>
-            Refresh
-          </Button>
+      <div className="space-y-5 px-0.5">
+        <div>
+          <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+        </div>
+        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5">
+          <p className="text-[13px] font-medium text-foreground">Couldn’t load customer history</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+            {error.message || "Something went wrong while loading this customer."}
+          </p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={onRefresh}>Try again</Button>
         </div>
       </div>
     );
   }
 
-  const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
-
-  if (!data?.customer && !data?.orders?.length) {
-    const source = data?.source ? String(data.source).trim() : "Shopify";
+  if (!hasCustomerData) {
     return (
-      <div className="space-y-5">
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>{`No customer found in ${source}.`}</span>
-          <Button variant="outline" size="sm" onClick={onRefresh}>
-            Refresh
-          </Button>
-        </div>
-        {previousTickets.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
-            {previousTickets.map((ticket) => {
-              const threadId = String(ticket?.thread_id || "").trim();
-              const lastActivity = formatTimestamp(ticket?.last_message_at);
-              return (
-                <button
-                  key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
-                  type="button"
-                  onClick={() => {
-                    if (!threadId) return;
-                    onOpenTicket?.(threadId);
-                  }}
-                  className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                  disabled={!threadId}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
-                        formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
-                          ? "bg-slate-100 font-mono font-medium text-slate-500"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {formatTicketRef(ticket?.ticket_number)}
-                    </div>
-                    <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
-                    {String(ticket?.subject || "").trim() || "Untitled ticket"}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
-                </button>
-              );
-            })}
+      <div className="space-y-5 px-0.5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
           </div>
-        )}
+          <Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>
+        </div>
+        <div className="rounded-xl border border-dashed border-border bg-background/40 p-4">
+          <p className="text-[13px] font-medium text-foreground">No customer profile found</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+            We couldn’t match this ticket to a customer or order.
+          </p>
+        </div>
+        <PreviousTicketsSection tickets={previousTickets} onOpenTicket={onOpenTicket} />
       </div>
     );
   }
-
-  const orders = Array.isArray(data?.orders) ? data.orders : [];
-  const customer = data?.customer || {};
-  const shopDomain =
-    data?.shopDomain ||
-    data?.shop?.domain ||
-    data?.shop?.shop_domain ||
-    null;
-  const source = data?.source ? String(data.source).trim() : "Shopify";
-  const sourceLabel = source ? source.charAt(0).toUpperCase() + source.slice(1) : "Shopify";
-  const updatedAt = formatTimestamp(data?.fetchedAt);
-  const totals = orders
-    .map((order) => parseAmount(order?.total))
-    .filter((value) => value !== null);
-  const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
-  const currency = orders.find((order) => order?.currency)?.currency || null;
-  const initials = getInitials(customer?.name, customer?.email);
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-          <span className="text-sm font-semibold">{initials}</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-semibold text-slate-900">
-            {customer?.name || "Unknown customer"}
+    <div className="space-y-5 px-0.5 pb-2">
+      <section className="border-b border-border/70 pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
           </div>
-          <div className="truncate text-[13px] text-slate-400">{customer?.email || "—"}</div>
+          <button
+            type="button"
+            onClick={onRefresh}
+            title="Refresh customer history"
+            aria-label="Refresh customer history"
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          title="Refresh"
-          className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-          <div className="text-[11px] text-slate-400">Spent</div>
-          <div className="mt-0.5 text-[15px] font-semibold text-slate-900">
+        <div className="mt-4 flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+            <span className="text-[13px] font-semibold">{initials}</span>
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold text-foreground">
+              {customerDisplayName}
+            </div>
+            <div className="truncate text-[11px] text-muted-foreground">{customer?.email || "No email available"}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-[1.35fr_0.825fr_0.825fr] gap-2">
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
+          <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
+          <div className="mt-1 whitespace-nowrap text-[12px] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
             {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
           </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-          <div className="text-[11px] text-slate-400">Orders</div>
-          <div className="mt-0.5 text-[15px] font-semibold text-slate-900">{orders.length}</div>
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Orders</div>
+          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{orders.length}</div>
         </div>
-      </div>
-      <div className="space-y-2">
-        <div className="text-[11px] font-medium text-slate-400">Recent orders</div>
+        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Tickets</div>
+          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{previousTickets.length}</div>
+        </div>
+      </section>
+
+      <section className="space-y-2.5">
+        <SectionHeading title="Recent orders" description="Orders linked to this customer." count={orders.length} />
         {orders.length ? (
-          orders.map((order) => (
-            <div key={order.id} className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-900">
-                  {order?.adminUrl || (shopDomain && order?.adminId) ? (
-                    <a
-                      href={
-                        order?.adminUrl ||
-                        `https://${shopDomain}/admin/orders/${order.adminId}`
-                      }
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 hover:underline"
-                    >
-                      Order #{order.id}
-                      <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
-                    </a>
-                  ) : (
-                    <>Order #{order.id}</>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {order?.financialStatus ? (
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        order.financialStatus === "paid"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {order.financialStatus === "paid" ? "Paid" : "Refunded"}
-                    </span>
-                  ) : null}
-                  {order?.fulfillmentStatus ? (
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        order.fulfillmentStatus === "fulfilled"
-                          ? "bg-blue-50 text-blue-600"
-                          : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {order.fulfillmentStatus === "fulfilled"
-                        ? "Fulfilled"
-                        : "Unfulfilled"}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-slate-500">
-                {order.total
-                  ? `Total: ${formatCurrency(parseAmount(order.total) ?? order.total, order.currency)}`
-                  : "Total: —"}
-              </div>
-              {order?.tracking?.url && order?.tracking?.number ? (
-                <div className="mt-2 flex items-center gap-1.5 text-[12px] text-gray-500">
-                  <Truck className="h-3.5 w-3.5 shrink-0" />
-                  <a
-                    href={order.tracking.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate hover:underline"
-                  >
-                    {order.tracking.number}
-                  </a>
-                </div>
-              ) : null}
-              {Array.isArray(order?.items) && order.items.length ? (
-                <div className="mt-3 space-y-1 text-sm text-gray-600">
-                  {order.items.map((item, index) => (
-                    <div key={`${order.id}-item-${index}`} className="flex items-center gap-2">
-                      <span className="h-1 w-1 rounded-full bg-gray-400" />
-                      <span className="font-medium text-gray-900">{item}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {order.shippingAddress?.city || order.shippingAddress?.country ? (
-                <div className="mt-1 text-xs text-slate-400">
-                  {[
-                    order.shippingAddress?.city,
-                    order.shippingAddress?.country,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")}
-                </div>
-              ) : null}
-            </div>
-          ))
+          <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
+            {orders.map((order, index) => (
+              <OrderCard key={order.id || `order-${index}`} order={order} shopDomain={shopDomain} />
+            ))}
+          </div>
         ) : (
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
-            Ingen ordrer fundet.
+          <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-[12px] text-muted-foreground">
+            No orders found.
           </div>
         )}
-      </div>
-      <div className="space-y-2">
-        <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
-        {previousTickets.length ? (
-          previousTickets.map((ticket) => {
-            const threadId = String(ticket?.thread_id || "").trim();
-            const lastActivity = formatTimestamp(ticket?.last_message_at);
-            return (
-              <button
-                key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
-                type="button"
-                onClick={() => {
-                  if (!threadId) return;
-                  onOpenTicket?.(threadId);
-                }}
-                className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                disabled={!threadId}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div
-                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
-                      formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
-                        ? "bg-slate-100 font-mono font-medium text-slate-500"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    {formatTicketRef(ticket?.ticket_number)}
-                  </div>
-                  <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
-                </div>
-                <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
-                  {String(ticket?.subject || "").trim() || "Untitled ticket"}
-                </div>
-                <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
-              </button>
-            );
-          })
-        ) : (
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
-            No previous tickets found.
-          </div>
-        )}
-      </div>
+      </section>
+
+      <PreviousTicketsSection tickets={previousTickets} onOpenTicket={onOpenTicket} />
     </div>
   );
 }

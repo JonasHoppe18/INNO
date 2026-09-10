@@ -39,6 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const escapeHtml = (input = "") =>
   String(input || "")
@@ -471,11 +472,16 @@ function ComposerComponent({
     if (detectedLanguage) setReplyLanguage(detectedLanguage);
   }, [detectedLanguage]);
 
-  const MIN_COMPOSER_HEIGHT_PX = 170;
-  const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
   const isForward = mode === "forward";
+  const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
+  const isEmptyReply =
+    !isNote && !isForward && !showDraftLoadingState && !String(value || "").trim();
+  // The composer height includes the recipient row, the action footer and the
+  // editor's vertical padding. Keep the minimums in sync with those actual
+  // layout primitives so a draft is never rendered underneath the footer.
+  const MIN_COMPOSER_HEIGHT_PX = isNote ? 224 : isEmptyReply ? 164 : 140;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -758,8 +764,12 @@ function ComposerComponent({
       window.removeEventListener("resize", update);
     };
   }, [refineSnippetsOpen]);
-  const replyEditorMinHeightClassName = "min-h-[72px]";
-  const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
+  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[32px]" : "min-h-[60px]";
+  const editorBodyMinHeightClassName = isNote
+    ? "min-h-[96px]"
+    : isEmptyReply
+      ? "min-h-[36px]"
+      : "min-h-[80px]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
     if (!toLabel) return [];
@@ -814,8 +824,10 @@ function ComposerComponent({
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
   const composerContainerRef = useRef(null);
+  const composerBodyRef = useRef(null);
   const resizeStateRef = useRef(null);
   const manualComposerResizeRef = useRef(false);
+  const draftLoadedRef = useRef(false);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -874,7 +886,6 @@ function ComposerComponent({
       // If the composer is hidden while the contentEditable is active,
       // clear focus state so value hydration works when reopening.
       replyEditorFocusedRef.current = false;
-      // Re-open with auto-calculated height based on current text content.
       manualComposerResizeRef.current = false;
       return;
     }
@@ -1362,7 +1373,12 @@ function ComposerComponent({
       }
     }
     syncingReplyHtmlRef.current = true;
-    onChange(extractPlainTextFromReplyHtml(htmlWithMarkers));
+    const nextValue = extractPlainTextFromReplyHtml(htmlWithMarkers);
+    if (!String(nextValue || "").trim()) {
+      manualComposerResizeRef.current = false;
+    }
+    onChange(nextValue);
+    syncComposerHeight(nextValue);
     syncingReplyHtmlRef.current = false;
   };
 
@@ -1561,7 +1577,7 @@ function ComposerComponent({
         0
       );
       const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 62 : 72;
+      const minEditorHeight = isNote ? 96 : isEmptyReply ? 36 : 80;
       const maxEditorHeight = 240;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
@@ -1571,29 +1587,28 @@ function ComposerComponent({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = isNote ? 112 : 124;
+      // `chromeHeight` includes the resize handle (reply only), recipient
+      // row, footer and the editor's 20px vertical padding.
+      const chromeHeight = isNote ? 128 : isEmptyReply ? 128 : 138;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
       return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
     },
-    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote]
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isEmptyReply, isNote]
   );
 
-  useEffect(() => {
-    if (collapsed) return;
-    if (manualComposerResizeRef.current) return;
-    if (replyEditorFocusedRef.current) return;
-    if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
-    const rafId = requestAnimationFrame(() => {
+  const syncComposerHeight = useCallback(
+    (nextValue = "") => {
+      if (manualComposerResizeRef.current) return;
       const measuredEditorHeight = isNote
         ? Number(textareaRef.current?.scrollHeight || 0)
         : Number(replyEditorRef.current?.scrollHeight || 0);
-      setComposerHeightPx(getAutoComposerHeightPx(value, measuredEditorHeight));
-    });
-    return () => cancelAnimationFrame(rafId);
-  }, [collapsed, getAutoComposerHeightPx, isNote, showDraftLoadingState, value]);
+      setComposerHeightPx(getAutoComposerHeightPx(nextValue, measuredEditorHeight));
+    },
+    [getAutoComposerHeightPx, isNote]
+  );
 
   const onResizeMove = useCallback(
     (event) => {
@@ -1613,35 +1628,58 @@ function ComposerComponent({
   const stopResize = useCallback(() => {
     resizeStateRef.current = null;
     if (typeof window === "undefined") return;
-    window.removeEventListener("mousemove", onResizeMove);
-    window.removeEventListener("mouseup", stopResize);
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", stopResize);
   }, [onResizeMove]);
 
-  const startResize = useCallback((event) => {
-    event.preventDefault();
-    const container = composerContainerRef.current;
-    if (!container || typeof window === "undefined") return;
-    manualComposerResizeRef.current = true;
-    const rect = container.getBoundingClientRect();
-    resizeStateRef.current = {
-      startY: Number(event?.clientY || 0),
-      startHeight: Math.round(rect.height),
-    };
-    window.addEventListener("mousemove", onResizeMove);
-    window.addEventListener("mouseup", stopResize);
-  }, [onResizeMove, stopResize]);
+  const startResize = useCallback(
+    (event) => {
+      event.preventDefault();
+      const container = composerContainerRef.current;
+      if (!container || typeof window === "undefined") return;
+      manualComposerResizeRef.current = true;
+      const rect = container.getBoundingClientRect();
+      resizeStateRef.current = {
+        startY: Number(event?.clientY || 0),
+        startHeight: Math.round(rect.height),
+      };
+      window.addEventListener("pointermove", onResizeMove);
+      window.addEventListener("pointerup", stopResize);
+    },
+    [onResizeMove, stopResize]
+  );
 
   useEffect(() => () => stopResize(), [stopResize]);
 
+  useEffect(() => {
+    const draftIsLoaded = Boolean(draftLoaded);
+    const draftJustLoaded = draftIsLoaded && !draftLoadedRef.current;
+    draftLoadedRef.current = draftIsLoaded;
+    if (collapsed) return;
+    if (draftJustLoaded) {
+      manualComposerResizeRef.current = false;
+    }
+    if (manualComposerResizeRef.current && !draftJustLoaded) return;
+    if (replyEditorFocusedRef.current) return;
+    if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
+    const rafId = requestAnimationFrame(() => {
+      const measuredEditorHeight = isNote
+        ? Number(textareaRef.current?.scrollHeight || 0)
+        : Number(replyEditorRef.current?.scrollHeight || 0);
+      setComposerHeightPx(getAutoComposerHeightPx(value, measuredEditorHeight));
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [collapsed, draftLoaded, getAutoComposerHeightPx, isNote, showDraftLoadingState, value]);
+
   if (collapsed) {
     return (
-      <div className="flex-none border-t border-border bg-background px-4 py-2">
-        <div className="flex items-center justify-between rounded-md border border-border bg-muted px-3 py-2">
+      <div className="flex-none bg-transparent px-3 pb-3 pt-2 sm:px-4">
+        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 shadow-[0_10px_24px_hsl(var(--foreground)/0.06)]">
           <span className="text-[12px] font-medium text-muted-foreground">Reply box hidden</span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground hover:bg-muted"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -1652,7 +1690,7 @@ function ComposerComponent({
   }
 
   return (
-    <div className="flex-none bg-transparent px-3 py-1.5">
+    <div className="flex-none bg-transparent px-0 pb-0 pt-0">
       <style>{`
         @keyframes refine-slide-in {
           from { opacity: 0; transform: translateY(-6px); }
@@ -1668,8 +1706,12 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border bg-card shadow-sm transition-colors ${
-          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : "border-border"
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+          isEmptyReply
+            ? "rounded-[22px] border-border/60 bg-background/95"
+            : "rounded-[22px] border-border/70 bg-background/95"
+        } ${
+          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : ""
         } ${disabled ? "opacity-60" : ""}`}
         style={{
           height: `${composerHeightPx}px`,
@@ -1678,28 +1720,30 @@ function ComposerComponent({
         }}
       >
         {isDragOver ? (
-          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-3xl bg-violet-50/90 dark:bg-violet-900/40 backdrop-blur-[1px]">
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[26px] bg-violet-50/90 dark:bg-violet-900/40 backdrop-blur-[1px]">
             <Paperclip className="h-6 w-6 text-violet-500" />
             <span className="text-[13px] font-medium text-violet-600 dark:text-violet-400">Drop to attach</span>
           </div>
         ) : null}
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize reply box"
-          onMouseDown={startResize}
-          className="group flex h-2.5 cursor-row-resize items-center justify-center bg-card"
-        >
-          <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+        {!isEmptyReply && !isNote ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize reply box"
+            onPointerDown={startResize}
+            className="group/resize flex h-2.5 cursor-row-resize items-center justify-center bg-transparent opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100"
+          >
+            <span className="h-1 w-10 rounded-full bg-border/80 transition-colors group-hover/resize:bg-muted-foreground/50" />
+          </div>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1.5 pt-3">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[12px] text-foreground"
+                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/70 px-2 py-0.5 text-[12px] text-foreground"
                 >
                   {recipient}
                   <button
@@ -1718,7 +1762,7 @@ function ComposerComponent({
                   onRecipientKey(event, toInput, setToRecipients, setToInput)
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
-                disabled={disabled}
+                disabled={disabled || isSending}
                 className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
               />
             </div>
@@ -1726,17 +1770,19 @@ function ComposerComponent({
           <div className="flex items-center gap-3 pr-2 text-[12px]">
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled || isSending}
               onClick={() => setShowCC((prev) => !prev)}
-              className="font-medium text-muted-foreground hover:text-foreground"
+              aria-label="Add Cc recipients"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               Cc
             </button>
             <button
               type="button"
-              disabled={disabled}
+              disabled={disabled || isSending}
               onClick={() => setShowBCC((prev) => !prev)}
-              className="font-medium text-muted-foreground hover:text-foreground"
+              aria-label="Add Bcc recipients"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               Bcc
             </button>
@@ -1745,14 +1791,14 @@ function ComposerComponent({
               onClick={onToggleCollapse}
               aria-label="Hide reply box"
               title="Hide reply box"
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
         {showCC ? (
-          <div className="flex items-start gap-2 border-b border-border px-3 py-1.5 text-[12px] text-foreground">
+          <div className="flex items-start gap-2 px-4 py-1.5 text-[12px] text-foreground">
             <span className="font-medium text-muted-foreground">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
@@ -1776,7 +1822,7 @@ function ComposerComponent({
                 onRecipientKey(event, ccInput, setCcRecipients, setCcInput)
               }
               placeholder="Add CC"
-              disabled={disabled}
+              disabled={disabled || isSending}
               className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
@@ -1794,7 +1840,7 @@ function ComposerComponent({
           </div>
         ) : null}
         {showBCC ? (
-          <div className="flex items-start gap-2 border-b border-border px-3 py-1.5 text-[12px] text-foreground">
+          <div className="flex items-start gap-2 px-4 py-1.5 text-[12px] text-foreground">
             <span className="font-medium text-muted-foreground">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
@@ -1818,7 +1864,7 @@ function ComposerComponent({
                 onRecipientKey(event, bccInput, setBccRecipients, setBccInput)
               }
               placeholder="Add BCC"
-              disabled={disabled}
+              disabled={disabled || isSending}
               className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
@@ -1836,7 +1882,13 @@ function ComposerComponent({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto bg-card px-3 py-2">
+          <div ref={composerBodyRef} className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+            isEmptyReply
+              ? "bg-transparent"
+              : isNote
+                ? "bg-yellow-50/[0.08]"
+                : "bg-transparent"
+          }`}>
             {refineOpen && !isNote ? (
               <div
                 className="relative mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
@@ -2096,12 +2148,15 @@ function ComposerComponent({
                     setMentionState((prev) => ({ ...prev, open: false }));
                   }
                 }}
-                onInput={resizeTextarea}
+                onInput={(event) => {
+                  resizeTextarea();
+                  syncComposerHeight(event.currentTarget.value);
+                }}
                 onBlur={onBlur}
                 placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
                 rows={2}
                 disabled={disabled}
-                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] focus-visible:!ring-0 bg-yellow-50/40"
+                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[13px] leading-[1.5] focus-visible:!ring-0 bg-yellow-50/40"
               />
             ) : (
               <div className={`flex flex-col ${editorBodyMinHeightClassName}`}>
@@ -2110,7 +2165,7 @@ function ComposerComponent({
                   className={`relative flex flex-1 flex-col ${replyEditorMinHeightClassName}`}
                 >
                   {!showDraftLoadingState && !String(value || "").trim() ? (
-                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-muted-foreground">
+                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-muted-foreground/80">
                       {disabled ? disabledPlaceholder : "Write your reply..."}
                     </div>
                   ) : null}
@@ -2174,7 +2229,7 @@ function ComposerComponent({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[13px] leading-[1.5] text-foreground outline-none selection:bg-violet-100 selection:text-foreground [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
@@ -2243,11 +2298,17 @@ function ComposerComponent({
               </div>
             ) : null}
           </div>
-          <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
-            <div className="flex items-center gap-2">
-              {showDraftLoadingState ? (
+          <div className="flex-none flex items-center justify-between bg-transparent px-4 pb-2.5 pt-2 text-[12px] text-muted-foreground">
+            <TooltipProvider delayDuration={300}>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {isSending ? (
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-violet-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Sending reply...
+                </div>
+              ) : showDraftLoadingState ? (
                 <div className="flex items-center gap-1.5 text-[12px] text-violet-500">
-                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
                   {isRefiningDraft ? "Refining draft..." : "Drafting reply..."}
                 </div>
               ) : !isNote ? (
@@ -2258,38 +2319,48 @@ function ComposerComponent({
                     multiple
                     className="hidden"
                     onChange={handleAddAttachments}
-                    disabled={disabled || showDraftLoadingState}
+                    disabled={disabled || showDraftLoadingState || isSending}
                   />
-                  <button
-                    type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    onClick={() => fileInputRef.current?.click()}
-                    aria-label="Attach file"
-                    title="Attach file"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    onClick={() => {
-                      setSavedRepliesQuery("");
-                      setSavedRepliesOpen(true);
-                    }}
-                    aria-label="Open saved replies"
-                    title="Saved Replies"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <Zap className="h-4 w-4" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={disabled || showDraftLoadingState || isSending}
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Attach file"
+                        className="rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Attach file</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={disabled || showDraftLoadingState || isSending}
+                        onClick={() => {
+                          setSavedRepliesQuery("");
+                          setSavedRepliesOpen(true);
+                        }}
+                        aria-label="Open saved replies"
+                        className="rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
+                      >
+                        <Zap className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Saved replies</TooltipContent>
+                  </Tooltip>
                   {!isNote && (
                     <Popover open={languagePickerOpen} onOpenChange={setLanguagePickerOpen}>
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
-                          disabled={isTranslating}
+                          aria-label="Change reply language"
+                          title="Change reply language"
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95 disabled:opacity-50"
+                          disabled={isTranslating || isSending}
                         >
                           {isTranslating ? (
                             <span className="inline-block h-4 w-4 animate-spin rounded-full border border-border border-t-foreground" />
@@ -2324,43 +2395,53 @@ function ComposerComponent({
                   {typeof onGenerateDraft === "function" ? (
                     <button
                       type="button"
-                      disabled={disabled || showDraftLoadingState || isGeneratingDraft}
+                      disabled={disabled || showDraftLoadingState || isGeneratingDraft || isSending}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
-                      className="rounded-md border border-border bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-border/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`rounded-lg px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                        isEmptyReply
+                          ? "border border-transparent bg-muted/55 hover:bg-muted"
+                          : "border border-transparent bg-transparent hover:bg-muted/70"
+                      }`}
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
                     </button>
                   ) : null}
                   {typeof onRefineDraft === "function" ? (
-                    <button
-                      type="button"
-                      disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
-                      onClick={() => {
-                        setRefineOpen((prev) => !prev);
-                        setRefineError("");
-                      }}
-                      aria-label="Refine draft with AI"
-                      title="Refine draft"
-                      className={refineOpen
-                        ? "rounded-md bg-violet-100 dark:bg-violet-500/25 p-1.5 text-violet-600 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-500/30"
-                        : "rounded-md p-1.5 text-violet-400 dark:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 dark:hover:text-violet-400"}
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft || isSending}
+                          onClick={() => {
+                            setRefineOpen((prev) => !prev);
+                            setRefineError("");
+                          }}
+                          aria-label="Refine draft with AI"
+                          className={refineOpen
+                            ? "rounded-md bg-violet-100 p-1.5 text-violet-600 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-100 active:scale-95 dark:bg-violet-500/25 dark:text-violet-300 dark:hover:bg-violet-500/30"
+                            : "rounded-md p-1.5 text-violet-400 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-600 active:scale-95 dark:text-violet-500 dark:hover:bg-violet-500/15 dark:hover:text-violet-400"}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Refine draft with AI</TooltipContent>
+                    </Tooltip>
                   ) : null}
                 </>
               ) : null}
             </div>
+            </TooltipProvider>
             <div className="flex items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
+                    disabled={disabled || showDraftLoadingState || isSending}
+                    aria-label={`Change composer mode. Current mode: ${isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}`}
+                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 ${
                       isNote
                         ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
-                        : "bg-muted text-foreground/80"
+                        : "bg-muted/45 text-foreground/80 hover:bg-muted"
                     }`}
                   >
                     {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
@@ -2379,7 +2460,11 @@ function ComposerComponent({
                 onClick={() => {
                   submitComposer();
                 }}
-                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
+                aria-label="Send reply"
+                title={isSending ? "Sending reply..." : "Send reply (⌘↵ / Ctrl+↵)"}
+                aria-busy={isSending}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
+                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-2"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2402,7 +2487,7 @@ function ComposerComponent({
               value={savedRepliesQuery}
               onChange={(event) => setSavedRepliesQuery(event.target.value)}
               placeholder="Search replies..."
-              className="h-9 text-[13px]"
+              className="h-8 text-[12px]"
             />
           </div>
           <div className="max-h-[400px] overflow-y-auto p-2">

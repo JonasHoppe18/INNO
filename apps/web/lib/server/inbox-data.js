@@ -165,6 +165,32 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
+async function loadThreadTags(serviceClient, threadIds) {
+  if (!threadIds.length) return [];
+
+  const { data, error } = await serviceClient
+    .from("thread_tag_assignments")
+    .select("thread_id, source, assigned_at, workspace_tags(id, name, color, category)")
+    .in("thread_id", threadIds)
+    .order("assigned_at", { ascending: true });
+
+  // Tags are enrichment for list views. If the optional tagging schema is not
+  // available yet, keep the inbox usable and render the rows without labels.
+  if (error) {
+    console.error("Inbox thread tags lookup failed:", error.message);
+    return [];
+  }
+
+  return (data || [])
+    .map((row) => ({
+      thread_id: row?.thread_id,
+      source: row?.source || "manual",
+      assigned_at: row?.assigned_at || null,
+      ...row?.workspace_tags,
+    }))
+    .filter((tag) => tag.thread_id && tag.id && tag.name);
+}
+
 async function loadAttachments(serviceClient, scope, mailboxIds, messageIds) {
   if (!messageIds.length) return [];
   const { data, error } = await applyScope(
@@ -231,6 +257,7 @@ export async function loadInboxData({
   includeMessages = true,
   includeAttachments = true,
   includeMembers = false,
+  includeTags = false,
 }) {
   const serviceClient = createInboxServiceClient();
   const result = {
@@ -239,6 +266,7 @@ export async function loadInboxData({
     messages: [],
     attachments: [],
     members: [],
+    threadTags: [],
     scope: null,
   };
 
@@ -255,6 +283,13 @@ export async function loadInboxData({
 
   const threads = await loadThreads(serviceClient, scope, mailboxIds);
   result.threads = threads;
+
+  if (includeTags) {
+    result.threadTags = await loadThreadTags(
+      serviceClient,
+      threads.map((thread) => thread?.id).filter(Boolean),
+    );
+  }
 
   if (includeMessages) {
     const messages = await loadMessages(serviceClient, scope, mailboxIds, {

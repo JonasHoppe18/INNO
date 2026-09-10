@@ -324,7 +324,7 @@ export default function AnimatedDemoInbox({
           ) : null}
           <div
             ref={panelRef}
-            className="relative flex min-h-[440px] min-w-0 flex-1 select-none flex-col gap-3 p-4 text-left sm:min-h-[460px]"
+            className="landing-demo-panel relative flex min-w-0 flex-1 select-none flex-col gap-3 p-4 text-left"
           >
             <div className="flex items-center gap-2 text-[11px]">
               <span className="rounded-md border border-zinc-200 px-2 py-0.5 font-semibold text-zinc-600">

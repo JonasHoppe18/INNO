@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { cookies } from "next/headers";
+import { isGreenfieldPlaygroundEnabled } from "@/lib/server/greenfield-playground";
 
 function mapClerkUser(user) {
   if (!user) return null;
@@ -85,7 +86,7 @@ export default async function DashboardLayout({ children }) {
   }
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
-  const defaultSidebarOpen = sidebarCookie === "false" ? false : true;
+  const defaultSidebarOpen = sidebarCookie === "true";
 
   return (
     <DashboardThemeProvider>
@@ -93,7 +94,11 @@ export default async function DashboardLayout({ children }) {
         <GlobalTestModeBanner />
         <div className="flex min-h-0 flex-1">
           <SidebarProvider defaultOpen={defaultSidebarOpen}>
-            <AppSidebar variant="inset" user={sidebarUser} />
+            <AppSidebar
+              variant="inset"
+              user={sidebarUser}
+              showGreenfieldPlayground={isGreenfieldPlaygroundEnabled()}
+            />
             <DashboardShell>{children}</DashboardShell>
           </SidebarProvider>
         </div>

@@ -8,6 +8,8 @@ import Link from "next/link";
 import {
   Bot,
   Building2,
+  Check,
+  CircleAlert,
   Clock,
   CreditCard,
   Globe,
@@ -33,8 +35,6 @@ import { TagsSettings } from "@/components/settings/TagsSettings";
 import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
-import { PlaygroundPanel } from "@/components/agent/PlaygroundPanel";
-import { PlaygroundPageHeader } from "@/components/agent/PlaygroundPageHeader";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
@@ -66,6 +66,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DEFAULT_THEME,
   THEME_OPTIONS,
@@ -78,7 +79,7 @@ const MENU_SECTIONS = [
     items: [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
-      { key: "mailboxes", label: "Channels", icon: Inbox },
+      { key: "mailboxes", label: "Channels & mailboxes", icon: Inbox },
       { key: "tags", label: "Tags", icon: Tag },
     ],
   },
@@ -87,7 +88,6 @@ const MENU_SECTIONS = [
     items: [
       { key: "ai", label: "AI instructions", icon: Bot },
       { key: "automation", label: "Actions & automation", icon: Zap },
-      { key: "playground", label: "Playground", icon: SlidersHorizontal },
     ],
   },
   {
@@ -256,14 +256,40 @@ const blocklistSnapshot = (rows = []) =>
 
 function TabSkeleton() {
   return (
-    <section className="max-w-2xl rounded-lg bg-white p-6">
-      <div className="h-8 w-40 animate-pulse rounded bg-slate-200" />
-      <div className="mt-3 h-4 w-64 animate-pulse rounded bg-slate-100" />
-      <div className="mt-8 space-y-3">
-        <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
-        <div className="h-10 w-full animate-pulse rounded bg-slate-100" />
-        <div className="h-10 w-32 animate-pulse rounded bg-slate-200" />
+    <section
+      className="w-full space-y-5"
+      aria-busy="true"
+      aria-label="Loading settings"
+    >
+      <div className="mb-6 space-y-2">
+        <Skeleton className="h-8 w-32 bg-muted" />
+        <Skeleton className="h-4 w-80 max-w-full bg-muted/70" />
       </div>
+
+      {["details", "lifecycle", "test-mode"].map((section) => (
+        <div key={section} className="rounded-xl border border-border/90 bg-card">
+          <div className="space-y-2 px-6 pb-2 pt-5">
+            <Skeleton className="h-5 w-40 bg-muted" />
+            <Skeleton className="h-4 w-72 max-w-full bg-muted/70" />
+          </div>
+          <div className="space-y-0 px-6 pb-2">
+            {["primary", "secondary"].map((row) => (
+              <div
+                key={row}
+                className="flex items-center gap-4 border-b border-border/80 py-5 last:border-b-0"
+              >
+                <Skeleton className="h-10 w-10 shrink-0 rounded-full bg-muted" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32 bg-muted" />
+                  <Skeleton className="h-3 w-56 max-w-full bg-muted/70" />
+                </div>
+                <Skeleton className="h-9 w-40 max-w-[35%] bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Loading settings</span>
     </section>
   );
 }
@@ -3151,6 +3177,17 @@ export function SettingsPanel() {
 
     setLoading(true);
     try {
+      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
+      let serverMembersResponse = null;
+      let serverMembersPayload = {};
+      if (user?.id) {
+        const response = await fetch("/api/settings/members", fetchOptions).catch(() => null);
+        if (response?.ok) {
+          serverMembersResponse = response;
+          serverMembersPayload = await response.json().catch(() => ({}));
+        }
+      }
+
       let supabaseUserId = null;
       const metadataUuid = user?.publicMetadata?.supabase_uuid;
       if (typeof metadataUuid === "string" && UUID_REGEX.test(metadataUuid)) {
@@ -3224,10 +3261,23 @@ export function SettingsPanel() {
         }
       }
 
-      let shopRow = null;
+      // The server resolves the scope with Clerk's session directly. This is
+      // the authoritative fallback when the browser-side Supabase token has
+      // not refreshed its workspace claims yet.
+      if (!supabaseUserId && serverMembersPayload?.supabase_user_id) {
+        supabaseUserId = serverMembersPayload.supabase_user_id;
+      }
+      if (!workspaceId && serverMembersPayload?.workspace_id) {
+        workspaceId = serverMembersPayload.workspace_id;
+        workspaceName = serverMembersPayload.workspace_name || null;
+        setSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+        setInitialSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+      }
+
+      let shopRow = serverMembersPayload?.shop || null;
       let shopError = null;
       let latestShop = null;
-      if (workspaceId) {
+      if (!shopRow && workspaceId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3236,7 +3286,9 @@ export function SettingsPanel() {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-      } else if (supabaseUserId) {
+        shopRow = latestShop?.data ?? null;
+        shopError = latestShop?.error ?? null;
+      } else if (!shopRow && supabaseUserId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3244,11 +3296,13 @@ export function SettingsPanel() {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-      } else {
+        shopRow = latestShop?.data ?? null;
+        shopError = latestShop?.error ?? null;
+      } else if (!shopRow) {
         latestShop = { data: null, error: null };
+        shopRow = null;
+        shopError = null;
       }
-      shopRow = latestShop?.data ?? null;
-      shopError = latestShop?.error ?? null;
 
       if (shopError) throw shopError;
 
@@ -3311,7 +3365,6 @@ export function SettingsPanel() {
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
 
       // Fire all independent fetches in parallel
-      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
       const [
         membersResponse,
         testModeResponse,
@@ -3324,7 +3377,7 @@ export function SettingsPanel() {
         inboxesResponse,
         profileRowsResult,
       ] = await Promise.all([
-        workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null),
+        serverMembersResponse || (workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null)),
         workspaceId ? fetch("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
         workspaceId ? fetch("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
         fetch("/api/settings/auto-reply", fetchOptions).catch(() => null),
@@ -3354,7 +3407,11 @@ export function SettingsPanel() {
         emailBlocklistPayload,
         inboxesPayload,
       ] = await Promise.all([
-        membersResponse?.ok ? membersResponse.json().catch(() => ({})) : Promise.resolve({}),
+        serverMembersResponse
+          ? Promise.resolve(serverMembersPayload)
+          : membersResponse?.ok
+            ? membersResponse.json().catch(() => ({}))
+            : Promise.resolve({}),
         testModeResponse?.ok ? testModeResponse.json().catch(() => ({})) : Promise.resolve({}),
         personaResponse?.ok ? personaResponse.json().catch(() => ({})) : Promise.resolve({}),
         autoReplyResponse?.ok ? autoReplyResponse.json().catch(() => ({})) : Promise.resolve({}),
@@ -4413,6 +4470,14 @@ export function SettingsPanel() {
     [updateSettingsUrl]
   );
 
+  const currentTabSaveStatus = loading
+    ? null
+    : activeTab === "general" || activeTab === "email"
+      ? hasCurrentTabChanges
+        ? "unsaved"
+        : "saved"
+      : null;
+
   const renderContent = () => {
     if (loading) {
       return <TabSkeleton />;
@@ -4477,12 +4542,6 @@ export function SettingsPanel() {
           <div className="w-full">
             <TagsSettings />
           </div>
-        );
-      case "playground":
-        return (
-          <PlaygroundPanel>
-            <PlaygroundPageHeader />
-          </PlaygroundPanel>
         );
       case "email":
         return (
@@ -4562,7 +4621,7 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="settings-theme flex h-[calc(100svh_-_2.5rem_-_var(--app-top-offset,0px))] min-h-0 flex-col overflow-hidden bg-background md:flex-row">
+    <main className="settings-theme flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:flex-row">
       <div className="flex items-center gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
         <span className="text-sm font-semibold text-foreground">Settings</span>
         <select
@@ -4599,10 +4658,11 @@ export function SettingsPanel() {
                       key={item.key}
                       type="button"
                       onClick={() => handleSelectTab(item.key)}
+                      aria-current={active ? "page" : undefined}
                       className={cn(
                         "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-primary/10 font-semibold text-primary"
+                          ? "bg-muted font-semibold text-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -4624,6 +4684,47 @@ export function SettingsPanel() {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
+          <div className="mb-8 flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Workspace
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">Workspace settings</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Configure how your team works with Sona.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {currentTabSaveStatus ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
+                    currentTabSaveStatus === "unsaved"
+                      ? "bg-amber-500/10 text-amber-700"
+                      : "bg-emerald-500/10 text-emerald-700"
+                  )}
+                >
+                  {currentTabSaveStatus === "unsaved" ? (
+                    <CircleAlert className="h-3.5 w-3.5" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  {currentTabSaveStatus === "unsaved" ? "Unsaved changes" : "All changes saved"}
+                </span>
+              ) : null}
+              {testMode ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700">
+                  <CircleAlert className="h-3.5 w-3.5" />
+                  Test mode on
+                </span>
+              ) : null}
+              <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <Building2 className="h-3.5 w-3.5 shrink-0" />
+                <span>Workspace</span>
+                <span className="truncate text-foreground">{teamName.trim() || "Your workspace"}</span>
+              </span>
+            </div>
+          </div>
           <div className="min-w-0">
             {renderContent()}
           </div>

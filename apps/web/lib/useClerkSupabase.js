@@ -30,13 +30,10 @@ export function useClerkSupabase() {
     clientRef.current = createClerkSupabaseClient({
       supabaseUrl,
       supabaseAnonKey,
-      // Clerk-getToken bliver kaldt med en template, så Supabase RLS ved hvem brugeren er.
+      // Den almindelige Clerk session token valideres af Supabase's native
+      // Clerk-provider.
       getToken: (...args) => getTokenRef.current?.(...args),
       storage: supabaseStorageAdapter,
-      tokenTemplate:
-        process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-        process.env.EXPO_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-        "supabase",
     });
   }
 

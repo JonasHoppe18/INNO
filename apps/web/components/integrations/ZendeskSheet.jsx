@@ -36,8 +36,6 @@ function formatDate(value) {
   });
 }
 
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const base64Alphabet =
@@ -285,8 +283,8 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
   const resolveUserIdFromToken = useCallback(async () => {
     if (typeof getToken !== "function") return null;
     try {
-      const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-      const payload = decodeJwtPayload(templateToken);
+      const sessionToken = await getToken();
+      const payload = decodeJwtPayload(sessionToken);
       const claimUuid =
         typeof payload?.supabase_user_id === "string"
           ? payload.supabase_user_id

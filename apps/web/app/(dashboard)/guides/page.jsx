@@ -57,7 +57,7 @@ export default async function GuidesPage() {
   return (
     <DashboardPageShell className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">Guides</h1>
+        <h1 className="text-2xl font-semibold">Sona Academy</h1>
         <p className="text-sm text-muted-foreground">
           Short videos and step-by-step docs for common setup tasks.
         </p>

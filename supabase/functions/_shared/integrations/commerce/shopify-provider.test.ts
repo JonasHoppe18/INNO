@@ -46,7 +46,7 @@ function provider(): ShopifyProvider {
   return new ShopifyProvider({
     shopDomain: "test-shop.myshopify.com",
     accessToken: "test-token",
-    apiVersion: "2024-01",
+    apiVersion: "2026-07",
   });
 }
 

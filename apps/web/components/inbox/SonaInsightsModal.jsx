@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +15,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
+import { Activity, Ban, Banknote, ChevronLeft, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
 import { CORE_ACTIONS } from "@/lib/action-modes";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { MANUAL_ACTION_TYPES, resolveMatchedOrder } from "@/lib/inbox/manual-actions";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
@@ -41,6 +42,10 @@ const MANUAL_ACTION_ICON_TONES = {
   refund_order: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
   initiate_return: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300",
 };
+const SIDEBAR_ROW_CLASS =
+  "group flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/30";
+const SIDEBAR_BACK_CLASS =
+  "inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 hover:text-foreground active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30";
 
 function OrderStatusPill({ status }) {
   const raw = String(status || "").trim().toLowerCase();
@@ -61,7 +66,7 @@ function OrderStatusPill({ status }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
         tone,
       )}
     >
@@ -90,6 +95,49 @@ const getSonaConfidenceLabel = (value) => {
   if (value >= 0.65) return "Medium confidence";
   return "Needs review";
 };
+
+const formatOrderTotal = (order) => {
+  const raw = order?.total ?? order?.total_price ?? order?.totalPrice;
+  if (raw == null || raw === "") return "";
+  const currency = String(order?.currency || order?.currencyCode || "DKK").toUpperCase();
+  const rawString = String(raw).replace(/[^\d,.-]/g, "");
+  const normalized = rawString.includes(",") && rawString.includes(".")
+    ? rawString.lastIndexOf(",") > rawString.lastIndexOf(".")
+      ? rawString.replace(/\./g, "").replace(",", ".")
+      : rawString.replace(/,/g, "")
+    : rawString.replace(",", ".");
+  const numeric = typeof raw === "number" ? raw : Number(normalized);
+  if (!Number.isFinite(numeric)) return String(raw);
+  try {
+    return new Intl.NumberFormat("da-DK", { style: "currency", currency }).format(numeric);
+  } catch {
+    return `${numeric.toLocaleString("da-DK")} ${currency}`;
+  }
+};
+
+const buildShopifyOrderUrl = (order, shopDomain) => {
+  const directUrl = asString(order?.adminUrl);
+  if (directUrl) return directUrl;
+
+  const normalizedDomain = asString(shopDomain)
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+  const adminId = order?.adminId;
+  if (!normalizedDomain || adminId === null || adminId === undefined || adminId === "") {
+    return "";
+  }
+
+  const normalizedAdminId = String(adminId).replace(/^gid:\/\/shopify\/Order\//i, "");
+  return `https://${normalizedDomain}/admin/orders/${encodeURIComponent(normalizedAdminId)}`;
+};
+
+function SidebarSectionLabel({ children }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+      {children}
+    </div>
+  );
+}
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -326,6 +374,7 @@ export function SonaInsightsModal({
   const [diagnostic, setDiagnostic] = useState(null);
   const [activeManualAction, setActiveManualAction] = useState(null);
   const [pendingManualActionId, setPendingManualActionId] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const {
     data: internalLookup,
@@ -338,6 +387,10 @@ export function SonaInsightsModal({
   });
 
   const effectiveLookup = customerLookup ?? internalLookup;
+  const customerDisplayName = getCustomerDisplayName({
+    customer: effectiveLookup?.customer,
+    fallbackEmail: effectiveLookup?.customer?.email,
+  });
   const effectiveLookupLoading = customerLookup != null ? customerLookupLoading : internalLookupLoading;
   const effectiveLookupError = customerLookup != null ? customerLookupError : internalLookupError;
   const effectiveRefresh = onCustomerRefresh ?? internalLookupRefresh;
@@ -349,7 +402,43 @@ export function SonaInsightsModal({
     () => resolveMatchedOrder(effectiveLookup?.orders),
     [effectiveLookup?.orders]
   );
-  const hasShopifyShop = Boolean(effectiveLookup?.shopDomain);
+  const shopDomain = asString(
+    effectiveLookup?.shopDomain ||
+      effectiveLookup?.shop?.domain ||
+      effectiveLookup?.shop?.shop_domain,
+  );
+  const matchedOrderUrl = useMemo(
+    () => buildShopifyOrderUrl(matchedOrder, shopDomain),
+    [matchedOrder, shopDomain],
+  );
+  const matchedOrderItems = useMemo(
+    () =>
+      (Array.isArray(matchedOrder?.items) ? matchedOrder.items : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    [matchedOrder?.items],
+  );
+  const isMatchedOrderFulfilled = useMemo(() => {
+    const status = String(
+      matchedOrder?.fulfillmentStatus ||
+        matchedOrder?.fulfillment_status ||
+        matchedOrder?.status ||
+        "",
+    ).trim().toLowerCase();
+    return ["fulfilled", "shipped", "delivered"].includes(status);
+  }, [matchedOrder]);
+  const availableManualActions = useMemo(
+    () =>
+      MANUAL_CORE_ACTIONS.filter(
+        (action) =>
+          !(
+            isMatchedOrderFulfilled &&
+            ["update_shipping_address", "cancel_order"].includes(action.type)
+          ),
+      ),
+    [isMatchedOrderFulfilled],
+  );
+  const hasShopifyShop = Boolean(shopDomain);
   const returnTrackingCandidate = returnTrackingActionState?.candidates?.[0] || null;
   const returnTrackingNumber = String(
     returnTrackingCandidate?.normalized_tracking_number ||
@@ -465,6 +554,20 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(gapLog.step_detail);
     return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
   }, [logs]);
+  const previousTickets = Array.isArray(effectiveLookup?.previousTickets)
+    ? effectiveLookup.previousTickets
+    : [];
+  const suggestedContext = useMemo(() => {
+    const intent = diagnostic?.intent
+      ? SONA_INTENT_LABELS[diagnostic.intent] || "General inquiry"
+      : trackingInfo || trackingOrder
+        ? "Tracking"
+        : null;
+    const confidence = diagnostic?.confidence != null
+      ? getSonaConfidenceLabel(diagnostic.confidence)
+      : null;
+    return { intent, confidence };
+  }, [diagnostic, trackingInfo, trackingOrder]);
   useEffect(() => {
     if (open) return;
     const containerEl = containerElRef.current;
@@ -475,18 +578,28 @@ export function SonaInsightsModal({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab("overview");
+  }, [open, threadId]);
+
   return (
     <aside
       ref={containerRef}
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
-        open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
+        open
+          ? "w-[clamp(19rem,22vw,26rem)] max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-full max-lg:border-l-0"
+          : "w-0 max-lg:pointer-events-none max-lg:absolute max-lg:inset-y-0 max-lg:right-0"
       }`}
+      aria-label="Ticket details"
       aria-hidden={!open}
     >
       {open ? (
-      <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden p-3 lg:p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Sona Insights</h2>
+      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background lg:bg-muted/[0.12]">
+        <div className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-semibold tracking-[-0.015em]">Ticket details</h2>
+          </div>
           <Button
             type="button"
             variant="ghost"
@@ -497,31 +610,145 @@ export function SonaInsightsModal({
               }
               onOpenChange(false);
             }}
-            aria-label="Close insights"
+            aria-label="Close ticket details"
+          className="h-7 w-7 rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden">
-          <TabsList className="grid w-full min-w-0 grid-cols-3">
-            <TabsTrigger value="actions">Overview</TabsTrigger>
-            <TabsTrigger value="customer">Customer</TabsTrigger>
-            <TabsTrigger value="manual-actions">Actions</TabsTrigger>
-          </TabsList>
-          <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="space-y-5">
-              <div className="rounded-2xl border border-border bg-card/90 p-4">
-                <TicketMetadataPanel threadId={threadId} />
-              </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3 lg:p-2.5">
+          <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="space-y-2.5 px-0.5 pb-2.5">
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
+                <SidebarSectionLabel>Customer</SidebarSectionLabel>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium text-foreground">
+                    {customerDisplayName}
+                  </div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {effectiveLookup?.customer?.email || "No email available"}
+                  </div>
+                </div>
+              </section>
 
-              {returnTrackingCandidate || returnTrackingActionState?.error ? (
-                <div>
+              {matchedOrder ? (
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
+                  <SidebarSectionLabel>Order</SidebarSectionLabel>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      {matchedOrderUrl ? (
+                        <a
+                          href={matchedOrderUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open order #${matchedOrder.id} in Shopify`}
+                          className="group/order inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
+                        >
+                          <span className="truncate">#{matchedOrder.id}</span>
+                          <ExternalLink
+                            aria-hidden="true"
+                            className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/order:text-violet-600 dark:group-hover/order:text-violet-300"
+                          />
+                        </a>
+                      ) : (
+                        <div className="truncate text-[13px] font-medium text-foreground">
+                          #{matchedOrder.id}
+                        </div>
+                      )}
+                      <OrderStatusPill
+                        status={
+                          matchedOrder.fulfillmentStatus ||
+                          matchedOrder.fulfillment_status ||
+                          matchedOrder.status
+                        }
+                      />
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {formatOrderTotal(matchedOrder) || "Amount unavailable"}
+                    </div>
+                    {matchedOrderItems.length ? (
+                      <div className="mt-2 border-t border-border/60 pt-2">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+                          Order items
+                        </div>
+                        <div className="space-y-1">
+                          {matchedOrderItems.slice(0, 2).map((item, index) => (
+                            <div
+                              key={`${matchedOrder.id}-item-${index}`}
+                              title={item}
+                              className="flex min-w-0 items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"
+                            >
+                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                              <span className="line-clamp-2 min-w-0">{item}</span>
+                            </div>
+                          ))}
+                          {matchedOrderItems.length > 2 ? (
+                            <div className="pl-2.5 text-[10px] text-muted-foreground/70">
+                              +{matchedOrderItems.length - 2} more
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
+                <TicketMetadataPanel threadId={threadId} />
+              </section>
+
+              {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
+                  <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
+                  <div className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left">
+                    <span className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-foreground">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+                      <span className="truncate">
+                        {suggestedContext.intent || "Tracking"}
+                        {suggestedContext.confidence ? ` · ${suggestedContext.confidence}` : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
+                      Detected
+                    </span>
+                  </div>
+
+                  {trackingOrder ? (
+                    <div className="pt-0.5">
+                      <TrackingCard order={trackingOrder} threadId={threadId} fullWidth compact direction="outbound" />
+                    </div>
+                  ) : trackingInfo ? (
+                    <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2.5">
+                      <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+                        <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+                        {trackingInfo.trackingCarrier || "Tracking"}
+                        {trackingInfo.trackingStatus ? (
+                          <span className="ml-auto text-[11px] text-muted-foreground">
+                            {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
+                          </span>
+                        ) : null}
+                      </div>
+                      {trackingInfo.trackingNumber ? (
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {trackingInfo.trackingUrl ? (
+                            <a href={trackingInfo.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
+                              #{trackingInfo.trackingNumber}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : `#${trackingInfo.trackingNumber}`}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {returnTrackingOrder ? (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <TrackingCard
                         order={returnTrackingOrder}
                         threadId={threadId}
                         fullWidth
+                        compact
                         title="Return tracking"
                         descriptionPrefix="Live return tracking for order"
                         direction="return"
@@ -531,7 +758,7 @@ export function SonaInsightsModal({
                           <Button
                             type="button"
                             size="sm"
-                            className="h-7 bg-slate-900 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+                            className="h-7 bg-foreground px-2.5 text-xs text-background shadow-none hover:bg-foreground/90"
                             disabled={returnTrackingActionState?.submitting === returnTrackingNumber}
                             onClick={() => returnTrackingActionState?.onAdd?.(returnTrackingCandidate)}
                           >
@@ -541,7 +768,7 @@ export function SonaInsightsModal({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            className="h-7 px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => returnTrackingActionState?.onDismiss?.(returnTrackingCandidate)}
                           >
                             Dismiss
@@ -551,117 +778,58 @@ export function SonaInsightsModal({
                     </div>
                   ) : null}
                   {returnTrackingActionState?.error ? (
-                    <div className={returnTrackingCandidate ? "mt-3 text-xs text-red-600" : "text-xs text-red-600"}>
-                      {returnTrackingActionState.error}
-                    </div>
+                    <div className="text-xs text-destructive">{returnTrackingActionState.error}</div>
                   ) : null}
-                </div>
+                </section>
               ) : null}
 
-              {trackingOrder ? (
-                <div className="w-full">
-                  <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
-                </div>
-              ) : trackingInfo ? (
-                <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                      Tracking
-                    </span>
-                    {trackingInfo.trackingStatus && (
-                      <span className="ml-auto rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                        {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    {trackingInfo.trackingCarrier && (
-                      <div className="text-[13px] font-semibold text-slate-800">
-                        {trackingInfo.trackingCarrier}
-                      </div>
-                    )}
-                    {trackingInfo.trackingNumber && (
-                      <div className="text-[12px] text-slate-500">
-                        {trackingInfo.trackingUrl ? (
-                          <a
-                            href={trackingInfo.trackingUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 hover:underline text-slate-600"
-                          >
-                            #{trackingInfo.trackingNumber}
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : (
-                          `#${trackingInfo.trackingNumber}`
-                        )}
-                      </div>
-                    )}
-                    {trackingInfo.trackingEvents?.length > 0 && (
-                      <div className="mt-2 space-y-0.5">
-                        {trackingInfo.trackingEvents.slice(0, 2).map((event, i) => (
-                          <div key={i} className="text-[11px] text-slate-400">
-                            {event}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {knowledgeGaps.length > 0 && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-600/80">
-                      Needs knowledge
-                    </span>
-                  </div>
-                  <div className="space-y-1">
+              {knowledgeGaps.length > 0 ? (
+                <section className="space-y-1.5 border-b border-border/70 pb-2">
+                  <SidebarSectionLabel>Needs knowledge</SidebarSectionLabel>
+                  <div className="space-y-1 text-[11px] leading-snug text-muted-foreground">
                     {knowledgeGaps.map((gap, i) => (
-                      <div key={i} className="text-xs text-amber-800 leading-snug">
-                        {gap.suggested_title || gap.gap_type}
-                      </div>
+                      <div key={i}>{gap.suggested_title || gap.gap_type}</div>
                     ))}
                   </div>
-                </div>
-              )}
+                </section>
+              ) : null}
 
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSonaLogOpen(true)}
-                className="group h-auto w-full justify-start gap-3 whitespace-normal rounded-2xl border-slate-200 bg-white p-4 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white">
-                  <SonaLogo size={28} className="h-7 w-7" speed={logsLoading ? "working" : "idle"} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-slate-900">
-                    How Sona built this draft
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
+                <SidebarSectionLabel>Customer history</SidebarSectionLabel>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("customer")}
+                  className={SIDEBAR_ROW_CLASS}
+                >
+                  <span className="text-[13px] font-medium text-foreground">
+                    {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-slate-500">
-                    {logsLoading
-                      ? "Loading Sona’s activity…"
-                      : diagnostic
-                        ? [
-                            SONA_INTENT_LABELS[diagnostic.intent] || null,
-                            getSonaConfidenceLabel(diagnostic.confidence),
-                            `${(diagnostic.kb_chunks?.length || 0) + (diagnostic.ticket_examples?.length || 0)} references`,
-                          ].filter(Boolean).join(" · ")
-                        : "No activity recorded yet"}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+              </section>
+
+              <section className="space-y-1.5 border-b border-border/70 pb-2">
+                <SidebarSectionLabel>More actions</SidebarSectionLabel>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("manual-actions")}
+                  className={SIDEBAR_ROW_CLASS}
+                >
+                  <span className="text-[13px] font-medium text-foreground">View available actions</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSonaLogOpen(true)}
+                  className={SIDEBAR_ROW_CLASS}
+                >
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                    View Sona activity
                   </span>
-                </span>
-                {diagnostic?.decision?.routingHint === "review" ? (
-                  <span className={`${badgeVariants({ variant: "outline" })} hidden shrink-0 border-amber-200 bg-amber-50 text-amber-700 sm:inline-flex`}>
-                    Review
-                  </span>
-                ) : null}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-slate-100 group-hover:text-slate-500">
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              </Button>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+                </button>
+              </section>
 
               <Dialog open={sonaLogOpen} onOpenChange={setSonaLogOpen}>
                 <DialogContent className="flex max-h-[90vh] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden border-border/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-w-[720px]">
@@ -671,7 +839,7 @@ export function SonaInsightsModal({
                         <SonaLogo size={26} className="size-7" speed={logsLoading ? "working" : "idle"} />
                       </span>
                       <div className="flex min-w-0 flex-col gap-1">
-                        <DialogTitle className="text-xl tracking-[-0.02em]">How Sona built this draft</DialogTitle>
+                        <DialogTitle className="text-xl tracking-[-0.02em]">Sona activity</DialogTitle>
                         <DialogDescription className="leading-relaxed">
                           The context, evidence, and decisions that shaped the reply.
                         </DialogDescription>
@@ -708,7 +876,15 @@ export function SonaInsightsModal({
               </Dialog>
             </div>
           </TabsContent>
-          <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto">
+          <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <button
+              type="button"
+              onClick={() => setActiveTab("overview")}
+              className={`${SIDEBAR_BACK_CLASS} mb-3`}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Back to ticket details
+            </button>
             <CustomerTab
               data={effectiveLookup}
               loading={effectiveLookupLoading}
@@ -718,17 +894,26 @@ export function SonaInsightsModal({
               onOpenTicket={onOpenTicket}
             />
           </TabsContent>
-          <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-3 p-1">
+          <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab("overview")}
+                className={`${SIDEBAR_BACK_CLASS} self-start`}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Back to ticket details
+              </button>
               {!hasShopifyShop ? (
-                <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                  Actions is only available for Shopify shops.
-                </p>
+                <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground/80">Shopify actions unavailable</p>
+                  <p className="mt-1 text-xs leading-relaxed">Connect a Shopify shop to manage orders from this ticket.</p>
+                </div>
               ) : (
                 <>
                   {matchedOrder ? (
-                    <div className="flex items-center gap-2.5 px-1 text-sm">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+                    <div className="flex items-center gap-2.5 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background shadow-sm">
                         <Image
                           src={shopifyLogo}
                           alt="Shopify"
@@ -737,19 +922,27 @@ export function SonaInsightsModal({
                           className="h-7 w-auto max-w-none"
                         />
                       </span>
-                      <span className="font-semibold text-foreground">Order {matchedOrder.id}</span>
-                      <OrderStatusPill status={matchedOrder.status} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Order {matchedOrder.id}</span>
+                      <OrderStatusPill
+                        status={
+                          matchedOrder.fulfillmentStatus ||
+                          matchedOrder.fulfillment_status ||
+                          matchedOrder.status
+                        }
+                      />
                     </div>
                   ) : (
-                    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      No order found on this ticket — find the customer/order under the Customer tab.
-                    </p>
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground/80">No order found</p>
+                      <p className="mt-1 text-xs leading-relaxed">Find the customer or order under the Customer tab.</p>
+                    </div>
                   )}
-                  <p className="px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
-                    Available actions
+                  <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                    Order actions
                   </p>
-                  <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {MANUAL_CORE_ACTIONS.map((action) => {
+                  {availableManualActions.length ? (
+                    <div className="overflow-hidden rounded-xl border border-border/80 bg-background">
+                    {availableManualActions.map((action) => {
                       const ActionIcon = MANUAL_ACTION_ICONS[action.type];
                       return (
                         <button
@@ -757,25 +950,30 @@ export function SonaInsightsModal({
                           type="button"
                           disabled={!matchedOrder}
                           onClick={() => setActiveManualAction(action.type)}
-                          className="flex w-full items-center gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
+                          className="group/action flex w-full items-center gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-[background-color,transform] duration-150 last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/55 active:scale-[0.995]"
                         >
                           <div
                             className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                               MANUAL_ACTION_ICON_TONES[action.type] || "bg-muted text-muted-foreground",
                             )}
                           >
-                            {ActionIcon ? <ActionIcon className="h-[18px] w-[18px]" /> : null}
+                            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
                           </div>
-                          <div className="grid flex-1 gap-1">
-                            <p className="text-sm font-medium text-foreground">{action.label}</p>
-                            <p className="text-[13px] leading-snug text-muted-foreground">{action.description}</p>
+                          <div className="grid min-w-0 flex-1 gap-0.5">
+                            <p className="text-[13px] font-medium text-foreground">{action.label}</p>
+                            <p className="text-[11px] leading-snug text-muted-foreground">{action.description}</p>
                           </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover/action:translate-x-0.5 group-hover/action:text-foreground" />
                         </button>
                       );
                     })}
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                      No order actions are available after fulfillment.
+                    </p>
+                  )}
                 </>
               )}
             </div>

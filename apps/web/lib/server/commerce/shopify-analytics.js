@@ -14,6 +14,18 @@ function asCurrency(value) {
   return /^[A-Z]{3}$/.test(currency) ? currency : null;
 }
 
+function humanizeReturnReason(value) {
+  const raw = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  return raw ? raw.replace(/\b\w/g, (character) => character.toUpperCase()) : null;
+}
+
+export function shopifyGidToId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/\/([^/]+)$/);
+  return asId(match?.[1] || raw);
+}
+
 export function mapShopifyOrderFact(payload, { workspaceId, shopId, syncedAt = new Date().toISOString() }) {
   const externalOrderId = asId(payload?.id);
   const orderCreatedAt = payload?.created_at || payload?.processed_at;
@@ -80,6 +92,49 @@ export function mapShopifyRefundFact(payload, { workspaceId, shopId, syncedAt = 
       refunded_at: refundedAt,
       amount: amount == null ? null : Number(amount.toFixed(2)),
       currency,
+      synced_at: syncedAt,
+    },
+    items,
+  };
+}
+
+/**
+ * Map the small subset of a Shopify GraphQL Return that is useful for
+ * analytics. Return notes and the raw GraphQL payload are intentionally not
+ * persisted.
+ */
+export function mapShopifyReturnFact(payload, { workspaceId, shopId, externalOrderId, syncedAt = new Date().toISOString() }) {
+  const externalReturnId = shopifyGidToId(payload?.id);
+  const orderId = asId(externalOrderId ?? shopifyGidToId(payload?.orderId));
+  const returnedAt = payload?.createdAt || payload?.updatedAt;
+  if (!workspaceId || !shopId || !externalReturnId || !orderId || !returnedAt) return null;
+
+  const lineItems = Array.isArray(payload?.returnLineItems)
+    ? payload.returnLineItems
+    : Array.isArray(payload?.returnLineItems?.edges)
+      ? payload.returnLineItems.edges.map((edge) => edge?.node)
+      : [];
+  const items = lineItems
+    .map((item) => {
+      const reasonHandle = String(item?.returnReasonDefinition?.handle || item?.returnReason || "").trim().toLowerCase() || null;
+      const reason = String(item?.returnReasonDefinition?.name || "").trim() || humanizeReturnReason(item?.returnReason);
+      return {
+        external_line_item_id: shopifyGidToId(item?.id),
+        quantity: Math.max(1, Number.parseInt(item?.quantity, 10) || 1),
+        reason_handle: reasonHandle,
+        reason,
+      };
+    })
+    .filter((item) => item.external_line_item_id || item.reason || item.reason_handle);
+
+  return {
+    return: {
+      workspace_id: workspaceId,
+      shop_id: shopId,
+      external_return_id: externalReturnId,
+      external_order_id: orderId,
+      returned_at: returnedAt,
+      status: String(payload?.status || "").trim().toLowerCase() || null,
       synced_at: syncedAt,
     },
     items,

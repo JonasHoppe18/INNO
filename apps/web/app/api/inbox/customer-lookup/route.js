@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
+import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
@@ -20,7 +21,7 @@ const NEGATIVE_TTL_MINUTES = Number(process.env.CUSTOMER_LOOKUP_NEGATIVE_TTL_MIN
 const SHOPIFY_LIMIT = 50;
 const SHOPIFY_PAGINATED_LIMIT = 250;
 const SHOPIFY_MAX_PAGES = 40;
-const SHOPIFY_API_VERSION = "2024-01";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -255,13 +256,13 @@ function mapCustomer(orders, fallbackEmail) {
   const primary = orders[0] || {};
   const customer = primary?.customer || {};
   const shipping = primary?.shipping_address || {};
-  const name =
-    shipping?.name ||
-    customer?.name ||
-    [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") ||
-    null;
+  const name = getCustomerDisplayName({
+    customer,
+    shippingName: shipping?.name,
+    fallbackEmail,
+  });
   return {
-    name: name || fallbackEmail || "Unknown customer",
+    name,
     email: primary?.email || customer?.email || fallbackEmail || null,
     phone: shipping?.phone || customer?.phone || null,
     tags: customer?.tags || null,

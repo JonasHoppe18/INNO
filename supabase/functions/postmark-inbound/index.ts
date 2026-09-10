@@ -48,7 +48,11 @@ const POSTMARK_FROM_NAME = Deno.env.get("POSTMARK_FROM_NAME") ?? "Sona";
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
 
-const INBOUND_DOMAIN = "inbound.sona-ai.dk";
+const INBOUND_DOMAIN = (Deno.env.get("INBOUND_DOMAIN") ?? "inbound.sona-ai.dk")
+  .trim()
+  .toLowerCase()
+  .replace(/^@+/, "")
+  .replace(/\.+$/, "");
 const EMAIL_CATEGORY_SET = new Set<string>(EMAIL_CATEGORIES);
 const LEGACY_CATEGORY_TAGS = new Set<string>(Object.keys(LEGACY_EMAIL_CATEGORY_MAP));
 
