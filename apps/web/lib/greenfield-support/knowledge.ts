@@ -46,7 +46,7 @@ const AUTHORITY_WEIGHT: Record<AuthorityLevel, number> = {
 };
 
 const STOP_WORDS = new Set(
-  "a an and are as at be can could did does for from how i in is it me my no not of on or order our please should still the this to was we what when where will with would you your".split(
+  "a an and are as at be can could did does for from how i in is it like me my no not of on or order our please should still the this to was we what when where will with would you your".split(
     " ",
   ),
 );
@@ -975,6 +975,7 @@ interface TaskRelevanceSignals {
   matches: number;
   titleMatches: number;
   bodyMatches: number;
+  bodyEvidenceStrength: number;
   matchedTerms: string[];
   queryTerms: number;
 }
@@ -1010,9 +1011,17 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
     const knowledgeType = String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "");
     const relevanceText = rowRelevanceText(row);
     const relevanceTokens = new Set(tokens(relevanceText).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
-    const bodyTokens = new Set(tokens(cleanText(row?.content ?? row?.chunk_content ?? "")).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
+    const bodyTokenList = tokens(cleanText(row?.content ?? row?.chunk_content ?? ""))
+      .filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token));
+    const bodyTokens = new Set(bodyTokenList);
     const titleMatchedTerms = taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
     const bodyMatches = taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
+    // A single incidental body mention should not outrank a policy whose body
+    // repeatedly establishes the requested topic. Cap each term's contribution
+    // so document length cannot dominate retrieval.
+    const bodyEvidenceStrength = knowledgeType === "policy"
+      ? taskTerms.reduce((total, queryToken) => total + Math.min(5, bodyTokenList.filter((candidateToken) => taskTokensMatch(queryToken, candidateToken)).length), 0)
+      : 0;
     const matchingTerms = knowledgeType === "policy"
       ? taskTerms.filter((queryToken) => (
           titleMatchedTerms.includes(queryToken)
@@ -1026,6 +1035,7 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
       matches: matchingTerms.length,
       titleMatches: titleMatchedTerms.length,
       bodyMatches,
+      bodyEvidenceStrength,
       matchedTerms: matchingTerms,
       queryTerms: taskTerms.length,
     });
@@ -1053,6 +1063,8 @@ function sortKnowledgeRows(rows: any[], query: string, productContext: Knowledge
     if (hasTaskSignal) {
       const taskDifference = (signals.get(rowRelevanceKey(right))?.score ?? 0) - (signals.get(rowRelevanceKey(left))?.score ?? 0);
       if (taskDifference) return taskDifference;
+      const evidenceDifference = (signals.get(rowRelevanceKey(right))?.bodyEvidenceStrength ?? 0) - (signals.get(rowRelevanceKey(left))?.bodyEvidenceStrength ?? 0);
+      if (evidenceDifference) return evidenceDifference;
     }
     // Applicability is a constraint before ranking. When a generic procedure
     // and an exact product procedure are both eligible, the customer's task

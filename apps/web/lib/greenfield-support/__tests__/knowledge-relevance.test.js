@@ -65,7 +65,7 @@ describe("generic greenfield knowledge task relevance", () => {
   it("selects relevant policy body content when the canonical title uses different terminology", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingestPolicy(store, "refund-policy", "Refund policy", "Unused products may be returned within 30 days of delivery. Start the return through support.");
-    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice, including products you may like and whether you return, exchange, or cancel a purchase.");
 
     const hits = await store.search({
       workspaceId: WORKSPACE_ID,
@@ -80,6 +80,15 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(hits[0].taskBodyMatches).toBeGreaterThan(0);
     expect(hits[0].record.content).toContain("returned within 30 days");
     expect(hits[0].evidenceSections.some((section) => section.content.includes("returned within 30 days"))).toBe(true);
+
+    const broadPolicyLookup = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "policy",
+      taskQuery: "I would like to return my order 1063?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+    expect(broadPolicyLookup.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
   });
 
   it("matches policy topics by canonical content while excluding unrelated policy records", async () => {
