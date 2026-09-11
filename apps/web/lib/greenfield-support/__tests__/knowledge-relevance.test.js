@@ -179,6 +179,25 @@ describe("generic greenfield knowledge task relevance", () => {
       .map((hit) => hit.record.sourceId)).toEqual(expect.arrayContaining(["refund-policy", "shipping-policy"]));
   });
 
+  it("uses policy subject relevance for broad process questions", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. After acceptance, send the parcel to the return address and the refund is initiated after inspection.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "We may need to send information to service providers and process data when you return to our website.");
+    await ingestPolicy(store, "shipping-policy", "Shipping policy", "Orders ship to supported destinations and delivery times depend on the carrier.");
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect((await search("How do I return my order?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Where should I send my return?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Where should I send my return?")).map((hit) => hit.record.sourceId)).not.toContain("privacy-policy");
+  });
+
   it("prefers an explicitly named policy topic over incidental body wording", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Shipping, shipping labels, and shipping costs are discussed in the return process.");
