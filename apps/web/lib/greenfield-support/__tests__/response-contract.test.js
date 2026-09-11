@@ -148,6 +148,40 @@ describe("structured response contract", () => {
     })).not.toContain("Hi Jonas!");
   });
 
+  it("keeps a dense knowledge answer readable without changing its content", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const text = "You can request a return within 30 days. The item must be unused and in its original packaging. If the seal is broken, a deduction may apply. Return shipping is your responsibility. The refund starts after the return is processed.";
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text,
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("You can request a return within 30 days. The item must be unused and in its original packaging.");
+    expect(rendered).toContain("If the seal is broken, a deduction may apply. Return shipping is your responsibility.");
+    expect(rendered).toContain("The refund starts after the return is processed.");
+    expect(rendered.split("\n\n")).toHaveLength(3);
+  });
+
+  it("preserves explicit address and step line breaks", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Once the return is accepted, send it to:\nAceZone International ApS\nNordre Fasanvej 113\n2000 Frederiksberg\nDenmark\nUse tracked shipping.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("send it to:\nAceZone International ApS\nNordre Fasanvej 113\n2000 Frederiksberg\nDenmark\nUse tracked shipping.");
+  });
+
   it("adapts website contact instructions when the customer is already in support", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

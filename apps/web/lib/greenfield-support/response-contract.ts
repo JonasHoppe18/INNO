@@ -1855,6 +1855,30 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
+/**
+ * Keeps model-written knowledge readable without changing its words or facts.
+ * Explicit line-oriented formatting (addresses and lists) is preserved; a
+ * dense prose block is split into small sentence groups for customer display.
+ */
+function formatReadableKnowledgeText(value: string) {
+  const paragraphs = String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.flatMap((paragraph) => {
+    if (paragraph.includes("\n")) return [paragraph];
+    const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length <= 2) return [paragraph];
+    const groups: string[] = [];
+    for (let index = 0; index < sentences.length; index += 2) {
+      groups.push(sentences.slice(index, index + 2).join(" "));
+    }
+    return groups;
+  }).join("\n\n");
+}
+
 function isActiveSupportChannel(channel?: GreenfieldInteractionChannel) {
   return channel === "support_email"
     || channel === "support_inbox"
@@ -1898,24 +1922,27 @@ function adaptSupportContactInstruction(value: string) {
 export function adaptCustomerFacingKnowledgeText(value: string, context: ResponseValidationContext) {
   const paragraphs = String(value ?? "").split(/\n\s*\n/);
   const adapted = paragraphs.flatMap((paragraph) => {
-    const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
-    const next = sentences.map((sentence) => {
-      let current = isActiveSupportChannel(context.interactionChannel)
-        ? adaptSupportContactInstruction(sentence)
-        : sentence;
-      if (hasKnownOrderReference(context)) {
-        current = current.replace(/\b(?:your\s+|the\s+|an?\s+)?order\s+(?:number|no\.?|id|identifier)\b/gi, "");
-      }
-      if (context.trustedCustomerIdentity?.verified) {
-        current = current
-          .replace(/\b(?:your\s+|the\s+|an?\s+)?name\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "")
-          .replace(/\b(?:your\s+|the\s+|an?\s+)?email(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "");
-      }
-      return cleanContextualizedKnowledgeSentence(current);
+    const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const nextLines = lines.map((line) => {
+      const sentences = line.split(/(?<=[.!?])\s+/).filter(Boolean);
+      return sentences.map((sentence) => {
+        let current = isActiveSupportChannel(context.interactionChannel)
+          ? adaptSupportContactInstruction(sentence)
+          : sentence;
+        if (hasKnownOrderReference(context)) {
+          current = current.replace(/\b(?:your\s+|the\s+|an?\s+)?order\s+(?:number|no\.?|id|identifier)\b/gi, "");
+        }
+        if (context.trustedCustomerIdentity?.verified) {
+          current = current
+            .replace(/\b(?:your\s+|the\s+|an?\s+)?name\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "")
+            .replace(/\b(?:your\s+|the\s+|an?\s+)?email(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "");
+        }
+        return cleanContextualizedKnowledgeSentence(current);
+      }).filter(Boolean).join(" ");
     }).filter(Boolean);
-    return next.length ? [next.join(" ")] : [];
+    return nextLines.length ? [nextLines.join("\n")] : [];
   });
-  return adapted.join("\n\n");
+  return formatReadableKnowledgeText(adapted.join("\n\n"));
 }
 
 type ProcedureStepPresentation = {
