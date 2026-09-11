@@ -152,6 +152,7 @@ export function MailboxesSettingsTab() {
                   domainInherited={mailbox.domainInherited}
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
+                  senderName={mailbox.senderName}
                   sharedFromEmail={mailbox.sharedFromEmail}
                   managedSenderStatus={mailbox.managedSenderStatus}
                   managedSenderDomain={mailbox.managedSenderDomain}

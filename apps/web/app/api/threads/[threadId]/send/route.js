@@ -20,6 +20,11 @@ import {
 import { emitDraftEvent } from "@/lib/server/draft-feedback-events";
 import { buildDraftSentEvents } from "@/lib/server/draft-feedback-builders";
 import { buildAgentReplyStatusPatch } from "@/lib/inbox/status-model";
+import {
+  buildNamedFromAddress,
+  buildOutlookFrom,
+  resolveMailboxSenderName,
+} from "@/lib/server/mailbox-sender-name";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -868,14 +873,7 @@ function parseEmailDomain(email) {
   return value.slice(atIndex + 1);
 }
 
-function buildFromAddress(name, email) {
-  if (!email) return null;
-  const safeName = String(name || "").trim();
-  if (!safeName) return email;
-  return `${safeName} <${email}>`;
-}
-
-function resolvePostmarkSender(mailbox, senderName, { shop = null } = {}) {
+function resolvePostmarkSender(mailbox, senderDisplayName, { shop = null } = {}) {
   const verifiedManagedFromEmail = getVerifiedManagedSenderEmail(mailbox);
   const safeSharedFromEmail = String(buildEffectiveSharedFromEmail({ shop, mailbox }) || "")
     .trim()
@@ -898,22 +896,24 @@ function resolvePostmarkSender(mailbox, senderName, { shop = null } = {}) {
     parseEmailDomain(safeCustomFromEmail) === safeSendingDomain;
 
   if (customIsAllowed) {
-    const resolvedName =
-      String(senderName || "").trim() ||
-      String(mailbox?.from_name || "").trim();
     return {
       fromEmail: safeCustomFromEmail,
-      fromDisplay: buildFromAddress(resolvedName, safeCustomFromEmail),
-      fromName: resolvedName || null,
+      fromDisplay: buildNamedFromAddress({
+        name: senderDisplayName,
+        email: safeCustomFromEmail,
+      }),
+      fromName: senderDisplayName || null,
       mode: "custom",
     };
   }
 
-  const resolvedName = String(senderName || "").trim() || POSTMARK_FROM_NAME;
   return {
     fromEmail: safeSharedFromEmail,
-    fromDisplay: buildFromAddress(resolvedName, safeSharedFromEmail),
-    fromName: resolvedName || null,
+    fromDisplay: buildNamedFromAddress({
+      name: senderDisplayName,
+      email: safeSharedFromEmail,
+    }),
+    fromName: senderDisplayName || null,
     mode: verifiedManagedFromEmail ? "managed_shared" : "shared",
   };
 }
@@ -1262,6 +1262,20 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
 
+  let senderDisplayName = null;
+  try {
+    senderDisplayName = resolveMailboxSenderName({
+      mailbox,
+      provider: mailbox.provider,
+      fallback: POSTMARK_FROM_NAME,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error?.message || "Mailbox sender name is invalid." },
+      { status: 400 },
+    );
+  }
+
   let shop = null;
   if (mailbox.shop_id) {
     const { data: shopRow, error: shopError } = await serviceClient
@@ -1453,9 +1467,8 @@ export async function POST(request, { params }) {
         intended_bcc: bccEmails,
       });
     } else if (mailbox.provider === "smtp") {
-      const senderConfig = resolvePostmarkSender(mailbox, senderName, { shop });
+      const senderConfig = resolvePostmarkSender(mailbox, senderDisplayName, { shop });
       sentFromEmail = senderConfig.fromEmail;
-      sentFromName = senderConfig.fromName;
       const references = (Array.isArray(inboundMessages) ? inboundMessages : [])
         .map((row) => normalizeMessageId(row?.provider_message_id))
         .filter(Boolean);
@@ -1492,7 +1505,10 @@ export async function POST(request, { params }) {
       const token = await getAccessToken(serviceClient, mailbox);
       if (mailbox.provider === "gmail") {
         const raw = buildRawEmail({
-          from: mailbox.provider_email,
+          from: buildNamedFromAddress({
+            name: senderDisplayName,
+            email: mailbox.provider_email,
+          }),
           to: deliveryTo,
           cc: deliveryCc,
           bcc: deliveryBcc,
@@ -1511,6 +1527,10 @@ export async function POST(request, { params }) {
       } else if (mailbox.provider === "outlook") {
         const message = {
           subject,
+          from: buildOutlookFrom({
+            name: senderDisplayName,
+            email: mailbox.provider_email,
+          }),
           body: {
             contentType: finalBodyHtml ? "HTML" : "Text",
             content: finalBodyHtml || finalBodyText,

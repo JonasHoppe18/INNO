@@ -2,11 +2,12 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, Copy, Globe2, Mail, RotateCw, ShieldCheck, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { buildInboundAddress } from "@/lib/inbound-domain";
 import { cn } from "@/lib/utils";
 import { SendingIdentityPanel } from "@/components/mailboxes/SendingIdentityPanel";
@@ -46,6 +47,7 @@ export function MailboxRow({
   domainInherited = false,
   fromEmail,
   fromName,
+  senderName,
   sharedFromEmail,
   managedSenderStatus = "unprovisioned",
   managedSenderDomain,
@@ -63,6 +65,12 @@ export function MailboxRow({
   const [forwardingCopied, setForwardingCopied] = useState(false);
   const [checkingManagedSender, setCheckingManagedSender] = useState(false);
   const [domainExpanded, setDomainExpanded] = useState(false);
+  const [senderNameValue, setSenderNameValue] = useState(senderName || "");
+  const [savingSenderName, setSavingSenderName] = useState(false);
+
+  useEffect(() => {
+    setSenderNameValue(senderName || "");
+  }, [senderName]);
 
   const config = PROVIDER_CONFIG[provider] || {
     label: provider,
@@ -92,6 +100,31 @@ export function MailboxRow({
       toast.error(error?.message || "Disconnect failed.");
     } finally {
       setIsDisconnecting(false);
+    }
+  };
+
+  const handleSaveSenderName = async (event) => {
+    event.preventDefault();
+    if (!mailboxId || savingSenderName) return;
+    setSavingSenderName(true);
+    try {
+      const res = await fetch(`/api/mail-accounts/${mailboxId}/sender-name`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender_name: senderNameValue }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not save the sender name.");
+      }
+      setSenderNameValue(payload?.sender_name || "");
+      toast.success("Sender name saved.");
+      router.refresh();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error?.message || "Could not save the sender name.");
+    } finally {
+      setSavingSenderName(false);
     }
   };
 
@@ -238,6 +271,39 @@ export function MailboxRow({
           </Button>
         </div>
       </div>
+
+      <form
+        onSubmit={handleSaveSenderName}
+        className="flex flex-col gap-3 border-b border-border/80 py-5 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <div className="min-w-0 sm:max-w-[45%]">
+          <p className="text-sm font-medium text-foreground">Sender name</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            The name customers see in the email From field. Your member name remains available in the signature.
+          </p>
+        </div>
+        <div className="flex w-full min-w-0 gap-2 sm:max-w-[55%]">
+          <Input
+            id={`sender-name-${mailboxId}`}
+            value={senderNameValue}
+            onChange={(event) => setSenderNameValue(event.target.value)}
+            placeholder="Customer Support"
+            maxLength={120}
+            autoComplete="organization"
+            aria-label={`Sender name for ${email || "mailbox"}`}
+            disabled={savingSenderName}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={savingSenderName || senderNameValue.trim() === String(senderName || "").trim()}
+            className="shrink-0"
+          >
+            {savingSenderName ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </form>
 
       {isForwarding && forwardingAddress ? (
         <div className="flex flex-col gap-3 border-b border-border/80 py-5 sm:flex-row sm:items-center sm:justify-between">

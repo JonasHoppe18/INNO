@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { buildDomainDns, createPostmarkDomain } from "@/lib/server/postmark";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { validateMailboxSenderName } from "@/lib/server/mailbox-sender-name";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -102,7 +103,11 @@ export async function POST(request, { params }) {
     );
   }
 
-  const fromName = String(body?.from_name || "").trim() || null;
+  const senderNameValidation = validateMailboxSenderName(body?.from_name);
+  if (senderNameValidation.error) {
+    return NextResponse.json({ error: senderNameValidation.error }, { status: 400 });
+  }
+  const fromName = senderNameValidation.value;
 
   let mailboxQuery = serviceClient
     .from("mail_accounts")

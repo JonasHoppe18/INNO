@@ -98,6 +98,7 @@ export default async function MailboxesPage() {
         domainDns: account.domain_dns || null,
         fromEmail: account.from_email || null,
         fromName: account.from_name || null,
+        senderName: account.from_name || null,
         sharedFromEmail: buildEffectiveSharedFromEmail({
           shop: shopsById.get(account.shop_id) || null,
           mailbox: account,
@@ -163,6 +164,7 @@ export default async function MailboxesPage() {
                   domainDns={mailbox.domainDns}
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
+                  senderName={mailbox.senderName}
                   sharedFromEmail={mailbox.sharedFromEmail}
                   managedSenderStatus={mailbox.managedSenderStatus}
                   managedSenderDomain={mailbox.managedSenderDomain}

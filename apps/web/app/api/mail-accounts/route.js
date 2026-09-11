@@ -145,6 +145,7 @@ export async function GET() {
           domainDns: domainSource.domain_dns || null,
           fromEmail: domainSource.from_email || null,
           fromName: domainSource.from_name || null,
+          senderName: account.from_name || null,
           domainMailboxId: domainSource.id || account.id,
           domainInherited: domainSource.id !== account.id,
           sharedFromEmail: buildEffectiveSharedFromEmail({
