@@ -463,6 +463,7 @@ export async function POST(request: Request) {
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
       message: messageForAgent,
+      interactionChannel: "playground",
       history: historyFromPlaygroundRows(historyRows),
       conversationContext: (contextBefore || undefined) as any,
       capabilities: {

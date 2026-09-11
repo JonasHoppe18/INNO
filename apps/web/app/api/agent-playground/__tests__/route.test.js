@@ -279,6 +279,7 @@ describe("greenfield agent playground API", () => {
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: "Jonas" }),
+      interactionChannel: "playground",
       actionExecutor: expect.any(Object),
     }));
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();

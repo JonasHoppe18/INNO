@@ -62,6 +62,8 @@ export interface ProcedureTask {
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 
+export type GreenfieldInteractionChannel = "support_email" | "support_inbox" | "playground" | "web_chat";
+
 /**
  * Trusted context is created by the server. It is deliberately not part of
  * any model-facing tool schema.

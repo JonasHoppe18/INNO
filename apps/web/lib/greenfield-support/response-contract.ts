@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
-import type { CapabilityManifest, ConversationContext, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
+import type { CapabilityManifest, ConversationContext, GreenfieldInteractionChannel, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
 import { isExplicitAddressChangeRequest } from "./tool-contracts";
 import type { StrictToolDefinition } from "./tool-contracts";
 
@@ -156,6 +156,14 @@ export interface ResponseValidationContext {
     issue?: string;
     returnDetails?: string;
     attemptedSteps?: string[];
+  };
+  /** Server-owned channel context used to adapt source instructions to the current interaction. */
+  interactionChannel?: GreenfieldInteractionChannel;
+  /** Server-owned identity availability; never inferred from untrusted message text. */
+  trustedCustomerIdentity?: {
+    verified: boolean;
+    hasName: boolean;
+    hasEmail: boolean;
   };
   /** Server-recorded results from this run, used to ground generic clarification purposes. */
   getResults?: () => ResponseEvidenceRecord[];
@@ -1847,6 +1855,69 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
+function isActiveSupportChannel(channel?: GreenfieldInteractionChannel) {
+  return channel === "support_email"
+    || channel === "support_inbox"
+    || channel === "playground"
+    || channel === "web_chat";
+}
+
+function hasKnownOrderReference(context: ResponseValidationContext) {
+  return Boolean(context.activeOrder?.requestedOrderId);
+}
+
+function cleanContextualizedKnowledgeSentence(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/,\s*(?:and|or)\s*(?=[.!?]|$)/gi, "")
+    .replace(/\b(?:with|including)\s*(?:,|and|or)?\s*(?=[.!?]|$)/gi, "")
+    .replace(/\b(?:please\s+)?(?:provide|share|send|include)\s*(?:and|or)?\s*(?=[.!?]|$)/gi, "")
+    .trim();
+}
+
+function adaptSupportContactInstruction(value: string) {
+  const contactPattern = /\b(?:please\s+)?(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\s+(?:us|our\s+support(?:\s+team)?|the\s+support(?:\s+team)?|support(?:\s+team)?|\[[^\]]+\]|[^\s,.;!?]+@[^\s,.;!?]+)(?:\s+(?:via|by|through|using)\s+(?:e-?mail|the\s+contact\s+form))?(?:\s+(?:on|at)\s+(?:\[[^\]]+\]|[^\s,.;!?]+@[^\s,.;!?]+))?/gi;
+  const formPattern = /\b(?:via|through|using)\s+(?:our|the)\s+contact\s+form\b/gi;
+  const hasContactInstruction = contactPattern.test(value) || formPattern.test(value);
+  contactPattern.lastIndex = 0;
+  formPattern.lastIndex = 0;
+  if (!hasContactInstruction) return value;
+
+  let adapted = value.replace(contactPattern, "").replace(formPattern, "");
+  adapted = adapted.replace(/,\s*(?=(?:with|including)\b)/i, ", please provide ");
+  adapted = cleanContextualizedKnowledgeSentence(adapted);
+  if (/^(?:to\s+)?(?:start|initiate|request)\s+(?:the\s+)?(?:return|refund|claim)\.?$/i.test(adapted)) return "";
+  return adapted;
+}
+
+/**
+ * Applies only current-conversation semantics to model-written knowledge
+ * guidance. The stored source and cited evidence remain unchanged.
+ */
+export function adaptCustomerFacingKnowledgeText(value: string, context: ResponseValidationContext) {
+  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+  const adapted = paragraphs.flatMap((paragraph) => {
+    const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const next = sentences.map((sentence) => {
+      let current = isActiveSupportChannel(context.interactionChannel)
+        ? adaptSupportContactInstruction(sentence)
+        : sentence;
+      if (hasKnownOrderReference(context)) {
+        current = current.replace(/\b(?:your\s+|the\s+|an?\s+)?order\s+(?:number|no\.?|id|identifier)\b/gi, "");
+      }
+      if (context.trustedCustomerIdentity?.verified) {
+        current = current
+          .replace(/\b(?:your\s+|the\s+|an?\s+)?name\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "")
+          .replace(/\b(?:your\s+|the\s+|an?\s+)?email(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "");
+      }
+      return cleanContextualizedKnowledgeSentence(current);
+    }).filter(Boolean);
+    return next.length ? [next.join(" ")] : [];
+  });
+  return adapted.join("\n\n");
+}
+
 type ProcedureStepPresentation = {
   text: string;
   path: string;
@@ -2255,6 +2326,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
+    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(segment.text, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {

@@ -5,6 +5,7 @@ import type {
   ActionExecutor,
   AgentTrace,
   ConversationContext,
+  GreenfieldInteractionChannel,
   GreenfieldModel,
   JsonValue,
   ModelResponse,
@@ -40,6 +41,7 @@ export interface GreenfieldAgentOptions {
   maxTurns?: number;
   now?: () => string;
   actionExecutor?: ActionExecutor;
+  interactionChannel?: GreenfieldInteractionChannel;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -136,7 +138,13 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
-  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message);
+  const continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+  );
   const instructions = instructionsForCapabilities(registry.manifest);
   trace.developerInstructions = instructions;
   const input: unknown[] = [
@@ -175,6 +183,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           proposedActions,
           activeOrder: registry.getActiveOrderFocus(),
           customerMessage: options.message,
+          interactionChannel: options.interactionChannel,
+          trustedCustomerIdentity: {
+            verified: Boolean(options.tenant.customerEmail?.trim()),
+            hasEmail: Boolean(options.tenant.customerEmail?.trim()),
+            hasName: Boolean(options.tenant.customerName?.trim()),
+          },
           customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
         };
         const validation = validateStructuredResponse(rawText, responseContext);

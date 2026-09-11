@@ -22,11 +22,14 @@ describe("greenfield conversation context", () => {
       { turn: 1, activeOrder, customerSignal: null },
       activeOrder,
       "Never mind, I found it.",
+      [],
+      "playground",
     );
 
     expect(input).toContain('"state":"verified"');
     expect(input).toContain('"verified_order_number":"10231"');
     expect(input).toContain('"customer_signal":"resolution"');
+    expect(input).toContain('"interaction_channel":"playground"');
     expect(input).not.toContain("PC10231");
   });
 

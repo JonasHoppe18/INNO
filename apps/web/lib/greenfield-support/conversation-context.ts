@@ -1,4 +1,4 @@
-import type { ConversationContext, CustomerProvidedContext, JsonObject } from "./types";
+import type { ConversationContext, CustomerProvidedContext, GreenfieldInteractionChannel, JsonObject } from "./types";
 
 const RESOLUTION_SIGNAL = /\b(?:never\s+mind|found\s+(?:it|the\s+package)|works?\s+now|now\s+(?:connects?|works?|functions?)|fixed|solved|all\s+good|no\s+longer\s+needed|resolved)\b|(?:glem\s+det|fundet|virker\s+nu|løst|løst\s+nu)/i;
 const MAX_PRODUCT_LENGTH = 100;
@@ -169,10 +169,12 @@ export function modelConversationContext(
   activeOrder: ConversationContext["activeOrder"],
   message: string,
   history: ConversationMessage[] = [],
+  interactionChannel?: GreenfieldInteractionChannel,
 ): string {
   const customerProvided = extractCustomerProvidedContext(history, message, previous?.customerProvided);
   const context: JsonObject = {
     turn: (previous?.turn ?? 0) + 1,
+    interaction_channel: interactionChannel ?? null,
     active_order: activeOrder
       ? {
           requested_order_id: activeOrder.requestedOrderId,

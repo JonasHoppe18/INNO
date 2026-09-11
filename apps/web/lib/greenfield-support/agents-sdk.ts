@@ -13,6 +13,7 @@ import type {
   ActionExecutor,
   AgentTrace,
   ConversationContext,
+  GreenfieldInteractionChannel,
   JsonValue,
   ProposedAction,
   TenantContext,
@@ -40,6 +41,7 @@ export interface GreenfieldAgentsSdkOptions {
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   actionExecutor?: ActionExecutor;
+  interactionChannel?: GreenfieldInteractionChannel;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -193,7 +195,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
-  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []);
+  const continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+  );
   const instructions = instructionsForCapabilities(registry.manifest);
   trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
@@ -305,6 +313,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
+      interactionChannel: options.interactionChannel,
+      trustedCustomerIdentity: {
+        verified: Boolean(options.tenant.customerEmail?.trim()),
+        hasEmail: Boolean(options.tenant.customerEmail?.trim()),
+        hasName: Boolean(options.tenant.customerName?.trim()),
+      },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
     const validation = validateStructuredResponse(result?.finalOutput, responseContext);

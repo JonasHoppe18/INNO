@@ -148,6 +148,113 @@ describe("structured response contract", () => {
     })).not.toContain("Hi Jonas!");
   });
 
+  it("adapts website contact instructions when the customer is already in support", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns can be requested within 30 days. To start the return, contact returns@example.test with the reason for return, the name used at purchase, and the order number.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    });
+    expect(rendered).toContain("30 days");
+    expect(rendered).toContain("reason for return");
+    expect(rendered).not.toContain("returns@example.test");
+    expect(rendered).not.toMatch(/contact\s+(?:us|support)/i);
+    expect(rendered).not.toContain("order number");
+  });
+
+  it("keeps a contact instruction in a non-support context", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the reason for return.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, { ...registry, interactionChannel: undefined });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, { ...registry, interactionChannel: undefined })).toContain("returns@example.test");
+  });
+
+  it("does not repeat verified customer identity requirements", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns can be requested within 30 days. Please provide the name used at purchase and the email address used at checkout.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("30 days");
+    expect(rendered).not.toMatch(/provide|name used at purchase|email address used at checkout/i);
+  });
+
+  it("keeps identity verification requests when no trusted identity exists", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To continue safely, please provide the email address used at checkout.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, context)).toContain("email address used at checkout");
+  });
+
+  it("preserves a source-bound procedure contact step until that step is relevant", async () => {
+    const dependencies = await createDemoDependencies();
+    await dependencies.knowledge.ingest(dependencies.tenant.workspaceId, {
+      sourceKind: "merchant_procedure",
+      sourceId: "procedure-contact-if-fails",
+      title: "Connection failure escalation",
+      content: "Try the documented connection steps. If this fails, contact support.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      sourceLabel: "Merchant support procedure",
+    });
+    const registry = createCapabilityRegistry(dependencies);
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "connection failure" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Follow the relevant procedure.",
+      basis: { result_id: procedure.resultId, field_paths: ["data.results[0].structured_data.procedure_steps"] },
+      step_paths: ["data.results[0].structured_data.procedure_steps[0].text"],
+    }] }, { ...registry, interactionChannel: "playground" });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, { ...registry, interactionChannel: "playground" })).toContain("contact support");
+  });
+
   it("keeps acknowledgement structurally unable to carry claims or promises", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

@@ -104,6 +104,7 @@ export async function POST(request: Request) {
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: customer.name },
       message,
+      interactionChannel: "support_inbox",
       history: threadState?.history || normalizeHistory(body?.history),
       conversationContext: threadState?.conversationContext,
       capabilities: {
