@@ -231,6 +231,41 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, context)).toContain("email address used at checkout");
   });
 
+  it("preserves material policy action details and a condition clarification", async () => {
+    const dependencies = await createDemoDependencies();
+    await dependencies.knowledge.ingest(dependencies.tenant.workspaceId, {
+      sourceKind: "merchant_policy",
+      sourceId: "actionable-return-policy",
+      title: "Refund policy",
+      content: "RETURN PROCESS\nThe return must be accepted before shipment to Example Returns, Return Street 10. Return shipping is your responsibility.\nREFUNDS\nOpened products may still be accepted with a EUR 50 deduction. The refund starts after receipt and processing.",
+      knowledgeType: "policy",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "published" },
+    });
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "I want to return this order" }));
+    const result = validateStructuredResponse({ segments: [
+      {
+        type: "knowledge_guidance",
+        text: "The return must be accepted before shipment to Example Returns, Return Street 10. Return shipping is your responsibility, and opened products may be accepted with a EUR 50 deduction. The refund starts after receipt and processing.",
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      },
+      {
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Has the product been opened or used?",
+        capability: null,
+        missing_arguments: [],
+      },
+    ] }, registry);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("Return Street 10");
+    expect(rendered).toContain("EUR 50 deduction");
+    expect(rendered).toContain("Has the product been opened or used?");
+  });
+
   it("preserves a source-bound procedure contact step until that step is relevant", async () => {
     const dependencies = await createDemoDependencies();
     await dependencies.knowledge.ingest(dependencies.tenant.workspaceId, {

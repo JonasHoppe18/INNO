@@ -547,13 +547,16 @@ function boundedEvidenceChunks(content: string, maxLength = 900): string[] {
   return chunks;
 }
 
-const MAX_EVIDENCE_CHARS = 3_600;
-const MAX_EVIDENCE_SECTIONS = 4;
+const MAX_EVIDENCE_CHARS = 5_200;
+const MAX_EVIDENCE_SECTIONS = 6;
 
 export interface KnowledgeEvidenceChunk {
   chunkId: string;
   chunkIndex: number;
   content: string;
+  /** Internal grouping metadata for canonical policy sections. */
+  sectionKey?: string;
+  sectionHeading?: string;
 }
 
 interface EvidenceBlock extends KnowledgeEvidenceChunk {
@@ -579,6 +582,32 @@ function isGenericHeading(value: string): boolean {
 
 function buildEvidenceSections(chunks: KnowledgeEvidenceChunk[]): EvidenceSectionCandidate[] {
   const orderedChunks = [...chunks].sort((left, right) => left.chunkIndex - right.chunkIndex);
+
+  // Imported policy pages can be stored as fixed-size chunks even when the
+  // source has meaningful semantic sections. Preserve those groups so an
+  // actionable section is not reduced to unrelated lexical fragments.
+  if (orderedChunks.some((chunk) => chunk.sectionKey)) {
+    const grouped = new Map<string, EvidenceSectionCandidate>();
+    let order = 0;
+    for (const chunk of orderedChunks) {
+      const key = chunk.sectionKey ?? `chunk:${chunk.chunkIndex}`;
+      const existing = grouped.get(key) ?? {
+        heading: cleanText(chunk.sectionHeading) || "Source context",
+        blocks: [],
+        order: order++,
+      };
+      existing.blocks.push({
+        chunkId: chunk.chunkId,
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        isHeading: false,
+        order: existing.blocks.length,
+      });
+      grouped.set(key, existing);
+    }
+    return Array.from(grouped.values());
+  }
+
   const sections: EvidenceSectionCandidate[] = [];
   let current: EvidenceSectionCandidate = { heading: "Source context", blocks: [], order: 0 };
   let order = 0;
@@ -633,6 +662,58 @@ function buildEvidenceSections(chunks: KnowledgeEvidenceChunk[]): EvidenceSectio
     merged.push(section);
   }
   return merged.map((section, index) => ({ ...section, order: index }));
+}
+
+interface CanonicalPolicySection {
+  heading: string;
+  content: string;
+}
+
+/**
+ * Some imported policy pages arrive as visible text with headings inline
+ * rather than as Markdown or separate paragraphs. Detect only generic
+ * all-caps heading-shaped runs; merchant values remain ordinary source text.
+ */
+function splitCanonicalPolicySections(content: string): CanonicalPolicySection[] {
+  const normalized = cleanText(content);
+  if (!normalized) return [];
+  const headingPattern = /(?:^|\s)([A-Z][A-Z0-9&\/'’()\-]*(?:\s+[A-Z][A-Z0-9&\/'’()\-]*){0,11})(?=\s+(?:[A-Z][a-z]|[A-Z]{2,}|[a-z])|\s*$)/g;
+  const markers: Array<{ start: number; heading: string }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = headingPattern.exec(normalized))) {
+    const heading = cleanText(match[1]);
+    if (heading.split(/\s+/).length < 2 && heading.length < 5) continue;
+    const start = match.index + match[0].lastIndexOf(heading);
+    markers.push({ start, heading });
+    if (match.index === headingPattern.lastIndex) headingPattern.lastIndex += 1;
+  }
+  if (!markers.length) return [{ heading: "Source context", content: normalized }];
+
+  const sections: CanonicalPolicySection[] = [];
+  let cursor = 0;
+  let currentHeading = "Source context";
+  for (const marker of markers) {
+    const before = normalized.slice(cursor, marker.start).trim();
+    if (before) sections.push({ heading: currentHeading, content: before });
+    cursor = marker.start;
+    currentHeading = marker.heading;
+  }
+  const tail = normalized.slice(cursor).trim();
+  if (tail) sections.push({ heading: currentHeading, content: tail });
+  return sections;
+}
+
+function canonicalPolicyEvidenceChunks(content: string, prefix: string): KnowledgeEvidenceChunk[] {
+  const sections = splitCanonicalPolicySections(content);
+  if (sections.length <= 1) return [];
+  let chunkIndex = 0;
+  return sections.flatMap((section, sectionIndex) => boundedEvidenceChunks(section.content).map((chunk, index) => ({
+    chunkId: `${prefix}:section:${sectionIndex}:${index}`,
+    chunkIndex: chunkIndex++,
+    content: chunk,
+    sectionKey: `${prefix}:section:${sectionIndex}`,
+    sectionHeading: section.heading,
+  })));
 }
 
 function compatibleToken(left: string, right: string): boolean {
@@ -1389,18 +1470,22 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     return selected.rows.map((row, index) => {
       const hit = row.record;
       const canonicalRecord = hit?.record ?? hit ?? row;
-      const canonicalChunks = boundedEvidenceChunks(canonicalRecord.content);
+      const canonicalChunks = canonicalRecord.knowledgeType === "policy"
+        ? canonicalPolicyEvidenceChunks(canonicalRecord.content, `${canonicalRecord.id}:canonical`)
+        : [];
       return {
         ...hit,
         taskRelevance: selected.signals.get(rowRelevanceKey(row))?.score ?? 0,
         taskTitleMatches: selected.signals.get(rowRelevanceKey(row))?.titleMatches ?? 0,
         taskBodyMatches: selected.signals.get(rowRelevanceKey(row))?.bodyMatches ?? 0,
         evidenceSections: selectEvidenceSections(
-          canonicalChunks.map((content, chunkIndex) => ({
-            chunkId: `${canonicalRecord.id}:canonical:${chunkIndex}`,
-            chunkIndex,
-            content,
-          })),
+          canonicalChunks.length
+            ? canonicalChunks
+            : boundedEvidenceChunks(canonicalRecord.content).map((content, chunkIndex) => ({
+                chunkId: `${canonicalRecord.id}:canonical:${chunkIndex}`,
+                chunkIndex,
+                content,
+              })),
           0,
           request.query,
         ),
@@ -1531,6 +1616,13 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       }
       const nonEmptyChunks = chunks.filter((chunk) => cleanText(chunk.content));
       const canonicalContent = canonicalContentById.get(recordId) || cleanText(row.content) || "";
+      const canonicalPolicyChunks = String(row.knowledge_type ?? "") === "policy" && canonicalContent
+        ? canonicalPolicyEvidenceChunks(canonicalContent, `${recordId}:canonical`)
+        : [];
+      if (canonicalPolicyChunks.length) {
+        sections.set(recordId, selectEvidenceSections(canonicalPolicyChunks, 0, query));
+        continue;
+      }
       if (!nonEmptyChunks.length && canonicalContent) {
         nonEmptyChunks.push(...boundedEvidenceChunks(canonicalContent).map((content, index) => ({
           id: `${recordId}:canonical:${index}`,

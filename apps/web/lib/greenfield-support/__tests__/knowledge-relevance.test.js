@@ -62,6 +62,66 @@ async function competingProcedures() {
 }
 
 describe("generic greenfield knowledge task relevance", () => {
+  it("keeps complete actionable policy sections instead of fixed-chunk fragments", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "long-refund-policy", "Refund policy", [
+      "RETURN ELIGIBILITY",
+      "Returns are accepted within 30 days of delivery when the product is unused and the original packaging is sealed.",
+      "RETURN PROCESS",
+      "The return must be accepted before the customer ships the package. Send the accepted return to Example Returns, Return Street 10, 2000 Frederiksberg, Denmark. Return shipping is the customer's responsibility. The refund is initiated after the return is received and processed.",
+      "REFUNDS",
+      "If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition; further damage may cause an additional deduction.",
+      "WARRANTY",
+      "Warranty claims require proof of purchase and cover manufacturing defects.",
+    ].join("\n"));
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    const returnRequest = (await search("I would like to return my order 1063?"))[0];
+    const returnEvidence = returnRequest.evidenceSections.map((section) => section.content).join("\n\n");
+    expect(returnEvidence).toContain("30 days of delivery");
+    expect(returnEvidence).toContain("Return Street 10");
+    expect(returnEvidence).toContain("return is received and processed");
+    expect(returnEvidence).toContain("EUR 50 deduction");
+    expect(returnEvidence).not.toContain("Warranty claims require proof");
+
+    const addressRequest = (await search("Where should I send my return?"))[0];
+    expect(addressRequest.evidenceSections.map((section) => section.content).join("\n")).toContain("Return Street 10");
+
+    const openedRequest = (await search("I opened the product. Can I still return it?"))[0];
+    expect(openedRequest.evidenceSections.map((section) => section.content).join("\n")).toContain("EUR 50 deduction");
+  });
+
+  it("keeps material warranty sections while excluding unrelated return procedure content", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "long-warranty-policy", "Warranty policy", [
+      "WARRANTY",
+      "Products have a 2-year warranty against manufacturing defects. Proof of purchase is required.",
+      "EXCLUSIONS",
+      "Warranty does not cover normal wear, misuse, or water damage.",
+      "RETURNS",
+      "Return requests follow the separate return policy.",
+    ].join("\n"));
+
+    const result = (await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "What warranty do I have?",
+      taskQuery: "What warranty do I have?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    }))[0];
+    const evidence = result.evidenceSections.map((section) => section.content).join("\n\n");
+    expect(evidence).toContain("2-year warranty");
+    expect(evidence).toContain("normal wear");
+    expect(evidence).not.toContain("separate return policy");
+  });
+
   it("selects relevant policy body content when the canonical title uses different terminology", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingestPolicy(store, "refund-policy", "Refund policy", "Unused products may be returned within 30 days of delivery. Start the return through support.");
