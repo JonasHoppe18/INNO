@@ -139,13 +139,36 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, {
       ...registry,
       customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
       firstResponse: true,
-    })).toMatch(/^Hi Jonas!\n\n/);
+    })).toMatch(/^Hi Jonas,\n\n/);
     expect(renderResponseSegments(result.approvedSegments, {
       ...registry,
       customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
       firstResponse: false,
-    })).not.toContain("Hi Jonas!");
+    })).not.toContain("Hi Jonas,");
+  });
+
+  it("does not personalize from an unverified customer name", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days of delivery.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+      firstResponse: true,
+    });
+
+    expect(rendered).not.toMatch(/^Hi Jonas,/);
+    expect(rendered).not.toContain("Jonas");
   });
 
   it("keeps a dense knowledge answer readable without changing its content", async () => {

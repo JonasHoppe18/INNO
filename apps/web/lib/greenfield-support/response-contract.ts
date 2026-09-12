@@ -1261,10 +1261,10 @@ function safeCustomerFirstName(value: unknown): string | null {
 }
 
 function greetingFor(context: ResponseValidationContext): string | null {
-  if (!context.firstResponse) return null;
+  if (!context.firstResponse || !context.trustedCustomerIdentity?.verified || !context.trustedCustomerIdentity.hasName) return null;
   const firstName = safeCustomerFirstName(context.customerName);
   if (!firstName) return null;
-  return localeFor(context) === "da" ? `Hej ${firstName}!` : `Hi ${firstName}!`;
+  return localeFor(context) === "da" ? `Hej ${firstName},` : `Hi ${firstName},`;
 }
 
 function firstSentence(value: string) {
