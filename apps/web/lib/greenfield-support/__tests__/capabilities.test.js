@@ -16,6 +16,24 @@ function order(orderNumber) {
   };
 }
 
+function labeledOrder(orderNumber, title) {
+  return {
+    ...order(orderNumber),
+    items: [{ id: `line-${orderNumber}`, title, quantity: 1 }],
+  };
+}
+
+async function candidateDependencies(orders) {
+  const dependencies = await createDemoDependencies();
+  return {
+    ...dependencies,
+    commerce: new InMemoryCommerceProvider({
+      customer: { email: dependencies.tenant.customerEmail },
+      orders,
+    }),
+  };
+}
+
 async function correctionDependencies(orderNumbers = ["1051", "1055", "1063"]) {
   const dependencies = await createDemoDependencies();
   return {
@@ -61,6 +79,131 @@ function trackingProvider(calls) {
 }
 
 describe("greenfield capabilities", () => {
+  it("pre-resolves the only customer order before the model can ask for its number", async () => {
+    const dependencies = await candidateDependencies([labeledOrder("1054", "Chaos Headset 4")]);
+    const registry = createCapabilityRegistry({ ...dependencies, customerMessage: "Where is my order?" });
+
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded.map(({ tool }) => tool)).toEqual(["get_order_history", "get_order"]);
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "verified" });
+    expect(registry.getOrderCandidates()).toBeUndefined();
+    expect(preloaded[0].result.data).toMatchObject({ order_resolution: "candidate" });
+  });
+
+  it("returns safe choices instead of guessing when customer history has multiple orders", async () => {
+    const dependencies = await candidateDependencies([
+      labeledOrder("1054", "Chaos Headset 4"),
+      labeledOrder("1055", "Chaos Mic 6"),
+    ]);
+    const registry = createCapabilityRegistry({ ...dependencies, customerMessage: "I want to return my order." });
+
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded).toHaveLength(1);
+    expect(registry.getActiveOrderFocus()).toBeNull();
+    expect(registry.getOrderCandidates()).toEqual([
+      expect.objectContaining({ orderNumber: "1054", itemTitles: ["Chaos Headset 4"] }),
+      expect.objectContaining({ orderNumber: "1055", itemTitles: ["Chaos Mic 6"] }),
+    ]);
+    expect(preloaded[0].result.data).toMatchObject({
+      order_resolution: "multiple",
+      order_candidates: [
+        { order_number: "1054", item_titles: ["Chaos Headset 4"] },
+        { order_number: "1055", item_titles: ["Chaos Mic 6"] },
+      ],
+    });
+    expect(preloaded[0].result.data).not.toHaveProperty("orders");
+  });
+
+  it("uses a product mention to select one order deterministically", async () => {
+    const dependencies = await candidateDependencies([
+      labeledOrder("1054", "Chaos Headset 4"),
+      labeledOrder("1055", "Chaos Mic 6"),
+    ]);
+    const registry = createCapabilityRegistry({ ...dependencies, customerMessage: "I want to return my Chaos Mic 6 order." });
+
+    await registry.resolveCustomerOrderContext();
+
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1055", state: "verified" });
+  });
+
+  it("resolves a customer's ordinal choice across runs without weakening ownership checks", async () => {
+    const dependencies = await candidateDependencies([
+      labeledOrder("1054", "Chaos Headset 4"),
+      labeledOrder("1055", "Chaos Mic 6"),
+    ]);
+    const firstRun = createCapabilityRegistry({ ...dependencies, customerMessage: "I want to return my order." });
+    await firstRun.resolveCustomerOrderContext();
+
+    const secondRun = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "The second one, please.",
+      conversationContext: {
+        turn: 1,
+        activeOrder: null,
+        customerSignal: null,
+        orderCandidates: firstRun.getOrderCandidates(),
+      },
+    });
+    const preloaded = await secondRun.resolveCustomerOrderContext();
+
+    expect(preloaded.map(({ tool }) => tool)).toEqual(["get_order"]);
+    expect(secondRun.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1055", state: "verified" });
+    expect(secondRun.getOrderCandidates()).toBeUndefined();
+  });
+
+  it("does not pre-resolve or bypass ownership for an explicit order reference", async () => {
+    const dependencies = await candidateDependencies([labeledOrder("1063", "Chaos Headset 4")]);
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "I want to return order 1054.",
+      orderReferences: extractOrderReferences("I want to return order 1054."),
+    });
+
+    expect(await registry.resolveCustomerOrderContext()).toEqual([]);
+    const result = await registry.execute("get_order", JSON.stringify({ order_id: "1054" }));
+    expect(result.status).toBe("not_found");
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "unresolved" });
+  });
+
+  it("keeps an explicit owned order on the exact requested focus", async () => {
+    const dependencies = await candidateDependencies([labeledOrder("1054", "Chaos Headset 4")]);
+    const message = "I want to return order 1054.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: message,
+      orderReferences: extractOrderReferences(message),
+    });
+
+    expect(await registry.resolveCustomerOrderContext()).toEqual([]);
+    const result = await registry.execute("get_order", JSON.stringify({ order_id: "1054" }));
+    expect(result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "1054" } } });
+  });
+
+  it("reports no matching customer orders without making a global claim", async () => {
+    const dependencies = await candidateDependencies([]);
+    const registry = createCapabilityRegistry({ ...dependencies, customerMessage: "Where is my order?" });
+
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded).toHaveLength(1);
+    expect(preloaded[0].result).toMatchObject({ status: "not_found", data: { order_resolution: "none", has_order_history: false } });
+    expect(registry.getActiveOrderFocus()).toBeNull();
+  });
+
+  it("does not perform an identity-backed preflight when no trusted email exists", async () => {
+    const dependencies = await candidateDependencies([labeledOrder("1054", "Chaos Headset 4")]);
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tenant: { workspaceId: dependencies.tenant.workspaceId, shopId: dependencies.tenant.shopId, customerEmail: null },
+      customerMessage: "Where is my order?",
+    });
+
+    expect(await registry.resolveCustomerOrderContext()).toEqual([]);
+    expect(registry.getActiveOrderFocus()).toBeNull();
+  });
+
   it("exposes strict schemas without model-controlled tenant scope", () => {
     for (const tool of GREENFIELD_TOOL_DEFINITIONS) {
       expect(tool.strict).toBe(true);

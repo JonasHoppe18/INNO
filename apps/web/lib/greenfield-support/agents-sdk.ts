@@ -161,7 +161,7 @@ function policyEvidenceQuery(message: string): string {
 
 function preloadedEvidenceInput(continuityInput: string, results: Array<{ tool: string; result: ToolExecutionResult }>): string {
   const evidence = results
-    .filter(({ result }) => result.status === "ok" && result.resultId)
+    .filter(({ result }) => result.status !== "error" && result.resultId)
     .map(({ tool, result }) => ({
       tool,
       result_id: result.resultId,
@@ -197,12 +197,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
-  const continuityInput = modelConversationContext(
+  let continuityInput = modelConversationContext(
     conversationContext,
     registry.getActiveOrderFocus(),
     options.message,
     options.history ?? [],
     options.interactionChannel,
+    registry.getOrderCandidates(),
   );
   const instructions = instructionsForCapabilities(registry.manifest);
   const customerDisplayName = resolveCustomerDisplayName({
@@ -258,6 +259,31 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   // while also handling another request in the same turn. This adds no model
   // call, router, or second agent.
   const preloadedResults: Array<{ tool: string; result: ToolExecutionResult }> = [];
+  const orderContextResults = await registry.resolveCustomerOrderContext();
+  for (const { tool, result, arguments: toolArguments } of orderContextResults) {
+    pushEvent(trace, "tool_call", {
+      call_id: `preloaded_${tool}`,
+      name: tool,
+      arguments: toolArguments ?? {},
+      preloaded: true,
+    }, now());
+    pushEvent(trace, "tool_result", {
+      call_id: `preloaded_${tool}`,
+      name: tool,
+      duration_ms: 0,
+      result,
+      preloaded: true,
+    }, now());
+  }
+  preloadedResults.push(...orderContextResults);
+  continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+    registry.getOrderCandidates(),
+  );
   const preload = async (toolName: "search_policy" | "search_procedures", query: string) => {
     const startedPreload = Date.now();
     pushEvent(trace, "tool_call", {
@@ -312,7 +338,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         proposedActions,
         actionExecutions: [],
         trace,
-        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
       };
     }
 
@@ -371,7 +397,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       actionExecutions,
       trace,
-      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
@@ -391,6 +417,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     proposedActions,
     actionExecutions: [],
     trace,
-    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
   };
 }

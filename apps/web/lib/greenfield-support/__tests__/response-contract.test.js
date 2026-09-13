@@ -1065,6 +1065,29 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("not used to authorize");
   });
 
+  it("renders safe choices when trusted history finds multiple orders", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "Where is my order?",
+    });
+    await registry.resolveCustomerOrderContext();
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Which order do you mean?",
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      }],
+    }, registry);
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
+      "Which order would you like help with — #10231 — Orion Wireless, #10232 — Orion Wired, #10233 — Orion Wireless, and #10234 — Orion replacement ear pads?",
+    );
+  });
+
   it("composes related order facts into a concise customer sentence", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);

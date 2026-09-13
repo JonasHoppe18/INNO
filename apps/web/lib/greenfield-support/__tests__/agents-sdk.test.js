@@ -3,12 +3,53 @@ import { ScriptedModel, assistantMessage, functionCall, modelResponse } from "@o
 import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
 import { PlaygroundDryRunExecutor } from "../action-executor";
 import { createDemoDependencies } from "../demo-fixtures";
+import { InMemoryCommerceProvider } from "../providers";
 
 function structured(...segments) {
   return JSON.stringify({ segments });
 }
 
 describe("greenfield OpenAI Agents SDK runtime", () => {
+  it("preloads trusted customer history before the model continuation", async () => {
+    const dependencies = await createDemoDependencies();
+    const commerce = new InMemoryCommerceProvider({
+      customer: { email: dependencies.tenant.customerEmail },
+      orders: [{
+        id: "shopify-1054",
+        orderNumber: "1054",
+        status: "processing",
+        fulfillmentStatus: null,
+        items: [{ id: "line-1054", title: "Chaos Headset 4", quantity: 1 }],
+        fulfillments: [],
+      }],
+    });
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "fact",
+        fact_kind: "order_reference",
+        evidence: [{ result_id: "tool_result_2", field_paths: ["data.orderNumber"] }],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      commerce,
+      message: "Where is my order?",
+      model,
+      capabilities: { ...dependencies, commerce },
+    });
+
+    model.assertComplete();
+    expect(model.calls).toHaveLength(1);
+    expect(result.response).toContain("#1054");
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual([
+      "get_order_history",
+      "get_order",
+    ]);
+    expect(model.firstCall.request.input.at(-1).content).toContain("Server-preloaded read-only evidence data");
+    expect(model.firstCall.request.input.at(-1).content).toContain('"order_resolution":"candidate"');
+  });
+
   it("uses one model response for a pure acknowledgement", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

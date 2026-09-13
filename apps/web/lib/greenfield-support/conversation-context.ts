@@ -1,10 +1,13 @@
-import type { ConversationContext, CustomerProvidedContext, GreenfieldInteractionChannel, JsonObject } from "./types";
+import type { ConversationContext, CustomerProvidedContext, GreenfieldInteractionChannel, JsonObject, OrderCandidate } from "./types";
 
 const RESOLUTION_SIGNAL = /\b(?:never\s+mind|found\s+(?:it|the\s+package)|works?\s+now|now\s+(?:connects?|works?|functions?)|fixed|solved|all\s+good|no\s+longer\s+needed|resolved)\b|(?:glem\s+det|fundet|virker\s+nu|løst|løst\s+nu)/i;
 const MAX_PRODUCT_LENGTH = 100;
 const MAX_CONTEXT_TEXT_LENGTH = 180;
 const MAX_ATTEMPT_LENGTH = 140;
 const MAX_ATTEMPTS = 3;
+const MAX_ORDER_CANDIDATES = 5;
+const MAX_ORDER_ITEM_TITLES = 3;
+const MAX_ORDER_ITEM_TITLE_LENGTH = 120;
 const PLATFORM_TERMS = [
   "usb-c", "usb-a", "bluetooth", "playstation 5", "ps5", "xbox", "nintendo switch",
   "steam deck", "iphone", "ipad", "android", "ios", "windows", "macos", "mac", "pc", "linux",
@@ -83,6 +86,31 @@ export function resolveCustomerDisplayName(input: CustomerDisplayNameInput = {})
     if (signature) return signature;
   }
   return undefined;
+}
+
+/**
+ * Normalizes the small server-owned order labels used to disambiguate a
+ * customer's own history. Full order snapshots never belong in continuity
+ * state; the live provider remains the source of truth for every order fact.
+ */
+export function normalizeOrderCandidates(value: unknown): OrderCandidate[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isRecord)
+    .map((candidate) => {
+      const orderNumber = compactText(candidate.orderNumber ?? candidate.order_number, 80).replace(/^#/, "");
+      const itemTitlesValue = candidate.itemTitles ?? candidate.item_titles;
+      const itemTitles = Array.isArray(itemTitlesValue)
+        ? itemTitlesValue
+          .map((title) => compactText(title, MAX_ORDER_ITEM_TITLE_LENGTH))
+          .filter(Boolean)
+          .slice(0, MAX_ORDER_ITEM_TITLES)
+        : [];
+      const createdAt = compactText(candidate.createdAt ?? candidate.created_at, 80) || null;
+      return { orderNumber, itemTitles, createdAt } satisfies OrderCandidate;
+    })
+    .filter((candidate) => candidate.orderNumber)
+    .slice(0, MAX_ORDER_CANDIDATES);
 }
 
 /**
@@ -231,8 +259,10 @@ export function modelConversationContext(
   message: string,
   history: ConversationMessage[] = [],
   interactionChannel?: GreenfieldInteractionChannel,
+  orderCandidates?: OrderCandidate[],
 ): string {
   const customerProvided = extractCustomerProvidedContext(history, message, previous?.customerProvided);
+  const normalizedOrderCandidates = normalizeOrderCandidates(orderCandidates ?? previous?.orderCandidates);
   const context: JsonObject = {
     turn: (previous?.turn ?? 0) + 1,
     interaction_channel: interactionChannel ?? null,
@@ -243,6 +273,13 @@ export function modelConversationContext(
           verified_order_number: activeOrder.order?.orderNumber ?? null,
         }
       : { state: "unbound" },
+    order_candidates: normalizedOrderCandidates.length
+      ? normalizedOrderCandidates.map((candidate) => ({
+          order_number: candidate.orderNumber,
+          item_titles: candidate.itemTitles,
+          created_at: candidate.createdAt ?? null,
+        }))
+      : null,
     customer_signal: isCustomerResolution(message) ? "resolution" : null,
     customer_provided_context: customerProvided
       ? JSON.parse(JSON.stringify(customerProvided)) as JsonObject
@@ -261,12 +298,15 @@ export function nextConversationContext(
   activeOrder: ConversationContext["activeOrder"],
   message: string,
   history: ConversationMessage[] = [],
+  orderCandidates?: OrderCandidate[],
 ): ConversationContext {
   const customerProvided = extractCustomerProvidedContext(history, message, previous?.customerProvided);
+  const normalizedOrderCandidates = normalizeOrderCandidates(orderCandidates);
   return {
     turn: (previous?.turn ?? 0) + 1,
     activeOrder,
     customerSignal: isCustomerResolution(message) ? "resolution" : null,
     ...(customerProvided ? { customerProvided } : {}),
+    ...(normalizedOrderCandidates.length ? { orderCandidates: normalizedOrderCandidates } : {}),
   };
 }

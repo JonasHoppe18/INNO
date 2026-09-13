@@ -1,5 +1,5 @@
 import { applyScope } from "./workspace-auth";
-import { normalizeCustomerProvidedContext } from "../greenfield-support/conversation-context";
+import { normalizeCustomerProvidedContext, normalizeOrderCandidates } from "../greenfield-support/conversation-context";
 import type { ConversationContext } from "../greenfield-support/types";
 
 export const GREENFIELD_CONTEXT_COLUMN = "greenfield_conversation_context_json";
@@ -69,11 +69,13 @@ export function normalizeStoredConversationContext(value: unknown): Conversation
 
   const customerSignal = source.customerSignal === "resolution" ? "resolution" : null;
   const customerProvided = normalizeCustomerProvidedContext(source.customerProvided);
+  const orderCandidates = normalizeOrderCandidates(source.orderCandidates);
   return {
     turn: Number(turn),
     activeOrder,
     customerSignal,
     ...(customerProvided ? { customerProvided } : {}),
+    ...(orderCandidates.length ? { orderCandidates } : {}),
   };
 }
 

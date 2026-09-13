@@ -803,7 +803,13 @@ function questionEvidence(
   const candidates = segment.capability
     ? records.filter((record) => record.toolName === segment.capability)
     : records;
-  return candidates.at(-1);
+  // Order disambiguation is preloaded through get_order_history, while the
+  // model asks to enable the exact get_order capability. Keep that safe
+  // history result available as grounding for the clarification.
+  return candidates.at(-1)
+    ?? (segment.capability === "get_order"
+      ? records.filter((record) => record.toolName === "get_order_history").at(-1)
+      : undefined);
 }
 
 function validateQuestionBasis(
@@ -1328,6 +1334,13 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
         ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
         : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
     }
+    const choices = orderCandidateChoices(questionEvidence(segment, context));
+    if (choices.length > 1) {
+      const choiceText = joinList(choices, locale);
+      return locale === "da"
+        ? `Hvilken ordre vil du gerne have hjælp til — ${choiceText}?`
+        : `Which order would you like help with — ${choiceText}?`;
+    }
     return locale === "da"
       ? "Kan du sende ordrenummeret fra din ordrebekræftelse?"
       : "Could you send the order number from your order confirmation?";
@@ -1424,6 +1437,20 @@ function joinList(values: string[], locale: ResponseLocale) {
   return locale === "da"
     ? `${values.slice(0, -1).join(", ")} og ${values.at(-1)}`
     : `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
+function orderCandidateChoices(evidence: ResponseEvidenceRecord | undefined) {
+  const data = objectValue(evidence?.result.data);
+  if (data?.order_resolution !== "multiple" || !Array.isArray(data.order_candidates)) return [];
+  return data.order_candidates.flatMap((value) => {
+    const candidate = objectValue(value);
+    const orderNumber = meaningful(candidate?.order_number) ? String(candidate.order_number).replace(/^#/, "") : "";
+    if (!orderNumber) return [];
+    const titles = Array.isArray(candidate?.item_titles)
+      ? candidate.item_titles.filter(meaningful).map((title) => String(title).replace(/\s+/g, " ").trim()).slice(0, 3)
+      : [];
+    return [`#${orderNumber}${titles.length ? ` — ${titles.join(", ")}` : ""}`];
+  }).slice(0, 5);
 }
 
 type RenderedOrderItem = { title: string; quantity: number | string };

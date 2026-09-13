@@ -231,6 +231,13 @@ export interface OrderSnapshot {
   fulfillments?: FulfillmentSnapshot[];
 }
 
+/** Safe, customer-owned order labels used only to disambiguate history. */
+export interface OrderCandidate {
+  orderNumber: string;
+  itemTitles: string[];
+  createdAt?: string | null;
+}
+
 export interface FulfillmentItemSnapshot {
   /** Stable Shopify order line-item identifier used for the join. */
   orderLineItemId: string;
@@ -280,6 +287,7 @@ export interface ConversationContext {
   } | null;
   customerSignal: "resolution" | null;
   customerProvided?: CustomerProvidedContext;
+  orderCandidates?: OrderCandidate[];
 }
 
 export interface TrackingSnapshot {

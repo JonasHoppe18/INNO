@@ -1,4 +1,4 @@
-import { normalizeCustomerProvidedContext } from "../greenfield-support/conversation-context";
+import { normalizeCustomerProvidedContext, normalizeOrderCandidates } from "../greenfield-support/conversation-context";
 
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_HISTORY_MESSAGES = 20;
@@ -122,6 +122,7 @@ function safeContext(value) {
   const activeOrder = isRecord(value.activeOrder) ? value.activeOrder : null;
   const order = activeOrder && isRecord(activeOrder.order) ? activeOrder.order : null;
   const customerProvided = normalizeCustomerProvidedContext(value.customerProvided);
+  const orderCandidates = normalizeOrderCandidates(value.orderCandidates);
   return {
     turn: Number.isSafeInteger(value.turn) ? value.turn : 0,
     active_order: activeOrder
@@ -133,6 +134,13 @@ function safeContext(value) {
       : null,
     customer_signal: value.customerSignal === "resolution" ? "resolution" : null,
     customer_provided: customerProvided ?? null,
+    order_candidates: orderCandidates.length
+      ? orderCandidates.map((candidate) => ({
+          order_number: candidate.orderNumber,
+          item_titles: candidate.itemTitles,
+          created_at: candidate.createdAt ?? null,
+        }))
+      : null,
   };
 }
 
@@ -150,6 +158,9 @@ export function normalizePlaygroundContext(value) {
       : null,
     customerSignal: context.customer_signal,
     ...(context.customer_provided ? { customerProvided: context.customer_provided } : {}),
+    ...(context.order_candidates?.length
+      ? { orderCandidates: normalizeOrderCandidates(context.order_candidates) }
+      : {}),
   };
 }
 
