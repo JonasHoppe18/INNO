@@ -34,6 +34,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { SuggestedProceduresView } from "./SuggestedProceduresView";
 
 const TYPE_OPTIONS = [
   { value: "policy", label: "Policy" },
@@ -331,6 +332,9 @@ export function GreenfieldKnowledgePageClient() {
   const [sourceForm, setSourceForm] = useState({ title: "", knowledge_type: "procedural", content: "" });
   const [shopifySource, setShopifySource] = useState({ connected: null, source: null });
   const [shopifyLoading, setShopifyLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState("");
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -348,6 +352,25 @@ export function GreenfieldKnowledgePageClient() {
   }, []);
 
   useEffect(() => { loadRecords(); }, [loadRecords]);
+
+  const loadSuggestions = useCallback(async () => {
+    setSuggestionsLoading(true);
+    setSuggestionsError("");
+    try {
+      const response = await fetch("/api/greenfield-procedure-suggestions", { credentials: "include" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not load suggested procedures.");
+      setSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions : []);
+    } catch (loadError) {
+      setSuggestionsError(loadError instanceof Error ? loadError.message : "Could not load suggested procedures.");
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "suggested") loadSuggestions();
+  }, [activeView, loadSuggestions]);
 
   const loadShopifySource = useCallback(async () => {
     try {
@@ -512,6 +535,7 @@ export function GreenfieldKnowledgePageClient() {
         <TabsList className="h-10 rounded-none border-b border-gray-200 bg-transparent p-0">
           <TabsTrigger value="knowledge" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Knowledge</TabsTrigger>
           <TabsTrigger value="sources" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Sources</TabsTrigger>
+          <TabsTrigger value="suggested" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Suggested</TabsTrigger>
         </TabsList>
 
         <div className="mt-6">
@@ -552,7 +576,7 @@ export function GreenfieldKnowledgePageClient() {
               }) : null}
               {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-sm font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
             </div>
-          </> : <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} onSyncShopify={syncShopify} shopifySource={shopifySource} shopifyLoading={shopifyLoading} />}
+          </> : activeView === "sources" ? <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} onSyncShopify={syncShopify} shopifySource={shopifySource} shopifyLoading={shopifyLoading} /> : <SuggestedProceduresView suggestions={suggestions} loading={suggestionsLoading} error={suggestionsError} onRefresh={loadSuggestions} onPublished={loadRecords} />}
         </div>
       </Tabs>
 

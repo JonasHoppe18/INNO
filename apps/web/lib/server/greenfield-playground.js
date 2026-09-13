@@ -4,7 +4,7 @@ const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TRACE_STRING_LENGTH = 420;
 const MAX_EVIDENCE_SECTIONS = 2;
-const GREENFIELD_DEV_SUPABASE_PROJECT_REF = "zxaoycxzdjrbnzvbullk";
+export const GREENFIELD_DEV_SUPABASE_PROJECT_REF = "zxaoycxzdjrbnzvbullk";
 
 export const GREENFIELD_PLAYGROUND_MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;
 export const GREENFIELD_PLAYGROUND_HISTORY_LIMIT = MAX_HISTORY_MESSAGES;
@@ -19,6 +19,11 @@ function supabaseProjectRef(value) {
   } catch {
     return null;
   }
+}
+
+export function isGreenfieldPlaygroundDevTarget(env = process.env) {
+  const actualProjectRef = supabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL || env.SUPABASE_URL);
+  return actualProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF;
 }
 
 export function greenfieldPlaygroundEnvironment(env = process.env) {
