@@ -1336,10 +1336,7 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
     }
     const choices = orderCandidateChoices(questionEvidence(segment, context));
     if (choices.length > 1) {
-      const choiceText = joinList(choices, locale);
-      return locale === "da"
-        ? `Hvilken ordre vil du gerne have hjælp til — ${choiceText}?`
-        : `Which order would you like help with — ${choiceText}?`;
+      return renderOrderCandidateClarification(choices, locale);
     }
     return locale === "da"
       ? "Kan du sende ordrenummeret fra din ordrebekræftelse?"
@@ -1451,6 +1448,26 @@ function orderCandidateChoices(evidence: ResponseEvidenceRecord | undefined) {
       : [];
     return [`#${orderNumber}${titles.length ? ` — ${titles.join(", ")}` : ""}`];
   }).slice(0, 5);
+}
+
+function renderOrderCandidateClarification(choices: string[], locale: ResponseLocale) {
+  const choiceText = joinList(choices, locale);
+  return locale === "da"
+    ? `Hvilken ordre vil du gerne have hjælp til — ${choiceText}?`
+    : `Which order would you like help with — ${choiceText}?`;
+}
+
+function isOrderCandidateClarification(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+) {
+  const historyEvidence = (context.getResults?.() ?? [])
+    .filter((record) => record.toolName === "get_order_history")
+    .at(-1);
+  const choices = orderCandidateChoices(historyEvidence);
+  if (choices.length < 2 || context.activeOrder?.state === "verified") return false;
+  if (segment.capability === "get_order" && segment.missing_arguments.includes("order_id")) return true;
+  return /\b(?:order|purchase)\b/i.test(segment.text ?? "");
 }
 
 type RenderedOrderItem = { title: string; quantity: number | string };
@@ -2438,6 +2455,12 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
+    }
+    else if (segment.type === "question" && isOrderCandidateClarification(segment, context)) {
+      const historyEvidence = (context.getResults?.() ?? [])
+        .filter((record) => record.toolName === "get_order_history")
+        .at(-1);
+      rendered.push(renderOrderCandidateClarification(orderCandidateChoices(historyEvidence), localeFor(context)));
     }
     else if (segment.type === "question" && segment.purpose === "disambiguate_variant") {
       rendered.push(renderGroundedQuestion(segment, context));

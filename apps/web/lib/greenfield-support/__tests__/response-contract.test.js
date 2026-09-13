@@ -1086,6 +1086,20 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
       "Which order would you like help with — #10231 — Orion Wireless, #10232 — Orion Wired, #10233 — Orion Wireless, and #10234 — Orion replacement ear pads?",
     );
+
+    const genericQuestion = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Do you mean your most recent order, #10231?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, registry);
+    expect(genericQuestion.allValid).toBe(true);
+    expect(renderResponseSegments(genericQuestion.approvedSegments, registry)).toBe(
+      "Which order would you like help with — #10231 — Orion Wireless, #10232 — Orion Wired, #10233 — Orion Wireless, and #10234 — Orion replacement ear pads?",
+    );
   });
 
   it("composes related order facts into a concise customer sentence", async () => {
