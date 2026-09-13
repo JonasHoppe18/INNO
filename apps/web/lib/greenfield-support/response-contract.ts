@@ -1457,15 +1457,23 @@ function renderOrderCandidateClarification(choices: string[], locale: ResponseLo
     : `Which order would you like help with — ${choiceText}?`;
 }
 
+export function renderOrderCandidateClarificationFromResults(
+  getResults: (() => ResponseEvidenceRecord[]) | undefined,
+  locale: ResponseLocale = "en",
+) {
+  const historyEvidence = (getResults?.() ?? [])
+    .filter((record) => record.toolName === "get_order_history")
+    .at(-1);
+  const choices = orderCandidateChoices(historyEvidence);
+  return choices.length > 1 ? renderOrderCandidateClarification(choices, locale) : undefined;
+}
+
 function isOrderCandidateClarification(
   segment: Extract<ResponseSegment, { type: "question" }>,
   context: ResponseValidationContext,
 ) {
-  const historyEvidence = (context.getResults?.() ?? [])
-    .filter((record) => record.toolName === "get_order_history")
-    .at(-1);
-  const choices = orderCandidateChoices(historyEvidence);
-  if (choices.length < 2 || context.activeOrder?.state === "verified") return false;
+  const choiceText = renderOrderCandidateClarificationFromResults(context.getResults, localeFor(context));
+  if (!choiceText || context.activeOrder?.state === "verified") return false;
   if (segment.capability === "get_order" && segment.missing_arguments.includes("order_id")) return true;
   return /\b(?:order|purchase)\b/i.test(segment.text ?? "");
 }
@@ -2457,10 +2465,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       consumed.add(index);
     }
     else if (segment.type === "question" && isOrderCandidateClarification(segment, context)) {
-      const historyEvidence = (context.getResults?.() ?? [])
-        .filter((record) => record.toolName === "get_order_history")
-        .at(-1);
-      rendered.push(renderOrderCandidateClarification(orderCandidateChoices(historyEvidence), localeFor(context)));
+      rendered.push(renderOrderCandidateClarificationFromResults(context.getResults, localeFor(context)) ?? "");
     }
     else if (segment.type === "question" && segment.purpose === "disambiguate_variant") {
       rendered.push(renderGroundedQuestion(segment, context));

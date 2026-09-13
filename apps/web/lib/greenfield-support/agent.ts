@@ -19,6 +19,7 @@ import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import {
   composeSafeKnowledgeGapResponse,
   inferResponseLocale,
+  renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
   summarizeResponseValidation,
   validateStructuredResponse,
@@ -127,6 +128,8 @@ export function fallbackResponse(context?: {
     getResults: context?.getResults,
   });
   if (knowledgeGap) return knowledgeGap;
+  const orderClarification = renderOrderCandidateClarificationFromResults(context?.getResults, context?.locale);
+  if (orderClarification) return orderClarification;
   return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
 }
 
