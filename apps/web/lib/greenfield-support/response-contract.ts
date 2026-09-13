@@ -138,8 +138,10 @@ export interface ResponseValidationContext {
   definitions: StrictToolDefinition[];
   /** The locale inferred from the current customer request, if it is clear. */
   locale?: ResponseLocale;
-  /** Trusted server-side customer identity used only for first-response personalization. */
+  /** Legacy/trusted profile name used as the highest-confidence display source. */
   customerName?: string | null;
+  /** Display-only sender/profile name; never used for authorization. */
+  customerDisplayName?: string | null;
   /** True only when this is the first substantive response in the conversation. */
   firstResponse?: boolean;
   /** Server-observed proposal results from the current tool loop. */
@@ -1261,8 +1263,10 @@ function safeCustomerFirstName(value: unknown): string | null {
 }
 
 function greetingFor(context: ResponseValidationContext): string | null {
-  if (!context.firstResponse || !context.trustedCustomerIdentity?.verified || !context.trustedCustomerIdentity.hasName) return null;
-  const firstName = safeCustomerFirstName(context.customerName);
+  if (!context.firstResponse) return null;
+  const displayName = context.customerDisplayName
+    ?? (context.trustedCustomerIdentity?.verified ? context.customerName : null);
+  const firstName = safeCustomerFirstName(displayName);
   if (!firstName) return null;
   return localeFor(context) === "da" ? `Hej ${firstName},` : `Hi ${firstName},`;
 }
@@ -1897,7 +1901,52 @@ function cleanContextualizedKnowledgeSentence(value: string) {
     .replace(/,\s*(?:and|or)\s*(?=[.!?]|$)/gi, "")
     .replace(/\b(?:with|including)\s*(?:,|and|or)?\s*(?=[.!?]|$)/gi, "")
     .replace(/\b(?:please\s+)?(?:provide|share|send|include)\s*(?:and|or)?\s*(?=[.!?]|$)/gi, "")
+    .replace(/([,;])\s*(?=[.!?]|$)/g, "")
+    .replace(/([.!?])\s*([.!?])/g, "$1")
     .trim();
+}
+
+function requirementListFromSentence(value: string) {
+  const match = String(value ?? "").match(/\b(?:with|provide|share|send|include)\s+(.+?)(?:[.!?]|$)/i);
+  if (!match?.[1]) return null;
+  const items = match[1]
+    .split(/,\s*|\s+(?:and|or)\s+/i)
+    .map((item) => item.trim().replace(/^(?:the|your|an?|any)\s+/i, "").trim())
+    .filter(Boolean);
+  return items.length ? items : null;
+}
+
+function requirementAlreadyKnown(value: string, context: ResponseValidationContext) {
+  if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return hasKnownOrderReference(context);
+  if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
+    return Boolean(context.trustedCustomerIdentity?.verified);
+  }
+  if (/\bemail(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
+    return Boolean(context.trustedCustomerIdentity?.verified);
+  }
+  return false;
+}
+
+function naturalMissingRequirementQuestion(items: string[], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  if (items.length === 1) {
+    return locale === "da" ? `Hvad er ${items[0]}?` : `What’s the ${items[0]}?`;
+  }
+  const information = joinList(items, locale);
+  return locale === "da" ? `Kan du sende ${information}?` : `Could you share ${information}?`;
+}
+
+/**
+ * Filters a complete source-authored requirement list as one semantic unit.
+ * This prevents context adaptation from leaving punctuation or conjunction
+ * fragments behind when known order/identity fields are removed.
+ */
+function adaptKnownRequirementList(value: string, context: ResponseValidationContext, allowWithClause: boolean) {
+  if (!allowWithClause && !/\b(?:provide|share|send|include)\b/i.test(value)) return undefined;
+  const items = requirementListFromSentence(value);
+  if (!items?.some((item) => requirementAlreadyKnown(item, context))) return undefined;
+  const missing = items.filter((item) => !requirementAlreadyKnown(item, context));
+  return missing.length ? naturalMissingRequirementQuestion(missing, context) : "";
 }
 
 function adaptSupportContactInstruction(value: string) {
@@ -1909,7 +1958,7 @@ function adaptSupportContactInstruction(value: string) {
   if (!hasContactInstruction) return value;
 
   let adapted = value.replace(contactPattern, "").replace(formPattern, "");
-  adapted = adapted.replace(/,\s*(?=(?:with|including)\b)/i, ", please provide ");
+  adapted = adapted.replace(/,\s*(?:with|including)\s+/i, ", please provide ");
   adapted = cleanContextualizedKnowledgeSentence(adapted);
   if (/^(?:to\s+)?(?:start|initiate|request)\s+(?:the\s+)?(?:return|refund|claim)\.?$/i.test(adapted)) return "";
   return adapted;
@@ -1926,9 +1975,13 @@ export function adaptCustomerFacingKnowledgeText(value: string, context: Respons
     const nextLines = lines.map((line) => {
       const sentences = line.split(/(?<=[.!?])\s+/).filter(Boolean);
       return sentences.map((sentence) => {
+        const hadSupportContactInstruction = isActiveSupportChannel(context.interactionChannel)
+          && /\b(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\b/i.test(sentence);
         let current = isActiveSupportChannel(context.interactionChannel)
           ? adaptSupportContactInstruction(sentence)
           : sentence;
+        const adaptedRequirementList = adaptKnownRequirementList(current, context, hadSupportContactInstruction);
+        if (adaptedRequirementList !== undefined) return adaptedRequirementList;
         if (hasKnownOrderReference(context)) {
           current = current.replace(/\b(?:your\s+|the\s+|an?\s+)?order\s+(?:number|no\.?|id|identifier)\b/gi, "");
         }

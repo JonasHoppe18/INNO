@@ -24,7 +24,7 @@ import {
   validateStructuredResponse,
 } from "./response-contract";
 import type { ResponseEvidenceRecord, ResponseValidationContext } from "./response-contract";
-import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext } from "./conversation-context";
+import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -33,6 +33,8 @@ export interface ConversationMessage {
 
 export interface GreenfieldAgentOptions {
   tenant: TenantContext;
+  /** Display-only sender/profile name; never used for authorization. */
+  customerDisplayName?: string | null;
   message: string;
   history?: ConversationMessage[];
   conversationContext?: ConversationContext;
@@ -146,6 +148,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     options.interactionChannel,
   );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const customerDisplayName = resolveCustomerDisplayName({
+    verifiedProfileName: options.tenant.customerName,
+    structuredSenderName: options.customerDisplayName,
+    history: options.history,
+    message: options.message,
+  });
   trace.developerInstructions = instructions;
   const input: unknown[] = [
     ...(options.history ?? []).map((message) => inputMessage(message.role, message.content)),
@@ -184,6 +192,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           activeOrder: registry.getActiveOrderFocus(),
           customerMessage: options.message,
           interactionChannel: options.interactionChannel,
+          customerDisplayName,
           trustedCustomerIdentity: {
             verified: Boolean(options.tenant.customerEmail?.trim()),
             hasEmail: Boolean(options.tenant.customerEmail?.trim()),
@@ -208,7 +217,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           ? renderResponseSegments(validation.approvedSegments, {
               ...responseContext,
               locale: inferResponseLocale(options.message),
-              customerName: options.tenant.customerName,
+              customerDisplayName,
               firstResponse: !(options.history?.length) && !(conversationContext?.turn),
               proposedActions,
             })

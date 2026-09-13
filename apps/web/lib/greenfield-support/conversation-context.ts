@@ -12,6 +12,13 @@ const PLATFORM_TERMS = [
 
 type ConversationMessage = { role: "user" | "assistant"; content: string };
 
+export interface CustomerDisplayNameInput {
+  verifiedProfileName?: string | null;
+  structuredSenderName?: string | null;
+  history?: ConversationMessage[];
+  message?: string;
+}
+
 function compactText(value: unknown, limit: number): string {
   return String(value ?? "")
     .replace(/[\u0000-\u001f\u007f]/g, " ")
@@ -22,6 +29,60 @@ function compactText(value: unknown, limit: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizedDisplayName(value: unknown): string | undefined {
+  const normalized = compactText(value, MAX_CONTEXT_TEXT_LENGTH)
+    .replace(/^['"“”]+|['"“”]+$/g, "")
+    .replace(/[,:;.!?]+$/, "")
+    .trim();
+  if (!normalized || normalized.includes("@") || /\d/.test(normalized)) return undefined;
+  const parts = normalized.split(/\s+/);
+  if (parts.length > 4 || parts.some((part) => !/^[\p{L}][\p{L}'’-]{0,39}$/u.test(part))) return undefined;
+  if (/^(?:i|we|you|thanks|thank|please|best|regards|sincerely|hello|hi)$/i.test(normalized)) return undefined;
+  return normalized;
+}
+
+/**
+ * Parses only an explicit sign-off followed by a short name. It deliberately
+ * does not infer a name from ordinary message prose or from an email address.
+ */
+export function parseCustomerSignatureName(value: string): string | undefined {
+  const lines = String(value ?? "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const inline = line.match(/^(?:best|kind|warm|many\s+thanks|thanks|thank\s+you|regards|sincerely|yours(?:\s+truly|\s+sincerely)?)\s*(?:regards)?\s*,\s*(.+)$/i);
+    if (inline?.[1]) {
+      const name = normalizedDisplayName(inline[1]);
+      if (name) return name;
+    }
+    if (!/^(?:best|kind|warm|many\s+thanks|thanks|thank\s+you|regards|sincerely|yours(?:\s+truly|\s+sincerely)?)\s*(?:regards)?[,]?$/i.test(line)) continue;
+    const name = normalizedDisplayName(lines[index + 1]);
+    if (name) return name;
+  }
+  return undefined;
+}
+
+/**
+ * Selects a display-only name. This value is never used as customer identity
+ * or as an authorization input; it exists only for customer-facing greetings.
+ */
+export function resolveCustomerDisplayName(input: CustomerDisplayNameInput = {}): string | undefined {
+  const profileName = normalizedDisplayName(input.verifiedProfileName);
+  if (profileName) return profileName;
+  const senderName = normalizedDisplayName(input.structuredSenderName);
+  if (senderName) return senderName;
+  const messages = [...(input.history ?? []), { role: "user" as const, content: String(input.message ?? "") }];
+  for (const item of messages.reverse()) {
+    if (item.role !== "user") continue;
+    const signature = parseCustomerSignatureName(item.content);
+    if (signature) return signature;
+  }
+  return undefined;
 }
 
 /**

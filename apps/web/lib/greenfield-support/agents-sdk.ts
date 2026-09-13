@@ -6,7 +6,7 @@ import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
-import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext } from "./conversation-context";
+import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
   AgentRunResult,
@@ -32,6 +32,8 @@ interface SonaAgentContext {
 
 export interface GreenfieldAgentsSdkOptions {
   tenant: TenantContext;
+  /** Display-only sender/profile name; never used for authorization. */
+  customerDisplayName?: string | null;
   message: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   conversationContext?: ConversationContext;
@@ -203,6 +205,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     options.interactionChannel,
   );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const customerDisplayName = resolveCustomerDisplayName({
+    verifiedProfileName: options.tenant.customerName,
+    structuredSenderName: options.customerDisplayName,
+    history: options.history,
+    message: options.message,
+  });
   trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
@@ -314,6 +322,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
       interactionChannel: options.interactionChannel,
+      customerDisplayName,
       trustedCustomerIdentity: {
         verified: Boolean(options.tenant.customerEmail?.trim()),
         hasEmail: Boolean(options.tenant.customerEmail?.trim()),
@@ -338,7 +347,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       ? renderResponseSegments(validation.approvedSegments, {
           ...responseContext,
           locale: inferResponseLocale(options.message),
-          customerName: options.tenant.customerName,
+          customerDisplayName,
           firstResponse: !(options.history?.length) && !(conversationContext?.turn),
           proposedActions,
         })

@@ -458,10 +458,11 @@ export async function POST(request: Request) {
       workspaceId: scope.workspaceId,
       shopId: shop.id,
       customerEmail: session.customer_email,
-      customerName: customerFirstName,
+      customerName: null,
     };
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
+      customerDisplayName: customerFirstName,
       message: messageForAgent,
       interactionChannel: "playground",
       history: historyFromPlaygroundRows(historyRows),
@@ -472,7 +473,7 @@ export async function POST(request: Request) {
         commerce: new ShopifyReadOnlyProvider({
           shopDomain: credentials.shop_domain,
           accessToken: credentials.access_token,
-          customer: { email: session.customer_email, name: customerFirstName },
+          customer: { email: session.customer_email, name: null },
         }),
         tracking: createGreenfieldTrackingProvider(),
       },

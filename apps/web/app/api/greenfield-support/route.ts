@@ -102,18 +102,19 @@ export async function POST(request: Request) {
     });
 
     const result = await runGreenfieldAgentWithAgentsSdk({
-      tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: customer.name },
+      tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: null },
+      customerDisplayName: customer.name,
       message,
       interactionChannel: "support_inbox",
       history: threadState?.history || normalizeHistory(body?.history),
       conversationContext: threadState?.conversationContext,
       capabilities: {
-        tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: customer.name },
+        tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: null },
         knowledge: new SupabaseKnowledgeStore(serviceClient),
         commerce: new ShopifyReadOnlyProvider({
           shopDomain: credentials.shop_domain,
           accessToken: credentials.access_token,
-          customer: { email: customer.email, name: customer.name },
+          customer: { email: customer.email, name: null },
         }),
         tracking: createGreenfieldTrackingProvider(),
       },

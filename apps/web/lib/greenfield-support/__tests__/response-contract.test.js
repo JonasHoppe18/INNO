@@ -171,6 +171,27 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("Jonas");
   });
 
+  it("uses a sender display name for greeting without making it a trusted identity", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days of delivery.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerDisplayName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+      firstResponse: true,
+    });
+
+    expect(rendered).toMatch(/^Hi Jonas,\n\n/);
+    expect(result.allValid).toBe(true);
+  });
+
   it("keeps a dense knowledge answer readable without changing its content", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -232,6 +253,54 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("returns@example.test");
     expect(rendered).not.toMatch(/contact\s+(?:us|support)/i);
     expect(rendered).not.toContain("order number");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
+    expect(rendered).not.toMatch(/\b(?:with|and|or|provide)\s*[.!?]/i);
+  });
+
+  it("turns a filtered requirement list into a natural question for the remaining field", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the reason for return, the name used at purchase, and the order number.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("What’s the reason for return?");
+    expect(rendered).not.toContain("name used at purchase");
+    expect(rendered).not.toContain("order number");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
+  });
+
+  it("removes a fully satisfied requirement sentence without leaving a fragment", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "verified", order: null },
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the name used at purchase and the order number. Refunds are initiated after processing.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toBe("Refunds are initiated after processing.");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
   });
 
   it("keeps a contact instruction in a non-support context", async () => {

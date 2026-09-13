@@ -278,7 +278,8 @@ describe("greenfield agent playground API", () => {
     }));
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
-      tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: "Jonas" }),
+      tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: null }),
+      customerDisplayName: "Jonas",
       interactionChannel: "playground",
       actionExecutor: expect.any(Object),
     }));
@@ -286,7 +287,7 @@ describe("greenfield agent playground API", () => {
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].reasoningEffort).toBeUndefined();
     expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({
       accessToken: "server-only-token",
-      customer: { email: "customer@example.test", name: "Jonas" },
+      customer: { email: "customer@example.test", name: null },
     }));
     expect(mocks.Ship24ReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({ requestImpl: expect.any(Function) }));
     expect(client.from.mock.calls.map(([table]) => table)).toEqual([

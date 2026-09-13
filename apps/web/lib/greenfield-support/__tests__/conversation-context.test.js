@@ -3,6 +3,8 @@ import {
   extractCustomerProvidedContext,
   modelConversationContext,
   nextConversationContext,
+  parseCustomerSignatureName,
+  resolveCustomerDisplayName,
 } from "../conversation-context";
 
 describe("greenfield conversation context", () => {
@@ -91,5 +93,19 @@ describe("greenfield conversation context", () => {
     expect(extractCustomerProvidedContext([], "I reset the A-Spire yesterday.")).toEqual({
       attemptedSteps: ["I reset the A-Spire yesterday."],
     });
+  });
+
+  it("uses a clear signature only as a display-name source", () => {
+    const message = "Hi, I want to return order 1063.\n\nBest regards\nJonas";
+    expect(parseCustomerSignatureName(message)).toBe("Jonas");
+    expect(resolveCustomerDisplayName({ message })).toBe("Jonas");
+  });
+
+  it("prefers structured sender metadata and ignores names in ordinary prose", () => {
+    expect(resolveCustomerDisplayName({
+      structuredSenderName: "Jonas Hoppe",
+      message: "My friend Marie told me to contact you.",
+    })).toBe("Jonas Hoppe");
+    expect(resolveCustomerDisplayName({ message: "My friend Jonas told me to contact you." })).toBeUndefined();
   });
 });
