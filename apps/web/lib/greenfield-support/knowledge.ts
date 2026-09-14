@@ -299,7 +299,7 @@ function procedureStructuredData(source: KnowledgeSourceInput, initial: JsonObje
  * The model may choose which values are relevant, but it cannot rewrite them
  * in the response contract or combine values from different records.
  */
-export function extractProcedureSteps(value: string): JsonObject[] {
+export function extractProcedureSteps(value: string): ProcedureBlock[] {
   const paragraphs = String(value ?? "")
     .replace(/\r\n/g, "\n")
     .split(/\n\s*\n/)
@@ -315,13 +315,18 @@ export function extractProcedureSteps(value: string): JsonObject[] {
     || (!/[.!?]$/.test(first) && !/^[-*•]\s/.test(first) && !/^\d+[.)]\s/.test(first))
   );
   const sourceParagraphs = firstLooksLikeHeading ? paragraphs.slice(1) : paragraphs;
-  const steps: JsonObject[] = [];
+  const steps: ProcedureBlock[] = [];
   for (const paragraph of sourceParagraphs) {
     const lines = paragraph.split(/\n(?=(?:[-*•]|\d+[.)]|[a-z][.)])\s+)/i);
     for (const line of lines) {
       const text = cleanText(line).replace(/^(?:[-*•]|\d+[.)]|[a-z][.)])\s+/i, "").trim();
       if (!text) continue;
-      steps.push({ text });
+      steps.push({
+        block_id: `block_${steps.length + 1}`,
+        kind: "instruction",
+        text,
+        list_style: null,
+      });
     }
   }
   return steps.slice(0, 64);
@@ -1059,6 +1064,36 @@ interface TaskRelevanceSignals {
   bodyEvidenceStrength: number;
   matchedTerms: string[];
   queryTerms: number;
+  taskFamilyMatches: ProcedureTaskFamily[];
+}
+
+type ProcedureTaskFamily = "reset" | "pairing" | "microphone" | "firmware" | "app_detection";
+
+const PROCEDURE_TASK_FAMILY_TERMS: Record<ProcedureTaskFamily, string[]> = {
+  reset: ["reset", "restore", "default", "factory"],
+  pairing: ["pair", "pairing", "connect", "connection", "connecting", "reconnect"],
+  microphone: ["microphone", "mic", "voice"],
+  firmware: ["firmware", "updater", "update", "software"],
+  app_detection: ["app", "application", "detect", "detected", "recognize", "recognised", "recognition"],
+};
+
+function procedureTaskFamilies(value: string): ProcedureTaskFamily[] {
+  const valueTokens = tokens(value);
+  return (Object.entries(PROCEDURE_TASK_FAMILY_TERMS) as Array<[ProcedureTaskFamily, string[]]>)
+    .filter(([, terms]) => terms.some((term) => valueTokens.some((token) => taskTokensMatch(term, token))))
+    .map(([family]) => family);
+}
+
+function implicitCompletedProcedureFamilies(value: string): ProcedureTaskFamily[] {
+  const completed = String(value ?? "").match(/\b(?:after|following|since)\s+(?:i\s+)?([^.!?;,]+)/i)?.[1] ?? "";
+  return procedureTaskFamilies(completed);
+}
+
+function completedProcedureFamilies(completedSteps: string[], query: string): ProcedureTaskFamily[] {
+  return Array.from(new Set([
+    ...completedSteps.flatMap((step) => procedureTaskFamilies(step)),
+    ...implicitCompletedProcedureFamilies(query),
+  ]));
 }
 
 function productTokenSet(rows: any[], productContext: KnowledgeProductContext | null): Set<string> {
@@ -1069,7 +1104,17 @@ function productTokenSet(rows: any[], productContext: KnowledgeProductContext | 
   return new Set(values.flatMap((value) => tokens(value)));
 }
 
-function taskRelevanceSignals(rows: any[], query: string, productContext: KnowledgeProductContext | null): Map<string, TaskRelevanceSignals> {
+function taskRelevanceSignals(
+  rows: any[],
+  query: string,
+  productContext: KnowledgeProductContext | null,
+  completedSteps: string[] = [],
+): Map<string, TaskRelevanceSignals> {
+  const procedureRows = rows.filter((row) => String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "") === "procedural");
+  const queryFamilies = procedureRows.length ? procedureTaskFamilies(query) : [];
+  const completedFamilies = procedureRows.length ? completedProcedureFamilies(completedSteps, query) : [];
+  const requestedFamilies = queryFamilies.filter((family) => !completedFamilies.includes(family));
+  const activeFamilies = requestedFamilies.length ? requestedFamilies : queryFamilies;
   const productTokens = productTokenSet(rows, productContext);
   const queryTokens = Array.from(new Set(tokens(query))).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token));
   const documentTokens = rows.map((row) => new Set(tokens(rowRelevanceText(row)).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token))));
@@ -1091,19 +1136,31 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
   for (const row of rows) {
     const knowledgeType = String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "");
     const relevanceText = rowRelevanceText(row);
+    const procedureMetadata = knowledgeType === "procedural" ? rowProcedureMetadata(row) : null;
+    const rowFamilies = procedureMetadata
+      ? procedureTaskFamilies([procedureMetadata.taskKey, procedureMetadata.title, ...procedureMetadata.aliases].filter(Boolean).join(" "))
+      : [];
+    const taskFamilyMatches = activeFamilies.filter((family) => rowFamilies.includes(family));
+    const familyMismatch = knowledgeType === "procedural"
+      && activeFamilies.length > 0
+      && taskFamilyMatches.length === 0;
     const relevanceTokens = new Set(tokens(relevanceText).filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token)));
     const bodyTokenList = tokens(cleanText(row?.content ?? row?.chunk_content ?? ""))
       .filter((token) => !productTokens.has(token) && !TASK_CONTEXT_WORDS.has(token));
     const bodyTokens = new Set(bodyTokenList);
-    const titleMatchedTerms = taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
-    const bodyMatches = taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
+    const titleMatchedTerms = familyMismatch
+      ? []
+      : taskTerms.filter((queryToken) => Array.from(relevanceTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken)));
+    const bodyMatches = familyMismatch
+      ? 0
+      : taskTerms.filter((queryToken) => Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))).length;
     // A single incidental body mention should not outrank a policy whose body
     // repeatedly establishes the requested topic. Cap each term's contribution
     // so document length cannot dominate retrieval.
     const bodyEvidenceStrength = knowledgeType === "policy"
       ? taskTerms.reduce((total, queryToken) => total + Math.min(5, bodyTokenList.filter((candidateToken) => taskTokensMatch(queryToken, candidateToken)).length), 0)
       : 0;
-    const matchingTerms = knowledgeType === "policy"
+    const matchingTerms = familyMismatch ? [] : knowledgeType === "policy"
       ? taskTerms.filter((queryToken) => (
           titleMatchedTerms.includes(queryToken)
           || Array.from(bodyTokens).some((candidateToken) => taskTokensMatch(queryToken, candidateToken))
@@ -1112,13 +1169,14 @@ function taskRelevanceSignals(rows: any[], query: string, productContext: Knowle
     const coverage = matchingTerms.length / Math.max(taskTerms.length, 1);
     const boundedBodySupport = knowledgeType === "policy" ? 0 : Math.min(0.2, bodyMatches * 0.05);
     signals.set(rowRelevanceKey(row), {
-      score: Math.min(1, coverage + boundedBodySupport),
-      matches: matchingTerms.length,
+      score: Math.min(1, coverage + boundedBodySupport + taskFamilyMatches.length * 0.35),
+      matches: matchingTerms.length + taskFamilyMatches.length,
       titleMatches: titleMatchedTerms.length,
       bodyMatches,
       bodyEvidenceStrength,
       matchedTerms: matchingTerms,
       queryTerms: taskTerms.length,
+      taskFamilyMatches,
     });
   }
   return signals;
@@ -1136,8 +1194,8 @@ function rowRelevanceKey(row: any): string {
   );
 }
 
-function sortKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
-  const signals = taskRelevanceSignals(rows, query, productContext);
+function sortKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, completedSteps: string[] = []): { rows: any[]; signals: Map<string, TaskRelevanceSignals> } {
+  const signals = taskRelevanceSignals(rows, query, productContext, completedSteps);
   const hasApplicableProduct = rows.some((row) => applicableProductScore(row, query) > 0);
   const hasTaskSignal = rows.some((row) => (signals.get(rowRelevanceKey(row))?.score ?? 0) > 0);
   const isPolicyRow = (row: any) => String(row?.knowledge_type ?? row?.record?.record?.knowledgeType ?? row?.record?.knowledgeType ?? "") === "policy";
@@ -1199,7 +1257,7 @@ function procedureSelectionInfo(rows: any[], signals: Map<string, TaskRelevanceS
 
   const directTaskCandidates = procedureRows
     .map((row) => ({ row, signal: signals.get(rowRelevanceKey(row)) }))
-    .filter(({ signal }) => (signal?.titleMatches ?? 0) > 0)
+    .filter(({ signal }) => (signal?.titleMatches ?? 0) > 0 || (signal?.taskFamilyMatches.length ?? 0) > 0)
     .sort((left, right) => (
       (right.signal?.score ?? 0) - (left.signal?.score ?? 0)
       || Number(right.row.score ?? 0) - Number(left.row.score ?? 0)
@@ -1225,13 +1283,13 @@ function procedureSelectionInfo(rows: any[], signals: Map<string, TaskRelevanceS
   };
 }
 
-function selectKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, finalLimit: number, knowledgeTypes?: KnowledgeType[]): {
+function selectKnowledgeRows(rows: any[], query: string, productContext: KnowledgeProductContext | null, finalLimit: number, knowledgeTypes?: KnowledgeType[], completedSteps: string[] = []): {
   rows: any[];
   signals: Map<string, TaskRelevanceSignals>;
   taskSpecificity?: "sufficient" | "insufficient";
   procedureCandidates?: KnowledgeProcedureCandidate[];
 } {
-  const ranked = sortKnowledgeRows(rows, query, productContext);
+  const ranked = sortKnowledgeRows(rows, query, productContext, completedSteps);
   if (!knowledgeTypes?.includes("procedural") || !ranked.rows.length) {
     // Semantic similarity is useful for recall, but it is not sufficient
     // evidence for a customer-facing answer. If none of the requested task
@@ -1267,7 +1325,7 @@ function selectKnowledgeRows(rows: any[], query: string, productContext: Knowled
     // A second procedure is retained only when it independently matches the
     // task and is close enough to be complementary evidence.
     return signal > 0
-      && (candidateSignal?.titleMatches ?? 0) > 0
+      && ((candidateSignal?.titleMatches ?? 0) > 0 || (candidateSignal?.taskFamilyMatches.length ?? 0) > 0)
       && (signal >= topSignal * 0.75 || separateTask);
   });
   return { rows: selected.slice(0, finalLimit), signals: ranked.signals, ...procedureInfo };
@@ -1466,6 +1524,7 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
       request.productContext ?? null,
       Math.max(1, Math.min(request.limit ?? 5, 20)),
       request.knowledgeTypes,
+      request.completedSteps,
     );
     return selected.rows.map((row, index) => {
       const hit = row.record;
@@ -1982,7 +2041,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
           return score === 0 || score === strongestExplicitProduct;
         })
       : mergedRows;
-    const selected = selectKnowledgeRows(productScopedRows, request.taskQuery ?? request.query, productContext, finalLimit, request.knowledgeTypes);
+    const selected = selectKnowledgeRows(productScopedRows, request.taskQuery ?? request.query, productContext, finalLimit, request.knowledgeTypes, request.completedSteps);
     const rows = selected.rows;
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
     return rows

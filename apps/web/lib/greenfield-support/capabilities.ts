@@ -344,7 +344,7 @@ function searchKnowledge(
   const continuityTerms = knowledgeTypes?.includes("product")
     ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform]
     : knowledgeTypes?.includes("procedural")
-      ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform, customerProvided?.issue, ...(customerProvided?.attemptedSteps ?? [])]
+      ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform, customerProvided?.issue]
       : [];
   const normalizedQuery = query.toLowerCase();
   const contextualQuery = [query, ...continuityTerms.filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))]
@@ -354,7 +354,8 @@ function searchKnowledge(
     workspaceId: context.tenant.workspaceId,
     trustedShopId: context.tenant.shopId ?? null,
     query: contextualQuery,
-    taskQuery: context.customerMessage || customerProvided?.issue || query,
+    taskQuery: [customerProvided?.issue, context.customerMessage].filter(Boolean).join(" ") || query,
+    completedSteps: customerProvided?.attemptedSteps ?? [],
     knowledgeTypes,
     limit,
   });

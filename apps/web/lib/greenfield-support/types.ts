@@ -154,6 +154,8 @@ export interface KnowledgeSearchRequest {
   query: string;
   /** Server-owned latest customer wording used for task specificity; retrieval query may be model-composed. */
   taskQuery?: string;
+  /** Server-owned customer steps already attempted; never supplied as a model-facing tool argument. */
+  completedSteps?: string[];
   knowledgeTypes?: KnowledgeType[];
   limit?: number;
   /** Server-owned shop binding used to resolve a product from the current catalog. */

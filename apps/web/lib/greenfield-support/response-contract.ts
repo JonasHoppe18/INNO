@@ -304,6 +304,34 @@ function procedureStepPath(path: string, defaultResultIndex?: number): { resultI
     : null;
 }
 
+function procedureStepCollectionResult(path: string, defaultResultIndex?: number): number | null {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))\.structured_data\.procedure_steps$/);
+  if (match) return Number(match[1] ?? match[2]);
+  return normalized === "structured_data.procedure_steps" && defaultResultIndex != null
+    ? defaultResultIndex
+    : null;
+}
+
+/**
+ * Some SDK responses cite the complete returned procedure_steps array rather
+ * than enumerating every item. Expand that source-bound collection reference
+ * into stable individual paths; it never creates steps that the tool did not
+ * return and still preserves record/step ordering during validation/rendering.
+ */
+function expandedProcedureStepPaths(
+  paths: string[],
+  result: ToolExecutionResult,
+  defaultResultIndex: number,
+): string[] {
+  return paths.flatMap((path) => {
+    if (procedureStepPath(path, defaultResultIndex)) return [path];
+    const resultIndex = procedureStepCollectionResult(path, defaultResultIndex);
+    if (resultIndex == null) return [path];
+    return procedureBlocks(result, resultIndex).map((entry) => `data.results[${resultIndex}].structured_data.procedure_steps[${entry.index}]`);
+  });
+}
+
 function resultIndexFromPath(path: string): number | null {
   const normalized = normalizedDataPath(path);
   const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))(?:\.|$)/);
@@ -444,7 +472,8 @@ function validateProcedureGuidance(
       }
     }
   } else {
-    const paths = (segment.step_paths ?? []).map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
+    const paths = expandedProcedureStepPaths(segment.step_paths ?? [], evidence.result, citedResultIndex)
+      .map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
     if (paths.some(({ parsed }) => !parsed)) {
       issues.push({ index, code: "procedure_step_path_invalid", message: "Procedure steps must cite returned structured procedure step fields." });
       return issues;
@@ -2181,7 +2210,7 @@ function procedureStepValues(
           : null;
         return step ? [step] : [];
       })
-    : (segment.step_paths ?? []).flatMap((path) => {
+    : expandedProcedureStepPaths(segment.step_paths ?? [], evidence.result, citedResultIndex).flatMap((path) => {
         const value = procedureStepValue(evidence.result, path, citedResultIndex);
         if (!meaningful(value)) return [];
         const parsed = procedureStepPath(path, citedResultIndex);

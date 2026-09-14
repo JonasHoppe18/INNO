@@ -304,6 +304,38 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(result.data.results[0].evidence_sections).toEqual([]);
   });
 
+  it("uses the requested next task after a completed reset", async () => {
+    const store = await competingProcedures();
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "I already reset my Product A. What pairing steps should I try next?",
+      taskQuery: "I already reset my Product A. What pairing steps should I try next?",
+      completedSteps: ["I already reset my Product A."],
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+
+    expect(hits[0].record.sourceId).toBe("pairing");
+    expect(hits.map((hit) => hit.record.sourceId)).not.toContain("reset");
+    expect(hits[0].taskSpecificity).toBe("sufficient");
+  });
+
+  it("does not substitute firmware or generic procedures for unsupported app detection", async () => {
+    const store = await competingProcedures();
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "Product A app does not detect my headset",
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+    expect(hits[0].record.sourceId).not.toBe("firmware");
+  });
+
   it("fails closed for generic support wording even when retrieval returns a bundled procedure", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingest(store, "bundled", "AceZone FAQ and support procedures", "Review the available support procedures for this product.", {
