@@ -1,5 +1,6 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
+import { composeEmailBodyWithSignature } from "@/lib/server/email-signature";
 import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
@@ -42,8 +43,20 @@ export interface GreenfieldAgentsSdkOptions {
   now?: () => string;
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  /** Server-resolved support-user signature; never supplied to the model. */
+  signature?: string | null;
   actionExecutor?: ActionExecutor;
   interactionChannel?: GreenfieldInteractionChannel;
+}
+
+function composeGreenfieldResponse(response: string, signature?: string | null): string {
+  const normalizedResponse = String(response || "").trim();
+  const normalizedSignature = String(signature || "").trim();
+  if (!normalizedSignature) return normalizedResponse;
+  return composeEmailBodyWithSignature({
+    bodyText: normalizedResponse,
+    config: { closingText: normalizedSignature },
+  }).finalBodyText;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -330,7 +343,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
 
     if (Array.isArray(result?.interruptions) && result.interruptions.length) {
       pushEvent(trace, "error", { code: "approval_required", message: "The SDK paused for tool approval; no action was executed." }, now());
-      const response = "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.";
+      const response = composeGreenfieldResponse(
+        "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.",
+        options.signature,
+      );
       pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [] }, now());
       trace.finishedAt = now();
       return {
@@ -369,7 +385,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
     });
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
-    const response = validation.approvedSegments.length
+    const responseWithoutSignature = validation.approvedSegments.length
       ? renderResponseSegments(validation.approvedSegments, {
           ...responseContext,
           locale: inferResponseLocale(options.message),
@@ -384,6 +400,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           customerProvidedContext: responseContext.customerProvidedContext,
           getResults: registry.getResults,
         });
+    const response = composeGreenfieldResponse(responseWithoutSignature, options.signature);
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
@@ -403,13 +420,14 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse({
+  const fallback = fallbackResponse({
     activeOrder: registry.getActiveOrderFocus(),
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     getResults: registry.getResults,
   });
+  const response = composeGreenfieldResponse(fallback, options.signature);
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {

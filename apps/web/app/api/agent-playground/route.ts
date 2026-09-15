@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
+import { loadUserEmailSignature } from "@/lib/server/email-signature";
 import {
   runGreenfieldAgentWithAgentsSdk,
   PlaygroundDryRunExecutor,
@@ -452,6 +453,7 @@ export async function POST(request: Request) {
     }
     if (!messageForAgent) return NextResponse.json({ error: "message is required." }, { status: 400 });
     const { shop, credentials } = await requireShopAndCredentials(serviceClient, scope);
+    const signature = await loadUserEmailSignature(serviceClient, scope.supabaseUserId);
     const customerFirstName = normalizePlaygroundCustomerName(session.conversation_context_json?.customerFirstName);
     const contextBefore = normalizePlaygroundContext(session.conversation_context_json);
     const tenant = {
@@ -467,6 +469,7 @@ export async function POST(request: Request) {
       interactionChannel: "playground",
       history: historyFromPlaygroundRows(historyRows),
       conversationContext: (contextBefore || undefined) as any,
+      signature,
       capabilities: {
         tenant,
         knowledge: new SupabaseKnowledgeStore(serviceClient),
