@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   composeEmailBodyWithSignature,
   inferGermanLanguage,
+  normalizeLanguageCode,
+  normalizeLanguageSignatures,
   selectSignatureText,
   stripTrailingComposedFooter,
 } from "../apps/web/lib/server/email-signature.js";
@@ -21,6 +23,14 @@ test("selects the configured signature variant and falls back to the default", (
   assert.equal(selectSignatureText({ defaultSignature: "Mvh\nJonas", languageSignatures: signatures, language: "fr" }), "Mvh\nJonas");
   assert.equal(selectSignatureText({ defaultSignature: "", languageSignatures: {}, language: "en" }), "");
   assert.equal(inferGermanLanguage("Ich möchte meine Bestellung zurückgeben, bitte."), true);
+});
+
+test("accepts manually entered language names for stored signature variants", () => {
+  assert.equal(normalizeLanguageCode("Portuguese"), "portuguese");
+  assert.deepEqual(
+    normalizeLanguageSignatures({ Portuguese: "Atenciosamente\nJonas" }),
+    { portuguese: "Atenciosamente\nJonas" },
+  );
 });
 
 test("stripTrailingComposedFooter removes the rendered closing and template footer", () => {
