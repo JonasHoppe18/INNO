@@ -107,6 +107,28 @@ describe("greenfield playground boundary", () => {
     ])).toEqual([{ role: "user", content: "customer question" }]);
   });
 
+  it("keeps only safe order labels when a customer must choose from history", () => {
+    const context = normalizePlaygroundContext({
+      turn: 2,
+      activeOrder: null,
+      customerSignal: null,
+      orderCandidates: [
+        { orderNumber: "1054", itemTitles: ["Chaos Headset 4"], createdAt: "2026-09-01T00:00:00.000Z" },
+        { orderNumber: "1055", itemTitles: ["Chaos Mic 6"], createdAt: "2026-09-02T00:00:00.000Z" },
+      ],
+    });
+
+    expect(context).toEqual({
+      turn: 2,
+      activeOrder: null,
+      customerSignal: null,
+      orderCandidates: [
+        { orderNumber: "1054", itemTitles: ["Chaos Headset 4"], createdAt: "2026-09-01T00:00:00.000Z" },
+        { orderNumber: "1055", itemTitles: ["Chaos Mic 6"], createdAt: "2026-09-02T00:00:00.000Z" },
+      ],
+    });
+  });
+
   it("G: describes read-only provider results without exposing credentials", () => {
     const sanitized = sanitizeGreenfieldTrace(
       {

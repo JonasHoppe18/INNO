@@ -31,6 +31,19 @@ async function ingest(store, sourceId, title, content, options = {}) {
   });
 }
 
+async function ingestPolicy(store, sourceId, title, content, options = {}) {
+  return store.ingest(WORKSPACE_ID, {
+    sourceKind: options.sourceKind ?? "policy",
+    sourceId,
+    title,
+    content,
+    knowledgeType: "policy",
+    authority: options.authority ?? "authoritative",
+    structuredData: options.structuredData,
+    metadata: { lifecycle_status: "published", ...(options.metadata ?? {}) },
+  });
+}
+
 async function competingProcedures() {
   const store = new InMemoryKnowledgeStore();
   await ingest(store, "pairing", "Product A USB dongle pairing", "Pair the headset and dongle until the connection is established.", {
@@ -49,6 +62,175 @@ async function competingProcedures() {
 }
 
 describe("generic greenfield knowledge task relevance", () => {
+  it("keeps complete actionable policy sections instead of fixed-chunk fragments", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "long-refund-policy", "Refund policy", [
+      "RETURN ELIGIBILITY",
+      "Returns are accepted within 30 days of delivery when the product is unused and the original packaging is sealed.",
+      "RETURN PROCESS",
+      "The return must be accepted before the customer ships the package. Send the accepted return to Example Returns, Return Street 10, 2000 Frederiksberg, Denmark. Return shipping is the customer's responsibility. The refund is initiated after the return is received and processed.",
+      "REFUNDS",
+      "If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition; further damage may cause an additional deduction.",
+      "WARRANTY",
+      "Warranty claims require proof of purchase and cover manufacturing defects.",
+    ].join("\n"));
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    const returnRequest = (await search("I would like to return my order 1063?"))[0];
+    const returnEvidence = returnRequest.evidenceSections.map((section) => section.content).join("\n\n");
+    expect(returnEvidence).toContain("30 days of delivery");
+    expect(returnEvidence).toContain("Return Street 10");
+    expect(returnEvidence).toContain("return is received and processed");
+    expect(returnEvidence).toContain("EUR 50 deduction");
+    expect(returnEvidence).not.toContain("Warranty claims require proof");
+
+    const addressRequest = (await search("Where should I send my return?"))[0];
+    expect(addressRequest.evidenceSections.map((section) => section.content).join("\n")).toContain("Return Street 10");
+
+    const openedRequest = (await search("I opened the product. Can I still return it?"))[0];
+    expect(openedRequest.evidenceSections.map((section) => section.content).join("\n")).toContain("EUR 50 deduction");
+  });
+
+  it("keeps material warranty sections while excluding unrelated return procedure content", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "long-warranty-policy", "Warranty policy", [
+      "WARRANTY",
+      "Products have a 2-year warranty against manufacturing defects. Proof of purchase is required.",
+      "EXCLUSIONS",
+      "Warranty does not cover normal wear, misuse, or water damage.",
+      "RETURNS",
+      "Return requests follow the separate return policy.",
+    ].join("\n"));
+
+    const result = (await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "What warranty do I have?",
+      taskQuery: "What warranty do I have?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    }))[0];
+    const evidence = result.evidenceSections.map((section) => section.content).join("\n\n");
+    expect(evidence).toContain("2-year warranty");
+    expect(evidence).toContain("normal wear");
+    expect(evidence).not.toContain("separate return policy");
+  });
+
+  it("selects relevant policy body content when the canonical title uses different terminology", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Unused products may be returned within 30 days of delivery. Start the return through support.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice, including products you may like and whether you return, exchange, or cancel a purchase.");
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "I would like to return my order 1063?",
+      taskQuery: "I would like to return my order 1063?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+    expect(hits[0].taskTitleMatches).toBe(0);
+    expect(hits[0].taskBodyMatches).toBeGreaterThan(0);
+    expect(hits[0].record.content).toContain("returned within 30 days");
+    expect(hits[0].evidenceSections.some((section) => section.content.includes("returned within 30 days"))).toBe(true);
+
+    const broadPolicyLookup = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "policy",
+      taskQuery: "I would like to return my order 1063?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+    expect(broadPolicyLookup.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+  });
+
+  it("matches policy topics by canonical content while excluding unrelated policy records", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Approved refunds are issued after inspection.");
+    await ingestPolicy(store, "returns-policy", "Eligibility policy", "Customers may receive money back after an eligible return is inspected.");
+    await ingestPolicy(store, "shipping-policy", "Shipping and delivery policy", "We deliver orders to supported destinations and publish delivery windows.");
+    await ingestPolicy(store, "warranty-policy", "Legal coverage information", "Manufacturing defects are covered by the product warranty for the stated warranty period.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.");
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect((await search("Can I return this item?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Can I return this item?")).map((hit) => hit.record.sourceId)).not.toContain("privacy-policy");
+    expect((await search("I want my money back for this purchase"))[0].record.sourceId).toBe("returns-policy");
+    expect((await search("Can you deliver my order to Japan?"))[0].record.sourceId).toBe("shipping-policy");
+    expect((await search("What warranty coverage applies to a manufacturing defect?"))[0].record.sourceId).toBe("warranty-policy");
+    expect((await search("What is your privacy policy?"))[0].record.sourceId).toBe("privacy-policy");
+    expect(await search("What loyalty program do you offer?")).toEqual([]);
+    expect((await search("Can you deliver my order to Japan?")).some((hit) => hit.record.sourceId === "privacy-policy")).toBe(false);
+    expect((await search("Can I return this item and what shipping options are available?"))
+      .map((hit) => hit.record.sourceId)).toEqual(expect.arrayContaining(["refund-policy", "shipping-policy"]));
+  });
+
+  it("uses policy subject relevance for broad process questions", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. After acceptance, send the parcel to the return address and the refund is initiated after inspection.");
+    await ingestPolicy(store, "privacy-policy", "Privacy policy", "We may need to send information to service providers and process data when you return to our website.");
+    await ingestPolicy(store, "shipping-policy", "Shipping policy", "Orders ship to supported destinations and delivery times depend on the carrier.");
+
+    const search = async (query) => store.search({
+      workspaceId: WORKSPACE_ID,
+      query,
+      taskQuery: query,
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect((await search("How do I return my order?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Where should I send my return?"))[0].record.sourceId).toBe("refund-policy");
+    expect((await search("Where should I send my return?")).map((hit) => hit.record.sourceId)).not.toContain("privacy-policy");
+  });
+
+  it("prefers an explicitly named policy topic over incidental body wording", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days. Shipping, shipping labels, and shipping costs are discussed in the return process.");
+    await ingestPolicy(store, "shipping-policy", "Shipping policy", "We ship orders to supported destinations, including Japan, subject to the available shipping options.");
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "Can you ship my order to Japan?",
+      taskQuery: "Can you ship my order to Japan?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["shipping-policy"]);
+  });
+
+  it("keeps policy type boundaries when other knowledge shares the requested wording", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingestPolicy(store, "refund-policy", "Refund policy", "Returns are accepted within 30 days.");
+    await ingest(store, "return-procedure", "How to return a device", "Pack the device and send it to support.", {
+      structuredData: { procedure: { task: { key: "return_device", title: "Return a device" } } },
+    });
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "How can I return this item?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+  });
+
   it("A: exact task/title match outranks a same-product unrelated procedure", async () => {
     const hits = await (await competingProcedures()).search({ workspaceId: WORKSPACE_ID, query: "Product A factory reset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits[0].record.sourceId).toBe("reset");
@@ -122,13 +304,70 @@ describe("generic greenfield knowledge task relevance", () => {
     expect(result.data.results[0].evidence_sections).toEqual([]);
   });
 
-  it("keeps a single applicable procedure usable even without a discriminating task term", async () => {
+  it("uses the requested next task after a completed reset", async () => {
+    const store = await competingProcedures();
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "I already reset my Product A. What pairing steps should I try next?",
+      taskQuery: "I already reset my Product A. What pairing steps should I try next?",
+      completedSteps: ["I already reset my Product A."],
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+
+    expect(hits[0].record.sourceId).toBe("pairing");
+    expect(hits.map((hit) => hit.record.sourceId)).not.toContain("reset");
+    expect(hits[0].taskSpecificity).toBe("sufficient");
+  });
+
+  it("does not substitute firmware or generic procedures for unsupported app detection", async () => {
+    const store = await competingProcedures();
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "Product A app does not detect my headset",
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+    expect(hits[0].record.sourceId).not.toBe("firmware");
+  });
+
+  it("fails closed for generic support wording even when retrieval returns a bundled procedure", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "bundled", "AceZone FAQ and support procedures", "Review the available support procedures for this product.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "My Product A has a problem. Can you help me find the right support steps?",
+      knowledgeTypes: ["procedural"],
+      productContext: PRODUCT_A,
+      limit: 5,
+    });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+  });
+
+  it("clarifies when a retrieved specific procedure has no discriminating task term", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
       structuredData: { applies_to: { product_models: ["Product A"] } },
     });
     const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "My Product A is not working", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits).toHaveLength(1);
+    expect(hits[0].taskSpecificity).toBe("insufficient");
+  });
+
+  it("keeps explicit task selection when only one eligible procedure is returned", async () => {
+    const store = new InMemoryKnowledgeStore();
+    await ingest(store, "only-procedure", "Product A reset", "Reset Product A.", {
+      structuredData: { applies_to: { product_models: ["Product A"] } },
+    });
+    const hits = await store.search({ workspaceId: WORKSPACE_ID, query: "Product A factory reset", knowledgeTypes: ["procedural"], productContext: PRODUCT_A, limit: 5 });
     expect(hits[0].taskSpecificity).toBe("sufficient");
   });
 

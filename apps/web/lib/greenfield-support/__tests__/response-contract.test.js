@@ -65,6 +65,67 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("send the order number from your order confirmation");
   });
 
+  it("allows product clarification before any lookup when the product is missing", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "Which product or model are you having trouble with, and what is happening?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, {
+      ...registry,
+      customerMessage: "My headset is broken. What can you help with?",
+      customerProvidedContext: { issue: "My headset is broken" },
+    });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerMessage: "My headset is broken. What can you help with?",
+      customerProvidedContext: { issue: "My headset is broken" },
+    })).toContain("Which product or model");
+  });
+
+  it("allows task clarification when the product is known but the issue is broad", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "What problem are you experiencing with it?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, {
+      ...registry,
+      customerMessage: "My A-Spire Wireless is broken.",
+      customerProvidedContext: { product: "A-Spire Wireless", issue: "My A-Spire Wireless is broken" },
+    });
+
+    expect(result.allValid).toBe(true);
+  });
+
+  it("allows a clarification for missing context without fabricating a tool result", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "clarify_task",
+        text: "Which product are you using, and what would you like help with?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, { ...registry, customerMessage: "I need help with my headset." });
+
+    expect(result.allValid).toBe(true);
+  });
+
   it("uses a trusted first-name greeting only on the first substantive response", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -78,13 +139,281 @@ describe("structured response contract", () => {
     expect(renderResponseSegments(result.approvedSegments, {
       ...registry,
       customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
       firstResponse: true,
-    })).toMatch(/^Hi Jonas!\n\n/);
+    })).toMatch(/^Hi Jonas,\n\n/);
     expect(renderResponseSegments(result.approvedSegments, {
       ...registry,
       customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
       firstResponse: false,
-    })).not.toContain("Hi Jonas!");
+    })).not.toContain("Hi Jonas,");
+  });
+
+  it("does not personalize from an unverified customer name", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days of delivery.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+      firstResponse: true,
+    });
+
+    expect(rendered).not.toMatch(/^Hi Jonas,/);
+    expect(rendered).not.toContain("Jonas");
+  });
+
+  it("uses a sender display name for greeting without making it a trusted identity", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days of delivery.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      customerDisplayName: "Jonas Hoppe",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+      firstResponse: true,
+    });
+
+    expect(rendered).toMatch(/^Hi Jonas,\n\n/);
+    expect(result.allValid).toBe(true);
+  });
+
+  it("keeps a dense knowledge answer readable without changing its content", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const text = "You can request a return within 30 days. The item must be unused and in its original packaging. If the seal is broken, a deduction may apply. Return shipping is your responsibility. The refund starts after the return is processed.";
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text,
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("You can request a return within 30 days. The item must be unused and in its original packaging.");
+    expect(rendered).toContain("If the seal is broken, a deduction may apply. Return shipping is your responsibility.");
+    expect(rendered).toContain("The refund starts after the return is processed.");
+    expect(rendered.split("\n\n")).toHaveLength(3);
+  });
+
+  it("preserves explicit address and step line breaks", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const knowledge = await registry.execute("search_policy", JSON.stringify({ query: "return window" }));
+    const result = validate(registry, {
+      type: "knowledge_guidance",
+      text: "Once the return is accepted, send it to:\nAceZone International ApS\nNordre Fasanvej 113\n2000 Frederiksberg\nDenmark\nUse tracked shipping.",
+      basis: { result_id: knowledge.resultId, field_paths: ["results"] },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("send it to:\nAceZone International ApS\nNordre Fasanvej 113\n2000 Frederiksberg\nDenmark\nUse tracked shipping.");
+  });
+
+  it("adapts website contact instructions when the customer is already in support", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns can be requested within 30 days. To start the return, contact returns@example.test with the reason for return, the name used at purchase, and the order number.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    });
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    });
+    expect(rendered).toContain("30 days");
+    expect(rendered).toContain("reason for return");
+    expect(rendered).not.toContain("returns@example.test");
+    expect(rendered).not.toMatch(/contact\s+(?:us|support)/i);
+    expect(rendered).not.toContain("order number");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
+    expect(rendered).not.toMatch(/\b(?:with|and|or|provide)\s*[.!?]/i);
+  });
+
+  it("turns a filtered requirement list into a natural question for the remaining field", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "unresolved", order: null },
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the reason for return, the name used at purchase, and the order number.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("What’s the reason for return?");
+    expect(rendered).not.toContain("name used at purchase");
+    expect(rendered).not.toContain("order number");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
+  });
+
+  it("removes a fully satisfied requirement sentence without leaving a fragment", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      activeOrder: { requestedOrderId: "1063", state: "verified", order: null },
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the name used at purchase and the order number. Refunds are initiated after processing.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toBe("Refunds are initiated after processing.");
+    expect(rendered).not.toMatch(/[,;:]\s*[.!?]/);
+  });
+
+  it("keeps a contact instruction in a non-support context", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To start the return, contact returns@example.test with the reason for return.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, { ...registry, interactionChannel: undefined });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, { ...registry, interactionChannel: undefined })).toContain("returns@example.test");
+  });
+
+  it("does not repeat verified customer identity requirements", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns can be requested within 30 days. Please provide the name used at purchase and the email address used at checkout.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("30 days");
+    expect(rendered).not.toMatch(/provide|name used at purchase|email address used at checkout/i);
+  });
+
+  it("keeps identity verification requests when no trusted identity exists", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      interactionChannel: "playground",
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: false },
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "To continue safely, please provide the email address used at checkout.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, context)).toContain("email address used at checkout");
+  });
+
+  it("preserves material policy action details and a condition clarification", async () => {
+    const dependencies = await createDemoDependencies();
+    await dependencies.knowledge.ingest(dependencies.tenant.workspaceId, {
+      sourceKind: "merchant_policy",
+      sourceId: "actionable-return-policy",
+      title: "Refund policy",
+      content: "RETURN PROCESS\nThe return must be accepted before shipment to Example Returns, Return Street 10. Return shipping is your responsibility.\nREFUNDS\nOpened products may still be accepted with a EUR 50 deduction. The refund starts after receipt and processing.",
+      knowledgeType: "policy",
+      authority: "authoritative",
+      metadata: { lifecycle_status: "published" },
+    });
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "I want to return this order" }));
+    const result = validateStructuredResponse({ segments: [
+      {
+        type: "knowledge_guidance",
+        text: "The return must be accepted before shipment to Example Returns, Return Street 10. Return shipping is your responsibility, and opened products may be accepted with a EUR 50 deduction. The refund starts after receipt and processing.",
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      },
+      {
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Has the product been opened or used?",
+        capability: null,
+        missing_arguments: [],
+      },
+    ] }, registry);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("Return Street 10");
+    expect(rendered).toContain("EUR 50 deduction");
+    expect(rendered).toContain("Has the product been opened or used?");
+  });
+
+  it("preserves a source-bound procedure contact step until that step is relevant", async () => {
+    const dependencies = await createDemoDependencies();
+    await dependencies.knowledge.ingest(dependencies.tenant.workspaceId, {
+      sourceKind: "merchant_procedure",
+      sourceId: "procedure-contact-if-fails",
+      title: "Connection failure escalation",
+      content: "Try the documented connection steps. If this fails, contact support.",
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      sourceLabel: "Merchant support procedure",
+    });
+    const registry = createCapabilityRegistry(dependencies);
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "connection failure" }));
+    const result = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Follow the relevant procedure.",
+      basis: { result_id: procedure.resultId, field_paths: ["data.results[0].structured_data.procedure_steps"] },
+      step_paths: ["data.results[0].structured_data.procedure_steps[0].text"],
+    }] }, { ...registry, interactionChannel: "playground" });
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, { ...registry, interactionChannel: "playground" })).toContain("contact support");
   });
 
   it("keeps acknowledgement structurally unable to carry claims or promises", async () => {
@@ -649,6 +978,33 @@ describe("structured response contract", () => {
     expect(unknownArgument.issues[0].code).toBe("question_argument_not_in_schema");
   });
 
+  it("does not turn a shipping destination question into an address action", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policyQuestion = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Send the order number and new address.",
+        capability: "update_address",
+        missing_arguments: ["order_id", "address"],
+      }],
+    }, { ...registry, customerMessage: "Can you ship my order to Japan?" });
+    const explicitChange = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Send the order number and new address.",
+        capability: "update_address",
+        missing_arguments: ["order_id", "address"],
+      }],
+    }, { ...registry, customerMessage: "Please change the shipping address on order #10232." });
+
+    expect(policyQuestion.allValid).toBe(false);
+    expect(policyQuestion.issues[0].code).toBe("address_change_request_required");
+    expect(explicitChange.allValid).toBe(true);
+  });
+
   it("keeps pure clarification separate from capability commitments", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -707,6 +1063,43 @@ describe("structured response contract", () => {
     expect(rendered).toContain("order number from your order confirmation");
     expect(rendered).not.toContain("Please provide");
     expect(rendered).not.toContain("not used to authorize");
+  });
+
+  it("renders safe choices when trusted history finds multiple orders", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: "Where is my order?",
+    });
+    await registry.resolveCustomerOrderContext();
+    const result = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "enable_capability",
+        text: "Which order do you mean?",
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      }],
+    }, registry);
+
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, registry)).toBe(
+      "Which order would you like help with — #10231 — Orion Wireless, #10232 — Orion Wired, #10233 — Orion Wireless, and #10234 — Orion replacement ear pads?",
+    );
+
+    const genericQuestion = validateStructuredResponse({
+      segments: [{
+        type: "question",
+        purpose: "pure_clarification",
+        text: "Do you mean your most recent order, #10231?",
+        capability: null,
+        missing_arguments: [],
+      }],
+    }, registry);
+    expect(genericQuestion.allValid).toBe(true);
+    expect(renderResponseSegments(genericQuestion.approvedSegments, registry)).toBe(
+      "Which order would you like help with — #10231 — Orion Wireless, #10232 — Orion Wired, #10233 — Orion Wireless, and #10234 — Orion replacement ear pads?",
+    );
   });
 
   it("composes related order facts into a concise customer sentence", async () => {
@@ -1113,6 +1506,59 @@ describe("structured response contract", () => {
     const rendered = renderResponseSegments(result.approvedSegments, registry);
     expect(rendered).toBe("I couldn’t verify a support procedure for this issue from our current guidance.");
     expect(rendered).not.toMatch(/retrieval|database|system/i);
+  });
+
+  it("uses customer-facing wording when procedure retrieval returns only weak legacy evidence", async () => {
+    const dependencies = await createDemoDependencies();
+    const record = {
+      id: "legacy-procedure",
+      workspaceId: dependencies.tenant.workspaceId,
+      knowledgeType: "procedural",
+      authority: "authoritative",
+      title: "[DEV lifecycle] Procedure",
+      content: "Open the test workflow and confirm the expected result.",
+      structuredData: { procedure_steps: [{ text: "Open the test workflow and confirm the expected result." }] },
+      sourceKind: "merchant_authored",
+      sourceId: "legacy-procedure",
+      sourceUri: null,
+      sourceLabel: "Legacy procedure",
+      contentHash: "legacy-procedure",
+      publishedAt: null,
+      observedAt: null,
+      expiresAt: null,
+      metadata: {},
+      chunks: ["Open the test workflow and confirm the expected result."],
+      taskKey: null,
+    };
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      knowledge: {
+        ingest: async () => record,
+        search: async () => [{
+          record,
+          score: 0.0864,
+          taskRelevance: 0,
+          taskTitleMatches: 0,
+          taskBodyMatches: 0,
+          matchReason: "lexical",
+          rank: 1,
+          evidenceSections: [{ heading: "Source context", content: record.content, chunkIds: ["legacy-procedure"] }],
+          taskSpecificity: "sufficient",
+        }],
+      },
+    });
+    const procedure = await registry.execute("search_procedures", JSON.stringify({ query: "headset keeps disconnecting from the dongle" }));
+    const result = validate(registry, {
+      type: "limitation",
+      text: "The procedure lookup returned no usable support guidance.",
+      basis: { result_id: procedure.resultId, field_paths: [] },
+    });
+
+    expect(procedure.status).toBe("not_found");
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, registry);
+    expect(rendered).toContain("couldn’t verify a support procedure");
+    expect(rendered).not.toMatch(/technical|retrieval|database|system/i);
   });
 
   it("states the useful partial-fulfillment distinction without inventing item allocation", async () => {

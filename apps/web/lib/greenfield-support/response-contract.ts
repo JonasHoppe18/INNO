@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
-import type { CapabilityManifest, ConversationContext, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
+import type { CapabilityManifest, ConversationContext, GreenfieldInteractionChannel, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
+import { isExplicitAddressChangeRequest } from "./tool-contracts";
 import type { StrictToolDefinition } from "./tool-contracts";
 
 const BasisSchema = z.object({
@@ -124,14 +125,23 @@ export interface ResponseValidationResult {
   parsed: StructuredResponse | null;
 }
 
+export type ResponseFailureClass =
+  | "system_tool_failure"
+  | "insufficient_knowledge"
+  | "insufficient_specificity"
+  | "valid_not_found"
+  | "model_response_invalid";
+
 export interface ResponseValidationContext {
   manifest: CapabilityManifest;
   getResult: (resultId: string) => ResponseEvidenceRecord | undefined;
   definitions: StrictToolDefinition[];
   /** The locale inferred from the current customer request, if it is clear. */
   locale?: ResponseLocale;
-  /** Trusted server-side customer identity used only for first-response personalization. */
+  /** Legacy/trusted profile name used as the highest-confidence display source. */
   customerName?: string | null;
+  /** Display-only sender/profile name; never used for authorization. */
+  customerDisplayName?: string | null;
   /** True only when this is the first substantive response in the conversation. */
   firstResponse?: boolean;
   /** Server-observed proposal results from the current tool loop. */
@@ -148,6 +158,14 @@ export interface ResponseValidationContext {
     issue?: string;
     returnDetails?: string;
     attemptedSteps?: string[];
+  };
+  /** Server-owned channel context used to adapt source instructions to the current interaction. */
+  interactionChannel?: GreenfieldInteractionChannel;
+  /** Server-owned identity availability; never inferred from untrusted message text. */
+  trustedCustomerIdentity?: {
+    verified: boolean;
+    hasName: boolean;
+    hasEmail: boolean;
   };
   /** Server-recorded results from this run, used to ground generic clarification purposes. */
   getResults?: () => ResponseEvidenceRecord[];
@@ -284,6 +302,34 @@ function procedureStepPath(path: string, defaultResultIndex?: number): { resultI
   return relative && defaultResultIndex != null
     ? { resultIndex: defaultResultIndex, stepIndex: Number(relative[1] ?? relative[2]) }
     : null;
+}
+
+function procedureStepCollectionResult(path: string, defaultResultIndex?: number): number | null {
+  const normalized = normalizedDataPath(path);
+  const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))\.structured_data\.procedure_steps$/);
+  if (match) return Number(match[1] ?? match[2]);
+  return normalized === "structured_data.procedure_steps" && defaultResultIndex != null
+    ? defaultResultIndex
+    : null;
+}
+
+/**
+ * Some SDK responses cite the complete returned procedure_steps array rather
+ * than enumerating every item. Expand that source-bound collection reference
+ * into stable individual paths; it never creates steps that the tool did not
+ * return and still preserves record/step ordering during validation/rendering.
+ */
+function expandedProcedureStepPaths(
+  paths: string[],
+  result: ToolExecutionResult,
+  defaultResultIndex: number,
+): string[] {
+  return paths.flatMap((path) => {
+    if (procedureStepPath(path, defaultResultIndex)) return [path];
+    const resultIndex = procedureStepCollectionResult(path, defaultResultIndex);
+    if (resultIndex == null) return [path];
+    return procedureBlocks(result, resultIndex).map((entry) => `data.results[${resultIndex}].structured_data.procedure_steps[${entry.index}]`);
+  });
 }
 
 function resultIndexFromPath(path: string): number | null {
@@ -426,7 +472,8 @@ function validateProcedureGuidance(
       }
     }
   } else {
-    const paths = (segment.step_paths ?? []).map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
+    const paths = expandedProcedureStepPaths(segment.step_paths ?? [], evidence.result, citedResultIndex)
+      .map((path) => ({ path, parsed: procedureStepPath(path, citedResultIndex) }));
     if (paths.some(({ parsed }) => !parsed)) {
       issues.push({ index, code: "procedure_step_path_invalid", message: "Procedure steps must cite returned structured procedure step fields." });
       return issues;
@@ -785,7 +832,13 @@ function questionEvidence(
   const candidates = segment.capability
     ? records.filter((record) => record.toolName === segment.capability)
     : records;
-  return candidates.at(-1);
+  // Order disambiguation is preloaded through get_order_history, while the
+  // model asks to enable the exact get_order capability. Keep that safe
+  // history result available as grounding for the clarification.
+  return candidates.at(-1)
+    ?? (segment.capability === "get_order"
+      ? records.filter((record) => record.toolName === "get_order_history").at(-1)
+      : undefined);
 }
 
 function validateQuestionBasis(
@@ -823,12 +876,12 @@ function productVariantChoices(evidence: ResponseEvidenceRecord | undefined) {
   });
 }
 
-function asksForKnownProduct(value: string, context: ResponseValidationContext) {
+function asksForKnownProduct(value: string, context: Pick<ResponseValidationContext, "customerProvidedContext">) {
   if (!context.customerProvidedContext?.product) return false;
   return /\b(?:which|what)\s+(?:exact\s+)?(?:product|headset|device)\b|\b(?:exact\s+)?model\s+number\b/i.test(value);
 }
 
-function hasSpecificCustomerIssue(context: ResponseValidationContext) {
+function hasSpecificCustomerIssue(context: Pick<ResponseValidationContext, "customerProvidedContext">) {
   const issue = String(context.customerProvidedContext?.issue ?? "").trim();
   if (!issue) return false;
   if (/\b(?:pair|connect|disconnect|power|sound|audio|microphone|mic|charge|charging|detected|detection|firmware|reset|button|volume|static|noise|echo)\b/i.test(issue)) return true;
@@ -857,7 +910,16 @@ function canClarifyMissingCustomerContext(
   if (segment.purpose !== "clarify_task" || segment.basis || segment.capability !== null || segment.missing_arguments.length) return false;
   const results = context.getResults?.();
   if (!results || results.length) return false;
-  return asksForMissingCustomerContext(segment.text ?? "", context);
+  const productMissing = !meaningful(context.customerProvidedContext?.product);
+  const taskMissing = !hasSpecificCustomerIssue(context);
+  if (!productMissing && !taskMissing) return false;
+  // A safe clarification may be phrased naturally by the model; the
+  // deterministic boundary is the missing customer context, not a brittle
+  // list of question templates. Still prevent it from asking for a product
+  // that the customer already supplied.
+  const supportContextQuestion = /\b(?:product|model|device|headset|issue|problem|help|wrong|trouble|symptom|happening|working|connect|pair|power|sound|audio|microphone|charging|firmware|reset)\b/i.test(segment.text ?? "");
+  return !asksForKnownProduct(segment.text ?? "", context)
+    && (asksForMissingCustomerContext(segment.text ?? "", context) || supportContextQuestion);
 }
 
 /**
@@ -875,6 +937,101 @@ function canClarifyInsufficientTaskResult(
     const data = objectValue(record.result.data);
     return effectiveResultStatus(record) === "not_found" || data?.task_specificity === "insufficient";
   });
+}
+
+function knowledgeTool(toolName: string) {
+  return ["search_procedures", "search_product_knowledge", "search_policy", "get_brand_guidance"].includes(toolName);
+}
+
+function latestKnowledgeEvidence(context: Pick<ResponseValidationContext, "getResults">) {
+  return [...(context.getResults?.() ?? [])].reverse().find((record) => knowledgeTool(record.toolName));
+}
+
+/**
+ * Keep safe customer-facing gaps separate from transport/provider failures.
+ * This classification is intentionally derived only from server-recorded tool
+ * results; it never treats model text or retrieved content as instructions.
+ */
+export function classifyResponseFailure(
+  context: Pick<ResponseValidationContext, "getResults">,
+): ResponseFailureClass {
+  const results = context.getResults?.() ?? [];
+  if (results.some((record) => ["error", "unavailable"].includes(record.result.status))) return "system_tool_failure";
+  const knowledge = latestKnowledgeEvidence(context);
+  if (knowledge) {
+    const status = effectiveResultStatus(knowledge);
+    const data = objectValue(knowledge.result.data);
+    if (["error", "unavailable"].includes(status ?? "") || knowledge.result.status === "error") return "system_tool_failure";
+    if (knowledge.toolName === "search_procedures" && data?.task_specificity === "insufficient") return "insufficient_specificity";
+    if (knowledge.toolName === "search_procedures" && status === "not_found") return "insufficient_knowledge";
+    if (status === "not_found") return "valid_not_found";
+    if (knowledge.toolName === "search_procedures" && !Array.isArray(data?.results)) return "insufficient_knowledge";
+  }
+  return "model_response_invalid";
+}
+
+function hasCustomerProduct(context: Pick<ResponseValidationContext, "customerProvidedContext">) {
+  return meaningful(context.customerProvidedContext?.product);
+}
+
+function customerFacingKnowledgeGap(
+  context: Pick<ResponseValidationContext, "locale" | "customerMessage" | "customerProvidedContext" | "getResults">,
+): string | null {
+  const evidence = latestKnowledgeEvidence(context);
+  if (!evidence) return null;
+  const failureClass = classifyResponseFailure(context);
+  const locale = context.locale ?? "en";
+  if (failureClass === "system_tool_failure" || failureClass === "model_response_invalid") return null;
+
+  if (evidence.toolName === "search_procedures" && failureClass === "insufficient_specificity") {
+    if (!hasCustomerProduct(context) && !hasSpecificCustomerIssue(context)) {
+      return locale === "da"
+        ? "Hvilket produkt eller hvilken model drejer det sig om, og hvad er det præcist, der er galt?"
+        : "Which product or model is this about, and what exactly is going wrong?";
+    }
+    if (!hasSpecificCustomerIssue(context)) {
+      return locale === "da"
+        ? "Hvad er det præcist, der sker med produktet — for eksempel lyd, mikrofon, strøm, forbindelse eller opladning?"
+        : "What exactly is happening with the product—for example, is it audio, microphone, power, connection, or charging?";
+    }
+    return locale === "da"
+      ? "Jeg kunne ikke identificere én bestemt supportprocedure ud fra den nuværende beskrivelse. Hvilken model bruger du, og hvad har du allerede prøvet?"
+      : "I couldn’t identify one specific support procedure from the current description. Which model are you using, and what have you already tried?";
+  }
+
+  if (evidence.toolName === "search_procedures" && failureClass === "insufficient_knowledge") {
+    return locale === "da"
+      ? "Jeg kunne ikke bekræfte en supportprocedure for dette problem ud fra den aktuelle vejledning. Hvilken model bruger du, og hvad har du allerede prøvet?"
+      : "I couldn’t verify a support procedure for this issue from the current guidance. Which model are you using, and what have you already tried?";
+  }
+
+  if (failureClass === "valid_not_found") {
+    if (evidence.toolName === "search_product_knowledge") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte den produktoplysning ud fra vores aktuelle produktinformation. Hvis du sender et produktlink, SKU eller det præcise modelnavn, kan jeg prøve igen."
+        : "I couldn’t verify that product detail from our current product information. If you share a product link, SKU, or exact model name, I can try again.";
+    }
+    if (evidence.toolName === "search_policy") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte den politikoplysning ud fra vores aktuelle politikoplysninger."
+        : "I couldn’t verify that policy detail from our current policy information.";
+    }
+    if (evidence.toolName === "get_brand_guidance") {
+      return locale === "da"
+        ? "Jeg kunne ikke bekræfte yderligere vejledning til denne henvendelse."
+        : "I couldn’t verify any additional guidance for this request.";
+    }
+  }
+
+  // Keep this branch intentionally narrow. A future knowledge result must not
+  // silently become a claim merely because it has an unfamiliar shape.
+  return null;
+}
+
+export function composeSafeKnowledgeGapResponse(
+  context: Pick<ResponseValidationContext, "locale" | "customerMessage" | "customerProvidedContext" | "getResults">,
+): string | null {
+  return customerFacingKnowledgeGap(context);
 }
 
 function validateGroundedQuestion(
@@ -993,6 +1150,11 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
   if (!segment.capability) {
     return [{ index, code: "question_capability_required", message: "A capability-enabling question must name one capability." }];
   }
+  if (segment.capability === "update_address"
+    && context.customerMessage?.trim()
+    && !isExplicitAddressChangeRequest(context.customerMessage)) {
+    return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
+  }
   if (!availableCapability(segment.capability, context)) {
     return [{ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." }];
   }
@@ -1028,6 +1190,11 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       return issues;
     }
     case "action_offer": {
+      if (segment.capability === "update_address"
+        && context.customerMessage?.trim()
+        && !isExplicitAddressChangeRequest(context.customerMessage)) {
+        return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
+      }
       const definition = definitionFor(segment.capability, context);
       if (!context.manifest.proposalOnlyTools.includes(segment.capability) || definition?.sensitivity !== "proposed_action") {
         return [{ index, code: "unknown_action_capability", message: "The offered action is not a current proposal-only capability." }];
@@ -1132,9 +1299,11 @@ function safeCustomerFirstName(value: unknown): string | null {
 
 function greetingFor(context: ResponseValidationContext): string | null {
   if (!context.firstResponse) return null;
-  const firstName = safeCustomerFirstName(context.customerName);
+  const displayName = context.customerDisplayName
+    ?? (context.trustedCustomerIdentity?.verified ? context.customerName : null);
+  const firstName = safeCustomerFirstName(displayName);
   if (!firstName) return null;
-  return localeFor(context) === "da" ? `Hej ${firstName}!` : `Hi ${firstName}!`;
+  return localeFor(context) === "da" ? `Hej ${firstName},` : `Hi ${firstName},`;
 }
 
 function firstSentence(value: string) {
@@ -1193,6 +1362,10 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
       return locale === "da"
         ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
         : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
+    }
+    const choices = orderCandidateChoices(questionEvidence(segment, context));
+    if (choices.length > 1) {
+      return renderOrderCandidateClarification(choices, locale);
     }
     return locale === "da"
       ? "Kan du sende ordrenummeret fra din ordrebekræftelse?"
@@ -1290,6 +1463,48 @@ function joinList(values: string[], locale: ResponseLocale) {
   return locale === "da"
     ? `${values.slice(0, -1).join(", ")} og ${values.at(-1)}`
     : `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
+function orderCandidateChoices(evidence: ResponseEvidenceRecord | undefined) {
+  const data = objectValue(evidence?.result.data);
+  if (data?.order_resolution !== "multiple" || !Array.isArray(data.order_candidates)) return [];
+  return data.order_candidates.flatMap((value) => {
+    const candidate = objectValue(value);
+    const orderNumber = meaningful(candidate?.order_number) ? String(candidate.order_number).replace(/^#/, "") : "";
+    if (!orderNumber) return [];
+    const titles = Array.isArray(candidate?.item_titles)
+      ? candidate.item_titles.filter(meaningful).map((title) => String(title).replace(/\s+/g, " ").trim()).slice(0, 3)
+      : [];
+    return [`#${orderNumber}${titles.length ? ` — ${titles.join(", ")}` : ""}`];
+  }).slice(0, 5);
+}
+
+function renderOrderCandidateClarification(choices: string[], locale: ResponseLocale) {
+  const choiceText = joinList(choices, locale);
+  return locale === "da"
+    ? `Hvilken ordre vil du gerne have hjælp til — ${choiceText}?`
+    : `Which order would you like help with — ${choiceText}?`;
+}
+
+export function renderOrderCandidateClarificationFromResults(
+  getResults: (() => ResponseEvidenceRecord[]) | undefined,
+  locale: ResponseLocale = "en",
+) {
+  const historyEvidence = (getResults?.() ?? [])
+    .filter((record) => record.toolName === "get_order_history")
+    .at(-1);
+  const choices = orderCandidateChoices(historyEvidence);
+  return choices.length > 1 ? renderOrderCandidateClarification(choices, locale) : undefined;
+}
+
+function isOrderCandidateClarification(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  context: ResponseValidationContext,
+) {
+  const choiceText = renderOrderCandidateClarificationFromResults(context.getResults, localeFor(context));
+  if (!choiceText || context.activeOrder?.state === "verified") return false;
+  if (segment.capability === "get_order" && segment.missing_arguments.includes("order_id")) return true;
+  return /\b(?:order|purchase)\b/i.test(segment.text ?? "");
 }
 
 type RenderedOrderItem = { title: string; quantity: number | string };
@@ -1725,6 +1940,145 @@ function renderTextSegment(value: string | null) {
   return value?.trim().replace(/\n{3,}/g, "\n\n") ?? "";
 }
 
+/**
+ * Keeps model-written knowledge readable without changing its words or facts.
+ * Explicit line-oriented formatting (addresses and lists) is preserved; a
+ * dense prose block is split into small sentence groups for customer display.
+ */
+function formatReadableKnowledgeText(value: string) {
+  const paragraphs = String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.flatMap((paragraph) => {
+    if (paragraph.includes("\n")) return [paragraph];
+    const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length <= 2) return [paragraph];
+    const groups: string[] = [];
+    for (let index = 0; index < sentences.length; index += 2) {
+      groups.push(sentences.slice(index, index + 2).join(" "));
+    }
+    return groups;
+  }).join("\n\n");
+}
+
+function isActiveSupportChannel(channel?: GreenfieldInteractionChannel) {
+  return channel === "support_email"
+    || channel === "support_inbox"
+    || channel === "playground"
+    || channel === "web_chat";
+}
+
+function hasKnownOrderReference(context: ResponseValidationContext) {
+  return Boolean(context.activeOrder?.requestedOrderId);
+}
+
+function cleanContextualizedKnowledgeSentence(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/,\s*(?:and|or)\s*(?=[.!?]|$)/gi, "")
+    .replace(/\b(?:with|including)\s*(?:,|and|or)?\s*(?=[.!?]|$)/gi, "")
+    .replace(/\b(?:please\s+)?(?:provide|share|send|include)\s*(?:and|or)?\s*(?=[.!?]|$)/gi, "")
+    .replace(/([,;])\s*(?=[.!?]|$)/g, "")
+    .replace(/([.!?])\s*([.!?])/g, "$1")
+    .trim();
+}
+
+function requirementListFromSentence(value: string) {
+  const match = String(value ?? "").match(/\b(?:with|provide|share|send|include)\s+(.+?)(?:[.!?]|$)/i);
+  if (!match?.[1]) return null;
+  const items = match[1]
+    .split(/,\s*|\s+(?:and|or)\s+/i)
+    .map((item) => item.trim().replace(/^(?:the|your|an?|any)\s+/i, "").trim())
+    .filter(Boolean);
+  return items.length ? items : null;
+}
+
+function requirementAlreadyKnown(value: string, context: ResponseValidationContext) {
+  if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return hasKnownOrderReference(context);
+  if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
+    return Boolean(context.trustedCustomerIdentity?.verified);
+  }
+  if (/\bemail(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
+    return Boolean(context.trustedCustomerIdentity?.verified);
+  }
+  return false;
+}
+
+function naturalMissingRequirementQuestion(items: string[], context: ResponseValidationContext) {
+  const locale = localeFor(context);
+  if (items.length === 1) {
+    return locale === "da" ? `Hvad er ${items[0]}?` : `What’s the ${items[0]}?`;
+  }
+  const information = joinList(items, locale);
+  return locale === "da" ? `Kan du sende ${information}?` : `Could you share ${information}?`;
+}
+
+/**
+ * Filters a complete source-authored requirement list as one semantic unit.
+ * This prevents context adaptation from leaving punctuation or conjunction
+ * fragments behind when known order/identity fields are removed.
+ */
+function adaptKnownRequirementList(value: string, context: ResponseValidationContext, allowWithClause: boolean) {
+  if (!allowWithClause && !/\b(?:provide|share|send|include)\b/i.test(value)) return undefined;
+  const items = requirementListFromSentence(value);
+  if (!items?.some((item) => requirementAlreadyKnown(item, context))) return undefined;
+  const missing = items.filter((item) => !requirementAlreadyKnown(item, context));
+  return missing.length ? naturalMissingRequirementQuestion(missing, context) : "";
+}
+
+function adaptSupportContactInstruction(value: string) {
+  const contactPattern = /\b(?:please\s+)?(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\s+(?:us|our\s+support(?:\s+team)?|the\s+support(?:\s+team)?|support(?:\s+team)?|\[[^\]]+\]|[^\s,.;!?]+@[^\s,.;!?]+)(?:\s+(?:via|by|through|using)\s+(?:e-?mail|the\s+contact\s+form))?(?:\s+(?:on|at)\s+(?:\[[^\]]+\]|[^\s,.;!?]+@[^\s,.;!?]+))?/gi;
+  const formPattern = /\b(?:via|through|using)\s+(?:our|the)\s+contact\s+form\b/gi;
+  const hasContactInstruction = contactPattern.test(value) || formPattern.test(value);
+  contactPattern.lastIndex = 0;
+  formPattern.lastIndex = 0;
+  if (!hasContactInstruction) return value;
+
+  let adapted = value.replace(contactPattern, "").replace(formPattern, "");
+  adapted = adapted.replace(/,\s*(?:with|including)\s+/i, ", please provide ");
+  adapted = cleanContextualizedKnowledgeSentence(adapted);
+  if (/^(?:to\s+)?(?:start|initiate|request)\s+(?:the\s+)?(?:return|refund|claim)\.?$/i.test(adapted)) return "";
+  return adapted;
+}
+
+/**
+ * Applies only current-conversation semantics to model-written knowledge
+ * guidance. The stored source and cited evidence remain unchanged.
+ */
+export function adaptCustomerFacingKnowledgeText(value: string, context: ResponseValidationContext) {
+  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+  const adapted = paragraphs.flatMap((paragraph) => {
+    const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const nextLines = lines.map((line) => {
+      const sentences = line.split(/(?<=[.!?])\s+/).filter(Boolean);
+      return sentences.map((sentence) => {
+        const hadSupportContactInstruction = isActiveSupportChannel(context.interactionChannel)
+          && /\b(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\b/i.test(sentence);
+        let current = isActiveSupportChannel(context.interactionChannel)
+          ? adaptSupportContactInstruction(sentence)
+          : sentence;
+        const adaptedRequirementList = adaptKnownRequirementList(current, context, hadSupportContactInstruction);
+        if (adaptedRequirementList !== undefined) return adaptedRequirementList;
+        if (hasKnownOrderReference(context)) {
+          current = current.replace(/\b(?:your\s+|the\s+|an?\s+)?order\s+(?:number|no\.?|id|identifier)\b/gi, "");
+        }
+        if (context.trustedCustomerIdentity?.verified) {
+          current = current
+            .replace(/\b(?:your\s+|the\s+|an?\s+)?name\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "")
+            .replace(/\b(?:your\s+|the\s+|an?\s+)?email(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering))\b/gi, "");
+        }
+        return cleanContextualizedKnowledgeSentence(current);
+      }).filter(Boolean).join(" ");
+    }).filter(Boolean);
+    return nextLines.length ? [nextLines.join("\n")] : [];
+  });
+  return formatReadableKnowledgeText(adapted.join("\n\n"));
+}
+
 type ProcedureStepPresentation = {
   text: string;
   path: string;
@@ -1773,6 +2127,53 @@ function procedureStepListStyle(source: JsonObject | null): ProcedureStepPresent
   return declared === "ordered" || declared === "unordered" ? declared : null;
 }
 
+function procedureStepPresentation(
+  value: unknown,
+  path: string,
+  blockId: string,
+  sourceIndex: number,
+  source: JsonObject | null,
+) {
+  const text = removeLeadingProcedureHeadings(normalizeProcedureText(value), sourceIndex);
+  return text ? {
+    text,
+    path,
+    blockId,
+    sourceIndex,
+    kind: procedureStepKind(text, source),
+    listStyle: procedureStepListStyle(source),
+  } satisfies ProcedureStepPresentation : null;
+}
+
+/**
+ * Conditions and warnings are source-bound blocks, but rendering one without
+ * its adjacent instruction makes the customer-facing answer look truncated.
+ * Complete only the local source block boundary; do not merge records or
+ * invent any text.
+ */
+function completeProcedureSteps(
+  selectedSteps: ProcedureStepPresentation[],
+  allSteps: ProcedureStepPresentation[],
+) {
+  const available = new Map(allSteps.map((step) => [step.sourceIndex, step]));
+  const selected = new Map(selectedSteps.map((step) => [step.sourceIndex, step]));
+  for (const step of [...selected.values()]) {
+    if (step.kind === "condition") {
+      const child = available.get(step.sourceIndex + 1);
+      if (child && ["instruction", "expected_result", "alternative", "note"].includes(child.kind)) {
+        selected.set(child.sourceIndex, child);
+      }
+    }
+    if (step.kind === "warning" || step.kind === "expected_result") {
+      const preceding = available.get(step.sourceIndex - 1);
+      if (preceding && preceding.kind === "instruction") selected.set(preceding.sourceIndex, preceding);
+    }
+  }
+  return [...selected.values()]
+    .filter((step) => step.kind !== "condition" || selected.has(step.sourceIndex + 1))
+    .sort((left, right) => left.sourceIndex - right.sourceIndex);
+}
+
 function procedureStepValues(
   segment: Extract<ResponseSegment, { type: "procedure_guidance" }>,
   context: ResponseValidationContext,
@@ -1782,39 +2183,49 @@ function procedureStepValues(
   const citedResultIndex = segment.basis.field_paths
     .map(resultIndexFromPath)
     .find((value): value is number => value != null);
-  if (segment.block_ids?.length && citedResultIndex != null) {
-    const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
-    const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
-    return segment.block_ids.flatMap((blockId) => {
-      const entry = blocksById.get(blockId);
-      if (!entry || !meaningful(entry.block.text)) return [];
-      const text = removeLeadingProcedureHeadings(normalizeProcedureText(entry.block.text), entry.index);
-      return text ? [{
-        text,
-        path: `structured_data.procedure_steps[${entry.index}]`,
-        blockId: entry.blockId,
-        sourceIndex: entry.index,
-        kind: procedureStepKind(text, entry.block),
-        listStyle: procedureStepListStyle(entry.block),
-      }] : [];
-    });
-  }
-  return (segment.step_paths ?? []).flatMap((path) => {
-    const value = procedureStepValue(evidence.result, path, citedResultIndex ?? undefined);
-    if (!meaningful(value)) return [];
-    const parsed = procedureStepPath(path, citedResultIndex ?? undefined);
-    if (!parsed) return [];
-    const source = procedureStepObject(evidence.result, path, citedResultIndex ?? undefined);
-    const text = removeLeadingProcedureHeadings(normalizeProcedureText(value), parsed.stepIndex);
-    return text ? [{
-      text,
-      path,
-      blockId: String(source?.block_id ?? source?.id ?? `block_${parsed.stepIndex + 1}`),
-      sourceIndex: parsed.stepIndex,
-      kind: procedureStepKind(text, source),
-      listStyle: procedureStepListStyle(source),
-    }] : [];
+  if (citedResultIndex == null) return [];
+  const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
+  const allSteps = availableBlocks.flatMap((entry) => {
+    const step = procedureStepPresentation(
+      entry.block.text,
+      `structured_data.procedure_steps[${entry.index}]`,
+      entry.blockId,
+      entry.index,
+      entry.block,
+    );
+    return step ? [step] : [];
   });
+  const blocksById = new Map(availableBlocks.map((entry) => [entry.blockId, entry]));
+  const selectedSteps = segment.block_ids?.length
+    ? segment.block_ids.flatMap((blockId) => {
+        const entry = blocksById.get(blockId);
+        const step = entry
+          ? procedureStepPresentation(
+              entry.block.text,
+              `structured_data.procedure_steps[${entry.index}]`,
+              entry.blockId,
+              entry.index,
+              entry.block,
+            )
+          : null;
+        return step ? [step] : [];
+      })
+    : expandedProcedureStepPaths(segment.step_paths ?? [], evidence.result, citedResultIndex).flatMap((path) => {
+        const value = procedureStepValue(evidence.result, path, citedResultIndex);
+        if (!meaningful(value)) return [];
+        const parsed = procedureStepPath(path, citedResultIndex);
+        if (!parsed) return [];
+        const source = procedureStepObject(evidence.result, path, citedResultIndex);
+        const step = procedureStepPresentation(
+          value,
+          path,
+          String(source?.block_id ?? source?.id ?? `block_${parsed.stepIndex + 1}`),
+          parsed.stepIndex,
+          source,
+        );
+        return step ? [step] : [];
+      });
+  return completeProcedureSteps(selectedSteps, allSteps);
 }
 
 function normalizedProcedurePhrase(value: unknown) {
@@ -1905,10 +2316,14 @@ function renderLimitation(
       return locale === "da" ? "Jeg kan ikke tjekke den aktuelle lagerstatus lige nu." : "I can’t check the current availability right now.";
     }
   }
-  if (evidence?.toolName === "get_product" && ["unavailable", "error", "unknown"].includes(status ?? "")) {
+  if (evidence?.toolName === "get_product" && ["not_found", "unavailable", "error", "unknown"].includes(status ?? "")) {
     return locale === "da"
-      ? "Jeg kan ikke bekræfte produktet i butikkens katalog lige nu."
-      : "I can’t verify this product in the store catalog right now.";
+      ? status === "not_found"
+        ? "Jeg kunne ikke bekræfte et aktuelt produkt i butikkens katalog."
+        : "Jeg kan ikke bekræfte produktet i butikkens katalog lige nu."
+      : status === "not_found"
+        ? "I couldn’t verify a current product record in the store catalog."
+        : "I can’t verify this product in the store catalog right now.";
   }
   if (evidence?.toolName === "get_tracking") {
     const source = options.includeVerifiedTrackingSource ? renderVerifiedTrackingSource(evidence, locale) : "";
@@ -2072,10 +2487,14 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
+    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(segment.text, context));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
+    }
+    else if (segment.type === "question" && isOrderCandidateClarification(segment, context)) {
+      rendered.push(renderOrderCandidateClarificationFromResults(context.getResults, localeFor(context)) ?? "");
     }
     else if (segment.type === "question" && segment.purpose === "disambiguate_variant") {
       rendered.push(renderGroundedQuestion(segment, context));

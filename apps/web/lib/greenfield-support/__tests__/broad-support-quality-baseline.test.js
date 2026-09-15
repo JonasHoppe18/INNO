@@ -276,6 +276,20 @@ const SINGLE_TURN_CASES = [
   { id: "multi_delivered_refund", category: "MULTI-INTENT", tenant: "test", contextSubject: "Hvor er min ordre #1063?", orderNumber: "1063", message: "Order #1063 shows delivered but I cannot find the package. What should I do, and can you refund it?", expectedTools: ["get_order", "get_tracking"], expectedFacts: ["verified delivered result", "refund is not executed"] },
 ];
 
+// Keep the broader historical benchmark equivalent to the frozen 60-case
+// report. These cases add coverage that is intentionally outside the primary
+// 42-case matrix without changing runtime behavior or knowledge data.
+const SUPPLEMENTAL_CASES = [
+  { id: "shipping_japan", category: "SHIPPING DESTINATION", tenant: "sona", message: "Can you ship my order to Japan?", expectedTools: ["search_policy"], expectedFacts: ["use current shipping knowledge", "do not promise"] },
+  { id: "shipping_countries", category: "SHIPPING DESTINATION", tenant: "sona", message: "Which countries do you deliver to?", expectedTools: ["search_policy"], expectedFacts: ["current shipping destinations"] },
+  { id: "cancel_order_1051", category: "CANCELLATION", tenant: "test", contextSubject: "Ordre 1051", orderNumber: "1051", message: "Can you cancel my order #1051?", expectedTools: ["get_order", "cancel_order"], expectedFacts: ["verified order", "proposal only"] },
+  { id: "cancel_before_ship_1051", category: "CANCELLATION", tenant: "test", contextSubject: "Ordre 1051", orderNumber: "1051", message: "Please cancel order #1051 before it ships.", expectedTools: ["get_order", "cancel_order"], expectedFacts: ["verified order", "proposal only"] },
+  { id: "b2b_event", category: "B2B / PARTNERSHIP", tenant: "sona", message: "We need 30 headsets for an esports event. Who should I contact?", expectedTools: ["search_policy"], expectedFacts: ["no unverified bulk contact"] },
+  { id: "partnership_contact", category: "B2B / PARTNERSHIP", tenant: "sona", message: "Who do I contact about a partnership?", expectedTools: ["get_brand_guidance"], expectedFacts: ["no unverified partnership contact"] },
+  { id: "warranty_reseller", category: "WARRANTY", tenant: "sona", message: "I bought this headset from a reseller, can you help with the warranty?", expectedTools: ["search_policy"], expectedFacts: ["regional warranty policy", "reseller eligibility not confirmed"] },
+  { id: "app_not_detecting", category: "FIRMWARE / APP SETUP", tenant: "sona", message: "The AceZone app does not detect my headset. What should I check?", expectedTools: ["search_procedures"], expectedFacts: ["clarify missing model/platform", "do not substitute firmware"] },
+];
+
 const MULTI_TURN_CASES = [
   {
     id: "conversation_delivered_missing_then_found",
@@ -596,7 +610,7 @@ describe("broad greenfield ecommerce support quality baseline", () => {
     }
 
     const singleTurnResults = [];
-    for (const item of SINGLE_TURN_CASES) {
+    for (const item of [...SINGLE_TURN_CASES, ...SUPPLEMENTAL_CASES]) {
       const context = await contextFor(item);
       const run = await runGreenfieldAgentWithAgentsSdk({
         tenant: context.tenant,

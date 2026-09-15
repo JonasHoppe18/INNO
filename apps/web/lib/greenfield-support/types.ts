@@ -62,6 +62,8 @@ export interface ProcedureTask {
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 
+export type GreenfieldInteractionChannel = "support_email" | "support_inbox" | "playground" | "web_chat";
+
 /**
  * Trusted context is created by the server. It is deliberately not part of
  * any model-facing tool schema.
@@ -115,6 +117,7 @@ export interface KnowledgeSourceDocumentInput {
   content: string;
   sourceUri?: string | null;
   sourceLabel?: string | null;
+  observedAt?: string | null;
   sourceVersion?: number | null;
   metadata?: JsonObject;
   candidates: KnowledgeSourceCandidateInput[];
@@ -151,6 +154,8 @@ export interface KnowledgeSearchRequest {
   query: string;
   /** Server-owned latest customer wording used for task specificity; retrieval query may be model-composed. */
   taskQuery?: string;
+  /** Server-owned customer steps already attempted; never supplied as a model-facing tool argument. */
+  completedSteps?: string[];
   knowledgeTypes?: KnowledgeType[];
   limit?: number;
   /** Server-owned shop binding used to resolve a product from the current catalog. */
@@ -228,6 +233,13 @@ export interface OrderSnapshot {
   fulfillments?: FulfillmentSnapshot[];
 }
 
+/** Safe, customer-owned order labels used only to disambiguate history. */
+export interface OrderCandidate {
+  orderNumber: string;
+  itemTitles: string[];
+  createdAt?: string | null;
+}
+
 export interface FulfillmentItemSnapshot {
   /** Stable Shopify order line-item identifier used for the join. */
   orderLineItemId: string;
@@ -277,6 +289,7 @@ export interface ConversationContext {
   } | null;
   customerSignal: "resolution" | null;
   customerProvided?: CustomerProvidedContext;
+  orderCandidates?: OrderCandidate[];
 }
 
 export interface TrackingSnapshot {
