@@ -5,7 +5,6 @@ import { getCustomerSatisfactionLanguageCopy, localizeCustomerSatisfactionValue 
 import { normalizeSupportLanguage } from "@/lib/translation/languages";
 import {
   hashCustomerSatisfactionToken,
-  resolveCustomerSatisfactionOrigin,
 } from "@/lib/server/customer-satisfaction-surveys";
 import { loadCustomerSatisfactionSettings } from "@/lib/server/customer-satisfaction";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
@@ -67,18 +66,6 @@ export async function GET(request, { params }) {
     const surveyRequest = await loadRequest(params?.token, client);
     if (!surveyRequest) return response({ error: "This survey link is invalid or expired." }, 404);
     const requestUrl = new URL(request.url);
-    const linkedScore = Number(requestUrl.searchParams.get("score"));
-    if (requestUrl.searchParams.has("score")) {
-      if (!Number.isInteger(linkedScore) || linkedScore < 1 || linkedScore > 5) {
-        return response({ error: "Score must be an integer from 1 to 5." }, 400);
-      }
-      await recordSurveyResponse(client, surveyRequest, linkedScore);
-      const redirectUrl = new URL(`/csat/${encodeURIComponent(String(params?.token || ""))}`, resolveCustomerSatisfactionOrigin(request));
-      redirectUrl.searchParams.set("submitted", "1");
-      const language = requestUrl.searchParams.get("language");
-      if (language) redirectUrl.searchParams.set("language", language);
-      return NextResponse.redirect(redirectUrl, 303);
-    }
     const settings = await loadCustomerSatisfactionSettings(client, surveyRequest.workspace_id, { logoExpiresIn: 7 * 24 * 60 * 60 });
     const language = normalizeSupportLanguage(requestUrl.searchParams.get("language") || "en");
     const languageCopy = getCustomerSatisfactionLanguageCopy(language);

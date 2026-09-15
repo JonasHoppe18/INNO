@@ -3,6 +3,7 @@ import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
+import type { ResolutionStage } from "./stages/planner.ts";
 import { assessConversationClosing } from "./stages/conversation-closing.ts";
 import {
   statusOnAutoResolvedAcknowledgment,
@@ -122,6 +123,13 @@ import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.
 import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
+import { buildReturnWindowFact, checkReturnWindow } from "./stages/return-window-check.ts";
+import {
+  addReviewReason,
+  type ReviewReason,
+  type ReviewSeverity,
+  summarizeReviewReasons,
+} from "./stages/review-reasons.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import {
   checkLiveFactAndActionClaims,
@@ -195,6 +203,11 @@ export interface PipelineResult {
   generation_id?: string;
   proposed_actions: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
+  // Why this draft is in review, independent of routing_hint — which in manual
+  // mode is always "review" and therefore cannot carry the guards' signal.
+  review_reasons?: ReviewReason[];
+  review_severity?: ReviewSeverity;
+  guard_violation?: boolean;
   block_send_recommended?: boolean;
   unsupported_commitment_check?: {
     checked: boolean;
@@ -1083,6 +1096,22 @@ export function applyVerifierRoutingGuard(
   return { routingHint, blockSendRecommended, reasons };
 }
 
+// Which RESOLUTION_STAGE_DIRECTIVES entry a post-action confirmation should
+// use. Every executed-action confirmation used to force resolution_stage to
+// "info_only" regardless of action type, which silenced any action-specific
+// tone directive (e.g. RESOLUTION_STAGE_DIRECTIVES.cancel_order) for exactly
+// the drafts that need it most. Only action types with a dedicated, tested
+// directive get mapped here — everything else keeps the safe "info_only"
+// default rather than guessing at an untested stage.
+export function resolveActionConfirmationStage(
+  actionType: string,
+): ResolutionStage {
+  const map: Partial<Record<string, ResolutionStage>> = {
+    cancel_order: "cancel_order",
+  };
+  return map[actionType] ?? "info_only";
+}
+
 export function shouldDeferDraftUntilActionDecision(
   proposals: ActionProposal[],
   routingHint: "auto" | "review" | "block",
@@ -1611,7 +1640,7 @@ export async function runDraftV2Pipeline(
       plan = {
         ...plan,
         primary_intent: actionIntentMap[actionType] ?? plan.primary_intent,
-        resolution_stage: "info_only",
+        resolution_stage: resolveActionConfirmationStage(actionType),
         skills_to_consider: [],
         confidence: 1,
       };
@@ -1843,6 +1872,27 @@ export async function runDraftV2Pipeline(
       messages,
       latestMessage,
     );
+    // Return-window verdict, computed here rather than left to the writer.
+    // C5 showed the writer granting a return on a five-month-old order: it had
+    // the order age and a directive to defer to policy, but finding the window
+    // in retrieved prose and comparing dates are both things it gets wrong.
+    // Only added for return intents, so ordinary enquiries carry no extra noise.
+    if (
+      (plan.required_facts || []).includes("return_eligibility") ||
+      plan.primary_intent === "return"
+    ) {
+      const returnWindowFact = buildReturnWindowFact({
+        order_age_days: facts.order?.created_at
+          ? Math.floor(
+            (Date.now() - new Date(facts.order.created_at).getTime()) /
+              (1000 * 60 * 60 * 24),
+          )
+          : null,
+        retrieved_chunks: retrieved.chunks,
+      });
+      if (returnWindowFact) facts.facts.push(returnWindowFact);
+    }
+
     const returnTrackingAttribution = detectCustomerProvidedReturnTracking({
       latestCustomerMessage: latestBody,
       conversationHistory: quotedAwareConversationHistory,
@@ -3524,11 +3574,16 @@ export async function runDraftV2Pipeline(
     let finalDraft = languageCheckedWritten.draft_text;
     let finalConfidence = verified.confidence;
     let finalRoutingHint = effectiveRoutingHint;
+    // Guards' own signal channel. routing_hint cannot carry it: with
+    // auto_send_intents empty every draft is already "review", so escalating
+    // to it is a no-op. Measured 14/14 on 2026-07-29.
+    let reviewReasons: ReviewReason[] = [];
     let finalVerification = verified;
 
     if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
       finalConfidence = Math.min(finalConfidence, 0.62);
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "mixed_language_draft");
     }
 
     // 11. Eskalér til stærkere model — kun for høj-risiko intents hvor fejl er dyre.
@@ -3662,6 +3717,10 @@ export async function runDraftV2Pipeline(
     if (actionOutcomeRequiresReview(postActionResult)) {
       finalRoutingHint = "review";
       blockSendRecommended = true;
+      reviewReasons = addReviewReason(reviewReasons, "action_outcome_requires_review");
+    }
+    for (const reason of verifierRoutingGuard.reasons) {
+      reviewReasons = addReviewReason(reviewReasons, reason);
     }
     if (verifierRoutingGuard.reasons.length > 0) {
       console.warn(
@@ -3691,6 +3750,7 @@ export async function runDraftV2Pipeline(
     );
     if (finalSupportVoiceViolations.length > 0) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "support_voice_violation");
       blockSendRecommended = true;
       finalConfidence = Math.min(finalConfidence, 0.72);
       console.warn(
@@ -3704,11 +3764,25 @@ export async function runDraftV2Pipeline(
     // refund/prepaid-label/replacement/exchange promises that prompt-only
     // guardrails do not reliably prevent. Additive only: never rewrites the
     // draft, never executes actions; only escalates routing_hint to "review".
+    // A just-executed action (postActionResult) authorizes its own past-tense
+    // confirmation. finalProposals is deliberately emptied once an action has
+    // run (it is no longer a pending proposal), which left the check unable to
+    // authorize the very claim it was confirming — "jeg har annulleret ordre
+    // #1053" was flagged as an unsupported promise on an already-applied,
+    // approved cancellation. Feed the executed type in explicitly.
+    const executedActionTypeForCommitmentCheck =
+      isExecutedActionResult(postActionResult) &&
+        typeof postActionResult?.action_type === "string"
+        ? [{ type: String(postActionResult.action_type) }]
+        : [];
     const unsupportedCommitmentCheck = checkUnsupportedCommitments({
       draft_text: finalDraft ?? "",
-      approved_actions: finalProposals
-        .filter((p) => !p.requires_approval)
-        .map((p) => ({ type: p.type })),
+      approved_actions: [
+        ...finalProposals
+          .filter((p) => !p.requires_approval)
+          .map((p) => ({ type: p.type })),
+        ...executedActionTypeForCommitmentCheck,
+      ],
       suggested_actions: finalProposals
         .filter((p) => p.requires_approval)
         .map((p) => ({ type: p.type })),
@@ -3717,9 +3791,49 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedCommitmentCheck.requires_review) {
       finalRoutingHint = "review";
+      for (const v of unsupportedCommitmentCheck.violations) {
+        reviewReasons = addReviewReason(reviewReasons, v.type, v.excerpt);
+      }
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported commitment check flagged ${unsupportedCommitmentCheck.violations.length} violation(s) — routing to review`,
+      );
+    }
+
+    // 12a2. Deterministic guard against granting a return the shop's own
+    // documented window does not cover. Observed live (C5): a return was
+    // granted on a five-month-old order because retrieval surfaced the policy
+    // chunk holding the return address rather than the one holding the window.
+    // Flags for review rather than refusing — honouring a late return is a
+    // business judgement, but it is not Sona's to make unilaterally.
+    const returnWindowCheck = checkReturnWindow({
+      draft_text: finalDraft ?? "",
+      order_age_days: facts.order?.created_at
+        ? Math.floor(
+          (Date.now() - new Date(facts.order.created_at).getTime()) /
+            (1000 * 60 * 60 * 24),
+        )
+        : null,
+      retrieved_chunks: retrieved.chunks,
+    });
+    if (returnWindowCheck.requires_review) {
+      finalRoutingHint = "review";
+      for (const v of returnWindowCheck.violations) {
+        reviewReasons = addReviewReason(
+          reviewReasons,
+          v.type,
+          `${v.order_age_days} dage${
+            v.documented_window_days ? ` vs ${v.documented_window_days} dage` : ""
+          }`,
+        );
+      }
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] return-window check flagged ${
+          returnWindowCheck.violations
+            .map((v) => v.type)
+            .join(", ")
+        } — routing to review`,
       );
     }
 
@@ -3740,6 +3854,7 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedAssumptionCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "unsupported_assumption");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] ungrounded gift/original-purchaser assumption flagged ${unsupportedAssumptionCheck.violations.length} violation(s) — routing to review`,
@@ -3761,6 +3876,7 @@ export async function runDraftV2Pipeline(
     });
     if (liveFactActionClaimCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "live_fact_action_claim");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported live-fact/action claim flagged ${
@@ -3786,6 +3902,9 @@ export async function runDraftV2Pipeline(
     );
     finalRoutingHint = imageEvidenceGuard.routingHint;
     blockSendRecommended = imageEvidenceGuard.blockSendRecommended;
+    for (const v of imageEvidenceGuard.violations) {
+      reviewReasons = addReviewReason(reviewReasons, "image_evidence_claim", v.type);
+    }
     if (imageEvidenceGuard.violations.length > 0) {
       console.warn(
         `[generate-draft-v2] unsupported image-evidence claim flagged ${
@@ -3808,6 +3927,7 @@ export async function runDraftV2Pipeline(
     });
     if (unsupportedNegativeClaimCheck.requires_review) {
       finalRoutingHint = "review";
+      reviewReasons = addReviewReason(reviewReasons, "unsupported_negative_claim");
       blockSendRecommended = true;
       console.warn(
         `[generate-draft-v2] unsupported negative compatibility/availability claim flagged ${
@@ -3832,8 +3952,24 @@ export async function runDraftV2Pipeline(
       finalDraft = capabilityRewrite.draft;
       finalRoutingHint = "review";
       blockSendRecommended = true;
+      reviewReasons = addReviewReason(reviewReasons, "capability_refusal");
       console.warn(
         "[generate-draft-v2] ungrounded capability refusal rewritten to owns-the-case hedge",
+      );
+    }
+
+    // All guards have had their say. `highest` is what distinguishes a draft
+    // that is merely awaiting manual approval from one a guard objected to —
+    // a distinction routing_hint cannot express while it is saturated.
+    const reviewReasonSummary = summarizeReviewReasons(reviewReasons);
+    if (reviewReasonSummary.has_guard_violation) {
+      console.warn(
+        `[generate-draft-v2] guard violation(s): ${
+          reviewReasons
+            .filter((r) => r.severity === "danger")
+            .map((r) => r.code)
+            .join(", ")
+        }`,
       );
     }
 
@@ -3996,6 +4132,9 @@ export async function runDraftV2Pipeline(
           intent: plan.primary_intent,
           confidence: finalConfidence,
           routing_hint: finalRoutingHint,
+          review_reasons: reviewReasonSummary.codes,
+          review_severity: reviewReasonSummary.highest,
+          guard_violation: reviewReasonSummary.has_guard_violation,
           sources: finalSourcesForLog,
         }),
         status: "success",
@@ -4062,6 +4201,9 @@ export async function runDraftV2Pipeline(
       generation_id: generationId,
       proposed_actions: finalProposals,
       routing_hint: finalRoutingHint,
+      review_reasons: reviewReasons,
+      review_severity: reviewReasonSummary.highest,
+      guard_violation: reviewReasonSummary.has_guard_violation,
       block_send_recommended: blockSendRecommended,
       unsupported_commitment_check: {
         checked: true,

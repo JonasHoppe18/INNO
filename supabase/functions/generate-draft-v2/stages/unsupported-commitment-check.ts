@@ -21,6 +21,7 @@ export type UnsupportedCommitmentViolationType =
   | "unsupported_exchange_promise"
   | "unsupported_document_promise"
   | "unsupported_discount_promise"
+  | "unsupported_cancellation_promise"
   | "unsupported_process_promise";
 
 export type UnsupportedCommitmentCheckInput = {
@@ -232,6 +233,10 @@ const FAMILIES: CommitmentFamily[] = [
       /\bthe\s+exchange\s+has\s+been\s+(?:started|processed)\b/i,
       // DA future
       /\b(?:vi|jeg)\s+(?:vil\s+)?ombytter?\b/i,
+      // DA verbum + handlingsnavneord: "jeg igangsætter en ombytning".
+      // Observeret live 2026-07-29 (A5). Moenstret ovenfor kraevede
+      // udsagnsordsformen "ombytter" og slap navneordsformen igennem.
+      /\b(?:vi|jeg)\b(?:(?!\bikke\b)[^.?!\n]){0,45}?\b(?:igangsætter|igangsætte|opretter|starter|sætter\s+i\s+gang|arrangerer|behandler)\b(?:(?!\bikke\b)[^.?!\n]){0,30}\b(?:ombytning|ombytte|bytte)\b/i,
       // READINESS-6c: variant-swap promise phrased as "sende dig den <farve/
       // anden> model/vare" — an exchange promise without the word "ombytte".
       // Anchored on a product noun so "vi sender dig et link" never matches.
@@ -362,6 +367,25 @@ const FAMILIES: CommitmentFamily[] = [
   // reagere på, han venter bare på en mail der aldrig kommer.
   //
   // Autoriseres af enhver action der faktisk starter en sagsgang.
+  {
+    violationType: "unsupported_cancellation_promise",
+    authorizingActionType: /cancel/i,
+    commitmentPatterns: [
+      // DA verbum + handlingsnavneord: "jeg igangsætter annullering af ...".
+      // Observeret live 2026-07-29 (B4), hvor draften beskrev en korrekt delvis
+      // annullering — men ingen action blev oprettet, saa intet skete.
+      // Mellemrummene maa ikke indeholde "ikke": "jeg kan ikke igangsætte en
+      // annullering" er en afvisning, ikke et loefte. Observeret formulering
+      // har flere ord mellem grundled og udsagnsord ("Jeg har modtaget din
+      // anmodning og igangsætter annullering ...").
+      /\b(?:vi|jeg)\b(?:(?!\bikke\b)[^.?!\n]){0,45}?\b(?:igangsætter|igangsætte|opretter|starter|sætter\s+i\s+gang|behandler|gennemfører)\b(?:(?!\bikke\b)[^.?!\n]){0,40}\b(?:annullering|annullere|afbestilling|afbestille)\b/i,
+      // DA allerede-gjort: "jeg har annulleret ordren"
+      /\b(?:vi|jeg)\s+(?:har\s+)?annulleret\b/i,
+      // EN future + already-done
+      /\b(?:we|i)(?:['’]ll| will)\s+cancel\b/i,
+      /\b(?:we(?:['’]ve| have))\s+(?:already\s+)?cancell?ed\b/i,
+    ],
+  },
   {
     violationType: "unsupported_process_promise",
     authorizingActionType: /return|exchange|replac|refund|warrant|repair/i,

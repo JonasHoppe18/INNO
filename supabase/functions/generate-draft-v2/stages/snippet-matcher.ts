@@ -45,7 +45,7 @@ export type MatchResponse = {
 
 type CallJson = typeof callOpenAIJson;
 
-const SYSTEM_PROMPT =
+export const SYSTEM_PROMPT =
   "You decide which knowledge snippet(s) actually answer the customer's " +
   "question. Match on MEANING ACROSS LANGUAGES — the customer may write Danish " +
   "or Spanish while the snippet is English. A snippet matches only if it answers " +
@@ -66,7 +66,16 @@ const SYSTEM_PROMPT =
   "success, or the upstream resolution below says the case has moved past " +
   "diagnosis, then a snippet that merely re-explains or re-diagnoses the " +
   "symptom does NOT answer their need — score the return/warranty-process " +
-  "snippet highest instead.";
+  "snippet highest instead. " +
+  // Maalt paa den rigtige kandidatpulje: uden denne regel returnerede baade
+  // gpt-4o-mini og gpt-4o én enkelt vinder, saa et procedure-svar aldrig kunne
+  // samles. Med reglen (og paa gpt-4o) hentes baade daekningen OG de felter
+  // kunden skal sende — de to dele et fuldt garantisvar kraever.
+  "PROCEDURES SPAN SEVERAL SNIPPETS: when the reply must walk the customer " +
+  "through a process (warranty, return, exchange, cancellation), a complete " +
+  "answer usually needs MORE THAN ONE snippet — eligibility, who handles it, " +
+  "and what the customer must send. Score EACH snippet independently on its " +
+  "own merit; do NOT pick a single winner and zero the rest.";
 
 // Advisory only for gpt-4o-mini: callOpenAIJson enforces json_schema structured
 // output for gpt-5 models but falls back to json_object mode otherwise, so this
