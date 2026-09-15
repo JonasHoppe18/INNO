@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
-import { loadUserEmailSignature } from "@/lib/server/email-signature";
+import { loadUserEmailSignatureConfig } from "@/lib/server/email-signature";
 import {
   runGreenfieldAgentWithAgentsSdk,
   Ship24ReadOnlyProvider,
@@ -101,7 +101,9 @@ export async function POST(request: Request) {
       requestedShopId: shop.id,
       reason: "greenfield_support_read_only",
     });
-    const signature = await loadUserEmailSignature(serviceClient, scope.supabaseUserId);
+    const signature = await loadUserEmailSignatureConfig(serviceClient, scope.supabaseUserId, {
+      workspaceId: scope.workspaceId,
+    });
 
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: null },

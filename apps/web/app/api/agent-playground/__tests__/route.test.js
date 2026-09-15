@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthScope: vi.fn(),
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
-  loadUserEmailSignature: vi.fn(),
+  loadUserEmailSignatureConfig: vi.fn(),
   isInternalGreenfieldPlaygroundUser: vi.fn(),
   isGreenfieldPlaygroundTicketRequired: vi.fn(),
   isGreenfieldPlaygroundProduction: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("@/lib/server/shopify-credentials", () => ({
   resolveShopifyCredentialsWithDiagnostics: mocks.resolveShopifyCredentialsWithDiagnostics,
 }));
 vi.mock("@/lib/server/email-signature", () => ({
-  loadUserEmailSignature: mocks.loadUserEmailSignature,
+  loadUserEmailSignatureConfig: mocks.loadUserEmailSignatureConfig,
 }));
 vi.mock("@/lib/greenfield-support", () => ({
   runGreenfieldAgentWithAgentsSdk: mocks.runGreenfieldAgentWithAgentsSdk,
@@ -91,7 +91,11 @@ beforeEach(() => {
   mocks.resolveScopedShop.mockResolvedValue({ id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" });
   mocks.listScopedShops.mockResolvedValue([{ id: "shop-a", workspace_id: "workspace-a" }]);
   mocks.resolveShopifyCredentialsWithDiagnostics.mockResolvedValue({ shop_domain: "test-shop.example", access_token: "server-only-token" });
-  mocks.loadUserEmailSignature.mockResolvedValue("Mvh\nJonas");
+  mocks.loadUserEmailSignatureConfig.mockResolvedValue({
+    closingText: "Mvh\nJonas",
+    defaultClosingText: "Mvh\nJonas",
+    languageSignatures: {},
+  });
 });
 
 describe("greenfield agent playground API", () => {
@@ -197,7 +201,6 @@ describe("greenfield agent playground API", () => {
       .mockReturnValueOnce(messages)
       .mockReturnValueOnce(chain({ awaitResult: { data: { id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" }, error: null } }))
       .mockReturnValueOnce(chain({ awaitResult: { data: { shop_domain: "test-shop.example", access_token: "server-only-token" }, error: null } }))
-      .mockReturnValueOnce(chain({ maybeSingleResult: { data: { signature: "Mvh\nJonas" }, error: null } }))
       .mockReturnValueOnce(chain({ awaitResult: { data: [{ id: "user-message", role: "user", content: "Where is my order?", trace_json: null, created_at: "now" }, { id: "assistant-message", role: "assistant", content: "Here is the answer.", trace_json: {}, created_at: "now" }], error: null } }))
       .mockReturnValueOnce(updatedSession);
 
@@ -207,8 +210,8 @@ describe("greenfield agent playground API", () => {
       body: JSON.stringify({ action: "send", session_id: session.id, message: "Where is my order?" }),
     }));
     expect(sendResponse.status).toBe(200);
-    expect(mocks.loadUserEmailSignature).toHaveBeenCalledWith(client, "user-a");
-    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: "Mvh\nJonas" }));
+    expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalledWith(client, "user-a", { workspaceId: "workspace-a" });
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: expect.objectContaining({ closingText: "Mvh\nJonas" }) }));
   });
 
   it("D1: keeps free-form creation available for an explicitly authorized internal environment", async () => {

@@ -5,6 +5,7 @@ import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   htmlToPlainText,
   loadEmailSignatureConfig,
+  normalizeLanguageSignatures,
   normalizePlainText,
   sanitizeEmailTemplateHtml,
 } from "@/lib/server/email-signature";
@@ -147,6 +148,7 @@ export async function GET(request) {
           closing_text: config.closingText || "",
           template_html: config.templateHtml || "",
           template_text_fallback: config.templateTextFallback || "",
+          language_signatures: config.languageSignatures || {},
           is_active: config.isActive !== false,
           legacy_signature: legacySignature || "",
         },
@@ -191,6 +193,7 @@ export async function PUT(request) {
 
     const legacySignature = await loadLegacySignature(serviceClient, targetUserId);
     const closingText = normalizePlainText(body?.closing_text || "");
+    const languageSignatures = normalizeLanguageSignatures(body?.language_signatures);
     const sanitizedTemplateHtml = sanitizeEmailTemplateHtml(body?.template_html || "");
     const templateTextFallbackRaw = normalizePlainText(body?.template_text_fallback || "");
     const templateTextFallback = templateTextFallbackRaw || htmlToPlainText(sanitizedTemplateHtml);
@@ -200,6 +203,7 @@ export async function PUT(request) {
       workspace_id: scope.workspaceId,
       user_id: targetUserId,
       closing_text: closingText || null,
+      language_signatures: languageSignatures,
       template_html: sanitizedTemplateHtml || "",
       template_text_fallback: templateTextFallback || "",
       is_active: Boolean(isActive),
@@ -211,7 +215,7 @@ export async function PUT(request) {
       .upsert(payload, {
         onConflict: "workspace_id,user_id",
       })
-      .select("closing_text, template_html, template_text_fallback, is_active")
+      .select("closing_text, language_signatures, template_html, template_text_fallback, is_active")
       .maybeSingle();
 
     if (error) {
@@ -229,6 +233,7 @@ export async function PUT(request) {
         signature: {
           user_id: targetUserId,
           closing_text: normalizePlainText(data?.closing_text || ""),
+          language_signatures: normalizeLanguageSignatures(data?.language_signatures),
           template_html: sanitizeEmailTemplateHtml(data?.template_html || ""),
           template_text_fallback: normalizePlainText(data?.template_text_fallback || ""),
           is_active: data?.is_active !== false,

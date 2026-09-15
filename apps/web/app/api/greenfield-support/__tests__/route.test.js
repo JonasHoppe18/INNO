@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthScope: vi.fn(),
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
-  loadUserEmailSignature: vi.fn(),
+  loadUserEmailSignatureConfig: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
   Ship24ReadOnlyProvider: vi.fn(),
   loadGreenfieldThreadState: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("@/lib/server/shopify-credentials", () => ({
   resolveShopifyCredentialsWithDiagnostics: mocks.resolveShopifyCredentialsWithDiagnostics,
 }));
 vi.mock("@/lib/server/email-signature", () => ({
-  loadUserEmailSignature: mocks.loadUserEmailSignature,
+  loadUserEmailSignatureConfig: mocks.loadUserEmailSignatureConfig,
 }));
 vi.mock("@/lib/greenfield-support", () => ({
   runGreenfieldAgentWithAgentsSdk: mocks.runGreenfieldAgentWithAgentsSdk,
@@ -48,7 +48,11 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  mocks.loadUserEmailSignature.mockResolvedValue("Mvh\nJonas");
+  mocks.loadUserEmailSignatureConfig.mockResolvedValue({
+    closingText: "Mvh\nJonas",
+    defaultClosingText: "Mvh\nJonas",
+    languageSignatures: {},
+  });
 });
 
 describe("greenfield support request wiring", () => {
@@ -121,8 +125,8 @@ describe("greenfield support request wiring", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledTimes(1);
-    expect(mocks.loadUserEmailSignature).toHaveBeenCalledWith(expect.anything(), "user-a");
-    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: "Mvh\nJonas" }));
+    expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalledWith(expect.anything(), "user-a", { workspaceId: "workspace-a" });
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: expect.objectContaining({ closingText: "Mvh\nJonas" }) }));
   });
 
   it("does not run without an explicit support message", async () => {

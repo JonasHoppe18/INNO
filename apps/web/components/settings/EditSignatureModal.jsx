@@ -49,6 +49,12 @@ const DEFAULT_SIGNATURE_BUILDER = {
   columnGap: "14",
 };
 
+const SIGNATURE_LANGUAGE_OPTIONS = [
+  { code: "da", label: "Danish" },
+  { code: "en", label: "English" },
+  { code: "de", label: "German" },
+];
+
 const LAYOUT_OPTIONS = [
   {
     value: "logo_left",
@@ -334,6 +340,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   const builderScrollRef = useRef(null);
   const logoFileInputRef = useRef(null);
   const [signature, setSignature] = useState("");
+  const [languageSignatures, setLanguageSignatures] = useState({});
   const [saving, setSaving] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateIsActive, setTemplateIsActive] = useState(true);
@@ -346,6 +353,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   useEffect(() => {
     if (!open) return;
     setSignature(String(member?.signature || ""));
+    setLanguageSignatures({});
   }, [member?.signature, open]);
 
   useEffect(() => {
@@ -362,8 +370,17 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         if (!active) return;
         if (!response.ok) throw new Error(payload?.error || "Could not load signature template.");
         const next = payload?.signature || {};
+        const normalizedLanguageSignatures =
+          next?.language_signatures && typeof next.language_signatures === "object" && !Array.isArray(next.language_signatures)
+            ? Object.fromEntries(
+                Object.entries(next.language_signatures)
+                  .map(([code, value]) => [String(code || "").trim().toLowerCase(), String(value || "")])
+                  .filter(([code, value]) => /^[a-z]{2,8}$/.test(code) && value.trim())
+              )
+            : {};
         setTemplateIsActive(next?.is_active !== false);
         setTemplateHtml(String(next?.template_html || ""));
+        setLanguageSignatures(normalizedLanguageSignatures);
       })
       .catch((error) => {
         if (!active) return;
@@ -501,6 +518,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         body: JSON.stringify({
           user_id: member.user_id,
           is_active: Boolean(templateIsActive),
+          language_signatures: languageSignatures,
           template_html: String(templateHtml || ""),
         }),
       });
@@ -552,6 +570,71 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 placeholder={"Best regards,\nYour Name"}
                 className="min-h-[100px] resize-y border-slate-200 text-sm"
               />
+            </div>
+
+            {/* Language-specific plain text signatures */}
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Language-specific signatures</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Use a matching sign-off when Sona replies in another language. The default remains the fallback.
+                  </p>
+                </div>
+                <select
+                  aria-label="Add language signature"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const code = String(event.target.value || "").trim().toLowerCase();
+                    if (!code) return;
+                    setLanguageSignatures((previous) => ({
+                      ...previous,
+                      [code]: previous[code] || "",
+                    }));
+                    event.target.value = "";
+                  }}
+                  className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700"
+                >
+                  <option value="">+ Add language</option>
+                  {SIGNATURE_LANGUAGE_OPTIONS.filter(({ code }) => !Object.prototype.hasOwnProperty.call(languageSignatures, code)).map(({ code, label }) => (
+                    <option key={code} value={code}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {Object.entries(languageSignatures).map(([code, value]) => {
+                const language = SIGNATURE_LANGUAGE_OPTIONS.find((option) => option.code === code);
+                const label = language?.label || code.toUpperCase();
+                return (
+                  <div key={code} className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor={`member-signature-${code}`} className="text-sm font-medium text-slate-700">
+                        {label}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                        onClick={() => setLanguageSignatures((previous) => {
+                          const next = { ...previous };
+                          delete next[code];
+                          return next;
+                        })}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <Textarea
+                      id={`member-signature-${code}`}
+                      value={value}
+                      onChange={(event) => setLanguageSignatures((previous) => ({ ...previous, [code]: event.target.value }))}
+                      placeholder={code === "da" ? "Mvh\nDit navn" : code === "de" ? "Viele Grüße\nIhr Name" : "Best regards\nYour Name"}
+                      className="min-h-[82px] resize-y border-slate-200 text-sm"
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             {/* Visual template toggle row */}
