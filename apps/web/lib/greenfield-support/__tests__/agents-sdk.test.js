@@ -69,6 +69,25 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.filter((event) => event.type === "tool_call")).toHaveLength(0);
   });
 
+  it("appends the server-resolved support-user signature once", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: "Mvh\nJonas",
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nMvh\nJonas");
+    expect(result.response.match(/Mvh/g)).toHaveLength(1);
+    expect(result.trace.events.at(-1).data.response).toBe(result.response);
+  });
+
   it("applies the shared Luna medium default to the SDK agent", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

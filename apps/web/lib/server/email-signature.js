@@ -221,6 +221,22 @@ export function composeEmailBodyWithSignature({ bodyText = "", bodyHtml = "", co
   };
 }
 
+export async function loadUserEmailSignature(serviceClient, supabaseUserId) {
+  if (!serviceClient || !supabaseUserId) return "";
+  try {
+    const { data, error } = await serviceClient
+      .from("profiles")
+      .select("signature")
+      .eq("user_id", supabaseUserId)
+      .maybeSingle();
+    if (error) throw error;
+    return normalizePlainText(data?.signature || "");
+  } catch (error) {
+    console.warn("[email-signature] user signature lookup failed", error?.message || error);
+    return "";
+  }
+}
+
 export async function loadEmailSignatureConfig(
   serviceClient,
   { workspaceId = null, userId = null, legacySignature = "" } = {}

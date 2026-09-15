@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthScope: vi.fn(),
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
+  loadUserEmailSignature: vi.fn(),
   isInternalGreenfieldPlaygroundUser: vi.fn(),
   isGreenfieldPlaygroundTicketRequired: vi.fn(),
   isGreenfieldPlaygroundProduction: vi.fn(),
@@ -25,6 +26,9 @@ vi.mock("@/lib/server/workspace-auth", () => ({
 }));
 vi.mock("@/lib/server/shopify-credentials", () => ({
   resolveShopifyCredentialsWithDiagnostics: mocks.resolveShopifyCredentialsWithDiagnostics,
+}));
+vi.mock("@/lib/server/email-signature", () => ({
+  loadUserEmailSignature: mocks.loadUserEmailSignature,
 }));
 vi.mock("@/lib/greenfield-support", () => ({
   runGreenfieldAgentWithAgentsSdk: mocks.runGreenfieldAgentWithAgentsSdk,
@@ -87,6 +91,7 @@ beforeEach(() => {
   mocks.resolveScopedShop.mockResolvedValue({ id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" });
   mocks.listScopedShops.mockResolvedValue([{ id: "shop-a", workspace_id: "workspace-a" }]);
   mocks.resolveShopifyCredentialsWithDiagnostics.mockResolvedValue({ shop_domain: "test-shop.example", access_token: "server-only-token" });
+  mocks.loadUserEmailSignature.mockResolvedValue("Mvh\nJonas");
 });
 
 describe("greenfield agent playground API", () => {
@@ -163,6 +168,47 @@ describe("greenfield agent playground API", () => {
     await expect(response.json()).resolves.toMatchObject({ ticket_required: false, session: { id: "session-a" } });
     expect(client.from).toHaveBeenCalledWith("greenfield_playground_sessions");
     expect(client.from.mock.calls.map(([table]) => table)).not.toEqual(expect.arrayContaining(["mail_threads", "mail_messages", "drafts", "draft_generations"]));
+  });
+
+  it("passes the signed-in support user's signature to Greenfield", async () => {
+    const session = { id: "session-signature", workspace_id: "workspace-a", owner_clerk_user_id: "clerk-user-a", title: "New conversation", customer_email: null };
+    const create = chain({ singleResult: { data: session, error: null } });
+    const client = { from: vi.fn(() => create) };
+    mocks.createClient.mockReturnValue(client);
+    mocks.runGreenfieldAgentWithAgentsSdk.mockResolvedValue({
+      response: "Here is the answer.",
+      proposedActions: [],
+      trace: { traceId: "trace-signature" },
+      conversationContext: { turn: 1, activeOrder: null, customerSignal: null },
+    });
+
+    const createResponse = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create" }),
+    }));
+    expect(createResponse.status).toBe(200);
+
+    const sessionLoad = chain({ maybeSingleResult: { data: session, error: null } });
+    const messages = chain({ awaitResult: { data: [], error: null } });
+    const updatedSession = chain({ singleResult: { data: { ...session, conversation_context_json: null }, error: null } });
+    client.from
+      .mockReturnValueOnce(sessionLoad)
+      .mockReturnValueOnce(messages)
+      .mockReturnValueOnce(chain({ awaitResult: { data: { id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" }, error: null } }))
+      .mockReturnValueOnce(chain({ awaitResult: { data: { shop_domain: "test-shop.example", access_token: "server-only-token" }, error: null } }))
+      .mockReturnValueOnce(chain({ maybeSingleResult: { data: { signature: "Mvh\nJonas" }, error: null } }))
+      .mockReturnValueOnce(chain({ awaitResult: { data: [{ id: "user-message", role: "user", content: "Where is my order?", trace_json: null, created_at: "now" }, { id: "assistant-message", role: "assistant", content: "Here is the answer.", trace_json: {}, created_at: "now" }], error: null } }))
+      .mockReturnValueOnce(updatedSession);
+
+    const sendResponse = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "send", session_id: session.id, message: "Where is my order?" }),
+    }));
+    expect(sendResponse.status).toBe(200);
+    expect(mocks.loadUserEmailSignature).toHaveBeenCalledWith(client, "user-a");
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: "Mvh\nJonas" }));
   });
 
   it("D1: keeps free-form creation available for an explicitly authorized internal environment", async () => {
