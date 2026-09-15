@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  SYSTEM_PROMPT,
   buildUserPrompt,
   detectTroubleshootingExhausted,
   matchSnippets,
@@ -383,4 +384,35 @@ Deno.test("procedureMode afstaar stadig naar intet er over taersklen", () => {
   const proc = selectFromRanked([{ id: "a", relevance: 0.3, reason: "" }], PROC);
   assertEquals(proc.selected.length, 0);
   assertEquals(proc.abstained, true);
+});
+
+// ── procedure-reglen i systemprompten ─────────────────────────────────────
+//
+// Maalt paa den rigtige kandidatpulje (3 koersler pr. arm):
+//   gpt-4o-mini, uden reglen : 1,0 chunk over 0,6  (kun "Warranty claims")
+//   gpt-4o,      uden reglen : 1,7
+//   gpt-4o,      MED reglen  : 2,0 ("Warranty claims" 3/3 + "Return for Swap" 3/3)
+// Mini scorer binaert uanset prompt; 4o scorer graderet. Reglen skal derfor
+// vaere i prompten, og procedure-stadier skal koere paa den staerke model.
+
+Deno.test("systemprompten siger at en procedure spænder over flere snippets", () => {
+  assertStringIncludes(SYSTEM_PROMPT, "PROCEDURES SPAN SEVERAL SNIPPETS");
+  assertStringIncludes(SYSTEM_PROMPT, "do NOT pick a single winner");
+});
+
+Deno.test("procedureMode: stoettedokumenter paa 0,5 kommer med ved lavere taerskel", () => {
+  // Maalt paa den rigtige pulje med gpt-4o: hoveddokumentet faar 1,0 og de
+  // stoettende faar 0,5 — praecis under standardtaersklen paa 0,6. Uden en
+  // lavere procedure-taerskel skaeres hele proceduren fra med et haar.
+  const ranked = [
+    { id: "warranty_claims", relevance: 1.0, reason: "" },
+    { id: "third_party", relevance: 0.5, reason: "" },
+    { id: "return_address", relevance: 0.5, reason: "" },
+    { id: "battery", relevance: 0, reason: "" },
+  ];
+  const cut = selectFromRanked(ranked, { ...OPTS, threshold: 0.6, procedureMode: true, maxSelected: 3 });
+  assertEquals(cut.selected.length, 1);
+
+  const kept = selectFromRanked(ranked, { ...OPTS, threshold: 0.45, procedureMode: true, maxSelected: 3 });
+  assertEquals(kept.selected.map((s) => s.id), ["warranty_claims", "third_party", "return_address"]);
 });

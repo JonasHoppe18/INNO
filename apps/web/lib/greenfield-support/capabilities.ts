@@ -1,4 +1,4 @@
-import { GREENFIELD_TOOL_DEFINITIONS, parseToolArguments } from "./tool-contracts";
+import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
 import { structuredKnowledgeData } from "./knowledge";
 import type {
@@ -11,6 +11,7 @@ import type {
   JsonValue,
   LiveTrackingProvider,
   KnowledgeStore,
+  OrderCandidate,
   OrderSnapshot,
   ProposedAction,
   TenantContext,
@@ -108,13 +109,31 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
     ? procedureHit?.taskSpecificity
       ?? (result.some(({ taskTitleMatches = 0 }) => taskTitleMatches > 0) ? "sufficient" : "insufficient")
     : "not_applicable";
+  // A procedural row is not usable evidence merely because retrieval returned
+  // a row. Keep weak legacy/irrelevant rows visible as candidates, but make
+  // the tool result fail closed so the response layer cannot turn them into
+  // instructions or a technical fallback.
+  const taskRelevance = procedureHit?.taskRelevance ?? (procedureHit?.taskTitleMatches ? 1 : 0);
+  const procedureStructuredData = procedureHit ? structuredKnowledgeData(procedureHit.record) : null;
+  const hasProcedureBlocks = Boolean(
+    procedureStructuredData
+    && Array.isArray(procedureStructuredData.procedure_steps)
+    && procedureStructuredData.procedure_steps.length,
+  );
+  const procedureEvidenceUsable = !procedural || (
+    taskSpecificity === "sufficient"
+    && taskRelevance > 0
+    && (Boolean(procedureHit?.evidenceSections?.length) || hasProcedureBlocks)
+  );
+  const effectiveTaskSpecificity = procedural && !procedureEvidenceUsable ? "insufficient" : taskSpecificity;
   const procedureCandidates = procedureHit?.procedureCandidates ?? [];
   return {
-    status: result.length ? "ok" : "not_found",
+    status: result.length && procedureEvidenceUsable ? "ok" : "not_found",
     data: {
       query,
-      task_specificity: taskSpecificity,
-      ...(procedural && taskSpecificity === "insufficient" && procedureCandidates.length
+      task_specificity: effectiveTaskSpecificity,
+      ...(procedural ? { procedure_evidence_quality: procedureEvidenceUsable ? "usable" : "insufficient" } : {}),
+      ...(procedural && effectiveTaskSpecificity === "insufficient" && procedureCandidates.length
         ? { possible_tasks: procedureCandidates.map(({ taskKey, title }) => ({ task_key: taskKey, title })) }
         : {}),
       results: result.map(({ record, score, taskRelevance = 0, taskTitleMatches = 0, taskBodyMatches = 0, matchReason, rank, evidenceSections }, index) => ({
@@ -141,10 +160,10 @@ function knowledgeResult(result: Awaited<ReturnType<KnowledgeStore["search"]>>, 
           observed_at: record.observedAt,
           expires_at: record.expiresAt,
         },
-        structured_data: taskSpecificity === "insufficient" && record.knowledgeType === "procedural"
+        structured_data: effectiveTaskSpecificity === "insufficient" && record.knowledgeType === "procedural"
           ? { task_candidate_only: true, task_key: record.taskKey, task_title: record.title }
           : structuredKnowledgeData(record),
-        ...(taskSpecificity === "insufficient" && record.knowledgeType === "procedural" ? { evidence_sections: [] } : {}),
+        ...(effectiveTaskSpecificity === "insufficient" && record.knowledgeType === "procedural" ? { evidence_sections: [] } : {}),
       })),
     },
   };
@@ -325,7 +344,7 @@ function searchKnowledge(
   const continuityTerms = knowledgeTypes?.includes("product")
     ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform]
     : knowledgeTypes?.includes("procedural")
-      ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform, customerProvided?.issue, ...(customerProvided?.attemptedSteps ?? [])]
+      ? [customerProvided?.product, customerProvided?.variant, customerProvided?.platform, customerProvided?.issue]
       : [];
   const normalizedQuery = query.toLowerCase();
   const contextualQuery = [query, ...continuityTerms.filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))]
@@ -335,7 +354,8 @@ function searchKnowledge(
     workspaceId: context.tenant.workspaceId,
     trustedShopId: context.tenant.shopId ?? null,
     query: contextualQuery,
-    taskQuery: context.customerMessage || customerProvided?.issue || query,
+    taskQuery: [customerProvided?.issue, context.customerMessage].filter(Boolean).join(" ") || query,
+    completedSteps: customerProvided?.attemptedSteps ?? [],
     knowledgeTypes,
     limit,
   });
@@ -353,6 +373,101 @@ function productLookupQuery(context: CapabilityContext, query: string): string {
   return [query, ...contextTerms].filter(Boolean).join(" ");
 }
 
+const ORDER_CONTEXT_INTENT = /\b(?:where\s+is|where's|what\s+(?:did|have)\s+i\s+order|status|tracking|track|delivered|arrived|return|refund|cancel(?:lation)?|replace(?:ment)?|address)\b/i;
+const ORDER_SUBJECT = /\b(?:my|the|this|that)\s+(?:[a-z0-9-]+\s+){0,4}(?:order|purchase|package|shipment)\b/i;
+const FULL_ORDER_HISTORY_REQUEST = /\b(?:latest|most\s+recent|recent(?:ly)?|what\s+(?:did|have)\s+i\s+order)\b/i;
+
+/** Only order-related requests benefit from an identity-backed history preflight. */
+export function shouldPreResolveCustomerOrders(message: string): boolean {
+  const value = String(message ?? "").trim();
+  if (!value || extractOrderReferences(value).length) return false;
+  return ORDER_CONTEXT_INTENT.test(value) && ORDER_SUBJECT.test(value);
+}
+
+function orderCandidateFromSnapshot(order: OrderSnapshot): OrderCandidate | null {
+  const orderNumber = normalizeOrderReference(order.orderNumber);
+  if (!orderNumber) return null;
+  const itemTitles = Array.from(new Set((order.items ?? [])
+    .map((item) => String(item?.title ?? "").trim())
+    .filter(Boolean)))
+    .slice(0, 3);
+  return {
+    orderNumber,
+    itemTitles,
+    createdAt: order.createdAt ?? null,
+  };
+}
+
+function safeOrderCandidates(orders: OrderSnapshot[]): OrderCandidate[] {
+  const seen = new Set<string>();
+  const candidates: OrderCandidate[] = [];
+  for (const order of orders) {
+    const candidate = orderCandidateFromSnapshot(order);
+    if (!candidate || seen.has(candidate.orderNumber)) continue;
+    seen.add(candidate.orderNumber);
+    candidates.push(candidate);
+    if (candidates.length >= 5) break;
+  }
+  return candidates;
+}
+
+function significantWords(value: string): string[] {
+  const stopWords = new Set(["the", "and", "for", "with", "order", "item", "this", "that", "my", "your"]);
+  return Array.from(new Set(String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopWords.has(word))));
+}
+
+function candidateMatchesMessage(candidate: OrderCandidate, message: string, product?: string): boolean {
+  const sources = [message, product].filter(Boolean).map((value) => String(value).toLowerCase());
+  return candidate.itemTitles.some((title) => {
+    const normalizedTitle = title.toLowerCase();
+    const titleWords = significantWords(title);
+    return sources.some((source) => source.includes(normalizedTitle)
+      || (titleWords.length > 0 && titleWords.every((word) => significantWords(source).includes(word))));
+  });
+}
+
+function selectedCandidate(candidates: OrderCandidate[], message: string, product?: string): OrderCandidate | null {
+  const ordinal = String(message ?? "").match(/\b(?:the\s+)?(first|1st|one|second|2nd|two|third|3rd|three|fourth|4th|four|fifth|5th|five)\b/i)?.[1]?.toLowerCase();
+  if (ordinal) {
+    const index = new Map([
+      ["first", 0], ["1st", 0], ["one", 0],
+      ["second", 1], ["2nd", 1], ["two", 1],
+      ["third", 2], ["3rd", 2], ["three", 2],
+      ["fourth", 3], ["4th", 3], ["four", 3],
+      ["fifth", 4], ["5th", 4], ["five", 4],
+    ]).get(ordinal);
+    return index == null ? null : candidates[index] ?? null;
+  }
+  const matches = candidates.filter((candidate) => candidateMatchesMessage(candidate, message, product));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function orderCandidateData(candidates: OrderCandidate[]) {
+  return candidates.map((candidate) => ({
+    order_number: candidate.orderNumber,
+    item_titles: candidate.itemTitles,
+    created_at: candidate.createdAt ?? null,
+  }));
+}
+
+function orderResolutionResult(
+  status: "multiple" | "none" | "candidate",
+  candidates: OrderCandidate[],
+): ToolExecutionResult {
+  return {
+    status: candidates.length ? "ok" : "not_found",
+    data: jsonValue({
+      order_resolution: status,
+      order_candidates: orderCandidateData(candidates),
+      ...(status === "none" ? { has_order_history: false } : {}),
+    }),
+  };
+}
+
 export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
 
@@ -368,6 +483,10 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     : persistedOrder
       ? { requestedOrderId: persistedOrder.requestedOrderId, state: persistedOrder.state, order: persistedOrder.order }
       : null;
+  let orderCandidates: OrderCandidate[] = Array.isArray(context.conversationContext?.orderCandidates)
+    ? context.conversationContext.orderCandidates.slice(0, 5)
+    : [];
+  let preloadedOrderHistory: OrderSnapshot[] | null = null;
   const manifest = buildCapabilityManifest(context);
   let resultSequence = 0;
   const resultRecords = new Map<string, { resultId: string; toolName: string; result: ToolExecutionResult }>();
@@ -378,7 +497,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     return recorded;
   };
 
-  return {
+  const registry = {
     definitions: GREENFIELD_TOOL_DEFINITIONS,
     manifest,
     getResult(resultId: string) {
@@ -394,6 +513,53 @@ export function createCapabilityRegistry(context: CapabilityContext) {
         state: orderFocus.state,
         order: orderFocus.order,
       } satisfies ConversationContext["activeOrder"];
+    },
+    getOrderCandidates() {
+      return orderCandidates.length ? [...orderCandidates] : undefined;
+    },
+    async resolveCustomerOrderContext(): Promise<Array<{ tool: string; result: ToolExecutionResult; arguments?: JsonObject }>> {
+      const product = context.conversationContext?.customerProvided?.product;
+      const hasExplicitOrder = extractOrderReferences(context.customerMessage ?? "").length > 0;
+      const previousSelection = hasExplicitOrder ? null : selectedCandidate(orderCandidates, context.customerMessage ?? "", product);
+      if (!context.tenant.customerEmail || orderFocus || (!shouldPreResolveCustomerOrders(context.customerMessage ?? "") && !previousSelection)) return [];
+      if (previousSelection) {
+        orderCandidates = [];
+        return [{
+          tool: "get_order",
+          arguments: { order_id: previousSelection.orderNumber },
+          result: await registry.execute("get_order", JSON.stringify({ order_id: previousSelection.orderNumber })),
+        }];
+      }
+
+      try {
+        const orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
+        const candidates = safeOrderCandidates(orders);
+        const fullHistoryRequest = FULL_ORDER_HISTORY_REQUEST.test(context.customerMessage ?? "");
+        const selected = candidates.length === 1
+          ? candidates[0]
+          : selectedCandidate(candidates, context.customerMessage ?? "", product);
+        orderCandidates = selected ? [] : candidates;
+        const historyResult = recordResult("get_order_history", fullHistoryRequest
+          ? { status: orders.length ? "ok" : "not_found", data: jsonValue({ orders }) }
+          : orderResolutionResult(selected ? "candidate" : candidates.length ? "multiple" : "none", candidates));
+        if (fullHistoryRequest) preloadedOrderHistory = orders;
+        if (!selected) return [{ tool: "get_order_history", result: historyResult }];
+        const orderResult = await registry.execute("get_order", JSON.stringify({ order_id: selected.orderNumber }));
+        if (orderResult.status !== "ok") orderCandidates = candidates;
+        return [
+          { tool: "get_order_history", result: historyResult, arguments: {} },
+          { tool: "get_order", result: orderResult, arguments: { order_id: selected.orderNumber } },
+        ];
+      } catch (error) {
+        const result = recordResult("get_order_history", {
+          status: "error",
+          error: {
+            code: "capability_failed",
+            message: error instanceof Error ? error.message : "Capability failed.",
+          },
+        });
+        return [{ tool: "get_order_history", result }];
+      }
     },
     async execute(toolName: string, rawArguments: string): Promise<ToolExecutionResult> {
       const parsed = parseToolArguments(toolName, rawArguments);
@@ -423,6 +589,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             if (!orderFocus || !sameOrderReference(orderFocus.requestedOrderId, orderId)) {
               orderFocus = { requestedOrderId: orderId, state: "unresolved", order: null };
             }
+            orderCandidates = [];
             const order = await context.commerce.getOrder(orderId);
             if (!order) {
               orderFocus = { ...orderFocus, state: "unresolved", order: null };
@@ -441,6 +608,21 @@ export function createCapabilityRegistry(context: CapabilityContext) {
                   candidate_only: true,
                   has_order_history: orders.length > 0,
                   order_focus: orderFocusData(orderFocus),
+                }),
+              };
+            }
+            if (preloadedOrderHistory) {
+              return {
+                status: preloadedOrderHistory.length ? "ok" : "not_found",
+                data: jsonValue({ orders: preloadedOrderHistory }),
+              };
+            }
+            if (orderCandidates.length) {
+              return {
+                status: "ok",
+                data: jsonValue({
+                  order_resolution: "multiple",
+                  order_candidates: orderCandidateData(orderCandidates),
                 }),
               };
             }
@@ -547,6 +729,15 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           case "cancel_order":
             return validatedProposedAction("cancel_order", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "update_address":
+            if (context.customerMessage?.trim() && !isExplicitAddressChangeRequest(context.customerMessage)) {
+              return {
+                status: "invalid_request",
+                error: {
+                  code: "address_change_request_required",
+                  message: "An address proposal requires an explicit request to change the existing order address.",
+                },
+              };
+            }
             return validatedProposedAction("update_address", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "create_return":
             return validatedProposedAction("create_return", args, stringArg(args, "reason"), context, manifest, orderFocus);
@@ -570,4 +761,5 @@ export function createCapabilityRegistry(context: CapabilityContext) {
       }
     },
   };
+  return registry;
 }

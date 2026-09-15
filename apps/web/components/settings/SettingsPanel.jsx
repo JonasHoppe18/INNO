@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   Bot,
   Building2,
@@ -17,6 +18,7 @@ import {
   Lock,
   PenLine,
   Settings,
+  SlidersHorizontal,
   Star,
   Tag,
   Trash2,
@@ -1733,11 +1735,13 @@ function EmailSettings({
 
   return (
     <section className="w-full space-y-5">
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Email</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Configure customer-facing messages, routing and sender controls.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Email</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure customer-facing messages, routing and sender controls.
+          </p>
+        </div>
       </div>
 
       <div className="overflow-x-auto border-b border-border" aria-label="Email settings sections">

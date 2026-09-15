@@ -171,6 +171,7 @@ describe("greenfield support request wiring", () => {
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
       history: [{ role: "user", content: "server-loaded history" }],
       conversationContext: persistedContext,
+      interactionChannel: "support_inbox",
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test" }),
     }));
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();

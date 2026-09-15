@@ -34,7 +34,7 @@ export async function PUT(request) {
     const { serviceClient, scope } = context;
     const { data: existing, error: existingError } = await serviceClient
       .from("workspace_customer_satisfaction_settings")
-      .select("company_name, sender_name, logo_path, logo_name")
+      .select("company_name, sender_name, logo_path, logo_name, subject, headline, intro, thank_you, footer, accent_color, logo_position, logo_size, language_mode")
       .eq("workspace_id", scope.workspaceId)
       .maybeSingle();
     if (existingError) throw new Error(existingError.message);

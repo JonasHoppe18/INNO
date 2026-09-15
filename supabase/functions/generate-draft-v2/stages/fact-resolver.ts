@@ -422,6 +422,7 @@ export type OrderMatchState =
   | "single_email_match" // no #, email fallback returned exactly one order
   | "multiple_email_matches" // no #, email fallback returned >1 (never auto-pick)
   | "order_not_found" // lookup SUCCEEDED, zero matches
+  | "order_not_owned" // order exists but belongs to a different customer
   | "integration_error" // a lookup threw / timed out / creds missing / decrypt failed
   | "missing_identifiers"; // no order number AND no usable email to look up
 
@@ -644,6 +645,20 @@ export interface OrderResolution {
   match: OrderMatch;
 }
 
+function normalizeEmailForComparison(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+// Identity gate. An order counts as the sender's only when both sides carry an
+// email and they match. Missing either side means we cannot establish identity,
+// and the safe answer is no.
+function senderOwnsOrder(order: Order, senderEmail: string): boolean {
+  const onOrder = normalizeEmailForComparison(order?.email);
+  const sender = normalizeEmailForComparison(senderEmail);
+  if (!onOrder || !sender) return false;
+  return onOrder === sender;
+}
+
 // Pure orchestration of the order-match state machine. Safety rules:
 //  - An explicit order number takes precedence and NEVER silently falls back to
 //    email (a wrong-order email match would be unsafe).
@@ -680,10 +695,19 @@ export async function resolveOrderMatch(opts: {
   // 1. Explicit order number takes precedence — no email fallback on failure.
   if (hadOrderNumber) {
     let threw = false;
+    let sawNotOwned = false;
     for (const raw of orderNumbers) {
       try {
         const found = await opts.provider.getOrderByName(raw);
         if (found) {
+          // An order number is a guessable key, so finding an order proves
+          // nothing about who is asking. Withhold anything the sender does not
+          // demonstrably own — otherwise status and the shipping address of a
+          // stranger's order leak to whoever names the number.
+          if (!senderOwnsOrder(found, customerEmail)) {
+            sawNotOwned = true;
+            continue;
+          }
           return {
             order: found,
             match: {
@@ -702,7 +726,11 @@ export async function resolveOrderMatch(opts: {
       order: null,
       match: {
         ...base,
-        state: threw ? "integration_error" : "order_not_found",
+        state: threw
+          ? "integration_error"
+          : sawNotOwned
+          ? "order_not_owned"
+          : "order_not_found",
         candidate_count: 0,
         selected_order_name: null,
       },
@@ -1280,6 +1308,16 @@ export async function runFactResolver(
           `Vi har hverken ordrenummer eller email at slå op på. ` +
           `Bed FØRST om ordrenummer (#xxxx); hvis det ikke haves, bed om den email der blev brugt ved købet. ` +
           `Bekræft intet og lov ingen handling, før en ordre er verificeret.`,
+      });
+      break;
+    case "order_not_owned":
+      facts.push({
+        label: "Ordre tilhører en anden kunde",
+        value:
+          `Det oplyste ordrenummer hører til en anden kundes ordre end afsenderen. ` +
+          `Der er BEVIDST ingen ordredata i denne kontekst. ` +
+          `Gengiv intet om ordren — heller ikke om den findes — og udfør/lov ingen handlinger på den. ` +
+          `Bed afsenderen skrive fra den email der blev brugt ved købet.`,
       });
       break;
     case "order_not_found":

@@ -61,7 +61,6 @@ export default clerkMiddleware((auth, request) => {
     );
     return NextResponse.redirect(destination);
   }
-
   if (!isPublicRoute(request) && !isCustomerSatisfactionPath(request.nextUrl.pathname)) {
     auth().protect();
   }

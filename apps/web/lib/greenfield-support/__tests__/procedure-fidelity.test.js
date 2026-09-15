@@ -151,6 +151,39 @@ describe("source-bound merchant procedure guidance", () => {
     expect(reordered.issues.map((issue) => issue.code)).toContain("procedure_step_order");
   });
 
+  it("expands a source-bound procedure collection reference into its returned steps", async () => {
+    const registry = await procedureRegistry();
+    const lookup = await registry.execute("search_procedures", JSON.stringify({ query: "A-Spire Wireless factory reset" }));
+    const wirelessIndex = procedureResultIndex(lookup, "wireless-reset");
+    const grounded = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Here are the source-bound steps.",
+      basis: { result_id: lookup.resultId, field_paths: [`data.results[${wirelessIndex}]`] },
+      step_paths: [`data.results[${wirelessIndex}].structured_data.procedure_steps`],
+    }] }, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" });
+
+    expect(grounded.allValid).toBe(true);
+    expect(renderResponseSegments(grounded.approvedSegments, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" })).toContain("15 seconds");
+  });
+
+  it("gives legacy content-derived procedure steps stable source-local block ids", async () => {
+    const registry = await procedureRegistry();
+    const lookup = await registry.execute("search_procedures", JSON.stringify({ query: "A-Spire Wireless factory reset" }));
+    const wirelessIndex = procedureResultIndex(lookup, "wireless-reset");
+    const steps = lookup.data.results[wirelessIndex].structured_data.procedure_steps;
+
+    expect(steps[0]).toMatchObject({ block_id: "block_1", kind: "instruction", text: "Turn the headset off." });
+    const grounded = validateStructuredResponse({ segments: [{
+      type: "procedure_guidance",
+      text: "Here are the source-bound steps.",
+      basis: { result_id: lookup.resultId, field_paths: [`data.results[${wirelessIndex}]`] },
+      block_ids: [steps[0].block_id, steps[1].block_id],
+    }] }, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" });
+
+    expect(grounded.allValid).toBe(true);
+    expect(renderResponseSegments(grounded.approvedSegments, { ...registry, customerMessage: "How do I reset my A-Spire Wireless?" })).toContain("15 seconds");
+  });
+
   it("keeps partial continuation source-bound and rejects a mismatched product", async () => {
     const registry = await procedureRegistry();
     const lookup = await registry.execute("search_procedures", JSON.stringify({ query: "A-Spire Wireless factory reset" }));

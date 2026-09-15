@@ -196,6 +196,40 @@ describe("greenfield knowledge store", () => {
     expect(refund[0].record.content).toContain("after inspection");
   });
 
+  it("does not return unrelated policy records when the requested policy topic is absent", async () => {
+    const store = new InMemoryKnowledgeStore();
+    for (const source of [
+      { sourceId: "returns", title: "Returns policy", content: "Returns are accepted within 30 days of delivery." },
+      { sourceId: "refunds", title: "Refund policy", content: "Approved refunds are processed after inspection." },
+      { sourceId: "privacy", title: "Privacy policy", content: "Personal data is handled according to the privacy notice." },
+    ]) {
+      await store.ingest("tenant-a", {
+        sourceKind: "policy",
+        ...source,
+        authority: "authoritative",
+        metadata: { lifecycle_status: "published" },
+      });
+    }
+
+    const shipping = await store.search({
+      workspaceId: "tenant-a",
+      query: "Can you ship my order to Japan?",
+      taskQuery: "Can you ship my order to Japan?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+    const returns = await store.search({
+      workspaceId: "tenant-a",
+      query: "What is the return policy?",
+      taskQuery: "What is the return policy?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+
+    expect(shipping).toEqual([]);
+    expect(returns[0].record.title).toBe("Returns policy");
+  });
+
   it("keeps multiple procedures for one product distinct and asks retrieval to follow the task", async () => {
     const store = new InMemoryKnowledgeStore();
     const sourceCandidates = splitMarkdownKnowledgeSource({ title: "A-Spire Wireless manual", content: "## Factory reset\n\nHold power for 15 seconds.\n\n## Microphone troubleshooting\n\nCheck the microphone input device.", knowledgeType: "procedural", authority: "authoritative" })

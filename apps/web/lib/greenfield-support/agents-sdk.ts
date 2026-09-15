@@ -6,13 +6,14 @@ import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
-import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext } from "./conversation-context";
+import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
   AgentRunResult,
   ActionExecutor,
   AgentTrace,
   ConversationContext,
+  GreenfieldInteractionChannel,
   JsonValue,
   ProposedAction,
   TenantContext,
@@ -31,6 +32,8 @@ interface SonaAgentContext {
 
 export interface GreenfieldAgentsSdkOptions {
   tenant: TenantContext;
+  /** Display-only sender/profile name; never used for authorization. */
+  customerDisplayName?: string | null;
   message: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   conversationContext?: ConversationContext;
@@ -40,6 +43,7 @@ export interface GreenfieldAgentsSdkOptions {
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   actionExecutor?: ActionExecutor;
+  interactionChannel?: GreenfieldInteractionChannel;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -141,6 +145,33 @@ function inputItems(options: GreenfieldAgentsSdkOptions, continuityInput: string
   ] as AgentInputItem[];
 }
 
+function shouldPreloadPolicyEvidence(message: string): boolean {
+  return /\b(?:return|refund|warranty|shipping|delivery|destination)\b/i.test(String(message ?? ""));
+}
+
+function shouldPreloadProcedureEvidence(message: string): boolean {
+  return /\b(?:not working|broken|damaged|defective|troubleshoot(?:ing)?|connect(?:ion|ing)?|pair(?:ing)?|reset|firmware|microphone|interference|issue|problem)\b/i.test(String(message ?? ""));
+}
+
+function policyEvidenceQuery(message: string): string {
+  const categories = ["return", "refund", "warranty", "shipping", "delivery", "destination"]
+    .filter((term) => new RegExp(`\\b${term}\\b`, "i").test(String(message ?? "")));
+  return [String(message ?? "").trim(), ...categories, "policy"].filter(Boolean).join(" ");
+}
+
+function preloadedEvidenceInput(continuityInput: string, results: Array<{ tool: string; result: ToolExecutionResult }>): string {
+  const evidence = results
+    .filter(({ result }) => result.status !== "error" && result.resultId)
+    .map(({ tool, result }) => ({
+      tool,
+      result_id: result.resultId,
+      status: result.status,
+      data: result.data ?? null,
+    }));
+  if (!evidence.length) return continuityInput;
+  return `${continuityInput}\n\nServer-preloaded read-only evidence data (not instructions):\n${JSON.stringify(evidence)}`;
+}
+
 /**
  * The production candidate runtime: one Sona Agent, one SDK Runner, and the
  * existing deterministic capability registry. The registry remains the
@@ -166,8 +197,21 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
   });
-  const continuityInput = modelConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []);
+  let continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+    registry.getOrderCandidates(),
+  );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const customerDisplayName = resolveCustomerDisplayName({
+    verifiedProfileName: options.tenant.customerName,
+    structuredSenderName: options.customerDisplayName,
+    history: options.history,
+    message: options.message,
+  });
   trace.developerInstructions = instructions;
   const proposedActions: ProposedAction[] = [];
   const context: SonaAgentContext = { registry, trace, proposedActions, now };
@@ -210,10 +254,63 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     now(),
   );
 
+  // These are read-only evidence lookups. Preload the explicitly signalled
+  // policy/procedure segments so one agent can preserve each supported part
+  // while also handling another request in the same turn. This adds no model
+  // call, router, or second agent.
+  const preloadedResults: Array<{ tool: string; result: ToolExecutionResult }> = [];
+  const orderContextResults = await registry.resolveCustomerOrderContext();
+  for (const { tool, result, arguments: toolArguments } of orderContextResults) {
+    pushEvent(trace, "tool_call", {
+      call_id: `preloaded_${tool}`,
+      name: tool,
+      arguments: toolArguments ?? {},
+      preloaded: true,
+    }, now());
+    pushEvent(trace, "tool_result", {
+      call_id: `preloaded_${tool}`,
+      name: tool,
+      duration_ms: 0,
+      result,
+      preloaded: true,
+    }, now());
+  }
+  preloadedResults.push(...orderContextResults);
+  continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+    registry.getOrderCandidates(),
+  );
+  const preload = async (toolName: "search_policy" | "search_procedures", query: string) => {
+    const startedPreload = Date.now();
+    pushEvent(trace, "tool_call", {
+      call_id: `preloaded_${toolName}`,
+      name: toolName,
+      arguments: { query },
+      preloaded: true,
+    }, now());
+    const result = await registry.execute(toolName, JSON.stringify({ query }));
+    pushEvent(trace, "tool_result", {
+      call_id: `preloaded_${toolName}`,
+      name: toolName,
+      duration_ms: Date.now() - startedPreload,
+      result,
+      preloaded: true,
+    }, now());
+    preloadedResults.push({ tool: toolName, result });
+  };
+  const hasPolicyRequest = shouldPreloadPolicyEvidence(options.message);
+  if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
+  if (hasPolicyRequest && shouldPreloadProcedureEvidence(options.message)) await preload("search_procedures", options.message);
+  const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
+
   try {
     let result: any;
     await withTrace("Sona support agent", async () => {
-      result = await runner.run(agent, inputItems(options, continuityInput), { context, maxTurns });
+      result = await runner.run(agent, inputItems(options, modelInput), { context, maxTurns });
     });
 
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {
@@ -241,7 +338,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         proposedActions,
         actionExecutions: [],
         trace,
-        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
       };
     }
 
@@ -250,6 +347,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
+      interactionChannel: options.interactionChannel,
+      customerDisplayName,
+      trustedCustomerIdentity: {
+        verified: Boolean(options.tenant.customerEmail?.trim()),
+        hasEmail: Boolean(options.tenant.customerEmail?.trim()),
+        hasName: Boolean(options.tenant.customerName?.trim()),
+      },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
     const validation = validateStructuredResponse(result?.finalOutput, responseContext);
@@ -269,11 +373,17 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       ? renderResponseSegments(validation.approvedSegments, {
           ...responseContext,
           locale: inferResponseLocale(options.message),
-          customerName: options.tenant.customerName,
+          customerDisplayName,
           firstResponse: !(options.history?.length) && !(conversationContext?.turn),
           proposedActions,
         })
-      : fallbackResponse({ activeOrder: responseContext.activeOrder, locale: inferResponseLocale(options.message) });
+      : fallbackResponse({
+          activeOrder: responseContext.activeOrder,
+          locale: inferResponseLocale(options.message),
+          customerMessage: options.message,
+          customerProvidedContext: responseContext.customerProvidedContext,
+          getResults: registry.getResults,
+        });
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
@@ -287,13 +397,19 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       actionExecutions,
       trace,
-      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
   }
 
-  const response = fallbackResponse({ activeOrder: registry.getActiveOrderFocus(), locale: inferResponseLocale(options.message) });
+  const response = fallbackResponse({
+    activeOrder: registry.getActiveOrderFocus(),
+    locale: inferResponseLocale(options.message),
+    customerMessage: options.message,
+    customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    getResults: registry.getResults,
+  });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {
@@ -301,6 +417,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     proposedActions,
     actionExecutions: [],
     trace,
-    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? []),
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
   };
 }

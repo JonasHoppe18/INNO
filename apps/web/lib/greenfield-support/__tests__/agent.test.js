@@ -47,6 +47,21 @@ describe("greenfield model/tool loop", () => {
     expect(result.trace.events.some((event) => event.type === "tool_call")).toBe(false);
   });
 
+  it("fails closed to safe order choices when model clarification is invalid", async () => {
+    const dependencies = await createDemoDependencies();
+    const result = await runGreenfieldAgent({
+      ...dependencies,
+      message: "Where is my order?",
+      model: scriptedModel([structured({ type: "fact", fact_kind: "order_reference", evidence: [] })]),
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toContain("Which order would you like help with");
+    expect(result.response).toContain("#10231 — Orion Wireless");
+    expect(result.response).toContain("#10234 — Orion replacement ear pads");
+    expect(result.response).not.toContain("most recent");
+  });
+
   it("completes a knowledge-only case and records provenance", async () => {
     const dependencies = await createDemoDependencies();
     const result = await runGreenfieldAgent({
