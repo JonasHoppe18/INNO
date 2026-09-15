@@ -211,6 +211,81 @@ describe("structured response contract", () => {
     expect(rendered.split("\n\n")).toHaveLength(3);
   });
 
+  it("puts the return process first and omits secondary policy details when they were not asked for", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "I found the package, but I want to return it. How do I do that?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Start the return through the returns portal. Opened products may incur a EUR 50 deduction. Return shipping is your responsibility. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered.indexOf("Start the return through the returns portal.")).toBeLessThan(rendered.indexOf("Returns are accepted within 30 days."));
+    expect(rendered).not.toContain("EUR 50");
+    expect(rendered).not.toContain("Return shipping is your responsibility");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("keeps an opened-package consequence when the customer asks about the condition", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "I opened the package, can I still return it?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. Return shipping is your responsibility. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("EUR 50 deduction");
+    expect(rendered).not.toContain("Return shipping is your responsibility");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("prioritizes the return destination and keeps its line-oriented address", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "Where do I send my return?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping. Opened products may incur a EUR 50 deduction. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping.");
+    expect(rendered).not.toContain("Returns are accepted within 30 days");
+    expect(rendered).not.toContain("EUR 50");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("returns refund timing without dumping unrelated return conditions", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "refund timing" }));
+    const context = { ...registry, customerMessage: "When will I get my refund?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. The refund is normally processed within 5 business days. Your bank may take additional time to display the funds.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("refund is normally processed within 5 business days");
+    expect(rendered).toContain("bank may take additional time");
+    expect(rendered).not.toContain("30 days");
+    expect(rendered).not.toContain("EUR 50");
+  });
+
   it("preserves explicit address and step line breaks", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -1041,8 +1116,9 @@ describe("structured response contract", () => {
     expect(action.allValid).toBe(true);
     const { renderResponseSegments } = await import("../response-contract");
     const rendered = renderResponseSegments(action.approvedSegments, registry);
-    expect(rendered).toContain("prepare a proposal for an address update");
-    expect(rendered).toContain("will not be completed");
+    expect(rendered).toContain("prepare an address update for an existing order");
+    expect(rendered).toContain("Nothing will be changed until you confirm");
+    expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toContain("hold");
     expect(rendered).not.toContain("carrier");
   });
@@ -1606,8 +1682,9 @@ describe("structured response contract", () => {
     );
 
     const rendered = renderResponseSegments(result.approvedSegments, registry);
-    expect(rendered).toContain("proposal");
-    expect(rendered).toContain("will not be completed without your confirmation");
+    expect(rendered).toContain("prepare a refund for your confirmation");
+    expect(rendered).toContain("Nothing will be changed until you confirm");
+    expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toMatch(/has been refunded|was refunded/i);
     expect(rendered.match(/Could you share/g)).toHaveLength(1);
   });

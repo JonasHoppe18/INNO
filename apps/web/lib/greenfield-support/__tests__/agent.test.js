@@ -179,7 +179,7 @@ describe("greenfield model/tool loop", () => {
 
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
-    expect(result.response).toContain("will not be completed");
+    expect(result.response).toContain("Nothing will be changed until you confirm");
     expect(result.response).not.toMatch(/order #10232 (?:was|has been) cancelled/i);
     expect(JSON.stringify(result.trace.events)).toContain('"status":"proposed"');
   });

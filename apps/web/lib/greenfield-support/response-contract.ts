@@ -102,6 +102,7 @@ export const StructuredResponseSchema = z.object({
 
 export type ResponseSegment = z.infer<typeof ResponseSegmentSchema>;
 export type StructuredResponse = z.infer<typeof StructuredResponseSchema>;
+type KnowledgeBasis = z.infer<typeof BasisSchema>;
 type FactKind = Extract<ResponseSegment, { type: "fact" }>["fact_kind"];
 
 export interface ResponseEvidenceRecord {
@@ -1416,16 +1417,20 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
   const locale = localeFor(context);
   if (!definition) {
     return locale === "da"
-      ? "Jeg kan forberede et forslag, når de nødvendige oplysninger er på plads."
-      : "I can prepare a proposal once the required information is available.";
+      ? "Jeg mangler nogle oplysninger, før jeg kan forberede den ønskede anmodning."
+      : "I still need a few details before I can prepare the requested change.";
   }
   const operation = firstSentence(definition.description).replace(/^Propose\s+/i, "");
   if (locale === "da") {
-    const missing = segment.missing_arguments.length ? `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? ` : "";
-    return `${missing}Jeg kan forberede et forslag om ${lowerFirst(operation)}. Det bliver ikke gennemført uden din bekræftelse.`;
+    if (segment.missing_arguments.length) {
+      return `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? Når jeg har dem, kan jeg forberede ${lowerFirst(operation)} til din bekræftelse. Der bliver ikke ændret noget, før du bekræfter.`;
+    }
+    return `Jeg kan forberede ${lowerFirst(operation)} til din bekræftelse. Der bliver ikke ændret noget, før du bekræfter.`;
   }
-  const missing = segment.missing_arguments.length ? `Could you share ${listArguments(segment.missing_arguments, locale)} first? ` : "";
-  return `${missing}I can prepare a proposal for ${lowerFirst(operation)}. It will not be completed without your confirmation.`;
+  if (segment.missing_arguments.length) {
+    return `Could you share ${listArguments(segment.missing_arguments, locale)} first? Once I have them, I can prepare ${lowerFirst(operation)} for your confirmation. Nothing will be changed until you confirm.`;
+  }
+  return `I can prepare ${lowerFirst(operation)} for your confirmation. Nothing will be changed until you confirm.`;
 }
 
 function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
@@ -2045,11 +2050,119 @@ function adaptSupportContactInstruction(value: string) {
   return adapted;
 }
 
+type CustomerKnowledgeFocus = {
+  asksProcess: boolean;
+  asksReturnDestination: boolean;
+  asksRefundTiming: boolean;
+  asksShippingResponsibility: boolean;
+  mentionsCondition: boolean;
+};
+
+function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocus {
+  const message = String(customerMessage ?? "").replace(/[\u2019]/g, "'").trim();
+  const hasReturnIntent = /\b(?:return|send\s+(?:it|the\s+item|the\s+order)\s+back)\b/i.test(message);
+  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b/i.test(message);
+  const asksReturnDestination = hasReturnIntent
+    && (/\bwhere\b/i.test(message) || /\b(?:send|ship)\b[\s\S]{0,40}\breturn\b/i.test(message));
+  const asksRefundTiming = /\brefund\b[\s\S]{0,60}\b(?:when|how\s+long|tim(?:e|ing)|within|after)\b/i.test(message)
+    || /\b(?:when|how\s+long|tim(?:e|ing))\b[\s\S]{0,60}\brefund\b/i.test(message);
+  const asksShippingResponsibility = /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*[\s\S]{0,50}\bshipping\b/i.test(message)
+    || /\bshipping\b[\s\S]{0,50}\b(?:who|pay|cost|responsib)\w*\b/i.test(message);
+  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged)\b/i.test(message);
+  return {
+    asksProcess: asksHow || asksReturnDestination || (hasReturnIntent && /\b(?:want|would\s+like|need|can\s+i|could\s+i)\b/i.test(message)),
+    asksReturnDestination,
+    asksRefundTiming,
+    asksShippingResponsibility,
+    mentionsCondition,
+  };
+}
+
+function isReturnConditionConsequence(value: string) {
+  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded)\b/i.test(value)
+    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*)\b/i.test(value);
+}
+
+function isReturnShippingResponsibility(value: string) {
+  return /\b(?:return\s+)?shipping\b/i.test(value)
+    && /\b(?:responsib|covered|cover|cost|pay|expense)\w*\b/i.test(value);
+}
+
+function isRefundTiming(value: string) {
+  const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally)\b/i.test(value);
+  return hasRefundTiming && (
+    /\brefund\w*\b/i.test(value)
+    || /\b(?:bank|payment\s+provider)\b[\s\S]{0,50}\b(?:display|post|funds?)\b/i.test(value)
+  );
+}
+
+function isReturnProcessInstruction(value: string) {
+  return /\b(?:start|initiate|request|send|ship|portal|label|address|contact|email|next\s+steps?|process|procedure)\b/i.test(value);
+}
+
+function policySentencePriority(value: string, focus: CustomerKnowledgeFocus) {
+  if (focus.asksRefundTiming) return isRefundTiming(value) ? 0 : 1;
+  if (focus.asksReturnDestination) {
+    return /\b(?:address|send|ship|portal|label|contact|email|return\s+to)\b/i.test(value) ? 0 : 1;
+  }
+  if (focus.asksProcess) return isReturnProcessInstruction(value) ? 0 : 1;
+  return 0;
+}
+
+function composePolicyLine(value: string, focus: CustomerKnowledgeFocus) {
+  const sentences = value.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length <= 1) return value;
+
+  let retained = sentences.filter((candidate) => {
+    if (!focus.mentionsCondition && isReturnConditionConsequence(candidate)) return false;
+    if (!focus.asksShippingResponsibility && isReturnShippingResponsibility(candidate)) return false;
+    if (!focus.asksRefundTiming && isRefundTiming(candidate)) return false;
+    return true;
+  });
+  if (!retained.length) return value;
+
+  if (focus.asksRefundTiming) {
+    const timing = retained.filter(isRefundTiming);
+    if (timing.length) retained = timing;
+  } else if (focus.asksReturnDestination) {
+    const destination = retained.filter((candidate) => /\b(?:address|send|ship|portal|label|contact|email|return\s+to)\b/i.test(candidate));
+    if (destination.length) retained = destination;
+  }
+
+  if (focus.asksProcess) {
+    retained = retained
+      .map((candidate, index) => ({ candidate, index }))
+      .sort((left, right) => policySentencePriority(left.candidate, focus) - policySentencePriority(right.candidate, focus) || left.index - right.index)
+      .map(({ candidate }) => candidate);
+  }
+  return retained.join(" ");
+}
+
+function composeMinimumSufficientPolicyText(value: string, context: ResponseValidationContext) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  if (!focus.asksProcess && !focus.asksRefundTiming && !focus.mentionsCondition && !focus.asksShippingResponsibility) return value;
+
+  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+  return paragraphs.map((paragraph) => {
+    const lines = paragraph.split(/\n+/);
+    const composedLines = lines.map((line) => composePolicyLine(line, focus)).filter(Boolean);
+    return composedLines.length ? composedLines.join("\n") : paragraph;
+  }).join("\n\n");
+}
+
+function isPolicyKnowledgeBasis(basis: KnowledgeBasis, context: ResponseValidationContext) {
+  return context.getResult(basis.result_id)?.toolName === "search_policy";
+}
+
 /**
  * Applies only current-conversation semantics to model-written knowledge
  * guidance. The stored source and cited evidence remain unchanged.
  */
-export function adaptCustomerFacingKnowledgeText(value: string, context: ResponseValidationContext) {
+export function adaptCustomerFacingKnowledgeText(
+  value: string,
+  context: ResponseValidationContext,
+  options: { policy?: boolean } = {},
+) {
   const paragraphs = String(value ?? "").split(/\n\s*\n/);
   const adapted = paragraphs.flatMap((paragraph) => {
     const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -2076,7 +2189,10 @@ export function adaptCustomerFacingKnowledgeText(value: string, context: Respons
     }).filter(Boolean);
     return nextLines.length ? [nextLines.join("\n")] : [];
   });
-  return formatReadableKnowledgeText(adapted.join("\n\n"));
+  const composed = options.policy
+    ? composeMinimumSufficientPolicyText(adapted.join("\n\n"), context)
+    : adapted.join("\n\n");
+  return formatReadableKnowledgeText(composed);
 }
 
 type ProcedureStepPresentation = {
@@ -2487,7 +2603,11 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
-    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(segment.text, context));
+    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(
+      segment.text,
+      context,
+      { policy: isPolicyKnowledgeBasis(segment.basis, context) },
+    ));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
