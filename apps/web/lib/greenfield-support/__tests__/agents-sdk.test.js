@@ -88,6 +88,103 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.at(-1).data.response).toBe(result.response);
   });
 
+  it("selects the English employee signature for an English reply", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: {
+        defaultClosingText: "Mvh\nJonas",
+        languageSignatures: { en: "Best regards\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nBest regards\nJonas");
+  });
+
+  it("selects the Danish employee signature for a Danish reply", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Tak, det løste problemet.",
+      signature: {
+        defaultClosingText: "Best regards\nJonas",
+        languageSignatures: { da: "Mvh\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("Det var så lidt.\n\nMvh\nJonas");
+  });
+
+  it("selects a German employee signature without translating it", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Ich danke Ihnen, bitte helfen Sie mir.",
+      signature: {
+        defaultClosingText: "Best regards\nJonas",
+        languageSignatures: { de: "Viele Grüße\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nViele Grüße\nJonas");
+  });
+
+  it("uses the default employee signature when a language override is absent", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: {
+        defaultClosingText: "Mvh\nJonas",
+        languageSignatures: { da: "Mvh\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nMvh\nJonas");
+  });
+
+  it("does not append a signature when the employee has none", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: { defaultClosingText: "", languageSignatures: {} },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.");
+  });
+
   it("applies the shared Luna medium default to the SDK agent", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

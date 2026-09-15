@@ -1,6 +1,6 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, Model } from "@openai/agents";
-import { composeEmailBodyWithSignature } from "@/lib/server/email-signature";
+import { composeEmailBodyWithSignature, inferGermanLanguage, selectSignatureText } from "@/lib/server/email-signature";
 import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
@@ -43,15 +43,31 @@ export interface GreenfieldAgentsSdkOptions {
   now?: () => string;
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
-  /** Server-resolved support-user signature; never supplied to the model. */
-  signature?: string | null;
+  /** Server-resolved support-user signature configuration; never supplied to the model. */
+  signature?: string | {
+    defaultClosingText?: string | null;
+    closingText?: string | null;
+    languageSignatures?: Record<string, string | null | undefined>;
+  } | null;
   actionExecutor?: ActionExecutor;
   interactionChannel?: GreenfieldInteractionChannel;
 }
 
-function composeGreenfieldResponse(response: string, signature?: string | null): string {
+function signatureLanguage(message: string): "da" | "de" | "en" {
+  const responseLocale = inferResponseLocale(message);
+  if (responseLocale === "da") return "da";
+  return inferGermanLanguage(message) ? "de" : "en";
+}
+
+function composeGreenfieldResponse(response: string, signature: GreenfieldAgentsSdkOptions["signature"], message: string): string {
   const normalizedResponse = String(response || "").trim();
-  const normalizedSignature = String(signature || "").trim();
+  const normalizedSignature = typeof signature === "string"
+    ? String(signature || "").trim()
+    : selectSignatureText({
+        defaultSignature: signature?.defaultClosingText ?? signature?.closingText ?? "",
+        languageSignatures: signature?.languageSignatures,
+        language: signatureLanguage(message),
+      });
   if (!normalizedSignature) return normalizedResponse;
   return composeEmailBodyWithSignature({
     bodyText: normalizedResponse,
@@ -346,6 +362,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       const response = composeGreenfieldResponse(
         "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.",
         options.signature,
+        options.message,
       );
       pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [] }, now());
       trace.finishedAt = now();
@@ -400,7 +417,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           customerProvidedContext: responseContext.customerProvidedContext,
           getResults: registry.getResults,
         });
-    const response = composeGreenfieldResponse(responseWithoutSignature, options.signature);
+    const response = composeGreenfieldResponse(responseWithoutSignature, options.signature, options.message);
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
@@ -427,7 +444,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     getResults: registry.getResults,
   });
-  const response = composeGreenfieldResponse(fallback, options.signature);
+  const response = composeGreenfieldResponse(fallback, options.signature, options.message);
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {
