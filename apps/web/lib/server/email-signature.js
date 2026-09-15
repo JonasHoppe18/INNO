@@ -266,8 +266,19 @@ export async function loadUserEmailSignature(serviceClient, supabaseUserId) {
 }
 
 export function normalizeLanguageCode(value) {
-  const normalized = asString(value).trim().toLowerCase().replace(/_/g, "-").split("-")[0];
-  return /^[a-z]{2,8}$/.test(normalized) ? normalized : "";
+  const normalized = asString(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return "";
+  if (/^[a-z]{2}(?:[-_][a-z]{2})?$/.test(normalized)) {
+    return normalized.split(/[-_]/)[0];
+  }
+  const languageKey = normalized
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return /^[a-z]{2,32}(?:-[a-z0-9]{2,32})?$/.test(languageKey) ? languageKey : "";
 }
 
 export function normalizeLanguageSignatures(value) {
