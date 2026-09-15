@@ -40,6 +40,21 @@ function TypingDots() {
   );
 }
 
+function GeneratingActivity() {
+  return (
+    <div className="mt-1 w-full max-w-[min(88%,24rem)] rounded-[18px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">Working through it…</span>
+        <TypingDots />
+      </div>
+      <div className="mt-2 border-l border-sky-200/80 pl-3 text-[10.5px] leading-relaxed dark:border-sky-800/70">
+        <p className="text-slate-600 dark:text-slate-300">Reviewing your message</p>
+        <p className="mt-1 text-slate-400 dark:text-slate-500">Preparing a verified reply</p>
+      </div>
+    </div>
+  );
+}
+
 function actionLabel(value) {
   return String(value || "Action")
     .split("_")
@@ -714,9 +729,9 @@ export function GreenfieldPlayground() {
             ))}
             {sending ? (
               <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
-                <div className="w-full max-w-[min(88%,42rem)]">
+                <div className="flex w-full max-w-[min(88%,42rem)] flex-col items-end">
                   <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
-                  <div className="ml-auto mt-1 inline-flex min-w-[3.5rem] justify-center rounded-[16px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30"><TypingDots /></div>
+                  <GeneratingActivity />
                 </div>
               </div>
             ) : null}
