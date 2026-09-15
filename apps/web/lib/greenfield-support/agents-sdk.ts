@@ -235,8 +235,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     registry.getOrderCandidates(),
   );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const providerCustomer = !options.tenant.customerName && !options.customerDisplayName
+    ? await options.capabilities.commerce.getCustomer().catch(() => null)
+    : null;
+  const verifiedProfileName = options.tenant.customerName ?? providerCustomer?.name ?? null;
   const customerDisplayName = resolveCustomerDisplayName({
-    verifiedProfileName: options.tenant.customerName,
+    verifiedProfileName,
     structuredSenderName: options.customerDisplayName,
     history: options.history,
     message: options.message,
@@ -381,11 +385,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
       interactionChannel: options.interactionChannel,
+      customerName: verifiedProfileName,
       customerDisplayName,
       trustedCustomerIdentity: {
         verified: Boolean(options.tenant.customerEmail?.trim()),
         hasEmail: Boolean(options.tenant.customerEmail?.trim()),
-        hasName: Boolean(options.tenant.customerName?.trim()),
+        hasName: Boolean(verifiedProfileName?.trim()),
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };

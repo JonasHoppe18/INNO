@@ -17,6 +17,13 @@ function normalizedEmail(value: unknown): string {
   return clean(value).toLowerCase();
 }
 
+function customerProfileName(raw: Record<string, unknown>): string | null {
+  const name = clean(raw.name);
+  if (name) return name;
+  const parts = [raw.first_name, raw.last_name].map(clean).filter(Boolean);
+  return parts.length ? parts.join(" ") : null;
+}
+
 function safeLookup(value: unknown): string {
   const result = clean(value);
   return /^[#a-z0-9_-]{1,80}$/i.test(result) ? result : "";
@@ -274,6 +281,7 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
   private readonly apiVersion: string;
   private readonly customer: CustomerSnapshot | null;
   private readonly fetchImpl: typeof fetch;
+  private customerResult: CustomerSnapshot | null | undefined;
 
   constructor(options: ShopifyReadOnlyProviderOptions) {
     this.domain = clean(options.shopDomain).replace(/^https?:\/\//i, "").replace(/\/+$/, "");
@@ -336,7 +344,31 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
   }
 
   async getCustomer(): Promise<CustomerSnapshot | null> {
-    return this.customer;
+    if (this.customerResult !== undefined) return this.customerResult;
+
+    const existing = this.customer;
+    const email = normalizedEmail(existing?.email);
+    if (!email || clean(existing?.name)) {
+      this.customerResult = existing;
+      return this.customerResult;
+    }
+
+    try {
+      const payload = await this.get("customers/search.json", {
+        query: `email:${email}`,
+        limit: "10",
+      });
+      const customers = Array.isArray(payload?.customers) ? payload.customers : [];
+      const match = customers.find((candidate: any) => normalizedEmail(candidate?.email) === email);
+      this.customerResult = {
+        email,
+        name: match ? customerProfileName(match) : null,
+      };
+    } catch {
+      // A display-only profile lookup must never make the support run fail.
+      this.customerResult = existing;
+    }
+    return this.customerResult;
   }
 
   async getProduct(query: string): Promise<JsonValue> {

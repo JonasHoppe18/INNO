@@ -10,6 +10,35 @@ function structured(...segments) {
 }
 
 describe("greenfield OpenAI Agents SDK runtime", () => {
+  it("greets from the verified commerce profile when the message has no sign-off", async () => {
+    const dependencies = await createDemoDependencies();
+    const commerce = new InMemoryCommerceProvider({
+      customer: { email: dependencies.tenant.customerEmail, name: "Jonas Hoppe" },
+      orders: [],
+    });
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "pure_clarification",
+        text: "How can I help?",
+        capability: null,
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      tenant: { ...dependencies.tenant, customerName: null },
+      customerDisplayName: null,
+      message: "I need help with my order.",
+      model,
+      capabilities: { ...dependencies, commerce },
+    });
+
+    model.assertComplete();
+    expect(result.response).toMatch(/^Hi Jonas,\n\n/);
+  });
+
   it("preloads trusted customer history before the model continuation", async () => {
     const dependencies = await createDemoDependencies();
     const commerce = new InMemoryCommerceProvider({
