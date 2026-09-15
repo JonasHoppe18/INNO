@@ -1,4 +1,5 @@
 import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { createDefaultCsatEmailContent } from "@/lib/csat/email-template";
 import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
 import {
   buildCsatResponseUrl,
@@ -107,21 +108,29 @@ export async function sendPublishedCsatSurveyEmail(
     data,
     mailbox = null,
     expiresAt = null,
+    origin = "",
   } = {}
 ) {
   const published = await loadPublishedCsatTemplate(serviceClient, workspaceId);
-  if (!published) throw new Error("No published CSAT email template exists for this workspace.");
+  const template = published || {
+    editor_json: createDefaultCsatEmailContent({ linkMode: "preview" }),
+    subject: "How was your support experience?",
+    preview_text: "Your feedback helps us improve.",
+    version: 0,
+  };
   const tokenRow = await issueCsatSurveyToken(serviceClient, {
     workspaceId,
     threadId,
     expiresAt,
   });
   const rendered = await renderCsatEmail({
-    content: published.editor_json,
-    subject: published.subject,
+    content: template.editor_json,
+    subject: template.subject,
+    previewText: template.preview_text,
     data,
     linkMode: "live",
     token: tokenRow.token,
+    baseUrl: origin,
   });
   const fromEmail = String(buildEffectiveSharedFromEmail({ mailbox }) || FALLBACK_FROM_EMAIL).trim();
   const fromName = String(mailbox?.from_name || FALLBACK_FROM_NAME).trim();
@@ -136,8 +145,8 @@ export async function sendPublishedCsatSurveyEmail(
     Metadata: {
       sona_workspace_id: workspaceId,
       sona_thread_id: threadId,
-      sona_csat_version: String(published.version),
+      sona_csat_version: String(template.version),
     },
   });
-  return { ...sendResult, token: tokenRow.token, version: published.version };
+  return { ...sendResult, token: tokenRow.token, version: template.version };
 }

@@ -25,6 +25,7 @@ export async function POST(request) {
     const rendered = await renderCsatEmail({
       content: body?.editor_json || draft.editor_json,
       subject: body?.subject || draft.subject,
+      previewText: body?.preview_text || draft.preview_text,
       linkMode: "test",
     });
 

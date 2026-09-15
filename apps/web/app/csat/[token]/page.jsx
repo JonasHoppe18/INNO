@@ -18,7 +18,6 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
   const [settings, setSettings] = useState(null);
   const [state, setState] = useState("loading");
   const [selected, setSelected] = useState(null);
-  const [linkedScoreToSubmit, setLinkedScoreToSubmit] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const accent = useMemo(() => safeAccent(settings?.accent), [settings?.accent]);
@@ -30,7 +29,6 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
     const validLinkedScore = Number.isInteger(linkedScore) && linkedScore >= 1 && linkedScore <= 5 ? linkedScore : null;
     const language = query.get("language");
     const languageQuery = language ? `?language=${encodeURIComponent(language)}` : "";
-    setLinkedScoreToSubmit(null);
     fetch(`/api/csat/survey/${encodeURIComponent(params?.token || "")}${languageQuery}`, { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
@@ -38,7 +36,6 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
         if (!active) return;
         setSettings(payload.settings || {});
         if (validLinkedScore) setSelected(validLinkedScore);
-        if (validLinkedScore && payload.status !== "responded") setLinkedScoreToSubmit(validLinkedScore);
         setState(payload.status === "responded" ? "thanks" : "ready");
       })
       .catch((loadError) => {
@@ -68,13 +65,6 @@ export default function CustomerSatisfactionSurveyPage({ params }) {
       setSubmitting(false);
     }
   }, [params?.token, submitting]);
-
-  useEffect(() => {
-    if (state !== "ready" || !linkedScoreToSubmit || submitting) return;
-    const score = linkedScoreToSubmit;
-    setLinkedScoreToSubmit(null);
-    void submitScore(score);
-  }, [linkedScoreToSubmit, state, submitting, submitScore]);
 
   const submit = () => {
     if (state !== "ready" || !selected) return;

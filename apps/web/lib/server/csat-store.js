@@ -1,4 +1,5 @@
 import {
+  CsatTemplateValidationError,
   DEFAULT_THANK_YOU_MESSAGES,
   normalizeCsatTemplateContent,
   normalizeThankYouMessages,
@@ -65,16 +66,19 @@ export async function saveCsatDraft(
   { name, subject, previewText, content, clerkUserId = null } = {}
 ) {
   const normalizedContent = normalizeCsatTemplateContent(content);
+  const current = await loadCsatDraft(serviceClient, workspaceId);
+  const nextSubject = String(subject ?? current.subject ?? "How was your support experience?").trim().slice(0, 300);
+  if (!nextSubject) throw new CsatTemplateValidationError("Email subject is required.");
   const rendered = await renderCsatEmail({
     content: normalizedContent,
-    subject,
+    subject: nextSubject,
+    previewText,
     linkMode: "markers",
   });
-  const current = await loadCsatDraft(serviceClient, workspaceId);
   const row = {
     workspace_id: workspaceId,
     name: String(name || current.name || "CSAT survey email").trim().slice(0, 160),
-    subject: String(subject || current.subject || "How was your support experience?").trim().slice(0, 300),
+    subject: nextSubject,
     preview_text: String(previewText || "").trim().slice(0, 300),
     editor_json: normalizedContent,
     rendered_html: rendered.html,
@@ -100,6 +104,7 @@ export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId
   const rendered = await renderCsatEmail({
     content: draft.editor_json,
     subject: draft.subject,
+    previewText: draft.preview_text,
     linkMode: "markers",
   });
   const { data: latestVersion, error: latestVersionError } = await serviceClient
@@ -112,52 +117,84 @@ export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId
   if (latestVersionError) throw new Error(latestVersionError.message);
   const nextVersion = Math.max(Number(latestVersion?.version || 0), Number(draft.version || 0)) + 1;
 
-  const { error: archiveError } = await serviceClient
+  const { data: previousPublished, error: previousPublishedError } = await serviceClient
     .from("csat_email_template_versions")
-    .update({ status: "archived" })
+    .select("id")
     .eq("workspace_id", workspaceId)
     .eq("status", "published");
-  if (archiveError) throw new Error(archiveError.message);
+  if (previousPublishedError) throw new Error(previousPublishedError.message);
 
-  const { data: version, error: versionError } = await serviceClient
-    .from("csat_email_template_versions")
-    .insert({
-      template_id: draft.id,
-      workspace_id: workspaceId,
-      version: nextVersion,
-      name: draft.name,
-      subject: draft.subject,
-      preview_text: draft.preview_text,
-      editor_json: draft.editor_json,
-      rendered_html: rendered.html,
-      rendered_text: rendered.text,
-      status: "published",
-      published_by_clerk_user_id: clerkUserId,
-    })
-    .select("id, workspace_id, template_id, version, name, subject, preview_text, editor_json, rendered_html, rendered_text, published_at")
-    .single();
-  if (versionError) throw new Error(versionError.message);
+  let insertedVersionId = null;
+  try {
+    const { error: archiveError } = await serviceClient
+      .from("csat_email_template_versions")
+      .update({ status: "archived" })
+      .eq("workspace_id", workspaceId)
+      .eq("status", "published");
+    if (archiveError) throw new Error(archiveError.message);
 
-  const { data: updatedDraft, error: draftError } = await serviceClient
-    .from("csat_email_templates")
-    .update({
-      status: "published",
-      version: nextVersion,
-      published_version: nextVersion,
-      rendered_html: rendered.html,
-      rendered_text: rendered.text,
-      updated_by_clerk_user_id: clerkUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("workspace_id", workspaceId)
-    .eq("id", draft.id)
-    .select("id, workspace_id, name, subject, preview_text, editor_json, rendered_html, rendered_text, status, version, published_version, updated_at")
-    .single();
-  if (draftError) throw new Error(draftError.message);
-  return {
-    draft: { ...updatedDraft, editor_json: normalizeCsatTemplateContent(updatedDraft.editor_json) },
-    published: { ...version, editor_json: normalizeCsatTemplateContent(version.editor_json) },
-  };
+    const { data: version, error: versionError } = await serviceClient
+      .from("csat_email_template_versions")
+      .insert({
+        template_id: draft.id,
+        workspace_id: workspaceId,
+        version: nextVersion,
+        name: draft.name,
+        subject: draft.subject,
+        preview_text: draft.preview_text,
+        editor_json: draft.editor_json,
+        rendered_html: rendered.html,
+        rendered_text: rendered.text,
+        status: "published",
+        published_by_clerk_user_id: clerkUserId,
+      })
+      .select("id, workspace_id, template_id, version, name, subject, preview_text, editor_json, rendered_html, rendered_text, published_at")
+      .single();
+    if (versionError) throw new Error(versionError.message);
+    insertedVersionId = version.id;
+
+    const { data: updatedDraft, error: draftError } = await serviceClient
+      .from("csat_email_templates")
+      .update({
+        status: "published",
+        version: nextVersion,
+        published_version: nextVersion,
+        rendered_html: rendered.html,
+        rendered_text: rendered.text,
+        updated_by_clerk_user_id: clerkUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("workspace_id", workspaceId)
+      .eq("id", draft.id)
+      .select("id, workspace_id, name, subject, preview_text, editor_json, rendered_html, rendered_text, status, version, published_version, updated_at")
+      .single();
+    if (draftError) throw new Error(draftError.message);
+    return {
+      draft: { ...updatedDraft, editor_json: normalizeCsatTemplateContent(updatedDraft.editor_json) },
+      published: { ...version, editor_json: normalizeCsatTemplateContent(version.editor_json) },
+    };
+  } catch (error) {
+    const rollbackErrors = [];
+    if (insertedVersionId) {
+      const { error: deleteError } = await serviceClient
+        .from("csat_email_template_versions")
+        .delete()
+        .eq("id", insertedVersionId)
+        .eq("workspace_id", workspaceId);
+      if (deleteError) rollbackErrors.push(deleteError);
+    }
+    const previousIds = (previousPublished || []).map((row) => row.id).filter(Boolean);
+    if (previousIds.length) {
+      const { error: restoreError } = await serviceClient
+        .from("csat_email_template_versions")
+        .update({ status: "published" })
+        .eq("workspace_id", workspaceId)
+        .in("id", previousIds);
+      if (restoreError) rollbackErrors.push(restoreError);
+    }
+    if (rollbackErrors.length) console.error("[csat-publish] Rollback failed", rollbackErrors);
+    throw error;
+  }
 }
 
 export async function loadThankYouMessages(serviceClient, workspaceId) {

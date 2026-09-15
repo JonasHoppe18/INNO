@@ -116,7 +116,18 @@ export const CSAT_RATING_BLOCK_DEFINITION = {
       label: "Question",
       type: "textarea",
       default: "How was your experience?",
-      required: true,
+    },
+    {
+      key: "leftLabel",
+      label: "Low score label",
+      type: "text",
+      default: "Very poor",
+    },
+    {
+      key: "rightLabel",
+      label: "High score label",
+      type: "text",
+      default: "Excellent",
     },
     {
       key: "scale",
@@ -163,6 +174,12 @@ export const CSAT_RATING_BLOCK_DEFINITION = {
       default: "#f59e0b",
     },
     {
+      key: "ratingBorderColor",
+      label: "Rating border",
+      type: "color",
+      default: "#e5e7eb",
+    },
+    {
       key: "size",
       label: "Size",
       type: "select",
@@ -188,26 +205,31 @@ export const CSAT_RATING_BLOCK_DEFINITION = {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td align="{{ alignment }}" style="text-align: {{ alignment }}; font-family: Arial, sans-serif;">
-          <p style="margin: 0 0 14px; color: {{ textColor }}; font-size: 18px; line-height: 1.4; font-weight: 600;">
+          {% if question != "" %}<p style="margin: 0 0 14px; color: {{ textColor }}; font-size: 18px; line-height: 1.4; font-weight: 600;">
             {{ question }}
-          </p>
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="{{ alignment }}">
+          </p>{% endif %}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="{{ alignment }}" style="max-width: 400px; table-layout: fixed;">
             <tr>
-              <td style="padding: 0 4px;">
-                <a href="{{ ratingUrl1 }}" style="display: inline-block; color: {{ ratingColor }}; text-decoration: none; font-size: {{ size }}; line-height: 1;">{% if ratingStyle == "emoji" %}😡{% elsif ratingStyle == "stars" %}★{% else %}1{% endif %}</a>
+              <td width="20%" style="padding: 0 4px;">
+                <a href="{{ ratingUrl1 }}" style="display: block; width: 100%; max-width: 64px; height: 64px; box-sizing: border-box; margin: 0 auto; border: 1px solid {{ ratingBorderColor }}; border-radius: 50%; color: {{ ratingColor }}; text-align: center; text-decoration: none; font-size: {{ size }}; line-height: 62px;">{% if ratingStyle == "emoji" %}😡{% elsif ratingStyle == "stars" %}★{% else %}1{% endif %}</a>
               </td>
-              <td style="padding: 0 4px;">
-                <a href="{{ ratingUrl2 }}" style="display: inline-block; color: {{ ratingColor }}; text-decoration: none; font-size: {{ size }}; line-height: 1;">{% if ratingStyle == "emoji" %}🙁{% elsif ratingStyle == "stars" %}★{% else %}2{% endif %}</a>
+              <td width="20%" style="padding: 0 4px;">
+                <a href="{{ ratingUrl2 }}" style="display: block; width: 100%; max-width: 64px; height: 64px; box-sizing: border-box; margin: 0 auto; border: 1px solid {{ ratingBorderColor }}; border-radius: 50%; color: {{ ratingColor }}; text-align: center; text-decoration: none; font-size: {{ size }}; line-height: 62px;">{% if ratingStyle == "emoji" %}🙁{% elsif ratingStyle == "stars" %}★{% else %}2{% endif %}</a>
               </td>
-              <td style="padding: 0 4px;">
-                <a href="{{ ratingUrl3 }}" style="display: inline-block; color: {{ ratingColor }}; text-decoration: none; font-size: {{ size }}; line-height: 1;">{% if ratingStyle == "emoji" %}😐{% elsif ratingStyle == "stars" %}★{% else %}3{% endif %}</a>
+              <td width="20%" style="padding: 0 4px;">
+                <a href="{{ ratingUrl3 }}" style="display: block; width: 100%; max-width: 64px; height: 64px; box-sizing: border-box; margin: 0 auto; border: 1px solid {{ ratingBorderColor }}; border-radius: 50%; color: {{ ratingColor }}; text-align: center; text-decoration: none; font-size: {{ size }}; line-height: 62px;">{% if ratingStyle == "emoji" %}😐{% elsif ratingStyle == "stars" %}★{% else %}3{% endif %}</a>
               </td>
-              <td style="padding: 0 4px;">
-                <a href="{{ ratingUrl4 }}" style="display: inline-block; color: {{ ratingColor }}; text-decoration: none; font-size: {{ size }}; line-height: 1;">{% if ratingStyle == "emoji" %}🙂{% elsif ratingStyle == "stars" %}★{% else %}4{% endif %}</a>
+              <td width="20%" style="padding: 0 4px;">
+                <a href="{{ ratingUrl4 }}" style="display: block; width: 100%; max-width: 64px; height: 64px; box-sizing: border-box; margin: 0 auto; border: 1px solid {{ ratingBorderColor }}; border-radius: 50%; color: {{ ratingColor }}; text-align: center; text-decoration: none; font-size: {{ size }}; line-height: 62px;">{% if ratingStyle == "emoji" %}🙂{% elsif ratingStyle == "stars" %}★{% else %}4{% endif %}</a>
               </td>
-              <td style="padding: 0 4px;">
-                <a href="{{ ratingUrl5 }}" style="display: inline-block; color: {{ ratingColor }}; text-decoration: none; font-size: {{ size }}; line-height: 1;">{% if ratingStyle == "emoji" %}😍{% elsif ratingStyle == "stars" %}★{% else %}5{% endif %}</a>
+              <td width="20%" style="padding: 0 4px;">
+                <a href="{{ ratingUrl5 }}" style="display: block; width: 100%; max-width: 64px; height: 64px; box-sizing: border-box; margin: 0 auto; border: 1px solid {{ ratingBorderColor }}; border-radius: 50%; color: {{ ratingColor }}; text-align: center; text-decoration: none; font-size: {{ size }}; line-height: 62px;">{% if ratingStyle == "emoji" %}😍{% elsif ratingStyle == "stars" %}★{% else %}5{% endif %}</a>
               </td>
+            </tr>
+            <tr>
+              <td width="20%" align="left" style="padding: 14px 4px 0; color: {{ textColor }}; font-size: 14px; line-height: 1.3; white-space: nowrap;">{{ leftLabel }}</td>
+              <td colspan="3"></td>
+              <td width="20%" align="right" style="padding: 14px 4px 0; color: {{ textColor }}; font-size: 14px; line-height: 1.3; white-space: nowrap;">{{ rightLabel }}</td>
             </tr>
           </table>
         </td>
@@ -237,7 +259,7 @@ export function createDefaultCsatEmailContent({ linkMode = "preview" } = {}) {
         type: "section",
         columns: "1",
         styles: {
-          padding: spacing(32, 32, 32, 32),
+          padding: spacing(30, 32, 30, 32),
           backgroundColor: "#ffffff",
         },
         children: [
@@ -246,47 +268,41 @@ export function createDefaultCsatEmailContent({ linkMode = "preview" } = {}) {
               id: "csat-title-1",
               type: "title",
               level: 1,
-              content: "We'd love your feedback",
+              content: "How was your support experience?",
               textAlign: "center",
-              styles: { padding: spacing(6, 0, 10, 0) },
+              styles: { padding: spacing(0, 0, 14, 0) },
             },
             {
               id: "csat-paragraph-1",
               type: "paragraph",
               content:
-                "<p style=\"text-align: center;\">Hi {{customer.first_name}},</p><p style=\"text-align: center;\">How did we do? Your feedback helps {{store.name}} improve every support experience.</p>",
-              styles: { padding: spacing(0, 0, 18, 0) },
+                "<p style=\"text-align: center; color: #737373; font-size: 26px; line-height: 1.35;\">We'd love to hear how we did. Your feedback helps us make every reply better.</p>",
+              styles: { padding: spacing(0, 0, 24, 0) },
             },
             {
               id: "csat-rating-1",
               type: "custom",
               customType: "csat-rating",
               fieldValues: {
-                question: "How was your experience?",
+                question: "",
                 scale: 5,
-                ratingStyle: "emoji",
+                leftLabel: "Very poor",
+                rightLabel: "Excellent",
+                ratingStyle: "numbers",
                 alignment: "center",
-                textColor: "#172033",
-                ratingColor: "#f59e0b",
+                textColor: "#737373",
+                ratingColor: "#737373",
+                ratingBorderColor: "#e5e7eb",
                 size: "28px",
                 ...csatRatingFields({ linkMode }),
               },
-              styles: { padding: spacing(0, 0, 12, 0) },
-            },
-            {
-              id: "csat-divider-1",
-              type: "divider",
-              lineStyle: "solid",
-              color: "#e5e7eb",
-              thickness: 1,
-              width: "full",
-              styles: { padding: spacing(14, 0, 14, 0) },
+              styles: { padding: spacing(0, 0, 42, 0) },
             },
             {
               id: "csat-footer-1",
               type: "paragraph",
-              content: "<p style=\"text-align: center; color: #64748b; font-size: 13px;\">Thanks for helping us get better.</p>",
-              styles: { padding: spacing(0, 0, 4, 0) },
+              content: "<p style=\"text-align: center; color: #a3a3a3; font-size: 14px; line-height: 1.45;\">You're receiving this because your support conversation was resolved.</p>",
+              styles: { padding: spacing(0, 0, 0, 0) },
             },
           ],
         ],
@@ -303,9 +319,109 @@ export function createDefaultCsatEmailContent({ linkMode = "preview" } = {}) {
   };
 }
 
+function updateDefaultTemplateCopy(content, { title, intro, footer, backgroundColor = "#f3f4f6" }) {
+  const section = content.blocks[0];
+  const [titleBlock, introBlock, ratingBlock, footerBlock] = section.children[0];
+  if (title !== undefined) titleBlock.content = title;
+  if (intro !== undefined) introBlock.content = `<p style="text-align: center; color: #737373; font-size: 26px; line-height: 1.35;">${intro}</p>`;
+  if (footer !== undefined) footerBlock.content = `<p style="text-align: center; color: #a3a3a3; font-size: 14px; line-height: 1.45;">${footer}</p>`;
+  section.styles.backgroundColor = "#ffffff";
+  content.settings.backgroundColor = backgroundColor;
+  return content;
+}
+
+export function createMinimalCsatEmailContent({ linkMode = "preview" } = {}) {
+  return updateDefaultTemplateCopy(createDefaultCsatEmailContent({ linkMode }), {
+    title: "How did we do?",
+    intro: "A quick rating helps us make every reply better.",
+    footer: "Thanks for helping us improve.",
+    backgroundColor: "#f8f8fb",
+  });
+}
+
+export function createPersonalCsatEmailContent({ linkMode = "preview" } = {}) {
+  return updateDefaultTemplateCopy(createDefaultCsatEmailContent({ linkMode }), {
+    title: "Could you share your experience?",
+    intro: "Hi {{customer.first_name}}, we'd love to know how your support experience felt.",
+    footer: "You're receiving this because your support conversation was resolved.",
+    backgroundColor: "#f7f5ff",
+  });
+}
+
+export function createBlankCsatEmailContent() {
+  return {
+    blocks: [
+      {
+        id: "csat-section-blank-1",
+        type: "section",
+        columns: "1",
+        styles: {
+          padding: spacing(24, 24, 24, 24),
+          backgroundColor: "#ffffff",
+        },
+        children: [[]],
+      },
+    ],
+    settings: {
+      width: 600,
+      backgroundColor: "#f8f8fb",
+      textColor: "#172033",
+      linkUnderline: true,
+      fontFamily: "Arial, sans-serif",
+      locale: "en",
+    },
+  };
+}
+
+export const CSAT_EMAIL_STARTER_TEMPLATES = [
+  {
+    id: "sona-default",
+    name: "Sona default",
+    description: "The balanced, ready-to-send CSAT email.",
+    accent: "#635bff",
+  },
+  {
+    id: "minimal",
+    name: "Minimal",
+    description: "A shorter email with more breathing room.",
+    accent: "#111118",
+  },
+  {
+    id: "personal",
+    name: "Personal",
+    description: "A warmer version that greets the customer by name.",
+    accent: "#8b5cf6",
+  },
+  {
+    id: "blank",
+    name: "Start blank",
+    description: "Build from scratch and add the rating block yourself.",
+    accent: "#a1a1aa",
+  },
+];
+
+export function createCsatEmailStarterTemplate(id, { linkMode = "preview" } = {}) {
+  if (id === "minimal") return createMinimalCsatEmailContent({ linkMode });
+  if (id === "personal") return createPersonalCsatEmailContent({ linkMode });
+  if (id === "blank") return createBlankCsatEmailContent({ linkMode });
+  return createDefaultCsatEmailContent({ linkMode });
+}
+
+export function countCsatRatingBlocks(content) {
+  const visit = (block) => {
+    if (!block || typeof block !== "object") return 0;
+    if (block.type === "custom" && block.customType === "csat-rating") return 1;
+    if (block.type !== "section" || !Array.isArray(block.children)) return 0;
+    return block.children.reduce((total, column) => total + (Array.isArray(column) ? column.reduce((sum, child) => sum + visit(child), 0) : 0), 0);
+  };
+  return Array.isArray(content?.blocks) ? content.blocks.reduce((total, block) => total + visit(block), 0) : 0;
+}
+
 export function getCsatRatingFields(fieldValues = {}) {
   return {
-    question: String(fieldValues.question || "How was your experience?").slice(0, 500),
+    question: String(fieldValues.question ?? "How was your experience?").slice(0, 500),
+    leftLabel: String(fieldValues.leftLabel ?? "Very poor").slice(0, 100),
+    rightLabel: String(fieldValues.rightLabel ?? "Excellent").slice(0, 100),
     scale: 5,
     ratingStyle: ["emoji", "numbers", "stars"].includes(fieldValues.ratingStyle)
       ? fieldValues.ratingStyle
@@ -315,6 +431,7 @@ export function getCsatRatingFields(fieldValues = {}) {
       : "center",
     textColor: normalizeHexColor(fieldValues.textColor, "#172033"),
     ratingColor: normalizeHexColor(fieldValues.ratingColor, "#f59e0b"),
+    ratingBorderColor: normalizeHexColor(fieldValues.ratingBorderColor, "#e5e7eb"),
     size: ["22px", "28px", "36px"].includes(String(fieldValues.size))
       ? String(fieldValues.size)
       : fieldValues.size === "lg"

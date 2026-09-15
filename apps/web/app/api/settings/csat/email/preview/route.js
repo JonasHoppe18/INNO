@@ -10,6 +10,7 @@ export async function POST(request) {
     const rendered = await renderCsatEmail({
       content: body?.editor_json,
       subject: body?.subject,
+      previewText: body?.preview_text,
       data: body?.preview_data,
       linkMode: "test",
     });

@@ -4,8 +4,7 @@ import { getReplyTargetEmail, normalizeEmailAddress } from "../inbox/sender.js";
 import { normalizeSupportLanguage } from "../translation/languages.js";
 import { getCustomerSatisfactionLanguageCopy, localizeCustomerSatisfactionValue } from "../csat/language-copy.js";
 import { loadCustomerSatisfactionSettings } from "./customer-satisfaction.js";
-import { sendPostmarkEmail } from "./postmark.js";
-import { buildEffectiveSharedFromEmail } from "./sending-identity.js";
+import { sendPublishedCsatSurveyEmail } from "./csat-response.js";
 
 const SOLVED_STATUSES = new Set(["resolved", "solved", "closed"]);
 const MAX_ATTEMPTS = 3;
@@ -93,11 +92,11 @@ function isCustomerEmail(email) {
 
 async function loadRecipient(serviceClient, thread) {
   const direct = normalizeEmailAddress(thread?.customer_email);
-  if (isCustomerEmail(direct)) return direct;
+  if (isCustomerEmail(direct)) return { email: direct, name: asString(thread?.customer_name) };
 
   const { data: message, error } = await serviceClient
     .from("mail_messages")
-    .select("from_email, extracted_customer_email")
+    .select("from_email, extracted_customer_email, from_name, extracted_customer_name")
     .eq("thread_id", thread.id)
     .eq("from_me", false)
     .order("received_at", { ascending: false })
@@ -105,7 +104,12 @@ async function loadRecipient(serviceClient, thread) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   const fallback = getReplyTargetEmail(message);
-  return isCustomerEmail(fallback) ? normalizeEmailAddress(fallback) : "";
+  return isCustomerEmail(fallback)
+    ? {
+        email: normalizeEmailAddress(fallback),
+        name: asString(message?.extracted_customer_name || message?.from_name),
+      }
+    : { email: "", name: "" };
 }
 
 function escapeHtml(value) {
@@ -119,11 +123,6 @@ function escapeHtml(value) {
 
 function replaceTemplate(value, tokens) {
   return String(value || "").replace(/{{\s*([a-z_]+)\s*}}/gi, (_match, key) => tokens[key] ?? "");
-}
-
-function buildFromDisplay(name, email) {
-  const safeName = String(name || "").replace(/[\r\n<>]/g, "").trim();
-  return safeName ? `${safeName} <${email}>` : email;
 }
 
 export function buildSurveyEmail({ settings, surveyUrl, customerName, subject, language = "en" }) {
@@ -190,28 +189,12 @@ export function buildSurveyEmail({ settings, surveyUrl, customerName, subject, l
 async function loadThread(serviceClient, threadId, workspaceId) {
   const { data, error } = await serviceClient
     .from("mail_threads")
-    .select("id, workspace_id, mailbox_id, subject, status, resolution_source, customer_email, customer_language")
+    .select("id, workspace_id, mailbox_id, subject, status, resolution_source, customer_email, customer_name, customer_language")
     .eq("id", threadId)
     .eq("workspace_id", workspaceId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data || null;
-}
-
-async function loadWorkspaceSupportLanguage(serviceClient, workspaceId) {
-  const { data, error } = await serviceClient
-    .from("workspaces")
-    .select("support_language")
-    .eq("id", workspaceId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return normalizeSupportLanguage(data?.support_language || "en");
-}
-
-function resolveSurveyLanguage(settings, thread, workspaceLanguage) {
-  if (settings.languageMode === "en") return "en";
-  if (settings.languageMode === "workspace") return workspaceLanguage;
-  return normalizeSupportLanguage(thread?.customer_language || workspaceLanguage);
 }
 
 export async function scheduleCustomerSatisfactionSurvey(
@@ -286,30 +269,34 @@ export async function sendCustomerSatisfactionSurvey(
   if (!SOLVED_STATUSES.has(String(thread.status || "").toLowerCase())) {
     return { status: "deferred", reason: "ticket_not_resolved" };
   }
-  const recipient = await loadRecipient(serviceClient, thread);
-  if (!recipient) return { status: "skipped", reason: "no_customer_email" };
-  if (!isCustomerEmail(recipient)) {
+  const customer = await loadRecipient(serviceClient, thread);
+  if (!customer.email) return { status: "skipped", reason: "no_customer_email" };
+  if (!isCustomerEmail(customer.email)) {
     return { status: "skipped", reason: "not_customer_email" };
   }
 
   const { mailbox, shop } = await loadMailboxAndShop(serviceClient, requestRow.workspace_id, thread);
-  const fromEmail = buildEffectiveSharedFromEmail({ shop, mailbox });
-  const fromName = settings.senderName || settings.company || "Support";
-  const token = deriveCustomerSatisfactionToken(requestRow.workspace_id, requestRow.thread_id);
-  const surveyUrl = buildCustomerSatisfactionUrl(token, origin);
-  const workspaceLanguage = await loadWorkspaceSupportLanguage(serviceClient, requestRow.workspace_id);
-  const language = resolveSurveyLanguage(settings, thread, workspaceLanguage);
-  const rendered = buildSurveyEmail({ settings, surveyUrl, subject: thread.subject, language });
-  const response = await sendPostmarkEmail({
-    From: buildFromDisplay(fromName, fromEmail),
-    To: recipient,
-    ReplyTo: mailbox.provider_email || fromEmail,
-    Subject: rendered.subject,
-    TextBody: rendered.text,
-    HtmlBody: rendered.html,
-    Tag: "csat-survey",
+  const storeUrl = shop?.shop_domain
+    ? (String(shop.shop_domain).startsWith("http") ? shop.shop_domain : `https://${shop.shop_domain}`)
+    : "";
+  const response = await sendPublishedCsatSurveyEmail(serviceClient, {
+    workspaceId: requestRow.workspace_id,
+    threadId: requestRow.thread_id,
+    recipient: customer.email,
+    origin,
+    mailbox,
+    data: {
+      customer: {
+        first_name: customer.name ? customer.name.split(/\s+/)[0] : "there",
+        full_name: customer.name,
+        email: customer.email,
+      },
+      store: { name: shop?.shop_name || "", url: storeUrl },
+      conversation: { subject: thread.subject || "", agent_name: mailbox.from_name || "" },
+      order: { number: "" },
+    },
   });
-  return { status: "sent", provider: "postmark", providerMessageId: response?.MessageID || null };
+  return { status: "sent", provider: "postmark", providerMessageId: response?.MessageID || null, version: response?.version || 0 };
 }
 
 async function updateRequest(serviceClient, id, patch) {
@@ -358,7 +345,7 @@ export async function scheduleRecentResolvedCustomerSatisfactionSurveys(
 
 export async function dispatchDueCustomerSatisfactionSurveys(
   serviceClient,
-  { workspaceId = null, origin = "", limit = 25 } = {},
+  { workspaceId = null, limit = 25, origin = "" } = {},
 ) {
   let query = serviceClient
     .from("csat_survey_requests")

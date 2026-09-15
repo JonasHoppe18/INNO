@@ -1742,12 +1742,6 @@ function EmailSettings({
             Configure customer-facing messages, routing and sender controls.
           </p>
         </div>
-        <Link
-          href="/settings/csat/email"
-          className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
-        >
-          Build CSAT email
-        </Link>
       </div>
 
       <div className="overflow-x-auto border-b border-border" aria-label="Email settings sections">

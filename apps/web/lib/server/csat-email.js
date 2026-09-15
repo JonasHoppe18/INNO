@@ -4,6 +4,7 @@ import {
   CSAT_SAMPLE_DATA,
   CSAT_VARIABLE_VALUES,
   createDefaultCsatEmailContent,
+  countCsatRatingBlocks,
   getCsatGroup,
   getCsatRatingFields,
   normalizeHexColor,
@@ -243,7 +244,9 @@ function normalizeBlock(block, depth = 0) {
   normalized.customType = customType;
   normalized.fieldValues = getCsatRatingFields({
     ...fieldValues,
-    question: safeText(fieldValues.question || "How was your experience?", 500),
+    question: safeText(fieldValues.question ?? "How was your experience?", 500),
+    leftLabel: safeText(fieldValues.leftLabel ?? "Very poor", 100),
+    rightLabel: safeText(fieldValues.rightLabel ?? "Excellent", 100),
   });
   return normalized;
 }
@@ -253,8 +256,13 @@ export function normalizeCsatTemplateContent(content) {
   const blocks = Array.isArray(source.blocks) ? source.blocks : [];
   if (blocks.length > 40) throw new CsatTemplateValidationError("CSAT emails can contain at most 40 sections.");
   const settings = source.settings && typeof source.settings === "object" ? source.settings : {};
+  const normalizedBlocks = blocks.map((block) => normalizeBlock(block));
+  const ratingBlockCount = countCsatRatingBlocks({ blocks: normalizedBlocks });
+  if (ratingBlockCount !== 1) {
+    throw new CsatTemplateValidationError("CSAT emails must contain exactly one CSAT rating block.");
+  }
   return {
-    blocks: blocks.map((block) => normalizeBlock(block)),
+    blocks: normalizedBlocks,
     settings: {
       width: clampNumber(settings.width, 320, 800, 600),
       backgroundColor: safeHex(settings.backgroundColor, "#f3f4f6"),
@@ -281,13 +289,13 @@ export function replaceCsatVariables(value, data = CSAT_SAMPLE_DATA) {
   });
 }
 
-function decorateContentForRender(content, { data, linkMode, token } = {}) {
+function decorateContentForRender(content, { data, linkMode, token, baseUrl } = {}) {
   const normalized = normalizeCsatTemplateContent(content);
   const responseUrls = Object.fromEntries(
     [1, 2, 3, 4, 5].map((score) => [
       score,
       linkMode === "live"
-        ? buildCsatResponseUrl(token, score)
+        ? buildCsatResponseUrl(token, score, baseUrl)
         : linkMode === "markers"
           ? `[[SONA_CSAT_RATING_URL_${score}]]`
           : `#sona-csat-test-score-${score}`,
@@ -313,6 +321,8 @@ function decorateContentForRender(content, { data, linkMode, token } = {}) {
       next.fieldValues = {
         ...getCsatRatingFields(block.fieldValues),
         question: replaceCsatVariables(block.fieldValues.question, data),
+        leftLabel: replaceCsatVariables(block.fieldValues.leftLabel, data),
+        rightLabel: replaceCsatVariables(block.fieldValues.rightLabel, data),
         ...Object.fromEntries(
           [1, 2, 3, 4, 5].map((score) => [`ratingUrl${score}`, responseUrls[score]])
         ),
@@ -333,10 +343,16 @@ function renderCsatRatingHtml(fieldValues) {
   const links = labels
     .map((label, index) => {
       const score = index + 1;
-      return `<td style="padding:0 4px"><a href="${escapeHtml(fields[`ratingUrl${score}`])}" style="display:inline-block;color:${escapeHtml(fields.ratingColor)};text-decoration:none;font-size:${escapeHtml(fields.size)};line-height:1">${label}</a></td>`;
+      return `<td width="20%" style="padding:0 4px"><a href="${escapeHtml(fields[`ratingUrl${score}`])}" style="display:block;width:100%;max-width:64px;height:64px;box-sizing:border-box;margin:0 auto;border:1px solid ${escapeHtml(fields.ratingBorderColor)};border-radius:50%;color:${escapeHtml(fields.ratingColor)};text-align:center;text-decoration:none;font-size:${escapeHtml(fields.size)};line-height:62px">${label}</a></td>`;
     })
     .join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="${fields.alignment}" style="text-align:${fields.alignment};font-family:Arial,sans-serif"><p style="margin:0 0 14px;color:${escapeHtml(fields.textColor)};font-size:18px;line-height:1.4;font-weight:600">${escapeHtml(fields.question)}</p><table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${fields.alignment}"><tr>${links}</tr></table></td></tr></table>`;
+  const question = fields.question
+    ? `<p style="margin:0 0 14px;color:${escapeHtml(fields.textColor)};font-size:18px;line-height:1.4;font-weight:600">${escapeHtml(fields.question)}</p>`
+    : "";
+  const scoreLabels = fields.leftLabel || fields.rightLabel
+    ? `<tr><td width="20%" align="left" style="padding:14px 4px 0;color:${escapeHtml(fields.textColor)};font-size:14px;line-height:1.3;white-space:nowrap">${escapeHtml(fields.leftLabel)}</td><td colspan="3"></td><td width="20%" align="right" style="padding:14px 4px 0;color:${escapeHtml(fields.textColor)};font-size:14px;line-height:1.3;white-space:nowrap">${escapeHtml(fields.rightLabel)}</td></tr>`
+    : "";
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="${fields.alignment}" style="text-align:${fields.alignment};font-family:Arial,sans-serif">${question}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="${fields.alignment}" style="max-width:400px;table-layout:fixed"><tr>${links}</tr>${scoreLabels}</table></td></tr></table>`;
 }
 
 function toPlainText(html) {
@@ -370,9 +386,11 @@ function assertSafeEmailHtml(html) {
 export async function renderCsatEmail({
   content,
   subject = "How was your support experience?",
+  previewText = "",
   data = CSAT_SAMPLE_DATA,
   linkMode = "test",
   token = "",
+  baseUrl = "",
 } = {}) {
   if (linkMode === "live" && !token) {
     throw new CsatTemplateValidationError("A secure CSAT token is required for live rating links.");
@@ -381,6 +399,7 @@ export async function renderCsatEmail({
     data,
     linkMode,
     token,
+    baseUrl,
   });
   const { renderToMjml } = await import("@templatical/renderer");
   const mjml = await renderToMjml(decorated, {
@@ -396,7 +415,11 @@ export async function renderCsatEmail({
   if (compiled.errors?.length) {
     throw new CsatTemplateValidationError(compiled.errors.map((error) => error.message).join(" "));
   }
-  const html = assertSafeEmailHtml(compiled.html);
+  const normalizedPreviewText = replaceCsatVariables(safeText(previewText || "", 300), data).trim();
+  const previewMarkup = normalizedPreviewText
+    ? `<div style="display:none!important;max-height:0;max-width:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">${normalizedPreviewText}</div>`
+    : "";
+  const html = assertSafeEmailHtml(compiled.html.replace(/(<body\b[^>]*>)/i, `$1${previewMarkup}`));
   return {
     subject: replaceCsatVariables(safeText(subject || "How was your support experience?", 300), data),
     mjml,

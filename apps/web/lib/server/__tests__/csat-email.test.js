@@ -48,6 +48,17 @@ describe("CSAT email safety and rendering", () => {
     })).toThrow(/unsupported markup/i);
   });
 
+  it("requires exactly one CSAT rating block", () => {
+    const withoutRating = createDefaultCsatEmailContent();
+    withoutRating.blocks[0].children[0] = withoutRating.blocks[0].children[0].filter((block) => block.customType !== "csat-rating");
+    expect(() => normalizeCsatTemplateContent(withoutRating)).toThrow(/exactly one CSAT rating block/i);
+
+    const withTwoRatings = createDefaultCsatEmailContent();
+    const rating = JSON.parse(JSON.stringify(withTwoRatings.blocks[0].children[0][2]));
+    withTwoRatings.blocks[0].children[0].push(rating);
+    expect(() => normalizeCsatTemplateContent(withTwoRatings)).toThrow(/exactly one CSAT rating block/i);
+  });
+
   it("renders variables and tolerates missing optional data", () => {
     expect(replaceCsatVariables("Hi {{customer.first_name}} {{order.number}}", {
       customer: { first_name: "Alex" },
@@ -81,6 +92,28 @@ describe("CSAT email safety and rendering", () => {
     for (const score of [1, 2, 3, 4, 5]) {
       expect(rendered.html).toContain(`#sona-csat-test-score-${score}`);
     }
+  });
+
+  it("renders the editable reference layout as the default CSAT email", async () => {
+    const rendered = await renderCsatEmail({
+      content: createDefaultCsatEmailContent({ linkMode: "preview" }),
+      linkMode: "test",
+    });
+    expect(rendered.html).toContain("How was your support experience?");
+    expect(rendered.html).toContain("We'd love to hear how we did.");
+    expect(rendered.html).toContain("border:1px solid #e5e7eb");
+    expect(rendered.html).toContain("Very poor");
+    expect(rendered.html).toContain("Excellent");
+    expect(rendered.html).toContain("You're receiving this because your support conversation was resolved.");
+  });
+
+  it("includes preview text in the rendered email", async () => {
+    const rendered = await renderCsatEmail({
+      content: createDefaultCsatEmailContent({ linkMode: "preview" }),
+      previewText: "A quick question about your support experience.",
+      linkMode: "test",
+    });
+    expect(rendered.html).toContain("A quick question about your support experience.");
   });
 
   it("requires a secure token for live rating links", async () => {
