@@ -7,6 +7,13 @@ import {
   buildEffectiveSharedFromEmail,
   buildSharedSonaFromEmail,
 } from "@/lib/server/sending-identity";
+import { buildNamedFromAddress, resolveMailboxSenderName } from "@/lib/server/mailbox-sender-name";
+import {
+  buildForwardedBodies,
+  buildPostmarkAttachments,
+  loadAuthorizedForwardSource,
+  normalizeForwardSubject,
+} from "@/lib/server/forward-email";
 import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
@@ -528,31 +535,25 @@ async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
 
 async function loadForwardingContext(serviceClient, scope, thread, payload) {
   const messageId = asString(payload?.original_message_id || payload?.message_id || "");
-  let messageQuery = serviceClient
-    .from("mail_messages")
-    .select("id, subject, body_text, body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, provider_message_id")
-    .eq("thread_id", thread.id)
-    .eq("from_me", false)
-    .order("received_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (messageId) {
-    messageQuery = serviceClient
-      .from("mail_messages")
-      .select("id, subject, body_text, body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, provider_message_id")
-      .eq("id", messageId)
-      .limit(1);
-  }
-  messageQuery = applyScope(messageQuery, scope);
-  const { data: inboundMessage } = await messageQuery.maybeSingle();
-
   let mailboxQuery = serviceClient
     .from("mail_accounts")
-    .select("id, workspace_id, shop_id, provider, provider_email, sending_type, sending_domain, domain_status, from_email, from_name, metadata")
+    .select("id, user_id, workspace_id, shop_id, provider, provider_email, sending_type, sending_domain, domain_status, from_email, from_name, metadata")
     .eq("id", thread.mailbox_id)
     .limit(1);
   mailboxQuery = applyScope(mailboxQuery, scope);
-  const { data: mailbox } = await mailboxQuery.maybeSingle();
+  const { data: mailbox, error: mailboxError } = await mailboxQuery.maybeSingle();
+  if (mailboxError) throw new Error(mailboxError.message);
+  if (!mailbox || mailbox.id !== thread.mailbox_id) {
+    throw new Error("The original mailbox is not available in this workspace.");
+  }
+  const { source: inboundMessage, attachments } = await loadAuthorizedForwardSource(
+    serviceClient,
+    scope,
+    thread,
+    mailbox,
+    messageId,
+  );
+
   const shop = await loadShopForSendingIdentity(serviceClient, mailbox?.shop_id);
   if (mailbox?.provider === "smtp") {
     try {
@@ -570,48 +571,26 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
     }
   }
 
-  const sourceSubject = asString(inboundMessage?.subject || thread.subject || "Inbound message");
-  const sourceBody = asString(inboundMessage?.body_text || inboundMessage?.body_html || "");
   const sourceFromName = asString(getEffectiveSenderName(inboundMessage));
   const sourceFromEmail = asString(getEffectiveSenderEmail(inboundMessage));
-  const sourceFrom = sourceFromEmail
-    ? sourceFromName
-      ? `${sourceFromName} <${sourceFromEmail}>`
-      : sourceFromEmail
-    : "Unknown sender";
 
   const fromEmail = resolvePostmarkSender(mailbox, shop);
-  const fromName = asString(mailbox?.from_name || "") || POSTMARK_FROM_NAME;
+  const fromName = resolveMailboxSenderName({
+    mailbox,
+    provider: "smtp",
+    fallback: POSTMARK_FROM_NAME,
+  });
   return {
-    sourceSubject,
-    sourceBody,
-    sourceFrom,
+    source: {
+      ...inboundMessage,
+      from_name: sourceFromName,
+      from_email: sourceFromEmail,
+    },
     fromEmail,
     fromName,
     providerMessageId: asString(inboundMessage?.provider_message_id || ""),
+    attachments,
   };
-}
-
-function buildForwardBodies(context) {
-  const textBody = [
-    "Forwarded inbound email",
-    "",
-    `From: ${context.sourceFrom || "Unknown sender"}`,
-    `Subject: ${context.sourceSubject || "(no subject)"}`,
-    "",
-    context.sourceBody || "(empty body)",
-  ].join("\n");
-  const safeBody = String(context.sourceBody || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br/>");
-  const htmlBody =
-    `<p><strong>Forwarded inbound email</strong></p>` +
-    `<p><strong>From:</strong> ${context.sourceFrom || "Unknown sender"}<br/>` +
-    `<strong>Subject:</strong> ${context.sourceSubject || "(no subject)"}</p>` +
-    `<hr/><p style=\"white-space:pre-wrap\">${safeBody}</p>`;
-  return { textBody, htmlBody };
 }
 
 async function loadLatestInboundMessage(serviceClient, scope, threadId) {
@@ -3229,17 +3208,36 @@ export async function POST(request, { params }) {
       );
     }
 
-    const forwardContext = await loadForwardingContext(serviceClient, scope, thread, payloadForForward);
-    const { textBody, htmlBody } = buildForwardBodies(forwardContext);
+    let forwardContext;
+    try {
+      forwardContext = await loadForwardingContext(
+        serviceClient,
+        scope,
+        thread,
+        payloadForForward,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not load the original email.";
+      return NextResponse.json({ error: message }, { status: 422 });
+    }
+    const { textBody, htmlBody } = buildForwardedBodies({
+      source: forwardContext.source,
+    });
 
     try {
       const forwardResponse = await sendPostmarkEmail({
-        From: `${forwardContext.fromName} <${forwardContext.fromEmail}>`,
+        From: buildNamedFromAddress({
+          name: forwardContext.fromName,
+          email: forwardContext.fromEmail,
+        }),
         To: targetEmail,
-        Subject: `Fwd: ${forwardContext.sourceSubject || thread.subject || "Inbound message"}`.slice(0, 250),
+        Subject: normalizeForwardSubject(
+          forwardContext.source?.subject || thread.subject,
+        ),
         TextBody: textBody,
         HtmlBody: htmlBody,
         ReplyTo: forwardContext.fromEmail,
+        Attachments: buildPostmarkAttachments(forwardContext.attachments),
       });
       const sentMessageId = asString(forwardResponse?.MessageID || "");
       if (actionRecord?.id) {

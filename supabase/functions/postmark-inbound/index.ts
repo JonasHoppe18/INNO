@@ -37,6 +37,15 @@ import {
   resolveInboundCustomerIdentity,
   resolveWorkspaceCustomer,
 } from "../_shared/customer-identity.ts";
+import {
+  buildForwardedBodies,
+  buildPostmarkAttachments,
+  extractForwardedCidReferences,
+  materializeForwardAttachment,
+  MAX_FORWARD_ATTACHMENTS,
+  normalizeForwardSubject,
+  type ForwardAttachment,
+} from "../_shared/forward-email.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -857,34 +866,25 @@ async function sendPostmarkAutoReply(payload: {
 async function sendForwardedEmail(options: {
   mailbox: MailboxLookup;
   to: string;
-  originalSubject: string;
-  originalFrom: string;
-  originalBodyText: string;
+  source: {
+    subject: string;
+    body_text: string;
+    body_html: string;
+    from_name: string;
+    from_email: string;
+    to_emails: string[];
+    cc_emails: string[];
+    received_at: string | null;
+  };
+  attachments: ForwardAttachment[];
 }): Promise<string | null> {
   if (!POSTMARK_SERVER_TOKEN) {
     throw new Error("POSTMARK_SERVER_TOKEN missing");
   }
   const fromEmail = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
   const fromName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
-  const subject = `Fwd: ${options.originalSubject || "Inbound message"}`.slice(0, 250);
-  const textBody = [
-    "Forwarded inbound email",
-    "",
-    `From: ${options.originalFrom || "Unknown sender"}`,
-    `Subject: ${options.originalSubject || "(no subject)"}`,
-    "",
-    options.originalBodyText || "(empty body)",
-  ].join("\n");
-  const safeBody = String(options.originalBodyText || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br/>");
-  const htmlBody =
-    `<p><strong>Forwarded inbound email</strong></p>` +
-    `<p><strong>From:</strong> ${options.originalFrom || "Unknown sender"}<br/>` +
-    `<strong>Subject:</strong> ${options.originalSubject || "(no subject)"}</p>` +
-    `<hr/><p style=\"white-space:pre-wrap\">${safeBody}</p>`;
+  const subject = normalizeForwardSubject(options.source.subject);
+  const { textBody, htmlBody } = buildForwardedBodies(options.source);
 
   const response = await fetch("https://api.postmarkapp.com/email", {
     method: "POST",
@@ -901,6 +901,9 @@ async function sendForwardedEmail(options: {
       TextBody: textBody,
       HtmlBody: htmlBody,
       ReplyTo: fromEmail,
+      ...(options.attachments.length
+        ? { Attachments: buildPostmarkAttachments(options.attachments) }
+        : {}),
     }),
   });
   const data = await response.json().catch(() => null);
@@ -972,6 +975,11 @@ async function runAutoForwardAction(options: {
   subject: string;
   fromRaw: string;
   textBody: string;
+  htmlBody: string;
+  toList: string[];
+  ccList: string[];
+  receivedAt: string | null;
+  attachmentCount: number;
   category: RoutingCategory;
   classification: RoutingClassification;
 }) {
@@ -1015,12 +1023,85 @@ async function runAutoForwardAction(options: {
   }
 
   try {
+    if (options.attachmentCount > MAX_FORWARD_ATTACHMENTS) {
+      throw new Error(
+        `This email has ${options.attachmentCount} attachments; forwarding is limited to ${MAX_FORWARD_ATTACHMENTS}.`,
+      );
+    }
+    if (!options.messageDbId && options.attachmentCount) {
+      throw new Error("Forwarded attachments could not be linked to the source message.");
+    }
+    if (options.messageDbId) {
+      const { data: sourceMessage, error: sourceMessageError } = await supabase
+        .from("mail_messages")
+        .select("id, user_id, mailbox_id, thread_id, from_me")
+        .eq("id", options.messageDbId)
+        .eq("user_id", options.mailbox.user_id)
+        .eq("mailbox_id", options.mailbox.mailbox_id)
+        .eq("thread_id", options.threadId)
+        .eq("from_me", false)
+        .maybeSingle();
+      if (sourceMessageError) throw new Error(sourceMessageError.message);
+      if (!sourceMessage) {
+        throw new Error("Forwarded source message is not authorized for this thread.");
+      }
+      const { data: sourceThread, error: sourceThreadError } = await supabase
+        .from("mail_threads")
+        .select("id, user_id, mailbox_id, workspace_id")
+        .eq("id", options.threadId)
+        .eq("user_id", options.mailbox.user_id)
+        .eq("mailbox_id", options.mailbox.mailbox_id)
+        .eq("workspace_id", options.mailbox.workspace_id)
+        .maybeSingle();
+      if (sourceThreadError) throw new Error(sourceThreadError.message);
+      if (!sourceThread) {
+        throw new Error("Forwarded source thread is not authorized for this workspace.");
+      }
+    }
+    const { data: persistedRows, error: attachmentError } = options.messageDbId
+      ? await supabase
+          .from("mail_attachments")
+          .select("user_id, mailbox_id, message_id, provider_attachment_id, filename, mime_type, size_bytes, storage_path")
+          .eq("user_id", options.mailbox.user_id)
+          .eq("mailbox_id", options.mailbox.mailbox_id)
+          .eq("message_id", options.messageDbId)
+          .order("created_at", { ascending: true })
+      : { data: [], error: null };
+    if (attachmentError) throw new Error(attachmentError.message);
+    const rows = Array.isArray(persistedRows) ? persistedRows : [];
+    if (rows.length !== options.attachmentCount) {
+      throw new Error("Forwarded attachments could not be recovered completely.");
+    }
+    const attachments = rows.map((row, index) =>
+      materializeForwardAttachment(row, index, options.htmlBody),
+    );
+    const sourceCids = new Set(extractForwardedCidReferences(options.htmlBody));
+    const availableCids = new Set(
+      attachments
+        .filter((attachment) => attachment.is_inline)
+        .map((attachment) => attachment.content_id)
+        .filter(Boolean),
+    );
+    const missingCids = Array.from(sourceCids).filter((contentId) => !availableCids.has(contentId));
+    if (missingCids.length) {
+      throw new Error(
+        `Forwarded inline image data is unavailable (${missingCids.join(", ")}).`,
+      );
+    }
     const providerMessageId = await sendForwardedEmail({
       mailbox: options.mailbox,
       to: effectiveTarget,
-      originalSubject: options.subject,
-      originalFrom: options.fromRaw,
-      originalBodyText: options.textBody,
+      source: {
+        subject: options.subject,
+        body_text: options.textBody,
+        body_html: options.htmlBody,
+        from_name: extractName(options.fromRaw) || "",
+        from_email: extractEmail(options.fromRaw) || "",
+        to_emails: options.toList,
+        cc_emails: options.ccList,
+        received_at: options.receivedAt,
+      },
+      attachments,
     });
     await supabase.from("thread_actions").insert({
       user_id: options.mailbox.user_id,
@@ -2168,6 +2249,13 @@ Deno.serve(async (req) => {
         subject,
         fromRaw,
         textBody,
+        htmlBody,
+        toList,
+        ccList,
+        receivedAt,
+        attachmentCount: Array.isArray(payload?.Attachments)
+          ? payload.Attachments.length
+          : 0,
         category: routeDecision.category,
         classification: routingClassification,
       });

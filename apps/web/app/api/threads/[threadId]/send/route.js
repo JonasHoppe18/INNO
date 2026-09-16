@@ -25,6 +25,14 @@ import {
   buildOutlookFrom,
   resolveMailboxSenderName,
 } from "@/lib/server/mailbox-sender-name";
+import {
+  buildForwardedBodies,
+  buildOutlookAttachment,
+  loadAuthorizedForwardSource,
+  MAX_FORWARD_ATTACHMENTS,
+  normalizeForwardSubject,
+} from "@/lib/server/forward-email";
+import { buildRawEmail } from "@/lib/server/email-transport";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -623,24 +631,6 @@ async function getAccessToken(serviceClient, account) {
   throw new Error("Unsupported provider");
 }
 
-function toBase64Url(input) {
-  return Buffer.from(input, "utf-8")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-function chunkBase64(input, lineLength = 76) {
-  const value = String(input || "");
-  if (!value) return "";
-  const chunks = [];
-  for (let index = 0; index < value.length; index += lineLength) {
-    chunks.push(value.slice(index, index + lineLength));
-  }
-  return chunks.join("\r\n");
-}
-
 function sanitizeBase64(input) {
   const value = String(input || "").replace(/\s+/g, "");
   if (!value) return "";
@@ -716,145 +706,6 @@ function stripInlineCidMarkers(text = "") {
     .replace(/\s*\[cid:[^\]]+\]\s*/gi, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function buildRawEmail({
-  from,
-  to,
-  cc,
-  bcc,
-  subject,
-  bodyText,
-  bodyHtml,
-  inReplyTo,
-  attachments,
-}) {
-  const safeAttachments = Array.isArray(attachments) ? attachments : [];
-  const hasHtml = Boolean(String(bodyHtml || "").trim());
-  const inlineAttachments = hasHtml
-    ? safeAttachments.filter(
-        (attachment) =>
-          attachment?.is_inline &&
-          normalizeContentId(attachment?.content_id || attachment?.filename),
-      )
-    : [];
-  const regularAttachments = safeAttachments.filter(
-    (attachment) => !attachment?.is_inline || !hasHtml,
-  );
-  const hasAttachments = safeAttachments.length > 0;
-  const headers = [];
-  headers.push(`From: ${from}`);
-  headers.push(`To: ${to.join(", ")}`);
-  if (cc?.length) headers.push(`Cc: ${cc.join(", ")}`);
-  if (bcc?.length) headers.push(`Bcc: ${bcc.join(", ")}`);
-  headers.push(`Subject: ${subject}`);
-  if (inReplyTo) headers.push(`In-Reply-To: ${inReplyTo}`);
-  headers.push("MIME-Version: 1.0");
-
-  const plainBody = String(bodyText || "");
-  const htmlBody = String(bodyHtml || "");
-  const plainBodyBase64 = chunkBase64(
-    Buffer.from(plainBody, "utf-8").toString("base64"),
-  );
-  const htmlBodyBase64 = chunkBase64(
-    Buffer.from(htmlBody, "utf-8").toString("base64"),
-  );
-
-  if (!hasAttachments && !hasHtml) {
-    headers.push(`Content-Type: text/plain; charset="UTF-8"`);
-    headers.push(`Content-Transfer-Encoding: base64`);
-    const raw = `${headers.join("\r\n")}\r\n\r\n${plainBodyBase64}`;
-    return toBase64Url(raw);
-  }
-
-  const mixedBoundary = `mix_${crypto.randomBytes(12).toString("hex")}`;
-  const altBoundary = `alt_${crypto.randomBytes(12).toString("hex")}`;
-  const relatedBoundary = `rel_${crypto.randomBytes(12).toString("hex")}`;
-  const lines = [...headers];
-
-  if (hasAttachments) {
-    lines.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
-    lines.push("");
-    lines.push(`--${mixedBoundary}`);
-  } else {
-    lines.push(
-      `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
-    );
-    lines.push("");
-  }
-
-  if (hasHtml && inlineAttachments.length) {
-    lines.push(
-      `Content-Type: multipart/related; boundary="${relatedBoundary}"`,
-    );
-    lines.push("");
-    lines.push(`--${relatedBoundary}`);
-  }
-
-  lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
-  lines.push("");
-  lines.push(`--${altBoundary}`);
-  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-  lines.push(`Content-Transfer-Encoding: base64`);
-  lines.push("");
-  lines.push(plainBodyBase64);
-
-  if (hasHtml) {
-    lines.push(`--${altBoundary}`);
-    lines.push(`Content-Type: text/html; charset="UTF-8"`);
-    lines.push(`Content-Transfer-Encoding: base64`);
-    lines.push("");
-    lines.push(htmlBodyBase64);
-  }
-
-  lines.push(`--${altBoundary}--`);
-
-  if (hasHtml && inlineAttachments.length) {
-    inlineAttachments.forEach((attachment, index) => {
-      const filename =
-        String(attachment?.filename || "").trim() || `inline-${index + 1}`;
-      const mimeType =
-        String(attachment?.mime_type || "").trim() ||
-        "application/octet-stream";
-      const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
-      const contentId =
-        normalizeContentId(
-          attachment?.content_id || attachment?.filename,
-          `inline-${index + 1}`,
-        ) || `inline-${index + 1}`;
-      lines.push("");
-      lines.push(`--${relatedBoundary}`);
-      lines.push(`Content-Type: ${mimeType}; name="${filename}"`);
-      lines.push(`Content-Disposition: inline; filename="${filename}"`);
-      lines.push(`Content-ID: <${contentId}>`);
-      lines.push("Content-Transfer-Encoding: base64");
-      lines.push("");
-      lines.push(content);
-    });
-    lines.push(`--${relatedBoundary}--`);
-  }
-
-  if (hasAttachments) {
-    regularAttachments.forEach((attachment, index) => {
-      const filename =
-        String(attachment?.filename || "").trim() || `attachment-${index + 1}`;
-      const mimeType =
-        String(attachment?.mime_type || "").trim() ||
-        "application/octet-stream";
-      const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
-      lines.push("");
-      lines.push(`--${mixedBoundary}`);
-      lines.push(`Content-Type: ${mimeType}; name="${filename}"`);
-      lines.push(`Content-Disposition: attachment; filename="${filename}"`);
-      lines.push("Content-Transfer-Encoding: base64");
-      lines.push("");
-      lines.push(content);
-    });
-    lines.push(`--${mixedBoundary}--`);
-  }
-
-  const raw = lines.join("\r\n");
-  return toBase64Url(raw);
 }
 
 function normalizeMessageId(value) {
@@ -1122,6 +973,13 @@ export async function POST(request, { params }) {
   }
 
   const body = await request.json().catch(() => ({}));
+  const isForward = body?.mode === "forward";
+  const requestedForwardSourceId =
+    typeof body?.source_message_id === "string"
+      ? body.source_message_id.trim()
+      : typeof body?.original_message_id === "string"
+        ? body.original_message_id.trim()
+        : "";
   const requestedBodyText = String(body?.body_text || "").trim();
   const requestedBodyHtml = String(body?.body_html || "").trim();
   const senderName = String(body?.sender_name || "").trim();
@@ -1133,7 +991,7 @@ export async function POST(request, { params }) {
     typeof body?.draft_message_id === "string"
       ? body.draft_message_id.trim()
       : null;
-  if (!requestedBodyText && !requestedBodyHtml) {
+  if (!requestedBodyText && !requestedBodyHtml && !isForward) {
     return NextResponse.json(
       { error: "body_text is required." },
       { status: 400 },
@@ -1334,6 +1192,35 @@ export async function POST(request, { params }) {
     ? inboundMessages[0]
     : null;
 
+  let forwardSource = null;
+  let forwardAttachments = [];
+  if (isForward) {
+    try {
+      const loaded = await loadAuthorizedForwardSource(
+        serviceClient,
+        scope,
+        thread,
+        mailbox,
+        requestedForwardSourceId,
+      );
+      forwardSource = loaded.source;
+      forwardAttachments = loaded.attachments;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error?.message || "Could not load the original email for forwarding." },
+        { status: 422 },
+      );
+    }
+    if (forwardAttachments.length + requestedAttachments.length > MAX_FORWARD_ATTACHMENTS) {
+      return NextResponse.json(
+        {
+          error: `A forwarded email can contain at most ${MAX_FORWARD_ATTACHMENTS} attachments.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // Load recent thread messages (both directions) for conversation context
   let threadMessagesQuery = serviceClient
     .from("mail_messages")
@@ -1418,7 +1305,9 @@ export async function POST(request, { params }) {
   const deliveryCc = isTestModeActive ? [] : ccEmails;
   const deliveryBcc = isTestModeActive ? [] : bccEmails;
 
-  const subject = isNewTicket
+  const subject = isForward
+    ? normalizeForwardSubject(forwardSource?.subject || thread.subject)
+    : isNewTicket
     ? subjectRaw
     : subjectRaw.toLowerCase().startsWith("re:")
       ? subjectRaw
@@ -1431,10 +1320,25 @@ export async function POST(request, { params }) {
     userId: supabaseUserId,
     legacySignature,
   });
-  const generatedBodyHtmlFromText =
-    buildHtmlFromBodyTextWithInlineImages(requestedBodyText);
-  const bodyText = stripInlineCidMarkers(requestedBodyText);
-  const bodyHtml = requestedBodyHtml || generatedBodyHtmlFromText || "";
+  const forwardedBodies = isForward
+    ? buildForwardedBodies({
+        agentBodyText: requestedBodyText,
+        agentBodyHtml: requestedBodyHtml,
+        source: forwardSource,
+      })
+    : null;
+  const generatedBodyHtmlFromText = isForward
+    ? null
+    : buildHtmlFromBodyTextWithInlineImages(requestedBodyText);
+  const bodyText = isForward
+    ? forwardedBodies.textBody
+    : stripInlineCidMarkers(requestedBodyText);
+  const bodyHtml = isForward
+    ? forwardedBodies.htmlBody
+    : requestedBodyHtml || generatedBodyHtmlFromText || "";
+  const deliveryAttachments = isForward
+    ? [...forwardAttachments, ...attachmentsPayload]
+    : attachmentsPayload;
   const composed = composeEmailBodyWithSignature({
     bodyText: bodyText || stripHtml(bodyHtml),
     bodyHtml,
@@ -1469,10 +1373,14 @@ export async function POST(request, { params }) {
     } else if (mailbox.provider === "smtp") {
       const senderConfig = resolvePostmarkSender(mailbox, senderDisplayName, { shop });
       sentFromEmail = senderConfig.fromEmail;
-      const references = (Array.isArray(inboundMessages) ? inboundMessages : [])
-        .map((row) => normalizeMessageId(row?.provider_message_id))
-        .filter(Boolean);
-      const inReplyTo = normalizeMessageId(inboundMessage?.provider_message_id);
+      const references = isForward
+        ? []
+        : (Array.isArray(inboundMessages) ? inboundMessages : [])
+            .map((row) => normalizeMessageId(row?.provider_message_id))
+            .filter(Boolean);
+      const inReplyTo = isForward
+        ? null
+        : normalizeMessageId(inboundMessage?.provider_message_id);
       const postmarkResponse = await sendViaPostmark({
         to: deliveryTo,
         cc: deliveryCc,
@@ -1484,7 +1392,7 @@ export async function POST(request, { params }) {
         references,
         replyTo: mailbox.provider_email || undefined,
         fromDisplay: senderConfig.fromDisplay,
-        attachments: attachmentsPayload,
+        attachments: deliveryAttachments,
       });
       providerMessageId = postmarkResponse?.MessageID || null;
 
@@ -1515,13 +1423,13 @@ export async function POST(request, { params }) {
           subject,
           bodyText: finalBodyText,
           bodyHtml: finalBodyHtml || null,
-          inReplyTo: inboundMessage?.provider_message_id || null,
-          attachments: attachmentsPayload,
+          inReplyTo: isForward ? null : inboundMessage?.provider_message_id || null,
+          attachments: deliveryAttachments,
         });
         const payload = await sendGmail({
           token,
           raw,
-          threadId: thread.provider_thread_id || undefined,
+          threadId: isForward ? undefined : thread.provider_thread_id || undefined,
         });
         providerMessageId = payload?.id || null;
       } else if (mailbox.provider === "outlook") {
@@ -1544,7 +1452,7 @@ export async function POST(request, { params }) {
           bccRecipients: deliveryBcc.map((email) => ({
             emailAddress: { address: email },
           })),
-          internetMessageHeaders: inboundMessage?.provider_message_id
+          internetMessageHeaders: !isForward && inboundMessage?.provider_message_id
             ? [
                 {
                   name: "In-Reply-To",
@@ -1552,18 +1460,12 @@ export async function POST(request, { params }) {
                 },
               ]
             : [],
-          attachments: attachmentsPayload.map((attachment) => ({
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            name: attachment.filename,
-            contentType: attachment.mime_type,
-            contentBytes: attachment.content_base64,
-            isInline: attachment?.is_inline === true,
-            contentId: attachment?.is_inline
-              ? attachment.content_id || undefined
-              : undefined,
-          })),
+          attachments: deliveryAttachments.map((attachment, index) =>
+            buildOutlookAttachment(attachment, index),
+          ),
         };
         const useReply =
+          !isForward &&
           Boolean(inboundMessage?.provider_message_id) &&
           !toEmails.length &&
           !isTestModeActive;
@@ -1763,8 +1665,8 @@ export async function POST(request, { params }) {
     );
     await clearExistingAttachmentsQuery;
 
-    if (attachmentsPayload.length) {
-      const attachmentRows = attachmentsPayload.map((attachment) => ({
+    if (deliveryAttachments.length) {
+      const attachmentRows = deliveryAttachments.map((attachment) => ({
         user_id: supabaseUserId,
         mailbox_id: mailbox.id,
         message_id: insertedMessage.id,
@@ -2087,7 +1989,7 @@ export async function POST(request, { params }) {
       message_id: insertedMessage?.id ?? null,
       provider_message_id: persistedProviderMessageId,
       provider: mailbox.provider,
-      attachment_count: attachmentsPayload.length,
+      attachment_count: deliveryAttachments.length,
       test_mode: isTestModeActive,
       simulated: shouldSimulateEmailOnly,
       redirected_to: testEmailAddress,

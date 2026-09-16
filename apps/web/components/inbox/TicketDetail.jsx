@@ -228,6 +228,11 @@ function TicketDetailComponent({
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
   const [returnTrackingSubmitting, setReturnTrackingSubmitting] = useState("");
+
+  const forwardSourceMessageId = useMemo(
+    () => getLatestInboundCustomerMessage(messages, mailboxEmails)?.id || "",
+    [mailboxEmails, messages],
+  );
   const [returnTrackingError, setReturnTrackingError] = useState("");
   const [createdReturnTrackingByThread, setCreatedReturnTrackingByThread] = useState({});
   const [ignoredReturnTrackingByThread, setIgnoredReturnTrackingByThread] = useState({});
@@ -974,6 +979,7 @@ function TicketDetailComponent({
               onMailboxChange={onMailboxChange}
               newTicketSubject={newTicketSubject}
               onNewTicketSubjectChange={onNewTicketSubjectChange}
+              forwardSourceMessageId={forwardSourceMessageId}
               mentionUsers={mentionUsers}
               onBlur={() => onDraftBlur?.(thread?.id || null)}
               isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}

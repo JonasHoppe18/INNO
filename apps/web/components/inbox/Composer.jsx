@@ -468,6 +468,7 @@ function ComposerComponent({
   onMailboxChange = null,
   newTicketSubject = "",
   onNewTicketSubjectChange = null,
+  forwardSourceMessageId = "",
 }) {
   const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -1320,7 +1321,13 @@ function ComposerComponent({
   }, [mentionUsers, normalizeMentionKey]);
 
   const submitComposer = useCallback(() => {
-    if (disabled || showDraftLoadingState || !canSend || !value.trim() || isSending) return;
+    if (
+      disabled ||
+      showDraftLoadingState ||
+      !canSend ||
+      (!value.trim() && !isForward) ||
+      isSending
+    ) return;
     const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
     const mentionUserIds = Array.from(
       new Set([...(selectedMentionIds || []), ...parsedMentionIds])
@@ -1333,6 +1340,7 @@ function ComposerComponent({
       bccRecipients: buildRecipients(bccRecipients, bccInput),
       attachments,
       mentionUserIds,
+      sourceMessageId: isForward ? forwardSourceMessageId || null : null,
     });
   }, [
     attachments,
@@ -1342,6 +1350,7 @@ function ComposerComponent({
     ccInput,
     ccRecipients,
     disabled,
+    forwardSourceMessageId,
     isForward,
     isNote,
     isSending,
@@ -2426,7 +2435,13 @@ function ComposerComponent({
               </DropdownMenu>
               <Button
                 type="button"
-                disabled={disabled || showDraftLoadingState || !canSend || !value.trim() || isSending}
+                disabled={
+                  disabled ||
+                  showDraftLoadingState ||
+                  !canSend ||
+                  (!value.trim() && !isForward) ||
+                  isSending
+                }
                 onClick={() => {
                   submitComposer();
                 }}

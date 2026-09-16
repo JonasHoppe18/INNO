@@ -1256,7 +1256,7 @@ export function useComposerState({
     const composeBody = String(
       composeMode === "note" ? activeNoteValue : draftValue || "",
     );
-    if (!composeBody.trim()) {
+    if (composeMode !== "forward" && !composeBody.trim()) {
       toast.error("Draft is empty.");
       return;
     }
@@ -1421,6 +1421,9 @@ export function useComposerState({
           new_ticket: isNewTicket,
           draft_message_id: draftMessage?.id || activeDraftId || null,
           draft_preview_id: null,
+          mode: composeMode,
+          source_message_id:
+            composeMode === "forward" ? payload?.sourceMessageId || null : null,
         }),
       });
       const data = await res.json().catch(() => ({}));
