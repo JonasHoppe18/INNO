@@ -4678,8 +4678,17 @@ export function SettingsPanel() {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
-          <div className="mb-6 flex justify-end">
-            <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="mb-8 flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Workspace
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">Workspace settings</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Configure how your team works with Sona.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               {currentTabSaveStatus ? (
                 <span
                   className={cn(

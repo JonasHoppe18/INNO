@@ -21,7 +21,7 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 84;
+const VIRTUAL_ROW_HEIGHT_PX = 68;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 
 export function TicketListToolbar({
@@ -35,7 +35,7 @@ export function TicketListToolbar({
       ?.label || "Newest";
 
   return (
-    <div className={`flex h-full w-full min-w-0 items-center gap-2 px-3.5 ${className}`}>
+    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-3 ${className}`}>
       <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
         <Input
@@ -49,7 +49,7 @@ export function TicketListToolbar({
           }}
           aria-label="Search tickets"
           placeholder="Search..."
-          className="h-9 min-w-0 rounded-lg border-transparent bg-muted/35 pl-8 pr-7 text-[12px] shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/55 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
+          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-[12px] shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
         />
         {hasActiveSearch ? (
           <button
@@ -68,7 +68,7 @@ export function TicketListToolbar({
           <button
             type="button"
             aria-label={`Sort tickets: ${selectedSortLabel}`}
-            className="flex h-9 max-w-[132px] shrink-0 items-center gap-1.5 rounded-lg border border-transparent bg-muted/25 px-2.5 text-[12px] text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-[12px] text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
             title={`Sort: ${selectedSortLabel}`}
           >
             <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />

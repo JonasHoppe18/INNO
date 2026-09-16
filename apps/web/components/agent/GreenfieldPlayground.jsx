@@ -2,16 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Check,
   ChevronDown,
+  ChevronRight,
   Loader2,
   Search,
   Send,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SonaLogo } from "@/components/ui/SonaLogo";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +28,31 @@ function formatTime(value) {
   if (!value) return "";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5" aria-label="Sona is typing">
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.3s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.15s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80" />
+    </div>
+  );
+}
+
+function GeneratingActivity() {
+  return (
+    <div className="mt-1 w-full max-w-[min(88%,24rem)] rounded-[18px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">Working through it…</span>
+        <TypingDots />
+      </div>
+      <div className="mt-2 border-l border-sky-200/80 pl-3 text-[10.5px] leading-relaxed dark:border-sky-800/70">
+        <p className="text-slate-600 dark:text-slate-300">Reviewing your message</p>
+        <p className="mt-1 text-slate-400 dark:text-slate-500">Preparing a verified reply</p>
+      </div>
+    </div>
+  );
 }
 
 function actionLabel(value) {
@@ -74,9 +97,7 @@ function buildReasoningSteps(trace) {
   const events = Array.isArray(trace?.events) ? trace.events : [];
   const toolCalls = events.filter((event) => event?.type === "tool_call");
   const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
-  const providerResults = Array.isArray(trace?.provider_results) ? trace.provider_results : [];
-  const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
-  const steps = toolCalls.slice(0, 5).map((event) => {
+  const steps = toolCalls.slice(0, 6).map((event) => {
     const result = resultForTool(trace, event);
     const resultData = result?.result?.data;
     const resultCount = Array.isArray(resultData?.results) ? resultData.results.length : 0;
@@ -95,20 +116,6 @@ function buildReasoningSteps(trace) {
   if (!steps.length) {
     steps.push({ title: "Safe fallback", detail: "No supporting tool result was recorded, so the response stayed within the verified information available.", status: "neutral" });
   }
-  providerResults.slice(0, Math.max(0, 5 - steps.length)).forEach((result) => {
-    steps.push({
-      title: `Checked ${toolLabel(result?.tool)}`,
-      detail: `${result?.provider || "Provider"} · ${humanize(result?.status || "not recorded")}.`,
-      status: result?.status === "ok" || result?.status === "success" ? "complete" : "neutral",
-    });
-  });
-  simulatedActions.slice(0, Math.max(0, 5 - steps.length)).forEach((action) => {
-    steps.push({
-      title: `Prepared ${actionLabel(action?.action)}`,
-      detail: `Dry run · ${action?.validation_status || "validation not recorded"}.`,
-      status: "neutral",
-    });
-  });
   steps.push({
     title: "Composed the reply",
     detail: sources.length ? "The answer was written from the evidence and checks shown below." : "The answer was written without inventing an unsupported fact.",
@@ -117,103 +124,196 @@ function buildReasoningSteps(trace) {
   return steps;
 }
 
-function AgentActivity({ trace, working = false }) {
-  const [manualOpen, setManualOpen] = useState(null);
-  const steps = working
-    ? [
-        { title: "Reviewing your message", detail: "Understanding the request and intent." },
-        { title: "Preparing a verified reply", detail: "Checking the context Sona can safely use." },
-      ]
-    : buildReasoningSteps(trace);
-  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
-  const isOpen = manualOpen ?? working;
-  const seconds = trace?.latency_ms == null ? null : Math.max(1, Math.round(trace.latency_ms / 1000));
-  const completeLabel = seconds
-    ? `Thought for ${seconds} second${seconds === 1 ? "" : "s"}`
-    : `Thought through ${steps.length} steps`;
-
-  useEffect(() => {
-    if (working) setManualOpen(null);
-  }, [working]);
-
+function SourceCard({ source, index }) {
+  const provenance = source?.provenance || {};
+  const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
+  const preview = sections[0]?.content || "No excerpt captured in the trace.";
   return (
-    <section className="mt-3 w-full max-w-[31rem]" aria-label="Sona activity">
-      <button
-        type="button"
-        aria-expanded={isOpen}
-        onClick={() => setManualOpen((current) => !(current ?? working))}
-        className="group -mx-2 flex w-fit items-center gap-2 rounded-md px-2 py-1.5 text-left text-violet-700 transition-[background-color,transform,color] duration-150 ease-out hover:bg-violet-50/80 hover:text-violet-800 active:scale-[0.985] dark:text-violet-300 dark:hover:bg-violet-950/30 dark:hover:text-violet-200"
-      >
-        {working ? (
-          <SonaLogo size={17} mode="sharp" speed="working" className="shrink-0" />
-        ) : (
-          <Sparkles className="size-[17px] shrink-0 text-violet-500 dark:text-violet-300" />
-        )}
-        {working ? (
-          <span className="text-sm font-medium animate-[pulse_1.8s_ease-in-out_infinite]">Thinking</span>
-        ) : (
-          <span className="text-sm font-medium text-muted-foreground">{completeLabel}</span>
-        )}
-        <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ease-out ${isOpen ? "rotate-180" : ""}`} />
-      </button>
+    <details className="group overflow-hidden rounded-lg bg-muted/[0.22] pb-1 transition-colors duration-150 ease-out open:bg-muted/40" open={index === 0}>
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-2.5 py-3 transition-colors duration-150 ease-out hover:bg-muted/35">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+        <span className="min-w-0 flex-1">
+          <span className="mb-1 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
+            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
+          </span>
+          <span className="block truncate text-[13px] font-semibold text-foreground">{source?.title || "Untitled source"}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
+        </span>
+        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
+      </summary>
+      <div className="px-3 pb-3 pt-1 text-xs leading-relaxed text-muted-foreground">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
+          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
+          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">{humanize(provenance.source_kind)}</span> : null}
+        </div>
+        <div className="flex flex-col gap-3">
+          {sections.length ? sections.map((section, sectionIndex) => (
+            <div key={`${section.heading || "excerpt"}-${sectionIndex}`}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
+              <p className="whitespace-pre-wrap text-foreground/80">{section.content || "No excerpt captured."}</p>
+            </div>
+          )) : <p className="text-foreground/70">{preview}</p>}
+        </div>
+        {(provenance.source_id || provenance.source_uri) ? (
+          <p className="mt-3 pt-2 text-[10.5px] text-muted-foreground/80">
+            {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri ? provenance.source_uri : ""}
+          </p>
+        ) : null}
+      </div>
+    </details>
+  );
+}
 
-      <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
-        <div className="overflow-hidden">
-          <div className="relative ml-2.5 mt-1.5 border-l border-violet-200/80 pl-4 dark:border-violet-400/25">
-            {steps.map((step, index) => {
-              const active = working && index === steps.length - 1;
-              return (
-                <div key={`${step.title}-${index}`} className="flex min-h-9 items-start gap-2.5 rounded-md px-2 py-1.5">
-                  {active ? (
-                    <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-violet-500" />
-                  ) : (
-                    <Check className="mt-0.5 size-4 shrink-0 text-violet-500 dark:text-violet-300" strokeWidth={2.5} />
-                  )}
-                  <span className="min-w-0">
-                    <span className={`block text-[13px] ${active ? "font-medium text-violet-900 dark:text-violet-100" : "font-medium text-foreground"}`}>{step.title}</span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">{step.detail}</span>
-                  </span>
-                </div>
-              );
-            })}
+function ProviderCheck({ result }) {
+  const successful = result?.status === "ok" || result?.status === "success";
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/35 px-3 py-2.5">
+      <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${successful ? "bg-emerald-500" : result?.status ? "bg-amber-500" : "bg-muted-foreground/50"}`} aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
+        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
+      </div>
+    </div>
+  );
+}
 
+function AnswerInspector({ message }) {
+  const trace = message?.trace;
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const providerResults = Array.isArray(trace?.provider_results) ? trace.provider_results : [];
+  const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
+  const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
+  return (
+    <aside className="flex min-h-0 flex-col overflow-hidden px-4 pb-4 pt-4 lg:border-l lg:border-border/60 lg:pl-5 lg:pt-5 lg:max-h-full" aria-label="Answer evidence">
+      <div className="shrink-0 px-0 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer details</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Why Sona replied</h2>
+          </div>
+          {trace ? <span className="rounded-full bg-muted/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {trace ? "The verified information and checks behind the selected reply." : "The information behind a reply will appear here."}
+        </p>
+      </div>
+      {!trace ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center">
+          <p className="text-[13px] font-semibold text-foreground">No answer selected</p>
+          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message and select a reply to see its sources and checks.</p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-0 py-2">
+          <div className="mb-4 grid grid-cols-3 gap-1.5">
+            <InspectorStat label="Checks" value={toolCalls.length} />
+            <InspectorStat label="Sources" value={sources.length} />
+            <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
+          </div>
+
+          <InspectorSection title="What informed the reply">
+            <ol className="relative ml-1 flex flex-col gap-4 border-l border-border pl-4">
+              {buildReasoningSteps(trace).map((step, index) => (
+                <li key={`${step.title}-${index}`} className="relative">
+                  <span className={`absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-foreground" : "bg-muted-foreground/50"}`} />
+                  <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </InspectorSection>
+
+          <InspectorSection title="Knowledge sources" count={sources.length}>
             {sources.length ? (
-              <div className="mt-1 border-t border-violet-100/80 px-2 pb-1 pt-2 dark:border-violet-400/15">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Sources used</p>
-                <div className="mt-1 flex flex-col gap-1">
-                  {sources.slice(0, 4).map((source, index) => (
-                    <p key={`${source?.title || "source"}-${index}`} className="truncate text-[11px] text-muted-foreground">
-                      {source?.title || source?.provenance?.source_label || "Verified source"}
-                    </p>
-                  ))}
-                  {sources.length > 4 ? <p className="text-[11px] text-muted-foreground">+{sources.length - 4} more</p> : null}
-                </div>
+              <div className="flex flex-col gap-2">
+                {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
               </div>
-            ) : null}
+            ) : (
+              <div className="rounded-lg bg-muted/35 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+            )}
+          </InspectorSection>
+
+          {providerResults.length ? (
+            <InspectorSection title="Live checks" count={providerResults.length}>
+              <div className="flex flex-col gap-2">{providerResults.map((result, index) => <ProviderCheck key={`${result?.tool || "provider"}-${index}`} result={result} />)}</div>
+            </InspectorSection>
+          ) : null}
+
+          {simulatedActions.length ? (
+            <InspectorSection title="Proposed actions" count={simulatedActions.length}>
+              <div className="flex flex-col gap-2">
+                {simulatedActions.map((action, index) => (
+                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{actionLabel(action?.action)}</p>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                    </div>
+                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
+                    {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </InspectorSection>
+          ) : null}
+
+          <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+            Only verified facts, provenance and high-level steps are shown.
           </div>
         </div>
+      )}
+    </aside>
+  );
+}
+
+function InspectorSection({ title, count, children }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <div className="mb-2.5 flex items-center gap-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
       </div>
+      {children}
     </section>
   );
 }
 
-function MessageBubble({ message }) {
+function InspectorStat({ label, value }) {
+  return (
+    <div className="rounded-lg bg-muted/45 px-2 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onInspect, inspected }) {
   const isUser = message.role === "user";
   const comparisonOnly = message.comparison_only === true;
-  const hasActivity = !isUser && !comparisonOnly && message.trace;
+  const canInspect = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
-      <div className={`w-full ${isUser ? "max-w-[min(78%,44rem)]" : "max-w-[min(88%,44rem)]"}`}>
+      <div className="w-full max-w-[min(78%,44rem)]">
         <div className={`flex items-center gap-2 ${isUser ? "" : "justify-end"}`}>
-          <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-violet-700 dark:text-violet-300"}`}>
+          <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
             {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
             {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
           </p>
         </div>
-        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-violet-50/75 text-foreground dark:bg-violet-950/25"}`}>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-sky-50 text-foreground dark:bg-sky-950/30"}`}>
           {message.content}
         </p>
-        {hasActivity ? <AgentActivity trace={message.trace} /> : null}
+        {canInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect?.(message.id)}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            aria-pressed={inspected}
+          >
+            {inspected ? "Viewing evidence" : "View evidence"}
+            <ChevronRight className="size-3" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -337,6 +437,7 @@ export function GreenfieldPlayground() {
   const [pendingUserMessage, setPendingUserMessage] = useState(null);
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [inspectedMessageId, setInspectedMessageId] = useState(null);
   const [ticketRequired, setTicketRequired] = useState(true);
 
   const load = useCallback(async (sessionId = "") => {
@@ -355,6 +456,7 @@ export function GreenfieldPlayground() {
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
     setPendingUserMessage(null);
+    setInspectedMessageId(null);
     setContext(payload.context || null);
     setCustomerEmail(payload.selected_session?.customer_email || "");
     setLoading(false);
@@ -371,6 +473,7 @@ export function GreenfieldPlayground() {
     setContext(null);
     setDraft("");
     setError("");
+    setInspectedMessageId(null);
   };
 
   const createSession = async () => {
@@ -406,6 +509,8 @@ export function GreenfieldPlayground() {
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
       const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
       setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((message) => message.role === "assistant" && message.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "The read-only agent run failed.");
@@ -464,6 +569,8 @@ export function GreenfieldPlayground() {
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
       const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
       setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((item) => item.role === "assistant" && item.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
       setPendingUserMessage(null);
     } catch (sendError) {
@@ -494,6 +601,8 @@ export function GreenfieldPlayground() {
   const currentTurn = context?.turn || 0;
   const displayedMessages = pendingUserMessage ? [...messages, pendingUserMessage] : messages;
   const hasMessages = displayedMessages.length > 0;
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.trace);
+  const inspectedMessage = messages.find((message) => message.id === inspectedMessageId && message.role === "assistant" && message.trace) || latestAssistant || null;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       if (scrollRef.current) {
@@ -559,7 +668,7 @@ export function GreenfieldPlayground() {
         </div>
       </details>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden bg-card lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -614,13 +723,15 @@ export function GreenfieldPlayground() {
               <MessageBubble
                 key={message.id}
                 message={message}
+                onInspect={setInspectedMessageId}
+                inspected={inspectedMessage?.id === message.id}
               />
             ))}
             {sending ? (
               <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
-                <div className="w-full max-w-[min(88%,42rem)]">
-                  <p className="text-right text-[10.5px] font-semibold tracking-wide text-violet-700 dark:text-violet-300">Sona</p>
-                  <div className="ml-auto mt-1 flex justify-end"><AgentActivity working /></div>
+                <div className="flex w-full max-w-[min(88%,42rem)] flex-col items-end">
+                  <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
+                  <GeneratingActivity />
                 </div>
               </div>
             ) : null}
@@ -666,6 +777,7 @@ export function GreenfieldPlayground() {
           </form>
         </section>
 
+        <AnswerInspector message={inspectedMessage} />
       </div>
 
       <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={ticketRequired} />

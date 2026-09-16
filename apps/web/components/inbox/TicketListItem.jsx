@@ -55,11 +55,10 @@ function TicketListItemComponent({
     ? `#${ticketRef.replace(/^T-/, "")}`
     : null;
   const statusLabel = status === "Solved" ? "Resolved" : status;
-  const preview = String(thread?.snippet || "").trim();
 
-  // Keep a compact three-line mail rhythm: sender/time, subject/ticket ID,
-  // and a short preview. Ticket type belongs in the full ticket view, where
-  // it can be read without competing with the subject in this narrow list.
+  // Keep the compact two-line mail rhythm: sender/time first, subject and
+  // ticket ID second. Ticket type belongs in the full ticket view, where it
+  // can be read without competing with the subject in this narrow list.
   const metadataTitle = [
     ticketRef,
     hasAiDraft ? "Draft ready" : null,
@@ -134,13 +133,14 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[84px] w-full flex-col justify-center gap-1 rounded-none px-3.5 py-3 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
-        // State hierarchy: unread calls for attention through typography, a
-        // quiet violet surface, and a slim brand rail — no extra dot.
-        !isActive && isUnread && "bg-violet-50/45 hover:bg-violet-50/75 before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-violet-400/80 dark:bg-violet-500/[0.06] dark:hover:bg-violet-500/[0.1]",
-        isActive && "bg-violet-50/85 hover:bg-violet-100/90 before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-violet-600 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19]",
+        // State hierarchy: unread calls for attention with type + a dot; the
+        // active ticket is the current location, so it alone gets the calm
+        // lavender surface and stronger brand rail.
+        isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
+        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19]",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -168,7 +168,13 @@ function TicketListItemComponent({
       aria-current={isActive ? "page" : undefined}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground", isUnread && "font-bold")}>
+        {isUnread ? (
+          <span
+            aria-label="Unread"
+            className="size-2 shrink-0 rounded-full bg-violet-600 ring-2 ring-violet-100 dark:bg-violet-400 dark:ring-violet-500/20"
+          />
+        ) : null}
+        <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
         <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
@@ -179,7 +185,7 @@ function TicketListItemComponent({
         className="flex min-w-0 items-center gap-2"
         title={metadataTitle || undefined}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
@@ -227,13 +233,6 @@ function TicketListItemComponent({
           ) : null}
         </div>
       </div>
-      {preview ? (
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-muted-foreground/80">
-            {preview}
-          </span>
-        </div>
-      ) : null}
     </button>
     {showApproveCloseActions ? (
       <div className="flex items-center gap-3 border-t border-border/60 px-3.5 py-1">
