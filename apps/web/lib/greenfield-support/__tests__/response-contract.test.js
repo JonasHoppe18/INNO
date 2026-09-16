@@ -261,10 +261,66 @@ describe("structured response contract", () => {
 
     expect(result.allValid).toBe(true);
     const rendered = renderResponseSegments(result.approvedSegments, context);
-    expect(rendered).toContain("Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping.");
+    expect(rendered).toContain("Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg");
     expect(rendered).not.toContain("Returns are accepted within 30 days");
+    expect(rendered).not.toContain("Use tracked shipping");
     expect(rendered).not.toContain("EUR 50");
     expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("keeps each merchant's grounded return destination flow distinct", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return destination" }));
+    const renderPolicy = (customerMessage, text) => {
+      const context = { ...registry, customerMessage };
+      const result = validateStructuredResponse({ segments: [{
+        type: "knowledge_guidance",
+        text,
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      }] }, context);
+      expect(result.allValid).toBe(true);
+      return renderResponseSegments(result.approvedSegments, context);
+    };
+
+    const physical = renderPolicy(
+      "Where do I send my return?",
+      "Returns are accepted within 30 days. Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nYou pay return shipping. Tracking is recommended. COD is not accepted. Refunds are processed after receipt.",
+    );
+    expect(physical).toContain("Merchant Returns\nReturn Street 10\n2000 Frederiksberg");
+    expect(physical).toContain("You pay return shipping.");
+    expect(physical).not.toContain("Tracking is recommended");
+    expect(physical).not.toContain("COD is not accepted");
+    expect(physical).not.toContain("Refunds are processed");
+
+    const danishPhysical = renderPolicy(
+      "Hvor skal jeg sende min retur?",
+      "Når din retur er blevet accepteret, skal den sendes til:\nMerchant Returns\nReturgade 10\n2000 Frederiksberg\nKontakt os først via kontaktformularen med årsagen til returen. Du skal selv betale returportoen. Vi anbefaler tracking. Refunderingen igangsættes efter modtagelsen.",
+    );
+    expect(danishPhysical).toContain("Merchant Returns\nReturgade 10\n2000 Frederiksberg");
+    expect(danishPhysical).toContain("Du skal selv betale returportoen.");
+    expect(danishPhysical).not.toContain("kontaktformularen");
+    expect(danishPhysical).not.toContain("efterkrav");
+    expect(danishPhysical).not.toContain("tracking");
+    expect(danishPhysical).not.toContain("Refunderingen");
+
+    const portal = renderPolicy(
+      "Where do I send my return?",
+      "Start your return through the returns portal. The portal will provide the shipping instructions. Refunds are processed after receipt.",
+    );
+    expect(portal).toContain("Start your return through the returns portal.");
+    expect(portal).toContain("The portal will provide the shipping instructions.");
+    expect(portal).not.toContain("Refunds are processed");
+    expect(portal).not.toContain("Merchant Returns");
+
+    const approvalFirst = renderPolicy(
+      "Where do I send my return?",
+      "Request return approval through support before sending the product. After approval, follow the instructions provided. Refunds are processed after receipt.",
+    );
+    expect(approvalFirst).toContain("Request return approval through support before sending the product.");
+    expect(approvalFirst).toContain("After approval, follow the instructions provided.");
+    expect(approvalFirst).not.toContain("Refunds are processed");
+    expect(approvalFirst).not.toContain("Merchant Returns");
   });
 
   it("returns refund timing without dumping unrelated return conditions", async () => {
@@ -284,6 +340,32 @@ describe("structured response contract", () => {
     expect(rendered).toContain("bank may take additional time");
     expect(rendered).not.toContain("30 days");
     expect(rendered).not.toContain("EUR 50");
+  });
+
+  it("does not ask for an order number when general refund timing already answers the question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "refund timing" }));
+    const context = { ...registry, customerMessage: "When will I get my refund?" };
+    const result = validateStructuredResponse({ segments: [
+      {
+        type: "knowledge_guidance",
+        text: "The refund is normally processed within 5 business days after receipt.",
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      },
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      },
+    ] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("refund is normally processed within 5 business days");
+    expect(rendered).not.toContain("order number");
   });
 
   it("keeps a Danish return-process answer focused on the primary question", async () => {

@@ -2080,6 +2080,8 @@ function adaptSupportContactInstruction(value: string) {
   return adapted;
 }
 
+type CustomerQuestionShape = "process" | "destination" | "eligibility" | "timing" | "cost" | "status" | "troubleshooting" | "action" | "unknown";
+
 type CustomerKnowledgeFocus = {
   asksProcess: boolean;
   asksReturnDestination: boolean;
@@ -2087,89 +2089,157 @@ type CustomerKnowledgeFocus = {
   asksShippingResponsibility: boolean;
   mentionsCondition: boolean;
   asksCondition: boolean;
+  asksEligibility: boolean;
+  questionShape: CustomerQuestionShape;
 };
 
 function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocus {
   const message = String(customerMessage ?? "").replace(/[\u2019]/g, "'").trim();
-  const hasReturnIntent = /\b(?:return\w*|retur\w*|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
-  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b|\bhvordan\b|\b(?:trin|proces|procedure|starte|påbegynde|gøre)\b/i.test(message);
+  const hasReturnIntent = /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
+  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b|\bhvordan\b|\b(?:trin|proces|procedure|starte|påbegynde|gøre)\b|\bwie\b|\b(?:schritte|prozess|vorgehen)\b/i.test(message);
   const asksReturnDestination = hasReturnIntent
-    && (/\b(?:where|hvor)\b/i.test(message) || /\b(?:send|ship|sende)\b[\s\S]{0,40}\b(?:return|retur)\b/i.test(message));
-  const hasRefundIntent = /\b(?:refund\w*|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage)\b/i.test(message);
-  const hasTimingQuestion = /\b(?:when|how\s+long|tim(?:e|ing)|within|after|hvornår|hvor\s+lang\s+tid|hvor\s+hurtigt|tid)\b/i.test(message);
+    && (/\b(?:where|hvor|wo)\b/i.test(message) || /\b(?:send|ship|sende|schick(?:en)?|sende)\b[\s\S]{0,40}\b(?:return|retur|rücksend|retoure)\b/i.test(message));
+  const hasRefundIntent = /\b(?:refund\w*|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage|erstatt\w*|rückerstatt\w*)\b/i.test(message);
+  const hasTimingQuestion = /\b(?:when|how\s+long|tim(?:e|ing)|within|after|hvornår|hvor\s+lang\s+tid|hvor\s+hurtigt|tid|wann|wie\s+lange|zeit)\b/i.test(message);
   const asksRefundTiming = hasRefundIntent && hasTimingQuestion;
-  const mentionsShipping = /\b(?:shipping|returfragt|fragt|levering)\b/i.test(message);
-  const asksShippingResponsibility = mentionsShipping && /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*\b|\b(?:hvem\s+betaler|betaler\s+jeg|ansvar|omkostning|udgift)\w*\b/i.test(message);
-  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|beskadiget)\b/i.test(message);
+  const mentionsShipping = /\b(?:shipping|returfragt|fragt|levering|versand|rückversand)\b/i.test(message);
+  const asksShippingResponsibility = mentionsShipping && /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*\b|\b(?:hvem\s+betaler|betaler\s+jeg|ansvar|omkostning|udgift)\w*\b|\b(?:wer\s+zahlt|kosten|verantwort)\w*\b/i.test(message);
+  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|beskadiget|geöffnet|benutzt|versiegelt|unbenutzt|beschädigt)\b/i.test(message);
   const asksCondition = hasReturnIntent && mentionsCondition;
+  const asksEligibility = hasReturnIntent && /\b(?:can\s+i|may\s+i|am\s+i\s+eligible|is\s+it\s+allowed|still\s+(?:return|send)|kan\s+jeg|må\s+jeg|er\s+det\s+muligt|berettiget|tilladt|darf\s+ich|kann\s+ich|ist\s+das\s+zulässig|berechtigt)\b/i.test(message);
+  const asksAction = /\b(?:cancel|annullere|annullér|change\s+(?:the\s+)?address|ændre\s+(?:leverings)?adressen|refund|refunder|remplacement|erstatning)\b/i.test(message);
+  const asksStatus = /\b(?:where\s+is|status|hvor\s+er|hvad\s+er\s+status|wo\s+ist)\b/i.test(message);
+  const asksTroubleshooting = /\b(?:not\s+working|won't|will\s+not|broken|pair|connect|problem|virker\s+ikke|forbinder|parre|fejl|funktioniert\s+nicht|verbinden|koppeln|problem)\b/i.test(message);
+  const questionShape: CustomerQuestionShape = asksCondition || asksEligibility
+    ? "eligibility"
+    : asksRefundTiming
+      ? "timing"
+      : asksShippingResponsibility
+        ? "cost"
+        : asksReturnDestination
+          ? "destination"
+          : asksHow || (hasReturnIntent && /\b(?:want|would\s+like|need|vil|ønsker|skal|ich\s+m(?:ö|oe)chte|ich\s+will)\b/i.test(message))
+            ? "process"
+            : asksAction
+              ? "action"
+              : asksStatus
+                ? "status"
+                : asksTroubleshooting
+                  ? "troubleshooting"
+                  : "unknown";
   return {
-    asksProcess: asksHow || asksReturnDestination || (hasReturnIntent && /\b(?:want|would\s+like|need|can\s+i|could\s+i|vil|ønsker|skal|kan\s+jeg|må\s+jeg)\b/i.test(message)),
+    asksProcess: questionShape === "process",
     asksReturnDestination,
     asksRefundTiming,
     asksShippingResponsibility,
     mentionsCondition,
     asksCondition,
+    asksEligibility,
+    questionShape,
   };
 }
 
 function isReturnConditionConsequence(value: string) {
-  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|fradrag|gebyr|reduceret|ikke\s+fuldt\s+refunderet)\b/i.test(value)
-    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*|retur\w*|refundering\w*|vare\w*|emballage\w*|forsegling\w*)\b/i.test(value);
+  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded|åbnet|brudt|forsegling\w*|forseglet|ubrugt|intakt|brugt|fradrag|gebyr|reduceret|trækk\w*|ikke\s+fuldt\s+refunderet|geöffnet|benutzt|versiegelt|unbenutzt|beschädigt)\b/i.test(value)
+    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*|retur\w*|refundering\w*|vare\w*|emballage\w*|forsegling\w*|deduct\w*|fradrag|gebyr|trækk\w*|fee|charge)\b/i.test(value);
 }
 
 function isReturnShippingResponsibility(value: string) {
-  return /\b(?:return\s+)?shipping\b|\breturfragt\w*\b|\bfragt\w*\b/i.test(value)
-    && /\b(?:responsib|covered|cover|cost|pay|expense|ansvar|omkostning|udgift|betaler)\w*\b/i.test(value);
+  return /\b(?:return\s+)?shipping\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
+    && /\b(?:responsib|covered|cover|cost|pay|expense|ansvar|omkostning|udgift|betal|zahlt|kosten|verantwort)\w*\b/i.test(value);
 }
 
 function isRefundTiming(value: string) {
   const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally|efter|inden\s+for|indenfor|behandl\w*|modtag\w*|betaling|dage|normalt|igangsæt\w*|tid)\b/i.test(value);
   return hasRefundTiming && (
-    /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b/i.test(value)
+    /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(value)
     || /\b(?:bank|payment\s+provider|bank|betalingsudbyder)\b[\s\S]{0,50}\b(?:display|post|funds?|vise|beløb)\b/i.test(value)
   );
 }
 
+function isReturnEligibility(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+    && /\b(?:within|under|accepted|eligible|allowed|days?|dage|accepter\w*|berettig\w*|tilladt|inden|innerhalb|tage)\b/i.test(value)
+    && !isReturnConditionConsequence(value);
+}
+
+function isReturnApprovalPrerequisite(value: string) {
+  return /\b(?:approval|approved|accepted\s+before|confirmation|godkend\w*|bekræft\w*|godkendt|bestätigung|genehmig\w*)\b/i.test(value)
+    && /\b(?:return\w*|retur\w*|send|ship|sende|schick|rücksend\w*|retoure)\b/i.test(value);
+}
+
+function isReturnDestinationInstruction(value: string) {
+  return /\b(?:address|portal|label|return\s+to|send\s+(?:it|the\s+(?:return|item|product|order))?\s+to|ship\s+(?:it|the\s+(?:return|item|product|order))?\s+to|adresse|retur(?:adresse|label)|send\w*\s+(?:den|die|das|die\s+retoure|die\s+ware)?\s*(?:an|zu|til)|rücksendeadresse|zurückschick\w*\s+an|retoure\s+an)\b/i.test(value);
+}
+
 function isReturnProcessInstruction(value: string) {
-  return /\b(?:start|initiate|request|send|ship|portal|label|address|contact|email|next\s+steps?|process|procedure|start(?:e)?|anmod|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin)\b/i.test(value);
+  if (isRefundTiming(value)) return false;
+  return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
+}
+
+function focusedPolicyClause(value: string, focus: CustomerKnowledgeFocus) {
+  if (focus.questionShape !== "destination" && focus.questionShape !== "cost") return value;
+  if (!isReturnShippingResponsibility(value)) return value;
+  const clauses = value.split(/,\s+(?:and|og|und)\s+/i);
+  if (clauses.length <= 1) return value;
+  return clauses.find(isReturnShippingResponsibility) ?? value;
 }
 
 function policySentencePriority(value: string, focus: CustomerKnowledgeFocus) {
-  if (focus.asksCondition && !focus.asksProcess && !focus.asksReturnDestination && !focus.asksRefundTiming) {
+  if (focus.questionShape === "eligibility") {
     return isReturnConditionConsequence(value) ? 0 : 1;
   }
-  if (focus.asksRefundTiming) return isRefundTiming(value) ? 0 : 1;
-  if (focus.asksReturnDestination) {
-    return /\b(?:address|send|ship|portal|label|contact|email|return\s+to|adresse|sende|retur|returlabel|kontakt|formular)\b/i.test(value) ? 0 : 1;
-  }
-  if (focus.asksProcess) return isReturnProcessInstruction(value) ? 0 : 1;
+  if (focus.questionShape === "timing") return isRefundTiming(value) ? 0 : 1;
+  if (focus.questionShape === "destination") return isReturnDestinationInstruction(value) ? 0 : 1;
+  if (focus.questionShape === "process") return isReturnProcessInstruction(value) ? 0 : 1;
   return 0;
 }
 
-function composePolicyLine(value: string, focus: CustomerKnowledgeFocus) {
+type PolicyCompositionOptions = {
+  includeShippingResponsibility?: boolean;
+  hasDirectDestination?: boolean;
+};
+
+function composePolicyLine(value: string, focus: CustomerKnowledgeFocus, options: PolicyCompositionOptions = {}) {
+  const includeShippingResponsibility = options.includeShippingResponsibility !== false;
   const sentences = value.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (sentences.length <= 1) return value;
 
   let retained = sentences.filter((candidate) => {
-    if (!focus.mentionsCondition && isReturnConditionConsequence(candidate)) return false;
-    if (!focus.asksShippingResponsibility && isReturnShippingResponsibility(candidate)) return false;
-    if (!focus.asksRefundTiming && isRefundTiming(candidate)) return false;
+    if (focus.questionShape === "eligibility") return isReturnEligibility(candidate) || isReturnConditionConsequence(candidate);
+    if (focus.questionShape === "timing") return isRefundTiming(candidate);
+    if (focus.questionShape === "cost") return isReturnShippingResponsibility(candidate);
+    if (focus.questionShape === "destination") return isReturnDestinationInstruction(candidate)
+      || isReturnApprovalPrerequisite(candidate)
+      || (options.hasDirectDestination !== true && isReturnProcessInstruction(candidate))
+      || (includeShippingResponsibility && isReturnShippingResponsibility(candidate));
+    if (focus.questionShape === "process") return isReturnProcessInstruction(candidate) || isReturnEligibility(candidate) || isReturnApprovalPrerequisite(candidate);
+    if (isReturnConditionConsequence(candidate)) return focus.mentionsCondition;
+    if (isReturnShippingResponsibility(candidate)) return focus.asksShippingResponsibility;
+    if (isRefundTiming(candidate)) return focus.asksRefundTiming;
     return true;
-  });
+  }).map((candidate) => focusedPolicyClause(candidate, focus));
   if (!retained.length) return value;
 
-  if (focus.asksCondition && !focus.asksProcess && !focus.asksReturnDestination && !focus.asksRefundTiming) {
+  if (focus.questionShape === "eligibility") {
     const condition = retained.filter(isReturnConditionConsequence);
-    if (condition.length) retained = condition;
-  } else if (focus.asksRefundTiming) {
+    const eligibility = retained.filter(isReturnEligibility);
+    if (condition.length || eligibility.length) retained = [...eligibility, ...condition];
+  } else if (focus.questionShape === "timing") {
     const timing = retained.filter(isRefundTiming);
     if (timing.length) retained = timing;
-  } else if (focus.asksReturnDestination) {
-    const destination = retained.filter((candidate) => /\b(?:address|send|ship|portal|label|contact|email|return\s+to)\b/i.test(candidate));
+  } else if (focus.questionShape === "destination") {
+    const destination = retained.filter((candidate) => isReturnDestinationInstruction(candidate)
+      || isReturnApprovalPrerequisite(candidate)
+      || (options.hasDirectDestination !== true && isReturnProcessInstruction(candidate))
+      || (includeShippingResponsibility && isReturnShippingResponsibility(candidate)));
     if (destination.length) retained = destination;
+  } else if (focus.questionShape === "cost") {
+    const shipping = retained.filter(isReturnShippingResponsibility);
+    if (shipping.length) retained = shipping;
   }
 
-  if (focus.asksProcess) {
+  if (focus.questionShape === "process") {
     retained = retained
       .map((candidate, index) => ({ candidate, index }))
       .sort((left, right) => policySentencePriority(left.candidate, focus) - policySentencePriority(right.candidate, focus) || left.index - right.index)
@@ -2178,16 +2248,82 @@ function composePolicyLine(value: string, focus: CustomerKnowledgeFocus) {
   return retained.join(" ");
 }
 
+function isAddressContinuation(value: string) {
+  const line = value.trim();
+  if (!line || /[.!?]$/.test(line)) return false;
+  return /\d|\b(?:street|road|avenue|vej|gade|strasse|straße|city|by|postcode|postal|danmark|denmark|germany|deutschland|phone|telefon|tel|email|e-mail|att\.?|c\/o)\b/i.test(line)
+    || !/\b(?:return|retur|rücksend|refund|refunder|shipping|fragt|versand|opened|åbnet|geöffnet|portal|contact|kontakt|formular)\b/i.test(line);
+}
+
+function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus, options: PolicyCompositionOptions = {}) {
+  const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (focus.questionShape === "unknown") return paragraph;
+
+  const destinationIndex = lines.findIndex(isReturnDestinationInstruction);
+  const selected: string[] = [];
+  const pushLine = (line: string) => {
+    if (line && !selected.includes(line)) selected.push(line);
+  };
+
+  if (focus.questionShape === "destination" && destinationIndex >= 0) {
+    const destinationLine = composePolicyLine(lines[destinationIndex], focus, options);
+    pushLine(destinationLine);
+    for (let index = destinationIndex + 1; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!isAddressContinuation(line)) break;
+      pushLine(line);
+    }
+    lines.forEach((line, index) => {
+      if (index !== destinationIndex && (isReturnApprovalPrerequisite(line) || (options.includeShippingResponsibility !== false && isReturnShippingResponsibility(line)))) {
+        pushLine(composePolicyLine(line, focus, options));
+      }
+    });
+    return selected.join("\n");
+  }
+
+  if (focus.questionShape === "destination") {
+    lines.forEach((line) => {
+      if (isReturnApprovalPrerequisite(line)
+        || (options.includeShippingResponsibility !== false && isReturnShippingResponsibility(line))
+        || (options.hasDirectDestination !== true && isReturnProcessInstruction(line))) {
+        pushLine(composePolicyLine(line, focus, options));
+      }
+    });
+    return selected.join("\n");
+  }
+
+  lines.forEach((line) => {
+    const composed = composePolicyLine(line, focus);
+    if (composed && (focus.questionShape === "eligibility"
+      ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
+      : focus.questionShape === "timing"
+        ? composed.split(/(?<=[.!?])\s+/).some(isRefundTiming)
+        : focus.questionShape === "cost"
+          ? composed.split(/(?<=[.!?])\s+/).some(isReturnShippingResponsibility)
+          : focus.questionShape === "process"
+            ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnProcessInstruction(sentenceValue) || isReturnEligibility(sentenceValue) || isReturnApprovalPrerequisite(sentenceValue))
+            : true)) {
+      pushLine(composed);
+    }
+  });
+
+  return selected.length ? selected.join("\n") : paragraph;
+}
+
 function composeMinimumSufficientPolicyText(value: string, context: ResponseValidationContext) {
   const focus = customerKnowledgeFocus(context.customerMessage);
-  if (!focus.asksProcess && !focus.asksRefundTiming && !focus.mentionsCondition && !focus.asksShippingResponsibility) return value;
+  if (focus.questionShape === "unknown") return value;
 
   const paragraphs = String(value ?? "").split(/\n\s*\n/);
-  return paragraphs.map((paragraph) => {
-    const lines = paragraph.split(/\n+/);
-    const composedLines = lines.map((line) => composePolicyLine(line, focus)).filter(Boolean);
-    return composedLines.length ? composedLines.join("\n") : paragraph;
-  }).join("\n\n");
+  const hasDirectDestination = focus.questionShape === "destination"
+    && paragraphs.some((paragraph) => paragraph.split(/\n+/).some(isReturnDestinationInstruction));
+  const hasApprovalPrerequisite = focus.questionShape === "destination"
+    && paragraphs.some((paragraph) => paragraph.split(/\n+/).some(isReturnApprovalPrerequisite));
+  const options = {
+    includeShippingResponsibility: !hasApprovalPrerequisite,
+    hasDirectDestination,
+  };
+  return paragraphs.map((paragraph) => composePolicyParagraph(paragraph, focus, options)).filter(Boolean).join("\n\n");
 }
 
 function isPolicyKnowledgeBasis(basis: KnowledgeBasis, context: ResponseValidationContext) {
@@ -2579,10 +2715,30 @@ function limitedResultQuestionIsRedundant(
   });
 }
 
+function isExplicitOrderReference(value?: string) {
+  return /(?:#\s*\d+|\border\s*(?:number|no\.?|id|identifier)?\s*[:#]?\s*\d+)/i.test(String(value ?? ""));
+}
+
+function isRedundantPolicyQuestion(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  focus: CustomerKnowledgeFocus,
+  hasPolicyGuidance: boolean,
+  context: ResponseValidationContext,
+) {
+  return hasPolicyGuidance
+    && focus.questionShape === "timing"
+    && !isExplicitOrderReference(context.customerMessage)
+    && segment.purpose === "enable_capability"
+    && segment.capability === "get_order"
+    && segment.missing_arguments.includes("order_id");
+}
+
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const rendered: string[] = [];
   const consumed = new Set<number>();
+  const policyFocus = customerKnowledgeFocus(context.customerMessage);
+  const hasPolicyGuidance = segments.some((segment) => segment.type === "knowledge_guidance" && isPolicyKnowledgeBasis(segment.basis, context));
   const hasOrderRecoveryQuestion = context.activeOrder?.state === "unresolved"
     && segments.some((segment) => segment.type === "question"
       && segment.purpose === "enable_capability"
@@ -2650,6 +2806,9 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     ));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
+    else if (segment.type === "question" && isRedundantPolicyQuestion(segment, policyFocus, hasPolicyGuidance, context)) {
+      consumed.add(index);
+    }
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
     }
