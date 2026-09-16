@@ -2208,6 +2208,264 @@ function hasAnswerBearingValueMarker(value: string, cue: AnswerBearingCue) {
   return hasLinkOrContact || hasNumericValue;
 }
 
+type AnswerCompletenessCandidate = {
+  value: string;
+  normalized: string;
+};
+
+function normalizeAnswerCompletenessValue(value: string) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\s+/g, " ")
+    .replace(/[\s.,;:!?]+$/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function pushAnswerCompletenessCandidate(candidates: AnswerCompletenessCandidate[], value: unknown) {
+  const cleaned = String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\s]+/g, " ")
+    .replace(/[\s.,;!?]+$/g, "")
+    .trim();
+  const normalized = normalizeAnswerCompletenessValue(cleaned);
+  if (!cleaned || !normalized || candidates.some((candidate) => candidate.normalized === normalized)) return;
+  candidates.push({ value: cleaned, normalized });
+}
+
+function answerCompletenessMessageCue(message: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
+  const text = String(message ?? "");
+  if (focus.questionShape === "destination") return "destination";
+  if (focus.questionShape === "timing") return "timing";
+  if (focus.questionShape === "cost") return "cost";
+  if (focus.questionShape === "eligibility") return "eligibility";
+  if (focus.questionShape === "status"
+    && /\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|sporing|forsendelse)\b/i.test(text)) return "tracking";
+  if (focus.questionShape === "status") return "status";
+  if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) return "contact";
+  return null;
+}
+
+function physicalAddressMarker(value: string) {
+  return /\b(?:street|st\.?|road|avenue|lane|boulevard|vej|gade|strasse|straße|postcode|postal|city|by)\b|\b\d{4,6}\s+[\p{L}][\p{L}'’-]*/iu.test(value);
+}
+
+function simpleAddressLabel(value: string) {
+  const text = value.trim();
+  return text.length >= 2
+    && text.length <= 80
+    && /^[\p{L}\p{N}][\p{L}\p{N} &'.,\-/]*$/u.test(text)
+    && !/\b(?:return|retur|refund|shipping|fragt|versand|opened|åbnet|contact|kontakt|portal|policy)\b/i.test(text);
+}
+
+function answerEvidenceUnits(value: string) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function answerEvidenceSections(records: unknown[]) {
+  return records.flatMap((item) => {
+    const record = objectValue(item);
+    if (!record) return [];
+    const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
+    const sectionText = sections
+      .map((section) => objectValue(section)?.content ?? objectValue(section)?.text)
+      .filter((content): content is string => typeof content === "string" && content.trim().length > 0)
+      .map((content) => content.trim());
+    if (sectionText.length) return sectionText;
+    return typeof record.content === "string" && record.content.trim() ? [record.content.trim()] : [];
+  });
+}
+
+function answerEvidenceRecords(
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+  cue: AnswerBearingCue,
+) {
+  const evidence = resultFor(basis, context);
+  if (!evidence || evidence.result.status !== "ok") return [];
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return citedKnowledgeRecords(results, basis.field_paths).filter((item) => {
+    const record = objectValue(item);
+    if (!record) return false;
+    const authority = String(record.authority ?? "");
+    return authority === "authoritative" || (cue === "tracking" && authority === "operational");
+  });
+}
+
+function answerCompletenessCandidates(cue: AnswerBearingCue, evidenceTexts: string[], customerMessage: string) {
+  const candidates: AnswerCompletenessCandidate[] = [];
+  const pushUrls = (text: string) => {
+    for (const match of text.match(/https?:\/\/[^\s<>)]+/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
+  };
+  const pushEmails = (text: string) => {
+    for (const match of text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
+  };
+
+  for (const evidenceText of evidenceTexts) {
+    if (cue === "destination") {
+      pushUrls(evidenceText);
+      const lines = evidenceText.split(/\r?\n/);
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index].trim();
+        if (!line || !isReturnDestinationInstruction(line)) continue;
+        const inline = line.match(/https?:\/\/[^\s<>)]+/i)?.[0];
+        if (inline) pushAnswerCompletenessCandidate(candidates, inline);
+
+        const afterCue = line.replace(/^.*?(?::|\bto\b|\btil\b|\ban\b|\bzu\b)\s*/i, "").trim();
+        if (physicalAddressMarker(afterCue)) pushAnswerCompletenessCandidate(candidates, afterCue);
+
+        const block: string[] = [];
+        for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+          const next = lines[nextIndex].trim();
+          if (!next) break;
+          const nextIsAddress = physicalAddressMarker(next);
+          const nextCouldBeName = block.length === 0 && simpleAddressLabel(next) && physicalAddressMarker(lines[nextIndex + 1] ?? "");
+          const nextCouldBeCity = block.length > 0 && block.some(physicalAddressMarker) && simpleAddressLabel(next);
+          if (!nextIsAddress && !nextCouldBeName && !nextCouldBeCity) break;
+          block.push(next);
+        }
+        if (block.some(physicalAddressMarker)) pushAnswerCompletenessCandidate(candidates, block.join("\n"));
+        if (isReturnApprovalPrerequisite(line)) pushAnswerCompletenessCandidate(candidates, line);
+      }
+      for (const unit of answerEvidenceUnits(evidenceText)) {
+        if (isReturnDestinationInstruction(unit) && physicalAddressMarker(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+        if (isReturnApprovalPrerequisite(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+      }
+      continue;
+    }
+
+    if (cue === "contact") {
+      pushEmails(evidenceText);
+      pushUrls(evidenceText);
+      for (const unit of answerEvidenceUnits(evidenceText)) {
+        if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(unit) && !/:\s*$/.test(unit)) {
+          const phone = unit.match(/\+?\d[\d\s().-]{5,}\d/)?.[0];
+          if (phone) pushAnswerCompletenessCandidate(candidates, phone);
+        }
+      }
+      continue;
+    }
+
+    if (cue === "tracking") {
+      if (/\b(?:link|url)\b/i.test(customerMessage)) pushUrls(evidenceText);
+      for (const unit of answerEvidenceUnits(evidenceText)) {
+        if (/(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervejs|zugestellt|versendet)/i.test(unit)
+          && /(?:tracking|shipment|parcel|package|order|sporing|forsendelse|pakke)/i.test(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+      }
+      continue;
+    }
+
+    const units = answerEvidenceUnits(evidenceText);
+    if (cue === "timing") units.filter(isRefundTiming).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "cost") units.filter(isReturnShippingResponsibility).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "eligibility") units
+      .filter((unit) => isAnswerBearingEligibility(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
+      .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "status") units
+      .filter((unit) => /(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervejs|zugestellt|versendet)/i.test(unit))
+      .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+  }
+  return candidates;
+}
+
+function answerCompletenessValuePresent(value: string, cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
+  const normalizedValue = normalizeAnswerCompletenessValue(value);
+  if (candidates.some((candidate) => normalizedValue.includes(candidate.normalized))) return true;
+  if (cue === "cost") {
+    const hasAmount = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:kr|dkk|eur|euro|euros?)\b/i.test(value);
+    const hasNamedPayer = /\b(?:customer|merchant|store|seller|buyer|recipient|sender|you|we|kunden|forhandler|butik|sælger|køber|modtager|afsender|du|vi)\b[\s\S]{0,32}\b(?:pay|pays|paid|cover\w*|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(value)
+      || /\b(?:paid|covered|betalt|dækket|zahlt|übernommen)\s+(?:by|af|von)\s+\b(?:the\s+)?(?:customer|merchant|store|seller|buyer|kunden|forhandler|butik|sælger|køber|du|kunden)\b/i.test(value);
+    return hasAmount || hasNamedPayer;
+  }
+  return hasAnswerBearingValueMarker(value, cue);
+}
+
+function restoreAnswerCompletenessValue(value: string, focus: CustomerKnowledgeFocus, cue: AnswerBearingCue, candidate: AnswerCompletenessCandidate) {
+  const lines = String(value ?? "").trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const cueIndex = lines.findIndex((line) => answerBearingCueFor(line, focus) === cue);
+  if (cueIndex >= 0) {
+    lines.splice(cueIndex + 1, 0, ...candidate.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+    return lines.join("\n");
+  }
+  return `${String(value ?? "").trim()}\n\n${candidate.value}`.trim();
+}
+
+/**
+ * Ensures a model cannot silently omit the smallest answer-bearing value that
+ * is already present in the cited authoritative evidence. This stays at the
+ * contract boundary: it neither retrieves new data nor asks the model to
+ * repair its own output.
+ */
+export function ensureAnswerCompleteness(
+  validation: ResponseValidationResult,
+  context: ResponseValidationContext,
+): ResponseValidationResult {
+  if (!validation.schemaValid || !validation.approvedSegments.length) return validation;
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const cue = answerCompletenessMessageCue(context.customerMessage ?? "", focus);
+  if (!cue) return validation;
+
+  const approvedSegments: ResponseSegment[] = [];
+  const rejectedSegments = [...validation.rejectedSegments];
+  const issues = [...validation.issues];
+  const restoredValues = new Set<string>();
+  let changed = false;
+
+  validation.approvedSegments.forEach((segment) => {
+    if (segment.type !== "knowledge_guidance") {
+      approvedSegments.push(segment);
+      return;
+    }
+    const records = answerEvidenceRecords(segment.basis, context, cue);
+    const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(records), context.customerMessage ?? "");
+    if (!candidates.length || answerCompletenessValuePresent(segment.text, cue, candidates)) {
+      approvedSegments.push(segment);
+      candidates.forEach((candidate) => {
+        if (normalizeAnswerCompletenessValue(segment.text).includes(candidate.normalized)) restoredValues.add(candidate.normalized);
+      });
+      return;
+    }
+
+    const index = validation.parsed?.segments.indexOf(segment) ?? validation.approvedSegments.indexOf(segment);
+    if (candidates.length === 1 && !restoredValues.has(candidates[0].normalized)) {
+      approvedSegments.push({
+        ...segment,
+        text: restoreAnswerCompletenessValue(segment.text, focus, cue, candidates[0]),
+      });
+      restoredValues.add(candidates[0].normalized);
+      changed = true;
+      return;
+    }
+
+    const issue: ResponseValidationIssue = {
+      index,
+      code: candidates.length > 1 ? "answer_value_ambiguous" : "answer_value_duplicate",
+      message: candidates.length > 1
+        ? "The selected evidence contains multiple conflicting answer values, so the response was withheld rather than guessing."
+        : "The response repeated an incomplete answer-bearing segment, so it was withheld rather than rendered twice.",
+    };
+    rejectedSegments.push({ index, type: segment.type, issues: [issue] });
+    issues.push(issue);
+    changed = true;
+  });
+
+  if (!changed) return validation;
+  return {
+    ...validation,
+    allValid: rejectedSegments.length === 0,
+    approvedSegments,
+    rejectedSegments,
+    issues,
+  };
+}
+
 function isAnswerBearingContinuation(value: string, cue: AnswerBearingCue) {
   const text = value.trim();
   const hasAddressMarker = /\b(?:street|road|avenue|vej|gade|strasse|straße|postcode|postal|city|by)\b|\b\d{4,6}\s+[A-Za-zÀ-ÿ]/i.test(text);

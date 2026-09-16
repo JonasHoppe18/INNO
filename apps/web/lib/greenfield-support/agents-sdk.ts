@@ -6,7 +6,7 @@ import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
@@ -394,7 +394,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
-    const validation = validateStructuredResponse(result?.finalOutput, responseContext);
+    const validation = ensureAnswerCompleteness(
+      validateStructuredResponse(result?.finalOutput, responseContext),
+      responseContext,
+    );
     const actionExecutions = await executeActionProposals({
       executor: options.actionExecutor,
       proposals: proposedActions,

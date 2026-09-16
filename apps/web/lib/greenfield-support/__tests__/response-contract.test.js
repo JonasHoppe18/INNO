@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { inferResponseLocale, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
@@ -1896,5 +1896,148 @@ describe("structured response contract", () => {
     });
     expect(evidence.allValid).toBe(false);
     expect(evidence.issues[0].code).toBe("unknown_result_id");
+  });
+});
+
+function answerEvidenceRecord(records) {
+  return {
+    resultId: "answer-completeness-1",
+    toolName: "search_policy",
+    result: {
+      status: "ok",
+      data: { results: records },
+    },
+  };
+}
+
+function policyRecord(content, title = "Authoritative support policy") {
+  return {
+    title,
+    knowledge_type: "policy",
+    authority: "authoritative",
+    evidence_sections: [{ heading: "Relevant policy section", content }],
+    provenance: { source_kind: "merchant_authored", source_id: title },
+  };
+}
+
+async function answerCompletenessCase(customerMessage, modelText, records) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const evidence = answerEvidenceRecord(records);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => resultId === evidence.resultId ? evidence : getResult(resultId),
+  };
+  const initial = validateStructuredResponse({ segments: [{
+    type: "knowledge_guidance",
+    text: modelText,
+    basis: { result_id: evidence.resultId, field_paths: ["results"] },
+  }] }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+describe("model-to-contract answer completeness", () => {
+  it("restores one omitted physical destination from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:",
+      [policyRecord("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg")],
+    );
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.rendered).toContain("Merchant Returns");
+    expect(result.rendered).toContain("Return Street 10");
+    expect(result.rendered).toContain("2000 Frederiksberg");
+  });
+
+  it("restores one omitted return portal URL from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Use the returns portal:",
+      [policyRecord("Use the returns portal:\nhttps://returns.example.test/start")],
+    );
+
+    expect(result.rendered).toContain("https://returns.example.test/start");
+  });
+
+  it("restores one omitted tracking URL from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where is my tracking link?",
+      "Your tracking link is:",
+      [policyRecord("Your tracking link is:\nhttps://tracking.example.test/parcel-1")],
+    );
+
+    expect(result.rendered).toContain("https://tracking.example.test/parcel-1");
+  });
+
+  it("restores one omitted contact email from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where can I contact support?",
+      "Contact support at:",
+      [policyRecord("Contact support at:\nsupport@example.test")],
+    );
+
+    expect(result.rendered).toContain("support@example.test");
+  });
+
+  it("restores one omitted refund timing value from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "When will I get my refund?",
+      "Your refund is processed within:",
+      [policyRecord("Your refund is processed within 5 business days after receipt.")],
+    );
+
+    expect(result.rendered).toContain("5 business days after receipt");
+  });
+
+  it("restores one omitted return-shipping payer from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Who pays return shipping?",
+      "Return shipping is paid by:",
+      [policyRecord("The customer is responsible for return shipping costs.")],
+    );
+
+    expect(result.rendered).toContain("responsible for return shipping costs");
+  });
+
+  it("restores one omitted eligibility answer from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Can I return it?",
+      "Returns are accepted:",
+      [policyRecord("Yes, returns are accepted within 30 days after delivery.")],
+    );
+
+    expect(result.rendered).toContain("returns are accepted within 30 days after delivery");
+  });
+
+  it("withholds an incomplete answer when selected evidence has conflicting destinations", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:",
+      [
+        policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North return policy"),
+        policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South return policy"),
+      ],
+    );
+
+    expect(result.completed.allValid).toBe(false);
+    expect(result.completed.approvedSegments).toEqual([]);
+    expect(result.completed.issues.at(-1).code).toBe("answer_value_ambiguous");
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
+  });
+
+  it("does not duplicate an answer-bearing value already present in model output", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg",
+      [policyRecord("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg")],
+    );
+
+    expect(result.completed.approvedSegments[0].text).toBe("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg");
+    expect(result.rendered.match(/Return Street 10/g)).toHaveLength(1);
   });
 });

@@ -18,6 +18,7 @@ import { createCapabilityRegistry, extractOrderReferences } from "./capabilities
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import {
   composeSafeKnowledgeGapResponse,
+  ensureAnswerCompleteness,
   inferResponseLocale,
   renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
@@ -247,7 +248,10 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           },
           customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
         };
-        const validation = validateStructuredResponse(rawText, responseContext);
+        const validation = ensureAnswerCompleteness(
+          validateStructuredResponse(rawText, responseContext),
+          responseContext,
+        );
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,
           proposals: proposedActions,
