@@ -255,7 +255,7 @@ describe("structured response contract", () => {
     const context = { ...registry, customerMessage: "Where do I send my return?" };
     const result = validateStructuredResponse({ segments: [{
       type: "knowledge_guidance",
-      text: "Returns are accepted within 30 days. Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping. Opened products may incur a EUR 50 deduction. Refunds are processed after receipt.",
+      text: "Returns are accepted within 30 days. Send the return to:\n\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping. Opened products may incur a EUR 50 deduction. Refunds are processed after receipt.",
       basis: { result_id: policy.resultId, field_paths: ["results"] },
     }] }, context);
 
@@ -321,6 +321,51 @@ describe("structured response contract", () => {
     expect(approvalFirst).toContain("After approval, follow the instructions provided.");
     expect(approvalFirst).not.toContain("Refunds are processed");
     expect(approvalFirst).not.toContain("Merchant Returns");
+  });
+
+  it("preserves answer-bearing values across prose paragraphs", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const renderPolicy = (customerMessage, text) => {
+      const context = { ...registry, customerMessage };
+      const result = validateStructuredResponse({ segments: [{
+        type: "knowledge_guidance",
+        text,
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      }] }, context);
+      expect(result.allValid).toBe(true);
+      return renderResponseSegments(result.approvedSegments, context);
+    };
+
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Send the return to:\n\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark",
+    )).toContain("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark");
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Use the returns portal here:\n\nhttps://returns.example.test/start",
+    )).toContain("https://returns.example.test/start");
+    expect(renderPolicy(
+      "Where can I contact support?",
+      "Contact support at:\n\nsupport@example.test",
+    )).toContain("support@example.test");
+    expect(renderPolicy(
+      "What is my tracking link?",
+      "Your tracking link is:\n\nhttps://tracking.example.test/parcel-1",
+    )).toContain("https://tracking.example.test/parcel-1");
+    expect(renderPolicy(
+      "When will I get my refund?",
+      "The refund will be processed within:\n\n5 business days after receipt.",
+    )).toContain("5 business days after receipt.");
+    expect(renderPolicy(
+      "Who pays return shipping?",
+      "The payer is:\n\nYou pay the return shipping.",
+    )).toContain("You pay the return shipping.");
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Send the return to:\n\nReturns are accepted within 30 days.",
+    )).not.toContain("Send the return to:");
   });
 
   it("returns refund timing without dumping unrelated return conditions", async () => {
@@ -408,6 +453,7 @@ describe("structured response contract", () => {
 
     expect(result.allValid).toBe(true);
     const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("Du kan stadig returnere varen, selv om forseglingen er brudt.");
     expect(rendered).toContain("50 EUR");
     expect(rendered).not.toContain("returfragten");
     expect(rendered).not.toContain("Refunderingen behandles");

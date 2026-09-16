@@ -2163,6 +2163,11 @@ function isReturnEligibility(value: string) {
     && !isReturnConditionConsequence(value);
 }
 
+function isAnswerBearingEligibility(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+    && /\b(?:yes|no|can|cannot|can't|may|still|ja|nej|kan|må|darf|kann|berechtigt|tilladt)\b/i.test(value);
+}
+
 function isReturnApprovalPrerequisite(value: string) {
   return /\b(?:approval|approved|accepted\s+before|confirmation|godkend\w*|bekræft\w*|godkendt|bestätigung|genehmig\w*)\b/i.test(value)
     && /\b(?:return\w*|retur\w*|send|ship|sende|schick|rücksend\w*|retoure)\b/i.test(value);
@@ -2175,6 +2180,83 @@ function isReturnDestinationInstruction(value: string) {
 function isReturnProcessInstruction(value: string) {
   if (isRefundTiming(value)) return false;
   return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
+}
+
+type AnswerBearingCue = "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
+
+function answerBearingCueFor(value: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
+  const text = value.trim();
+  if (!text || !/:\s*$/.test(text)) return null;
+  if (focus.questionShape === "destination" && isReturnDestinationInstruction(text)) return "destination";
+  if (/\b(?:contact|support|email|e-mail|phone|telefon|tel\.?|kontakt)\b[\s\S]*:\s*$/i.test(text)) return "contact";
+  if (/\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|package)\b[\s\S]*:\s*$/i.test(text)) return "tracking";
+  if (focus.questionShape === "timing" || /\b(?:when|how\s+long|refund|refundering|tilbagebetaling|pengene\s+tilbage|wann|wie\s+lange)\b[\s\S]*:\s*$/i.test(text)) return "timing";
+  if (focus.questionShape === "cost" || /\b(?:cost|price|fee|amount|pay|payer|omkostning|udgift|betaler|kosten|zahlt)\b[\s\S]*:\s*$/i.test(text)) return "cost";
+  if (focus.questionShape === "eligibility" || /\b(?:eligible|allowed|can|may|must|berettiget|tilladt|kan|må|darf|kann)\b[\s\S]*:\s*$/i.test(text)) return "eligibility";
+  if (focus.questionShape === "status" || /\b(?:status|state|levering|shipment|order)\b[\s\S]*:\s*$/i.test(text)) return "status";
+  return null;
+}
+
+function hasAnswerBearingValueMarker(value: string, cue: AnswerBearingCue) {
+  const text = value.trim();
+  const hasLinkOrContact = /https?:\/\/|mailto:|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|\+?\d[\d\s().-]{5,}/i.test(text);
+  const hasNumericValue = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:business\s+)?(?:days?|hours?|weeks?|months?|dage|timer|uger|måneder|tage|stunden|wochen|monate)\b|\b\d{2,}\b/i.test(text);
+  const hasCostPayer = /\b(?:pay|payer|paid|pays|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(text);
+  if (cue === "eligibility") return hasLinkOrContact || hasNumericValue || /\b(?:yes|no|can|cannot|can't|may|must|required|eligible|allowed|still|ja|nej|kan|må|skal|berettiget|tilladt|darf|kann|muss|berechtigt)\b/i.test(text);
+  if (cue === "status") return hasLinkOrContact || hasNumericValue || /\b(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervjs|zugestellt|versendet)\b/i.test(text);
+  if (cue === "cost") return hasLinkOrContact || hasNumericValue || hasCostPayer;
+  return hasLinkOrContact || hasNumericValue;
+}
+
+function isAnswerBearingContinuation(value: string, cue: AnswerBearingCue) {
+  const text = value.trim();
+  const hasAddressMarker = /\b(?:street|road|avenue|vej|gade|strasse|straße|postcode|postal|city|by)\b|\b\d{4,6}\s+[A-Za-zÀ-ÿ]/i.test(text);
+  const looksLikePolicyText = /\b(?:returns?|retur\w*|refund\w*|shipping|fragt\w*|versand\w*|opened|åbnet|geöffnet|tracking|efterkrav)\b/i.test(text)
+    && (/[.!?]$/.test(text) || /\b(?:are|is|can|must|will|within|after|recommend|you|we|not|should|may|er|kan|skal|vil|inden|efter|anbefal\w*|du|vi|ikke|bør|darf|muss|wird|nach|empfehl\w*)\b/i.test(text));
+  if (!text) return false;
+  if (cue === "destination"
+    && !/^https?:\/\//i.test(text)
+    && !hasAddressMarker
+    && looksLikePolicyText) {
+    return false;
+  }
+  return isAddressContinuation(text) || hasAnswerBearingValueMarker(text, cue);
+}
+
+function answerBearingContinuationLines(lines: string[], startIndex: number, cue: AnswerBearingCue) {
+  const continuation: string[] = [];
+  for (let index = startIndex; index < lines.length; index += 1) {
+    if (!isAnswerBearingContinuation(lines[index], cue)) break;
+    continuation.push(lines[index]);
+  }
+  return continuation;
+}
+
+function answerBearingContinuationPrefix(value: string, cue: AnswerBearingCue) {
+  const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const continuation = answerBearingContinuationLines(lines, 0, cue);
+  return continuation.length > 0 && continuation.some((line) => hasAnswerBearingValueMarker(line, cue))
+    ? continuation
+    : [];
+}
+
+function mergeAnswerBearingParagraphs(paragraphs: string[], focus: CustomerKnowledgeFocus) {
+  const merged: string[] = [];
+  paragraphs.forEach((paragraph) => {
+    const previous = merged[merged.length - 1];
+    const previousLines = previous?.split(/\n+/).map((line) => line.trim()).filter(Boolean) ?? [];
+    const previousLine = previousLines[previousLines.length - 1];
+    const cue = previousLine ? answerBearingCueFor(previousLine, focus) : null;
+    const continuation = cue && previous ? answerBearingContinuationPrefix(paragraph, cue) : [];
+    if (continuation.length > 0 && previous) {
+      merged[merged.length - 1] = `${previous}\n${continuation.join("\n")}`;
+      const remaining = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(continuation.length);
+      if (remaining.length > 0) merged.push(remaining.join("\n"));
+    } else {
+      merged.push(paragraph);
+    }
+  });
+  return merged;
 }
 
 function focusedPolicyClause(value: string, focus: CustomerKnowledgeFocus) {
@@ -2206,7 +2288,7 @@ function composePolicyLine(value: string, focus: CustomerKnowledgeFocus, options
   if (sentences.length <= 1) return value;
 
   let retained = sentences.filter((candidate) => {
-    if (focus.questionShape === "eligibility") return isReturnEligibility(candidate) || isReturnConditionConsequence(candidate);
+    if (focus.questionShape === "eligibility") return isReturnEligibility(candidate) || isAnswerBearingEligibility(candidate) || isReturnConditionConsequence(candidate);
     if (focus.questionShape === "timing") return isRefundTiming(candidate);
     if (focus.questionShape === "cost") return isReturnShippingResponsibility(candidate);
     if (focus.questionShape === "destination") return isReturnDestinationInstruction(candidate)
@@ -2223,7 +2305,7 @@ function composePolicyLine(value: string, focus: CustomerKnowledgeFocus, options
 
   if (focus.questionShape === "eligibility") {
     const condition = retained.filter(isReturnConditionConsequence);
-    const eligibility = retained.filter(isReturnEligibility);
+    const eligibility = retained.filter((candidate) => isReturnEligibility(candidate) || isAnswerBearingEligibility(candidate));
     if (condition.length || eligibility.length) retained = [...eligibility, ...condition];
   } else if (focus.questionShape === "timing") {
     const timing = retained.filter(isRefundTiming);
@@ -2267,11 +2349,15 @@ function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus
 
   if (focus.questionShape === "destination" && destinationIndex >= 0) {
     const destinationLine = composePolicyLine(lines[destinationIndex], focus, options);
-    pushLine(destinationLine);
-    for (let index = destinationIndex + 1; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (!isAddressContinuation(line)) break;
-      pushLine(line);
+    const destinationCue = answerBearingCueFor(destinationLine, focus);
+    const continuation = destinationCue
+      ? answerBearingContinuationLines(lines, destinationIndex + 1, destinationCue)
+      : [];
+    const hasDestinationValue = !destinationCue
+      || continuation.some((line) => hasAnswerBearingValueMarker(line, destinationCue));
+    if (hasDestinationValue) {
+      pushLine(destinationLine);
+      continuation.forEach(pushLine);
     }
     lines.forEach((line, index) => {
       if (index !== destinationIndex && (isReturnApprovalPrerequisite(line) || (options.includeShippingResponsibility !== false && isReturnShippingResponsibility(line)))) {
@@ -2279,6 +2365,19 @@ function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus
       }
     });
     return selected.join("\n");
+  }
+
+  const answerCueIndex = lines.findIndex((line) => answerBearingCueFor(line, focus) !== null);
+  if (answerCueIndex >= 0) {
+    const answerCue = answerBearingCueFor(lines[answerCueIndex], focus);
+    if (answerCue) {
+      const continuation = answerBearingContinuationLines(lines, answerCueIndex + 1, answerCue);
+      if (continuation.some((line) => hasAnswerBearingValueMarker(line, answerCue))) {
+        pushLine(lines[answerCueIndex]);
+        continuation.forEach(pushLine);
+        return selected.join("\n");
+      }
+    }
   }
 
   if (focus.questionShape === "destination") {
@@ -2295,7 +2394,7 @@ function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus
   lines.forEach((line) => {
     const composed = composePolicyLine(line, focus);
     if (composed && (focus.questionShape === "eligibility"
-      ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
+      ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isAnswerBearingEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
       : focus.questionShape === "timing"
         ? composed.split(/(?<=[.!?])\s+/).some(isRefundTiming)
         : focus.questionShape === "cost"
@@ -2312,9 +2411,8 @@ function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus
 
 function composeMinimumSufficientPolicyText(value: string, context: ResponseValidationContext) {
   const focus = customerKnowledgeFocus(context.customerMessage);
-  if (focus.questionShape === "unknown") return value;
-
-  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+  const paragraphs = mergeAnswerBearingParagraphs(String(value ?? "").split(/\n\s*\n/), focus);
+  if (focus.questionShape === "unknown") return paragraphs.join("\n\n");
   const hasDirectDestination = focus.questionShape === "destination"
     && paragraphs.some((paragraph) => paragraph.split(/\n+/).some(isReturnDestinationInstruction));
   const hasApprovalPrerequisite = focus.questionShape === "destination"
