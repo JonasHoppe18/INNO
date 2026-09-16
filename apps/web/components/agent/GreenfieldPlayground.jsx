@@ -2,12 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   Check,
+  CheckCircle2,
   ChevronDown,
+  ChevronRight,
+  FileText,
+  Info,
+  Inbox,
   Loader2,
+  ShieldCheck,
   Search,
   Send,
   Sparkles,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -197,10 +205,186 @@ function AgentActivity({ trace, working = false }) {
   );
 }
 
-function MessageBubble({ message }) {
+function SourceCard({ source, index }) {
+  const provenance = source?.provenance || {};
+  const sections = Array.isArray(source?.evidence_sections) ? source.evidence_sections : [];
+  const preview = sections[0]?.content || "No excerpt captured in the trace.";
+  return (
+    <details className="group overflow-hidden rounded-xl border border-border/80 bg-background transition-[border-color,box-shadow] duration-150 ease-out open:border-violet-200 open:shadow-[0_8px_24px_rgba(91,33,182,0.06)]" open={index === 0}>
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-3.5 py-3.5 transition-colors duration-150 ease-out hover:bg-muted/35">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-violet-200/80 bg-violet-50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">
+          <FileText className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="mb-1 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
+            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
+          </span>
+          <span className="block truncate text-[13px] font-semibold text-foreground">{source?.title || "Untitled source"}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
+        </span>
+        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border/70 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
+          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
+          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">{humanize(provenance.source_kind)}</span> : null}
+        </div>
+        <div className="flex flex-col gap-3">
+          {sections.length ? sections.map((section, sectionIndex) => (
+            <div key={`${section.heading || "excerpt"}-${sectionIndex}`}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
+              <p className="whitespace-pre-wrap text-foreground/80">{section.content || "No excerpt captured."}</p>
+            </div>
+          )) : <p className="text-foreground/70">{preview}</p>}
+        </div>
+        {(provenance.source_id || provenance.source_uri) ? (
+          <p className="mt-3 border-t border-border/60 pt-2 text-[10.5px] text-muted-foreground/80">
+            {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri || ""}
+          </p>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function ProviderCheck({ result }) {
+  const successful = result?.status === "ok" || result?.status === "success";
+  const Icon = successful ? CheckCircle2 : result?.status ? XCircle : Info;
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5">
+      <Icon className={`mt-0.5 size-3.5 shrink-0 ${successful ? "text-emerald-600" : result?.status ? "text-amber-600" : "text-muted-foreground"}`} />
+      <div className="min-w-0">
+        <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
+        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
+      </div>
+    </div>
+  );
+}
+
+function AnswerInspector({ message }) {
+  const trace = message?.trace;
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+  const providerResults = Array.isArray(trace?.provider_results) ? trace.provider_results : [];
+  const toolCalls = Array.isArray(trace?.events) ? trace.events.filter((event) => event?.type === "tool_call") : [];
+  const simulatedActions = Array.isArray(trace?.simulated_actions) ? trace.simulated_actions : [];
+
+  return (
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_8px_30px_rgba(15,23,42,0.04)]" aria-label="Answer inspector">
+      <div className="shrink-0 border-b border-border/70 px-4 py-4">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 text-violet-700 dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-violet-300">
+            <Sparkles className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer inspector</p>
+            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Sources & reasoning</h2>
+          </div>
+          {trace ? <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {trace ? "A compact evidence trail for the selected Sona response." : "Select a Sona response to inspect what informed it."}
+        </p>
+      </div>
+      {!trace ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 text-muted-foreground">
+            <BookOpen className="size-5" />
+          </div>
+          <p className="mt-4 text-[13px] font-semibold text-foreground">Nothing to inspect yet</p>
+          <p className="mt-1 max-w-[24ch] text-[11px] leading-relaxed text-muted-foreground">Send a message, then open “View answer basis” below Sona&apos;s reply.</p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="mb-4 grid grid-cols-3 gap-1.5">
+            <InspectorStat label="Checks" value={toolCalls.length} />
+            <InspectorStat label="Sources" value={sources.length} />
+            <InspectorStat label="Latency" value={trace.latency_ms == null ? "—" : `${trace.latency_ms}ms`} />
+          </div>
+
+          <InspectorSection title="Why this answer" icon={Sparkles}>
+            <ol className="relative ml-1 flex flex-col gap-4 border-l border-violet-200 pl-4 dark:border-violet-900/60">
+              {buildReasoningSteps(trace).map((step, index) => (
+                <li key={`${step.title}-${index}`} className="relative">
+                  <span className={`absolute -left-[21px] top-0.5 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-violet-500" : "bg-muted-foreground/50"}`} />
+                  <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </InspectorSection>
+
+          <InspectorSection title="Knowledge sources" icon={BookOpen} count={sources.length}>
+            {sources.length ? (
+              <div className="flex flex-col gap-2">
+                {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+            )}
+          </InspectorSection>
+
+          {providerResults.length ? (
+            <InspectorSection title="Live checks" icon={CheckCircle2} count={providerResults.length}>
+              <div className="flex flex-col gap-2">{providerResults.map((result, index) => <ProviderCheck key={`${result?.tool || "provider"}-${index}`} result={result} />)}</div>
+            </InspectorSection>
+          ) : null}
+
+          {simulatedActions.length ? (
+            <InspectorSection title="Proposed actions" icon={ShieldCheck} count={simulatedActions.length}>
+              <div className="flex flex-col gap-2">
+                {simulatedActions.map((action, index) => (
+                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{actionLabel(action?.action)}</p>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                    </div>
+                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
+                    {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </InspectorSection>
+          ) : null}
+
+          <div className="mt-5 flex items-start gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>Only sanitized facts, provenance and high-level steps are shown. Hidden model reasoning is not exposed.</span>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function InspectorSection({ title, icon: Icon, count, children }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <div className="mb-2.5 flex items-center gap-2">
+        <Icon className="size-3.5 text-muted-foreground" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InspectorStat({ label, value }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-muted/20 px-2 py-2 text-center">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onInspect, inspected }) {
   const isUser = message.role === "user";
   const comparisonOnly = message.comparison_only === true;
   const hasActivity = !isUser && !comparisonOnly && message.trace;
+  const canInspect = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
       <div className={`w-full ${isUser ? "max-w-[min(78%,44rem)]" : "max-w-[min(88%,44rem)]"}`}>
@@ -214,6 +398,18 @@ function MessageBubble({ message }) {
           {message.content}
         </p>
         {hasActivity ? <AgentActivity trace={message.trace} /> : null}
+        {canInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect?.(message.id)}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            aria-pressed={inspected}
+          >
+            <Sparkles className="size-3" />
+            {inspected ? "Viewing answer basis" : "View answer basis"}
+            <ChevronRight className="size-3" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -337,6 +533,7 @@ export function GreenfieldPlayground() {
   const [pendingUserMessage, setPendingUserMessage] = useState(null);
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [inspectedMessageId, setInspectedMessageId] = useState(null);
   const [ticketRequired, setTicketRequired] = useState(true);
 
   const load = useCallback(async (sessionId = "") => {
@@ -355,6 +552,7 @@ export function GreenfieldPlayground() {
     setSelectedSession(payload.selected_session || null);
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
     setPendingUserMessage(null);
+    setInspectedMessageId(null);
     setContext(payload.context || null);
     setCustomerEmail(payload.selected_session?.customer_email || "");
     setLoading(false);
@@ -371,6 +569,7 @@ export function GreenfieldPlayground() {
     setContext(null);
     setDraft("");
     setError("");
+    setInspectedMessageId(null);
   };
 
   const createSession = async () => {
@@ -406,6 +605,8 @@ export function GreenfieldPlayground() {
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
       const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
       setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((message) => message.role === "assistant" && message.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "The read-only agent run failed.");
@@ -464,6 +665,8 @@ export function GreenfieldPlayground() {
       setSessions((current) => [payload.session, ...current.filter((item) => item.id !== payload.session.id)]);
       const responseMessages = Array.isArray(payload.messages) ? payload.messages : [];
       setMessages((current) => [...current, ...responseMessages]);
+      const latestResponse = [...responseMessages].reverse().find((message) => message.role === "assistant" && message.trace);
+      if (latestResponse) setInspectedMessageId(latestResponse.id);
       setContext(payload.context || null);
       setPendingUserMessage(null);
     } catch (sendError) {
@@ -494,6 +697,8 @@ export function GreenfieldPlayground() {
   const currentTurn = context?.turn || 0;
   const displayedMessages = pendingUserMessage ? [...messages, pendingUserMessage] : messages;
   const hasMessages = displayedMessages.length > 0;
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.trace);
+  const inspectedMessage = messages.find((message) => message.id === inspectedMessageId && message.role === "assistant" && message.trace) || latestAssistant || null;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       if (scrollRef.current) {
@@ -561,7 +766,7 @@ export function GreenfieldPlayground() {
         </div>
       </details>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -616,6 +821,8 @@ export function GreenfieldPlayground() {
               <MessageBubble
                 key={message.id}
                 message={message}
+                onInspect={setInspectedMessageId}
+                inspected={inspectedMessage?.id === message.id}
               />
             ))}
             {sending ? (
@@ -668,6 +875,7 @@ export function GreenfieldPlayground() {
           </form>
         </section>
 
+        <AnswerInspector message={inspectedMessage} />
       </div>
 
       <TicketPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onPick={importTicket} productionMode={ticketRequired} />
