@@ -721,6 +721,21 @@ function canonicalPolicyEvidenceChunks(content: string, prefix: string): Knowled
   })));
 }
 
+function canonicalPolicySelectedIndex(chunks: KnowledgeEvidenceChunk[], selectedContent: string): number {
+  const normalizedSelected = cleanText(selectedContent).toLowerCase();
+  if (!normalizedSelected) return 0;
+  const selectedTokens = new Set(tokens(normalizedSelected));
+  const ranked = chunks.map((chunk, index) => {
+    const normalizedChunk = cleanText(chunk.content).toLowerCase();
+    const exactContentMatch = normalizedSelected.length >= 32 && normalizedChunk.includes(normalizedSelected) ? 100 : 0;
+    return {
+      index,
+      score: exactContentMatch + queryOverlap(selectedTokens, `${chunk.sectionHeading}\n${chunk.content}`),
+    };
+  });
+  return ranked.sort((left, right) => right.score - left.score || left.index - right.index)[0]?.index ?? 0;
+}
+
 function compatibleToken(left: string, right: string): boolean {
   return left === right || (left.length >= 4 && right.length >= 4 && (left.startsWith(right) || right.startsWith(left)));
 }
@@ -1336,6 +1351,41 @@ function selectPolicyRows(rows: any[], signals: Map<string, TaskRelevanceSignals
     const signal = signals.get(rowRelevanceKey(row));
     return (signal?.titleMatches ?? 0) > 0 || (signal?.bodyMatches ?? 0) > 0;
   });
+
+  // Policy titles and bodies are often authored in the merchant's language,
+  // while customers may ask in another language. Keep lexical/task overlap as
+  // a positive signal, but do not let its absence veto a clearly leading
+  // semantic match. The absolute floor rejects weak vector neighbours; the
+  // relative lead rejects arbitrary winners when the policy family is unclear.
+  const semanticCandidates = rows
+    .filter((row) => row.match_reason === "semantic")
+    .filter((row) => String(row.authority ?? "").toLowerCase() === "authoritative")
+    .map((row) => ({ row, score: Number(row.score ?? 0) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((left, right) => right.score - left.score);
+  const semanticLeader = semanticCandidates[0];
+  const semanticRunnerUp = semanticCandidates[1];
+  const semanticLeadIsClear = Boolean(semanticLeader)
+    && semanticLeader.score >= 0.30
+    && (!semanticRunnerUp
+      || (
+        semanticLeader.score - semanticRunnerUp.score >= Math.max(0.04, semanticLeader.score * 0.15)
+        && semanticLeader.score / Math.max(semanticRunnerUp.score, 0.01) >= 1.15
+      ));
+  const semanticRows = semanticLeadIsClear
+    ? semanticCandidates
+      .filter(({ score }) => score >= Math.max(0.30, semanticLeader.score * 0.8))
+      .map(({ row }) => row)
+    : [];
+
+  if (semanticRows.length) {
+    // The semantic candidate set is already tenant-, lifecycle-, authority-,
+    // and applicability-filtered by the caller. Prefer it when it is clearly
+    // stronger than the competing families; this is what prevents a weak
+    // lexical fragment from making Privacy win a return question.
+    return semanticRows.slice(0, finalLimit);
+  }
+
   if (relevant.length <= 1) return relevant;
 
   // A single customer intent should not cause an incidental body word in a
@@ -1679,7 +1729,11 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         ? canonicalPolicyEvidenceChunks(canonicalContent, `${recordId}:canonical`)
         : [];
       if (canonicalPolicyChunks.length) {
-        sections.set(recordId, selectEvidenceSections(canonicalPolicyChunks, 0, query));
+        sections.set(recordId, selectEvidenceSections(
+          canonicalPolicyChunks,
+          canonicalPolicySelectedIndex(canonicalPolicyChunks, String(row.chunk_content ?? "")),
+          query,
+        ));
         continue;
       }
       if (!nonEmptyChunks.length && canonicalContent) {

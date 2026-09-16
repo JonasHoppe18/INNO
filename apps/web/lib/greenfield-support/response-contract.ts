@@ -1352,6 +1352,28 @@ function listArguments(argumentsList: string[], locale: ResponseLocale = "en") {
   return `${labels.slice(0, -1).join(", ")}${conjunction}${labels.at(-1)}`;
 }
 
+const CUSTOMER_FACING_ACTIONS: Record<ResponseLocale, Record<string, string>> = {
+  en: {
+    cancel_order: "request a cancellation",
+    update_address: "request an address change",
+    create_return: "request a return",
+    create_refund: "request a refund",
+    send_replacement: "request a replacement",
+  },
+  da: {
+    cancel_order: "anmode om at få ordren annulleret",
+    update_address: "anmode om at få leveringsadressen ændret",
+    create_return: "anmode om en returnering",
+    create_refund: "anmode om en refundering",
+    send_replacement: "anmode om en erstatning",
+  },
+};
+
+function customerFacingAction(capability: string, locale: ResponseLocale) {
+  return CUSTOMER_FACING_ACTIONS[locale][capability]
+    ?? (locale === "da" ? "gå videre med denne anmodning" : "continue with this request");
+}
+
 function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext) {
   const definition = definitionFor(segment.capability ?? "", context);
   const locale = localeFor(context);
@@ -1388,6 +1410,14 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
       : "Which product name or SKU should I check for availability?";
   }
 
+  if (context.manifest.proposalOnlyTools.includes(segment.capability ?? "")) {
+    const information = listArguments(segment.missing_arguments, locale);
+    const action = customerFacingAction(segment.capability ?? "", locale);
+    return locale === "da"
+      ? `Kan du sende ${information} først? Når jeg har dem, kan jeg hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`
+      : `Could you share ${information} first? Once I have them, I can help you ${action}. Nothing will be changed until you confirm.`;
+  }
+
   const operation = firstSentence(definition.description)
     .replace(/^Read\s+/i, locale === "da" ? "slå op i " : "look up ")
     .replace(/^Propose\s+/i, locale === "da" ? "forberede et forslag om " : "prepare a proposal for ");
@@ -1420,17 +1450,17 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
       ? "Jeg mangler nogle oplysninger, før jeg kan forberede den ønskede anmodning."
       : "I still need a few details before I can prepare the requested change.";
   }
-  const operation = firstSentence(definition.description).replace(/^Propose\s+/i, "");
+  const action = customerFacingAction(segment.capability, locale);
   if (locale === "da") {
     if (segment.missing_arguments.length) {
-      return `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? Når jeg har dem, kan jeg forberede ${lowerFirst(operation)} til din bekræftelse. Der bliver ikke ændret noget, før du bekræfter.`;
+      return `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? Når jeg har dem, kan jeg hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`;
     }
-    return `Jeg kan forberede ${lowerFirst(operation)} til din bekræftelse. Der bliver ikke ændret noget, før du bekræfter.`;
+    return `Jeg kan hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`;
   }
   if (segment.missing_arguments.length) {
-    return `Could you share ${listArguments(segment.missing_arguments, locale)} first? Once I have them, I can prepare ${lowerFirst(operation)} for your confirmation. Nothing will be changed until you confirm.`;
+    return `Could you share ${listArguments(segment.missing_arguments, locale)} first? Once I have them, I can help you ${action}. Nothing will be changed until you confirm.`;
   }
-  return `I can prepare ${lowerFirst(operation)} for your confirmation. Nothing will be changed until you confirm.`;
+  return `I can help you ${action}. Nothing will be changed until you confirm.`;
 }
 
 function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
@@ -2056,54 +2086,61 @@ type CustomerKnowledgeFocus = {
   asksRefundTiming: boolean;
   asksShippingResponsibility: boolean;
   mentionsCondition: boolean;
+  asksCondition: boolean;
 };
 
 function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocus {
   const message = String(customerMessage ?? "").replace(/[\u2019]/g, "'").trim();
-  const hasReturnIntent = /\b(?:return|send\s+(?:it|the\s+item|the\s+order)\s+back)\b/i.test(message);
-  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b/i.test(message);
+  const hasReturnIntent = /\b(?:return\w*|retur\w*|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
+  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b|\bhvordan\b|\b(?:trin|proces|procedure|starte|påbegynde|gøre)\b/i.test(message);
   const asksReturnDestination = hasReturnIntent
-    && (/\bwhere\b/i.test(message) || /\b(?:send|ship)\b[\s\S]{0,40}\breturn\b/i.test(message));
-  const asksRefundTiming = /\brefund\b[\s\S]{0,60}\b(?:when|how\s+long|tim(?:e|ing)|within|after)\b/i.test(message)
-    || /\b(?:when|how\s+long|tim(?:e|ing))\b[\s\S]{0,60}\brefund\b/i.test(message);
-  const asksShippingResponsibility = /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*[\s\S]{0,50}\bshipping\b/i.test(message)
-    || /\bshipping\b[\s\S]{0,50}\b(?:who|pay|cost|responsib)\w*\b/i.test(message);
-  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged)\b/i.test(message);
+    && (/\b(?:where|hvor)\b/i.test(message) || /\b(?:send|ship|sende)\b[\s\S]{0,40}\b(?:return|retur)\b/i.test(message));
+  const hasRefundIntent = /\b(?:refund\w*|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage)\b/i.test(message);
+  const hasTimingQuestion = /\b(?:when|how\s+long|tim(?:e|ing)|within|after|hvornår|hvor\s+lang\s+tid|hvor\s+hurtigt|tid)\b/i.test(message);
+  const asksRefundTiming = hasRefundIntent && hasTimingQuestion;
+  const mentionsShipping = /\b(?:shipping|returfragt|fragt|levering)\b/i.test(message);
+  const asksShippingResponsibility = mentionsShipping && /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*\b|\b(?:hvem\s+betaler|betaler\s+jeg|ansvar|omkostning|udgift)\w*\b/i.test(message);
+  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|beskadiget)\b/i.test(message);
+  const asksCondition = hasReturnIntent && mentionsCondition;
   return {
-    asksProcess: asksHow || asksReturnDestination || (hasReturnIntent && /\b(?:want|would\s+like|need|can\s+i|could\s+i)\b/i.test(message)),
+    asksProcess: asksHow || asksReturnDestination || (hasReturnIntent && /\b(?:want|would\s+like|need|can\s+i|could\s+i|vil|ønsker|skal|kan\s+jeg|må\s+jeg)\b/i.test(message)),
     asksReturnDestination,
     asksRefundTiming,
     asksShippingResponsibility,
     mentionsCondition,
+    asksCondition,
   };
 }
 
 function isReturnConditionConsequence(value: string) {
-  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded)\b/i.test(value)
-    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*)\b/i.test(value);
+  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|fradrag|gebyr|reduceret|ikke\s+fuldt\s+refunderet)\b/i.test(value)
+    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*|retur\w*|refundering\w*|vare\w*|emballage\w*|forsegling\w*)\b/i.test(value);
 }
 
 function isReturnShippingResponsibility(value: string) {
-  return /\b(?:return\s+)?shipping\b/i.test(value)
-    && /\b(?:responsib|covered|cover|cost|pay|expense)\w*\b/i.test(value);
+  return /\b(?:return\s+)?shipping\b|\breturfragt\w*\b|\bfragt\w*\b/i.test(value)
+    && /\b(?:responsib|covered|cover|cost|pay|expense|ansvar|omkostning|udgift|betaler)\w*\b/i.test(value);
 }
 
 function isRefundTiming(value: string) {
-  const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally)\b/i.test(value);
+  const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally|efter|inden\s+for|indenfor|behandl\w*|modtag\w*|betaling|dage|normalt|igangsæt\w*|tid)\b/i.test(value);
   return hasRefundTiming && (
-    /\brefund\w*\b/i.test(value)
-    || /\b(?:bank|payment\s+provider)\b[\s\S]{0,50}\b(?:display|post|funds?)\b/i.test(value)
+    /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b/i.test(value)
+    || /\b(?:bank|payment\s+provider|bank|betalingsudbyder)\b[\s\S]{0,50}\b(?:display|post|funds?|vise|beløb)\b/i.test(value)
   );
 }
 
 function isReturnProcessInstruction(value: string) {
-  return /\b(?:start|initiate|request|send|ship|portal|label|address|contact|email|next\s+steps?|process|procedure)\b/i.test(value);
+  return /\b(?:start|initiate|request|send|ship|portal|label|address|contact|email|next\s+steps?|process|procedure|start(?:e)?|anmod|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin)\b/i.test(value);
 }
 
 function policySentencePriority(value: string, focus: CustomerKnowledgeFocus) {
+  if (focus.asksCondition && !focus.asksProcess && !focus.asksReturnDestination && !focus.asksRefundTiming) {
+    return isReturnConditionConsequence(value) ? 0 : 1;
+  }
   if (focus.asksRefundTiming) return isRefundTiming(value) ? 0 : 1;
   if (focus.asksReturnDestination) {
-    return /\b(?:address|send|ship|portal|label|contact|email|return\s+to)\b/i.test(value) ? 0 : 1;
+    return /\b(?:address|send|ship|portal|label|contact|email|return\s+to|adresse|sende|retur|returlabel|kontakt|formular)\b/i.test(value) ? 0 : 1;
   }
   if (focus.asksProcess) return isReturnProcessInstruction(value) ? 0 : 1;
   return 0;
@@ -2121,7 +2158,10 @@ function composePolicyLine(value: string, focus: CustomerKnowledgeFocus) {
   });
   if (!retained.length) return value;
 
-  if (focus.asksRefundTiming) {
+  if (focus.asksCondition && !focus.asksProcess && !focus.asksReturnDestination && !focus.asksRefundTiming) {
+    const condition = retained.filter(isReturnConditionConsequence);
+    if (condition.length) retained = condition;
+  } else if (focus.asksRefundTiming) {
     const timing = retained.filter(isRefundTiming);
     if (timing.length) retained = timing;
   } else if (focus.asksReturnDestination) {

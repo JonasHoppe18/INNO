@@ -286,6 +286,75 @@ describe("structured response contract", () => {
     expect(rendered).not.toContain("EUR 50");
   });
 
+  it("keeps a Danish return-process answer focused on the primary question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Jeg fandt pakken, men jeg vil gerne returnere den, hvordan gør jeg?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Du kan returnere varen inden for 30 dage efter modtagelsen. Udfyld kontaktformularen med årsagen til returneringen, navnet på ordren og ordrenummeret. Hvis forseglingen er brudt, kan der fratrækkes 50 EUR. Du betaler selv returfragten. Refunderingen igangsættes, når returneringen er modtaget og behandlet.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered.indexOf("Udfyld kontaktformularen")).toBeLessThan(rendered.indexOf("Du kan returnere varen"));
+    expect(rendered).not.toContain("50 EUR");
+    expect(rendered).not.toContain("returfragten");
+    expect(rendered).not.toContain("Refunderingen igangsættes");
+  });
+
+  it("keeps a Danish opened-package answer on the condition asked about", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Jeg har åbnet pakken, kan jeg stadig returnere den?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Du kan stadig returnere varen, selv om forseglingen er brudt. Hvis emballagen ikke er komplet, kan der trækkes 50 EUR. Du betaler selv returfragten. Refunderingen behandles efter modtagelsen.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("50 EUR");
+    expect(rendered).not.toContain("returfragten");
+    expect(rendered).not.toContain("Refunderingen behandles");
+  });
+
+  it("translates proposal-only cancellation questions into customer language", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Kan du annullere min ordre?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "cancel_order",
+      missing_arguments: ["order_id", "reason"],
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("hjælpe dig med at anmode om at få ordren annulleret");
+    expect(rendered).not.toContain("forslag");
+    expect(rendered).not.toContain("cancellation of an order");
+    expect(rendered).toContain("Der bliver ikke ændret noget, før du bekræfter");
+  });
+
   it("preserves explicit address and step line breaks", async () => {
     const dependencies = await createDemoDependencies();
     const registry = createCapabilityRegistry(dependencies);
@@ -1116,7 +1185,7 @@ describe("structured response contract", () => {
     expect(action.allValid).toBe(true);
     const { renderResponseSegments } = await import("../response-contract");
     const rendered = renderResponseSegments(action.approvedSegments, registry);
-    expect(rendered).toContain("prepare an address update for an existing order");
+    expect(rendered).toContain("help you request an address change");
     expect(rendered).toContain("Nothing will be changed until you confirm");
     expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toContain("hold");
@@ -1682,7 +1751,7 @@ describe("structured response contract", () => {
     );
 
     const rendered = renderResponseSegments(result.approvedSegments, registry);
-    expect(rendered).toContain("prepare a refund for your confirmation");
+    expect(rendered).toContain("help you request a refund");
     expect(rendered).toContain("Nothing will be changed until you confirm");
     expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toMatch(/has been refunded|was refunded/i);

@@ -44,6 +44,70 @@ async function ingestPolicy(store, sourceId, title, content, options = {}) {
   });
 }
 
+function semanticPolicyRow(sourceId, title, content, score, authority = "authoritative") {
+  return {
+    id: sourceId,
+    workspace_id: WORKSPACE_ID,
+    knowledge_type: "policy",
+    authority,
+    title,
+    content,
+    structured_data: {},
+    source_kind: "shopify",
+    source_id: sourceId,
+    source_uri: null,
+    source_label: "Shopify",
+    content_hash: `${sourceId}-hash`,
+    published_at: null,
+    observed_at: null,
+    expires_at: null,
+    metadata: { lifecycle_status: "published" },
+    chunk_id: `chunk-${sourceId}`,
+    chunk_index: 0,
+    chunk_content: content,
+    score,
+    match_reason: "semantic",
+  };
+}
+
+function semanticPolicyStore(rowsByQuery) {
+  let embeddedQuery = "";
+  const chunksByRecord = new Map();
+  for (const rows of Object.values(rowsByQuery)) {
+    for (const row of rows) {
+      if (!chunksByRecord.has(row.id)) chunksByRecord.set(row.id, row);
+    }
+  }
+
+  const client = {
+    rpc: vi.fn(async (name) => name === "greenfield_search_knowledge_semantic"
+      ? { data: rowsByQuery[embeddedQuery] ?? [], error: null }
+      : { data: [], error: null }),
+    from: vi.fn((table) => {
+      if (table !== "greenfield_knowledge_chunks") throw new Error(`Unexpected table: ${table}`);
+      return {
+        select: () => ({
+          eq: () => ({
+            in: async (_column, ids) => ({
+              data: ids.flatMap((id) => {
+                const row = chunksByRecord.get(id);
+                return row ? [{ id: row.chunk_id, record_id: row.id, chunk_index: 0, content: row.chunk_content }] : [];
+              }),
+              error: null,
+            }),
+          }),
+        }),
+      };
+    }),
+  };
+
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+    embeddedQuery = JSON.parse(init.body).input;
+    return { ok: true, async json() { return { data: [{ embedding: [0.1, 0.2] }] }; } };
+  }));
+  return { store: new SupabaseKnowledgeStore(client), client };
+}
+
 async function competingProcedures() {
   const store = new InMemoryKnowledgeStore();
   await ingest(store, "pairing", "Product A USB dongle pairing", "Pair the headset and dongle until the connection is established.", {
@@ -212,6 +276,116 @@ describe("generic greenfield knowledge task relevance", () => {
     });
 
     expect(hits.map((hit) => hit.record.sourceId)).toEqual(["shipping-policy"]);
+  });
+
+  it("keeps a clearly leading authoritative semantic policy across languages", async () => {
+    process.env.OPENAI_API_KEY = "test-key-for-stubbed-embedding";
+    const refund = semanticPolicyRow(
+      "refund-policy",
+      "Refund policy",
+      "Send accepted returns to Example Returns, Return Street 10, 2000 Frederiksberg, Denmark. The refund is initiated after the return is received and processed.",
+      0.40,
+    );
+    const shipping = semanticPolicyRow(
+      "shipping-policy",
+      "Shipping policy",
+      "Orders ship to supported destinations and delivery times depend on the carrier.",
+      0.25,
+    );
+    const privacy = semanticPolicyRow(
+      "privacy-policy",
+      "Privacy policy",
+      "Personal data is handled according to our privacy notice.",
+      0.20,
+    );
+    const queries = [
+      "Where do I send my return?",
+      "Hvor skal jeg sende min retur?",
+      "Wo soll ich meine Rücksendung hinschicken?",
+    ];
+    const { store } = semanticPolicyStore(Object.fromEntries(queries.map((query) => [query, [refund, shipping, privacy]])));
+
+    for (const query of queries) {
+      const hits = await store.search({ workspaceId: WORKSPACE_ID, query, taskQuery: query, knowledgeTypes: ["policy"], limit: 5 });
+      expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+      expect(hits[0].evidenceSections.map((section) => section.content).join("\n")).toContain("Return Street 10");
+    }
+
+    vi.unstubAllGlobals();
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it("uses semantic policy family evidence for refund timing and privacy in Danish and German", async () => {
+    process.env.OPENAI_API_KEY = "test-key-for-stubbed-embedding";
+    const refund = semanticPolicyRow(
+      "refund-policy",
+      "Refund policy",
+      "The refund is initiated after the return is received and processed.",
+      0.31,
+    );
+    const privacy = semanticPolicyRow(
+      "privacy-policy",
+      "Privacy policy",
+      "Personal data is handled according to our privacy notice.",
+      0.20,
+    );
+    const shipping = semanticPolicyRow(
+      "shipping-policy",
+      "Shipping policy",
+      "Orders ship to supported destinations.",
+      0.15,
+    );
+    const rowsByQuery = {
+      "Hvornår får jeg pengene tilbage?": [refund, privacy, shipping],
+      "Wann bekomme ich mein Geld zurück?": [refund, privacy, shipping],
+      "Hvad er jeres privatlivspolitik?": [
+        semanticPolicyRow("privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.", 0.41),
+        semanticPolicyRow("refund-policy", "Refund policy", "Returns are accepted within 30 days.", 0.19),
+        semanticPolicyRow("shipping-policy", "Shipping policy", "Orders ship to supported destinations.", 0.14),
+      ],
+    };
+    const { store } = semanticPolicyStore(rowsByQuery);
+
+    const refundQueries = ["Hvornår får jeg pengene tilbage?", "Wann bekomme ich mein Geld zurück?"];
+    for (const query of refundQueries) {
+      const hits = await store.search({ workspaceId: WORKSPACE_ID, query, taskQuery: query, knowledgeTypes: ["policy"], limit: 5 });
+      expect(hits.map((hit) => hit.record.sourceId)).toEqual(["refund-policy"]);
+      expect(hits[0].evidenceSections.map((section) => section.content).join("\n")).toContain("refund is initiated");
+    }
+
+    const privacyHits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "Hvad er jeres privatlivspolitik?",
+      taskQuery: "Hvad er jeres privatlivspolitik?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+    expect(privacyHits.map((hit) => hit.record.sourceId)).toEqual(["privacy-policy"]);
+
+    vi.unstubAllGlobals();
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it("does not use a weak semantic policy tie as a customer-facing answer", async () => {
+    process.env.OPENAI_API_KEY = "test-key-for-stubbed-embedding";
+    const { store } = semanticPolicyStore({
+      "What loyalty program do you offer?": [
+        semanticPolicyRow("refund-policy", "Refund policy", "Returns are accepted within 30 days.", 0.29),
+        semanticPolicyRow("privacy-policy", "Privacy policy", "Personal data is handled according to our privacy notice.", 0.27),
+      ],
+    });
+
+    const hits = await store.search({
+      workspaceId: WORKSPACE_ID,
+      query: "What loyalty program do you offer?",
+      taskQuery: "What loyalty program do you offer?",
+      knowledgeTypes: ["policy"],
+      limit: 5,
+    });
+    expect(hits).toEqual([]);
+
+    vi.unstubAllGlobals();
+    delete process.env.OPENAI_API_KEY;
   });
 
   it("keeps policy type boundaries when other knowledge shares the requested wording", async () => {
