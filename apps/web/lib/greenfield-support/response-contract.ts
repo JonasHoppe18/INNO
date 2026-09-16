@@ -2344,7 +2344,7 @@ type CustomerKnowledgeFocus = {
 
 function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocus {
   const message = String(customerMessage ?? "").replace(/[\u2019]/g, "'").trim();
-  const hasReturnIntent = /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
+  const hasReturnIntent = /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*)|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
   const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b|\bhvordan\b|\b(?:trin|proces|procedure|starte|påbegynde|gøre)\b|\bwie\b|\b(?:schritte|prozess|vorgehen)\b/i.test(message);
   const asksReturnDestination = hasReturnIntent
     && (/\b(?:where|hvor|wo)\b/i.test(message) || /\b(?:send|ship|sende|schick(?:en)?|sende)\b[\s\S]{0,40}\b(?:return|retur|rücksend|retoure)\b/i.test(message));
@@ -2394,7 +2394,7 @@ function isReturnConditionConsequence(value: string) {
 }
 
 function isReturnShippingResponsibility(value: string) {
-  return /\b(?:return\s+)?shipping\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
+  return /\b(?:return\s+)?(?:shipping|shipment)\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
     && /\b(?:responsib|covered|cover|cost|pay|expense|ansvar|omkostning|udgift|betal|zahlt|kosten|verantwort)\w*\b/i.test(value);
 }
 
@@ -2407,14 +2407,19 @@ function isRefundTiming(value: string) {
 }
 
 function isReturnEligibility(value: string) {
-  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
     && /\b(?:within|under|accepted|eligible|allowed|days?|dage|accepter\w*|berettig\w*|tilladt|inden|innerhalb|tage)\b/i.test(value)
     && !isReturnConditionConsequence(value);
 }
 
 function isAnswerBearingEligibility(value: string) {
-  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
     && /\b(?:yes|no|can|cannot|can't|may|still|ja|nej|kan|må|darf|kann|berechtigt|tilladt)\b/i.test(value);
+}
+
+function isReturnProhibition(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
+    && /\b(?:not\s+(?:allowed|eligible|permitted|accepted)|cannot|can't|prohibited|forbidden|ikke\s+(?:tilladt|berettiget|accepteret|muligt)|kan\s+ikke|må\s+ikke|nicht\s+(?:zulässig|berechtigt|angenommen|möglich)|kann\s+nicht|darf\s+nicht|abgelehnt|verboten)\b/i.test(value);
 }
 
 function isReturnApprovalPrerequisite(value: string) {
@@ -2431,12 +2436,13 @@ function isReturnProcessInstruction(value: string) {
   return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
 }
 
-type AnswerBearingCue = "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
+type AnswerBearingCue = "process" | "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
 
 function answerBearingCueFor(value: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
   const text = value.trim();
   if (!text || !/:\s*$/.test(text)) return null;
   if (focus.questionShape === "destination" && isReturnDestinationInstruction(text)) return "destination";
+  if (focus.questionShape === "process" && isReturnProcessInstruction(text)) return "process";
   if (/\b(?:contact|support|email|e-mail|phone|telefon|tel\.?|kontakt)\b[\s\S]*:\s*$/i.test(text)) return "contact";
   if (/\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|package)\b[\s\S]*:\s*$/i.test(text)) return "tracking";
   if (focus.questionShape === "timing" || /\b(?:when|how\s+long|refund|refundering|tilbagebetaling|pengene\s+tilbage|wann|wie\s+lange)\b[\s\S]*:\s*$/i.test(text)) return "timing";
@@ -2452,6 +2458,7 @@ function hasAnswerBearingValueMarker(value: string, cue: AnswerBearingCue) {
   const hasNumericValue = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:business\s+)?(?:days?|hours?|weeks?|months?|dage|timer|uger|måneder|tage|stunden|wochen|monate)\b|\b\d{2,}\b/i.test(text);
   const hasCostPayer = /\b(?:pay|payer|paid|pays|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(text);
   if (cue === "eligibility") return hasLinkOrContact || hasNumericValue || /\b(?:yes|no|can|cannot|can't|may|must|required|eligible|allowed|still|ja|nej|kan|må|skal|berettiget|tilladt|darf|kann|muss|berechtigt)\b/i.test(text);
+  if (cue === "process") return isReturnProcessInstruction(text) || hasLinkOrContact;
   if (cue === "status") return hasLinkOrContact || hasNumericValue || /\b(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervjs|zugestellt|versendet)\b/i.test(text);
   if (cue === "cost") return hasLinkOrContact || hasNumericValue || hasCostPayer;
   return hasLinkOrContact || hasNumericValue;
@@ -2486,6 +2493,7 @@ function pushAnswerCompletenessCandidate(candidates: AnswerCompletenessCandidate
 
 function answerCompletenessMessageCue(message: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
   const text = String(message ?? "");
+  if (focus.questionShape === "process") return "process";
   if (focus.questionShape === "destination") return "destination";
   if (focus.questionShape === "timing") return "timing";
   if (focus.questionShape === "cost") return "cost";
@@ -2495,6 +2503,21 @@ function answerCompletenessMessageCue(message: string, focus: CustomerKnowledgeF
   if (focus.questionShape === "status") return "status";
   if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) return "contact";
   return null;
+}
+
+function answerCompletenessMessageCues(message: string, focus: CustomerKnowledgeFocus): AnswerBearingCue[] {
+  const text = String(message ?? "");
+  const cues: AnswerBearingCue[] = [];
+  if (focus.asksProcess) cues.push("process");
+  if (focus.asksReturnDestination) cues.push("destination");
+  if (focus.asksRefundTiming) cues.push("timing");
+  if (focus.asksShippingResponsibility) cues.push("cost");
+  if (focus.asksEligibility) cues.push("eligibility");
+  if (focus.questionShape === "status"
+    && /\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|sporing|forsendelse)\b/i.test(text)) cues.push("tracking");
+  if (focus.questionShape === "status") cues.push("status");
+  if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) cues.push("contact");
+  return Array.from(new Set(cues));
 }
 
 function physicalAddressMarker(value: string) {
@@ -2612,16 +2635,171 @@ function answerCompletenessCandidates(cue: AnswerBearingCue, evidenceTexts: stri
     }
 
     const units = answerEvidenceUnits(evidenceText);
+    if (cue === "process") {
+      const nextStep = units.find((unit) => isReturnProcessInstruction(unit));
+      if (nextStep) pushAnswerCompletenessCandidate(candidates, nextStep);
+    }
     if (cue === "timing") units.filter(isRefundTiming).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
     if (cue === "cost") units.filter(isReturnShippingResponsibility).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
     if (cue === "eligibility") units
-      .filter((unit) => isAnswerBearingEligibility(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
+      .filter((unit) => isAnswerBearingEligibility(unit) || isReturnProhibition(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
       .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
     if (cue === "status") units
       .filter((unit) => /(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervejs|zugestellt|versendet)/i.test(unit))
       .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
   }
   return candidates;
+}
+
+type EvidenceRecovery =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; candidate?: AnswerCompletenessCandidate };
+
+type ProcedureRecovery =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; blockIds: string[] };
+
+function successfulKnowledgeResults(context: ResponseValidationContext, toolName: string) {
+  return (context.getResults?.() ?? []).filter((evidence) => {
+    if (evidence.toolName !== toolName || evidence.result.status !== "ok") return false;
+    return Array.isArray(objectValue(evidence.result.data)?.results);
+  });
+}
+
+function uniqueAnswerCandidates(candidates: AnswerCompletenessCandidate[]) {
+  return candidates.filter((candidate, index) => candidates.findIndex((item) => item.normalized === candidate.normalized) === index);
+}
+
+function recoveryCandidatesForRecord(
+  cue: AnswerBearingCue,
+  record: JsonObject,
+  customerMessage: string,
+): AnswerCompletenessCandidate[] {
+  const candidates = answerCompletenessCandidates(cue, answerEvidenceSections([record]), customerMessage);
+  if (cue === "destination") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      /^https?:\/\//i.test(candidate.value) || physicalAddressMarker(candidate.value)));
+  }
+  if (cue === "contact") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      /https?:\/\/|mailto:|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|\+?\d[\d\s().-]{5,}/i.test(candidate.value)));
+  }
+  if (cue === "cost") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      /\b(?:pay|payer|paid|pays|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(candidate.value)));
+  }
+  if (cue === "eligibility") {
+    const stateCandidates = candidates.filter((candidate) =>
+      isAnswerBearingEligibility(candidate.value) || isReturnProhibition(candidate.value) || isReturnEligibility(candidate.value));
+    const consequenceCandidates = candidates.filter((candidate) => isReturnConditionConsequence(candidate.value));
+    const relevant = uniqueAnswerCandidates([...stateCandidates, ...consequenceCandidates]);
+    if (!stateCandidates.length) return [];
+    if (!consequenceCandidates.length) return relevant;
+    return [{
+      value: relevant.map((candidate) => candidate.value).join(" "),
+      normalized: normalizeAnswerCompletenessValue(relevant.map((candidate) => candidate.value).join(" ")),
+    }];
+  }
+  return uniqueAnswerCandidates(candidates);
+}
+
+function recoverPolicyAnswer(context: ResponseValidationContext, cue: AnswerBearingCue): EvidenceRecovery {
+  for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data : null;
+    if (!results) continue;
+    const records = (Array.isArray(data.results) ? data.results : []).map((value, resultIndex) => ({
+      record: objectValue(value),
+      resultIndex,
+      rank: Number(objectValue(value)?.rank ?? resultIndex + 1),
+    })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
+      Boolean(item.record) && String(item.record.authority ?? "") === "authoritative" && String(item.record.knowledge_type ?? "") === "policy");
+    const matches = records.flatMap((item) => {
+      const candidates = recoveryCandidatesForRecord(cue, item.record, context.customerMessage ?? "");
+      return candidates.length ? [{ ...item, candidates }] : [];
+    });
+    if (!matches.length) continue;
+    const candidates = uniqueAnswerCandidates(matches.flatMap((item) => item.candidates));
+    if (matches.length !== 1 || candidates.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
+  }
+  return { kind: "none" };
+}
+
+function recoverProcedureAnswer(context: ResponseValidationContext): ProcedureRecovery {
+  const customerMessage = [
+    context.customerMessage,
+    context.customerProvidedContext?.product,
+    context.customerProvidedContext?.platform,
+    context.customerProvidedContext?.issue,
+  ].filter(Boolean).join(" ");
+  for (const evidence of successfulKnowledgeResults(context, "search_procedures").reverse()) {
+    const data = objectValue(evidence.result.data);
+    if (data?.task_specificity !== "sufficient" || data?.procedure_evidence_quality !== "usable") continue;
+    const results = Array.isArray(data.results) ? data.results : [];
+    const matches = results.flatMap((value, resultIndex) => {
+      const record = objectValue(value);
+      if (!record || String(record.authority ?? "") !== "authoritative" || String(record.knowledge_type ?? "") !== "procedural") return [];
+      const blocks = procedureBlocks(evidence.result, resultIndex);
+      if (!blocks.length || blocks.length > 32 || blocks.some((entry) => !meaningful(entry.block.text))) return [];
+      if (procedureProductMismatch(results, customerMessage, resultIndex, -1).length) return [];
+      return [{
+        record,
+        resultIndex,
+        rank: Number(record.rank ?? resultIndex + 1),
+        blockIds: blocks.map((entry) => entry.blockId),
+      }];
+    });
+    if (!matches.length) continue;
+    const bestRank = Math.min(...matches.map((item) => item.rank));
+    const best = matches.filter((item) => item.rank === bestRank);
+    if (best.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: best[0].resultIndex, blockIds: best[0].blockIds };
+  }
+  return { kind: "none" };
+}
+
+function looksLikeGenericEvidenceFallback(value: string) {
+  return /\b(?:couldn['’]?t|cannot|can't|unable|no\s+(?:support\s+)?(?:procedure|policy|guidance)|not\s+(?:available|found|verified)|try\s+again|safely\s+complete|verify\s+(?:a\s+)?(?:support\s+)?(?:procedure|policy))\b/i.test(value);
+}
+
+function isReplaceableEvidenceFallback(
+  segment: ResponseSegment,
+  context: ResponseValidationContext,
+  toolName: string,
+) {
+  if (!(segment.type === "limitation" || segment.type === "knowledge_guidance" || segment.type === "question")) return false;
+  if (!looksLikeGenericEvidenceFallback(segment.text ?? "")) return false;
+  const basis = "basis" in segment ? segment.basis : null;
+  const evidence = basis ? resultFor(basis, context) : undefined;
+  return evidence?.toolName === toolName && evidence.result.status === "ok";
+}
+
+function recoveredPolicySegment(recovery: EvidenceRecovery): ResponseSegment | null {
+  if (recovery.kind !== "usable" || !recovery.candidate) return null;
+  return {
+    type: "knowledge_guidance",
+    text: recovery.candidate.value,
+    basis: {
+      result_id: recovery.evidence.resultId,
+      field_paths: [`results[${recovery.resultIndex}]`],
+    },
+  } satisfies Extract<ResponseSegment, { type: "knowledge_guidance" }>;
+}
+
+function recoveredProcedureSegment(recovery: ProcedureRecovery): ResponseSegment | null {
+  if (recovery.kind !== "usable") return null;
+  return {
+    type: "procedure_guidance",
+    text: "Relevant support steps.",
+    basis: {
+      result_id: recovery.evidence.resultId,
+      field_paths: [`results[${recovery.resultIndex}]`],
+    },
+    block_ids: recovery.blockIds,
+  } satisfies Extract<ResponseSegment, { type: "procedure_guidance" }>;
 }
 
 function answerCompletenessValuePresent(value: string, cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
@@ -2648,18 +2826,22 @@ function restoreAnswerCompletenessValue(value: string, focus: CustomerKnowledgeF
 
 /**
  * Ensures a model cannot silently omit the smallest answer-bearing value that
- * is already present in the cited authoritative evidence. This stays at the
+ * is already present in the current authoritative evidence. This stays at the
  * contract boundary: it neither retrieves new data nor asks the model to
- * repair its own output.
+ * repair its own output. Server-recorded evidence may be used when the model
+ * emitted a generic fallback instead of citing the result itself.
  */
 export function ensureAnswerCompleteness(
   validation: ResponseValidationResult,
   context: ResponseValidationContext,
 ): ResponseValidationResult {
-  if (!validation.schemaValid || !validation.approvedSegments.length) return validation;
+  if (!validation.schemaValid) return validation;
   const focus = customerKnowledgeFocus(context.customerMessage);
-  const cue = answerCompletenessMessageCue(context.customerMessage ?? "", focus);
-  if (!cue) return validation;
+  const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  const procedureRequested = /\b(?:procedure|steps?|troubleshoot(?:ing)?|pair(?:ing)?|connect(?:ion|ing)?|reset|firmware|microphone|interference|not\s+working|won['’]?t|will\s+not|problem|issue|fejl|forbinder|parre|funktioniert|verbinden|koppeln)\b/i.test([
+    context.customerMessage,
+    context.customerProvidedContext?.issue,
+  ].filter(Boolean).join(" "));
 
   const approvedSegments: ResponseSegment[] = [];
   const rejectedSegments = [...validation.rejectedSegments];
@@ -2672,44 +2854,93 @@ export function ensureAnswerCompleteness(
       approvedSegments.push(segment);
       return;
     }
-    const records = answerEvidenceRecords(segment.basis, context, cue);
-    const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(records), context.customerMessage ?? "");
-    if (!candidates.length || answerCompletenessValuePresent(segment.text, cue, candidates)) {
-      approvedSegments.push(segment);
-      candidates.forEach((candidate) => {
-        if (normalizeAnswerCompletenessValue(segment.text).includes(candidate.normalized)) restoredValues.add(candidate.normalized);
-      });
-      return;
-    }
+    let currentSegment = segment;
+    let rejected = false;
+    for (const cue of cues) {
+      const records = answerEvidenceRecords(currentSegment.basis, context, cue);
+      const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(records), context.customerMessage ?? "");
+      if (!candidates.length || answerCompletenessValuePresent(currentSegment.text, cue, candidates)) {
+        candidates.forEach((candidate) => {
+          if (normalizeAnswerCompletenessValue(currentSegment.text).includes(candidate.normalized)) restoredValues.add(candidate.normalized);
+        });
+        continue;
+      }
 
-    const index = validation.parsed?.segments.indexOf(segment) ?? validation.approvedSegments.indexOf(segment);
-    if (candidates.length === 1 && !restoredValues.has(candidates[0].normalized)) {
-      approvedSegments.push({
-        ...segment,
-        text: restoreAnswerCompletenessValue(segment.text, focus, cue, candidates[0]),
-      });
-      restoredValues.add(candidates[0].normalized);
+      const index = validation.parsed?.segments.indexOf(segment) ?? validation.approvedSegments.indexOf(segment);
+      if (candidates.length === 1 && !restoredValues.has(candidates[0].normalized)) {
+        currentSegment = {
+          ...currentSegment,
+          text: restoreAnswerCompletenessValue(currentSegment.text, focus, cue, candidates[0]),
+        };
+        restoredValues.add(candidates[0].normalized);
+        changed = true;
+        continue;
+      }
+
+      const issue: ResponseValidationIssue = {
+        index,
+        code: candidates.length > 1 ? "answer_value_ambiguous" : "answer_value_duplicate",
+        message: candidates.length > 1
+          ? "The selected evidence contains multiple conflicting answer values, so the response was withheld rather than guessing."
+          : "The response repeated an incomplete answer-bearing segment, so it was withheld rather than rendered twice.",
+      };
+      rejectedSegments.push({ index, type: segment.type, issues: [issue] });
+      issues.push(issue);
+      rejected = true;
       changed = true;
-      return;
+      break;
     }
-
-    const issue: ResponseValidationIssue = {
-      index,
-      code: candidates.length > 1 ? "answer_value_ambiguous" : "answer_value_duplicate",
-      message: candidates.length > 1
-        ? "The selected evidence contains multiple conflicting answer values, so the response was withheld rather than guessing."
-        : "The response repeated an incomplete answer-bearing segment, so it was withheld rather than rendered twice.",
-    };
-    rejectedSegments.push({ index, type: segment.type, issues: [issue] });
-    issues.push(issue);
-    changed = true;
+    if (!rejected) approvedSegments.push(currentSegment);
   });
+
+  const recoveredSegments: ResponseSegment[] = [];
+  const recoveredTools = new Set<string>();
+  for (const cue of cues) {
+    const recovery = recoverPolicyAnswer(context, cue);
+    if (recovery.kind !== "usable") continue;
+    const hasAnswer = approvedSegments.some((segment) => {
+      if (segment.type !== "knowledge_guidance") return false;
+      const evidence = resultFor(segment.basis, context);
+      if (evidence?.toolName !== "search_policy") return false;
+      const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(answerEvidenceRecords(segment.basis, context, cue)), context.customerMessage ?? "");
+      return candidates.length > 0 && answerCompletenessValuePresent(segment.text, cue, candidates);
+    });
+    if (hasAnswer) continue;
+    const segment = recoveredPolicySegment(recovery);
+    if (!segment || validateSegment(segment, context, -1).length) continue;
+    recoveredSegments.push(segment);
+    recoveredTools.add("search_policy");
+    changed = true;
+  }
+
+  if (procedureRequested) {
+    const recovery = recoverProcedureAnswer(context);
+    const hasProcedure = approvedSegments.some((segment) => segment.type === "procedure_guidance");
+    if (recovery.kind === "usable" && !hasProcedure) {
+      const segment = recoveredProcedureSegment(recovery);
+      if (segment && !validateSegment(segment, context, -1).length) {
+        recoveredSegments.push(segment);
+        recoveredTools.add("search_procedures");
+        changed = true;
+      }
+    }
+  }
+
+  if (recoveredTools.size) {
+    for (let index = approvedSegments.length - 1; index >= 0; index -= 1) {
+      const segment = approvedSegments[index];
+      if ([...recoveredTools].some((toolName) => isReplaceableEvidenceFallback(segment, context, toolName))) {
+        approvedSegments.splice(index, 1);
+        changed = true;
+      }
+    }
+  }
 
   if (!changed) return validation;
   return {
     ...validation,
     allValid: rejectedSegments.length === 0,
-    approvedSegments,
+    approvedSegments: [...recoveredSegments, ...approvedSegments],
     rejectedSegments,
     issues,
   };
@@ -3334,7 +3565,7 @@ function isRedundantPolicyQuestion(
   context: ResponseValidationContext,
 ) {
   return hasPolicyGuidance
-    && focus.questionShape === "timing"
+    && ["timing", "destination", "cost", "eligibility"].includes(focus.questionShape)
     && !isExplicitOrderReference(context.customerMessage)
     && segment.purpose === "enable_capability"
     && segment.capability === "get_order"

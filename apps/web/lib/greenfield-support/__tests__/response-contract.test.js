@@ -1921,6 +1921,52 @@ function policyRecord(content, title = "Authoritative support policy", structure
   };
 }
 
+function procedureEvidenceRecord({ taskSpecificity = "sufficient", procedureEvidenceQuality = "usable", records = [{
+  title: "A-Blaze pairing procedure",
+  knowledge_type: "procedural",
+  authority: "authoritative",
+  task_relevance_score: 1,
+  rank: 1,
+  evidence_sections: [{ heading: "Pairing", content: "Pair the headset with the USB-C dongle." }],
+  structured_data: {
+    applies_to: { product_models: ["A-Blaze"] },
+    procedure_steps: [
+      { block_id: "pair_1", kind: "instruction", text: "Plug the USB-C dongle into the PC." },
+      { block_id: "pair_2", kind: "instruction", text: "Turn on the headset and wait for it to pair." },
+    ],
+  },
+  provenance: { source_kind: "merchant_authored", source_id: "a-blaze-pairing" },
+}] } = {}) {
+  return {
+    resultId: "procedure-completeness-1",
+    toolName: "search_procedures",
+    result: {
+      status: taskSpecificity === "sufficient" && procedureEvidenceQuality === "usable" ? "ok" : "not_found",
+      data: {
+        task_specificity: taskSpecificity,
+        procedure_evidence_quality: procedureEvidenceQuality,
+        results: records,
+      },
+    },
+  };
+}
+
+async function recoveryCase(customerMessage, modelSegments, evidenceRecords, customerProvidedContext = {}) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    customerProvidedContext,
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
 async function answerCompletenessCase(customerMessage, modelText, records) {
   const dependencies = await createDemoDependencies();
   const registry = createCapabilityRegistry(dependencies);
@@ -1930,6 +1976,7 @@ async function answerCompletenessCase(customerMessage, modelText, records) {
     ...registry,
     customerMessage,
     getResult: (resultId) => resultId === evidence.resultId ? evidence : getResult(resultId),
+    getResults: () => [evidence, ...registry.getResults()],
   };
   const initial = validateStructuredResponse({ segments: [{
     type: "knowledge_guidance",
@@ -2058,6 +2105,142 @@ describe("model-to-contract answer completeness", () => {
 
     expect(result.completed.approvedSegments[0].text).toBe("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg");
     expect(result.rendered.match(/Return Street 10/g)).toHaveLength(1);
+  });
+});
+
+describe("evidence-aware fallback recovery", () => {
+  it("recovers a usable policy answer when the model emits a generic fallback", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Your refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("couldn't verify");
+  });
+
+  it("recovers the payer without re-inserting the rest of the policy", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("You arrange and pay for the return shipment.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("pay for the return shipment");
+    expect(result.rendered).not.toContain("30 days");
+  });
+
+  it("recovers a compound eligibility and consequence proposition", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days of delivery. If the seal is broken, the refund may be reduced by EUR 50.",
+    )]);
+    const result = await recoveryCase("Can I return an opened item?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("Returns are accepted within 30 days of delivery");
+    expect(result.rendered).toContain("refund may be reduced by EUR 50");
+  });
+
+  it("preserves an applicable procedure when the model says it was not found", async () => {
+    const evidence = procedureEvidenceRecord();
+    const result = await recoveryCase("My A-Blaze headset will not pair.", [{
+      type: "limitation",
+      text: "I couldn't verify a support procedure for this issue from our current guidance.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], { product: "A-Blaze", issue: "My A-Blaze headset will not pair" });
+
+    expect(result.rendered).toContain("Plug the USB-C dongle into the PC.");
+    expect(result.rendered).toContain("wait for it to pair");
+    expect(result.rendered).not.toContain("couldn't verify a support procedure");
+  });
+
+  it("leaves an ambiguous procedure request as a clarification", async () => {
+    const evidence = procedureEvidenceRecord({ taskSpecificity: "insufficient", procedureEvidenceQuality: "insufficient" });
+    const result = await recoveryCase("My headset is not working.", [{
+      type: "question",
+      purpose: "clarify_task",
+      text: "What exactly is happening with the headset?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence], { product: "A-Blaze", issue: "My headset is not working" });
+
+    expect(result.rendered).toContain("What exactly is happening");
+    expect(result.rendered).not.toContain("Plug the USB-C dongle");
+  });
+
+  it("reselects the final supported procedure intent using multi-turn context", async () => {
+    const evidence = procedureEvidenceRecord();
+    const result = await recoveryCase("I use the USB-C dongle on a PC.", [{
+      type: "limitation",
+      text: "I couldn't verify a support procedure for this issue from our current guidance.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      product: "A-Blaze",
+      platform: "USB-C dongle + PC",
+      issue: "My headset will not connect",
+      attemptedSteps: ["I already reset it"],
+    });
+
+    expect(result.rendered).toContain("Plug the USB-C dongle into the PC.");
+    expect(result.rendered).not.toContain("reset");
+  });
+
+  it("keeps the safe fallback when authoritative evidence is insufficient", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const evidence = {
+      resultId: "insufficient-policy-1",
+      toolName: "search_policy",
+      result: { status: "not_found", data: { results: [] } },
+    };
+    const context = {
+      ...registry,
+      customerMessage: "When will I get my refund?",
+      getResult: (resultId) => resultId === evidence.resultId ? evidence : registry.getResult(resultId),
+      getResults: () => [evidence],
+    };
+    const initial = validateStructuredResponse({ segments: [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }] }, context);
+    const completed = ensureAnswerCompleteness(initial, context);
+
+    expect(completed.approvedSegments).toHaveLength(1);
+    expect(renderResponseSegments(completed.approvedSegments, context)).toContain("couldn’t verify");
+  });
+
+  it("fails closed when authoritative answer values conflict", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North policy"),
+      policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South policy"),
+    ]);
+    const result = await recoveryCase("Where do I send my return?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
+  });
+
+  it("does not duplicate a complete model answer", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Your refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "knowledge_guidance",
+      text: "Your refund is initiated after the return is received and processed.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered.match(/refund is initiated/gi)).toHaveLength(1);
   });
 });
 

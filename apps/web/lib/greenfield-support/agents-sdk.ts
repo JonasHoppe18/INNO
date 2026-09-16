@@ -178,8 +178,20 @@ function shouldPreloadPolicyEvidence(message: string): boolean {
   return /\b(?:return|refund|warranty|shipping|delivery|destination)\b/i.test(String(message ?? ""));
 }
 
-function shouldPreloadProcedureEvidence(message: string): boolean {
-  return /\b(?:not working|broken|damaged|defective|troubleshoot(?:ing)?|connect(?:ion|ing)?|pair(?:ing)?|reset|firmware|microphone|interference|issue|problem)\b/i.test(String(message ?? ""));
+function shouldPreloadProcedureEvidence(message: string, customerProvidedContext?: ReturnType<typeof extractCustomerProvidedContext>): boolean {
+  return /\b(?:not working|broken|damaged|defective|troubleshoot(?:ing)?|connect(?:ion|ing)?|pair(?:ing)?|reset|firmware|microphone|interference|issue|problem)\b/i.test([
+    message,
+    customerProvidedContext?.issue,
+  ].filter(Boolean).join(" "));
+}
+
+function procedureEvidenceQuery(message: string, customerProvidedContext?: ReturnType<typeof extractCustomerProvidedContext>): string {
+  return [
+    message,
+    customerProvidedContext?.product,
+    customerProvidedContext?.platform,
+    customerProvidedContext?.issue,
+  ].filter(Boolean).join(" ");
 }
 
 function policyEvidenceQuery(message: string): string {
@@ -220,6 +232,11 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     usage: [],
   };
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
+  const customerProvidedContext = extractCustomerProvidedContext(
+    options.history ?? [],
+    options.message,
+    conversationContext?.customerProvided,
+  );
   const registry = createCapabilityRegistry({
     ...options.capabilities,
     customerMessage: options.message,
@@ -337,7 +354,9 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   const hasPolicyRequest = shouldPreloadPolicyEvidence(options.message);
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
-  if (hasPolicyRequest && shouldPreloadProcedureEvidence(options.message)) await preload("search_procedures", options.message);
+  if (shouldPreloadProcedureEvidence(options.message, customerProvidedContext)) {
+    await preload("search_procedures", procedureEvidenceQuery(options.message, customerProvidedContext));
+  }
   const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
 
   try {

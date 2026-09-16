@@ -79,6 +79,45 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.firstCall.request.input.at(-1).content).toContain('"order_resolution":"candidate"');
   });
 
+  it("reselects procedure evidence when a multi-turn final message only adds platform context", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "pure_clarification",
+        text: "What exactly is happening with the headset?",
+        capability: null,
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "I use the USB-C dongle on a PC.",
+      history: [
+        { role: "user", content: "My headset will not connect." },
+        { role: "assistant", content: "What headset model are you using?" },
+        { role: "user", content: "It is the Orion Wireless." },
+        { role: "assistant", content: "Have you already reset it?" },
+        { role: "user", content: "I already reset it." },
+      ],
+      conversationContext: {
+        turn: 3,
+        customerProvided: {
+          product: "Orion Wireless",
+          issue: "My headset will not connect",
+          attemptedSteps: ["I already reset it"],
+        },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toContain("search_procedures");
+    expect(model.firstCall.request.input.at(-1).content).toContain('"tool":"search_procedures"');
+  });
+
   it("uses one model response for a pure acknowledgement", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
