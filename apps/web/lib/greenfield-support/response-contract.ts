@@ -295,6 +295,254 @@ function validateKnowledgeBasis(
   return [];
 }
 
+type PolicyTruthState = "allowed" | "disallowed" | "conditional";
+type PolicyTruthConfidence = "structured" | "prose_strong" | "prose_ambiguous";
+
+type PolicyTruthRule = {
+  state: PolicyTruthState;
+  confidence: PolicyTruthConfidence;
+  sourceText: string;
+  conditionText?: string;
+  consequenceText?: string;
+};
+
+type PolicyTruthDecision =
+  | { kind: "none" }
+  | { kind: "correct"; rule: PolicyTruthRule }
+  | { kind: "ambiguous" };
+
+function policyTextValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const values = value.map(policyTextValue).filter((item): item is string => Boolean(item));
+    return values.length ? values.join("; ") : undefined;
+  }
+  return undefined;
+}
+
+function policyTruthState(value: unknown, hasCondition = false, hasConsequence = false): PolicyTruthState | null {
+  if (value === false) return "disallowed";
+  if (value === true) return hasCondition || hasConsequence ? "conditional" : "allowed";
+  const text = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (hasCondition || hasConsequence || /conditional|subject_to|depends|with_condition/.test(text)) return "conditional";
+  if (/disallow|prohibit|forbidden|ineligible|not_eligible|not_allowed|rejected|reject|denied|not_covered|cannot/.test(text)) return "disallowed";
+  if (/allow|allowed|permit|permitted|eligible|accepted|covered|available|ship|return|refund|true/.test(text)) return "allowed";
+  return null;
+}
+
+function structuredPolicyTruthRules(record: JsonObject): PolicyTruthRule[] {
+  const structuredData = objectValue(record.structured_data);
+  if (!structuredData) return [];
+  const candidates: unknown[] = [
+    structuredData.policy_truth,
+    structuredData.policyTruth,
+    structuredData.policy_rules,
+    structuredData.policyRules,
+    structuredData.policy,
+  ];
+  const entries = candidates.flatMap((candidate) => {
+    if (Array.isArray(candidate)) return candidate;
+    const object = objectValue(candidate);
+    if (!object) return [];
+    return Array.isArray(object.rules) ? object.rules : [object];
+  });
+  return entries.flatMap((entry) => {
+    const rule = objectValue(entry);
+    if (!rule) return [];
+    const conditionText = policyTextValue(rule.condition ?? rule.conditions ?? rule.requirement ?? rule.requirements);
+    const consequenceText = policyTextValue(rule.consequence ?? rule.consequences ?? rule.deduction ?? rule.exception);
+    const state = policyTruthState(rule.eligibility ?? rule.outcome ?? rule.status ?? rule.allowed, Boolean(conditionText), Boolean(consequenceText));
+    if (!state) return [];
+    const sourceText = policyTextValue(rule.source_text ?? rule.sourceText ?? rule.text ?? rule.evidence)
+      ?? [conditionText, consequenceText].filter(Boolean).join(". ");
+    return sourceText ? [{ state, confidence: "structured", sourceText, conditionText, consequenceText }] : [];
+  });
+}
+
+function policyEvidenceUnits(value: string): string[] {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((unit) => unit.trim())
+    .filter(Boolean);
+}
+
+function policyAllowanceSignal(value: string): boolean {
+  return /\b(?:allow(?:ed)?|accept(?:ed|s)?|eligible|permit(?:ted)?|cover(?:ed|s)?|available|ship(?:ped|s)?|can|could|may|akzeptiert|kann|accepter(?:et|es)?|berettig(?:et|ede)?|dækk(?:et|es)?|kan|må|tilladt|angenommen|berechtigt|abgedeckt|versendet)\b/i.test(value);
+}
+
+function policyProhibitionSignal(value: string): boolean {
+  const explicitConditional = /\b(?:only\s+(?:if|when)|nur\s+(?:wenn|bei)|kun\s+hvis|alleen\s+als)\b/i.test(value);
+  const explicitNegative = /\b(?:not\s+(?:allowed|eligible|permitted|accepted|covered|available)|cannot|can't|prohibited|forbidden|rejected|denied|not\s+possible|ikke\s+(?:tilladt|berettiget|accepteret|dækket|muligt)|kan\s+ikke|må\s+ikke|afvis(?:es|t)?|nicht\s+(?:zulässig|berechtigt|angenommen|abgedeckt|möglich)|kann\s+nicht|darf\s+nicht|abgelehnt|verboten)\b/i.test(value)
+    || /\b(?:can|kan|kann)\b[\s\S]{0,48}\b(?:rejected|abgelehnt|afvist|afvises)\b/i.test(value);
+  if (explicitNegative) return true;
+  if (explicitConditional) return false;
+  return /\b(?:only|nur|kun)\b[\s\S]{0,120}\b(?:return|retur|rückgabe|zurück|eligible|berettig|tilladt|berechtigt)\b/i.test(value)
+    || /\b(?:return|retur|rückgabe|zurück|eligible|berettig|tilladt|berechtigt)\b[\s\S]{0,120}\b(?:only|nur|kun)\b/i.test(value);
+}
+
+function policyConditionSignal(value: string): boolean {
+  return /\b(?:if|when|unless|except|once|only\s+if|only\s+when|subject\s+to|provided|depending|may\s+still|can\s+still|within|under|before|after|requires?|requirement|condition|eligible|eligibility|for|deduct(?:ion|ed)?|fee|proof|restricted|hvis|når|medmindre|undtagen|kun\s+hvis|forudsat|afhængig|kan\s+stadig|inden|under|kræver|betingelse|berettig(?:et|ede)?|fradrag|gebyr|bevis|begrænset|wenn|außer|sobald|vorausgesetzt|abhängig|kann\s+weiterhin|innerhalb|erfordert|Bedingung|Abzug|Nachweis|beschränkt)\b/i.test(value);
+}
+
+function prosePolicyConsequenceSignal(value: string): boolean {
+  return /\b(?:deduct(?:ion|ed)?|fee|refund|restricted|responsib(?:le|ility)|shipping\s+cost|fradrag|fratrækk(?:es|e|et)?|trækk(?:es|e|et)?|gebyr|refunder(?:es|et)?|begrænset|ansvar(?:lig|et)?|returporto|returfragt|abzug|gebühr|erstatt(?:et|ung)|verantwortlich|versandkosten)\b/i.test(value)
+    || /\b(?:not|ikke|nicht)\b[\s\S]{0,32}\b(?:allowed|eligible|permitted|covered|tilladt|berettiget|zulässig|berechtigt)\b/i.test(value);
+}
+
+function prosePolicyTruthRules(record: JsonObject): PolicyTruthRule[] {
+  const sections = Array.isArray(record.evidence_sections)
+    ? record.evidence_sections
+      .map((section) => objectValue(section)?.content ?? objectValue(section)?.text)
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const content = [
+    typeof record.content === "string" ? record.content : "",
+    ...sections,
+  ].filter(Boolean).join("\n");
+  return policyEvidenceUnits(content).flatMap((unit): PolicyTruthRule[] => {
+    const hasAllowance = policyAllowanceSignal(unit);
+    const hasProhibition = policyProhibitionSignal(unit);
+    const hasCondition = policyConditionSignal(unit);
+    const hasConsequence = prosePolicyConsequenceSignal(unit);
+    if (!hasAllowance && !hasProhibition) return [];
+    if (hasProhibition && !/\b(?:may\s+still|can\s+still|kan\s+stadig|kann\s+weiterhin|still\s+(?:be|return)|weiterhin)\b/i.test(unit)) {
+      return [{
+        state: "disallowed" as const,
+        confidence: hasCondition ? "prose_strong" : "prose_ambiguous",
+        sourceText: unit,
+      }];
+    }
+    if (hasAllowance) {
+      return [{
+        state: hasCondition ? "conditional" as const : "allowed" as const,
+        confidence: hasCondition && hasConsequence ? "prose_strong" : "prose_ambiguous",
+        sourceText: unit,
+      }];
+    }
+    return [];
+  });
+}
+
+function policyTruthRulesForBasis(
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+): PolicyTruthRule[] {
+  const evidence = resultFor(basis, context);
+  if (!evidence || evidence.toolName !== "search_policy" || evidence.result.status !== "ok") return [];
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return citedKnowledgeRecords(results, basis.field_paths)
+    .flatMap((item) => {
+      const record = objectValue(item);
+      if (!record || String(record.authority ?? "") !== "authoritative") return [];
+      const structured = structuredPolicyTruthRules(record);
+      return structured.length ? structured : prosePolicyTruthRules(record);
+    });
+}
+
+function policyRuleMatchScore(rule: PolicyTruthRule, message: string): number {
+  const messageWords = new Set(String(message ?? "").toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []);
+  const ruleWords = `${rule.sourceText} ${rule.conditionText ?? ""} ${rule.consequenceText ?? ""}`.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+  return Array.from(new Set(ruleWords)).filter((word) => messageWords.has(word)).length;
+}
+
+function selectedPolicyTruthRule(rules: PolicyTruthRule[], customerMessage: string): PolicyTruthRule | null | "ambiguous" {
+  if (!rules.length) return null;
+  const focus = customerKnowledgeFocus(customerMessage);
+  const conditionRules = focus.asksCondition
+    ? rules.filter((rule) => rule.consequenceText || /\b(?:may\s+still|can\s+still|deduct(?:ion|ed)?|fee|proof|condition|restricted|kan\s+stadig|kann\s+weiterhin)\b/i.test(rule.sourceText))
+    : rules;
+  const scored = (conditionRules.length ? conditionRules : rules).map((rule) => ({ rule, score: policyRuleMatchScore(rule, customerMessage) }));
+  const highest = Math.max(...scored.map(({ score }) => score));
+  const candidates = scored.filter(({ score }) => score === highest).map(({ rule }) => rule);
+  const states = new Set(candidates.map((rule) => rule.state));
+  if (states.size > 1) return "ambiguous";
+  return candidates[0] ?? null;
+}
+
+function modelClaimsPolicySubject(value: string, rule: PolicyTruthRule): boolean {
+  const source = `${rule.sourceText} ${rule.conditionText ?? ""} ${rule.consequenceText ?? ""}`;
+  if (/\b(?:return\w*|retur\w*|rückgabe\w*|zurück\w*)\b/i.test(source)) return /\b(?:return\w*|retur\w*|rückgabe\w*|zurück\w*|items?|products?|varer?|vare|artik(?:el|ler))\b/i.test(value);
+  if (/\b(?:warranty|garanti\w*)\b/i.test(source)) return /\b(?:warranty|garanti\w*|claim|dækket|covered|abgedeckt)\b/i.test(value);
+  if (/\b(?:ship\w*|delivery|levering|versand)\b/i.test(source)) return /\b(?:ship\w*|delivery|lever\w*|versand|send)\b/i.test(value);
+  return true;
+}
+
+function modelClaimsPolicyPermission(value: string, rule: PolicyTruthRule): boolean {
+  return modelClaimsPolicySubject(value, rule)
+    && !policyConditionSignal(value)
+    && (/\b(?:return(?:s|ed|able)?|item|product|warranty|claim)\b[\s\S]{0,64}\b(?:allow(?:ed)?|accept(?:ed|s)?|eligible|permit(?:ted)?|cover(?:ed|s)?|available)\b/i.test(value)
+    || /\b(?:you|customers?|items?|products?|returns?)\b[\s\S]{0,24}\b(?:can|could|may)\b[\s\S]{0,24}\b(?:return(?:ed)?|be\s+returned|be\s+covered)\b/i.test(value)
+    || /\bwe\s+ship\b/i.test(value));
+}
+
+function modelClaimsPolicyProhibition(value: string, rule: PolicyTruthRule): boolean {
+  return modelClaimsPolicySubject(value, rule) && policyProhibitionSignal(value);
+}
+
+function modelHasUnqualifiedPermission(value: string, rule: PolicyTruthRule): boolean {
+  if (!policyAllowanceSignal(value) || !modelClaimsPolicyPermission(value, rule) || policyProhibitionSignal(value)) return false;
+  if (/:\s*$/.test(value)) return false;
+  if (rule.state === "disallowed") return true;
+  const absolute = /\b(?:always|every|all|any|regardless|without\s+(?:condition|restriction)|worldwide|everywhere|automatically|full(?:y)?|altid|alle|enhver|uanset|overalt|immer|alle|jeder|weltweit|überall)\b/i.test(value);
+  const repeatsCondition = Boolean(rule.conditionText && policyRuleMatchScore({ ...rule, sourceText: rule.conditionText ?? "" }, value) > 0);
+  return absolute || (!repeatsCondition && Boolean(rule.conditionText || rule.consequenceText || policyConditionSignal(rule.sourceText)) && !policyConditionSignal(value));
+}
+
+function policyContradictionDecision(value: string, rules: PolicyTruthRule[], customerMessage: string): PolicyTruthDecision {
+  const selected = selectedPolicyTruthRule(rules, customerMessage);
+  if (selected === "ambiguous") return { kind: "ambiguous" };
+  if (!selected) return { kind: "none" };
+  const hasPolicyProhibition = policyEvidenceUnits(value).some((unit) => modelClaimsPolicyProhibition(unit, selected));
+  const hasUnqualifiedPermission = policyEvidenceUnits(value).some((unit) => modelHasUnqualifiedPermission(unit, selected));
+  const contradiction = (selected.state === "conditional" && (hasPolicyProhibition || hasUnqualifiedPermission))
+    || (selected.state === "allowed" && hasPolicyProhibition)
+    || (selected.state === "disallowed" && hasUnqualifiedPermission);
+  if (contradiction && selected.confidence === "prose_ambiguous") return { kind: "ambiguous" };
+  if (selected.state === "conditional" && (hasPolicyProhibition || hasUnqualifiedPermission)) {
+    return { kind: "correct", rule: selected };
+  }
+  if (selected.state === "allowed" && hasPolicyProhibition) {
+    return { kind: "correct", rule: selected };
+  }
+  if (selected.state === "disallowed" && hasUnqualifiedPermission) {
+    return { kind: "correct", rule: selected };
+  }
+  return { kind: "none" };
+}
+
+function replaceContradictoryPolicyText(value: string, rule: PolicyTruthRule): string {
+  const units = policyEvidenceUnits(value);
+  const contradictory = units.map((unit) => modelClaimsPolicyProhibition(unit, rule) || modelHasUnqualifiedPermission(unit, rule));
+  const first = contradictory.findIndex(Boolean);
+  if (first < 0) return rule.sourceText;
+  return units
+    .map((unit, index) => index === first ? rule.sourceText : (contradictory[index] ? "" : unit))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function validatePolicyTruth(
+  segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>,
+  context: ResponseValidationContext,
+  index: number,
+): ResponseValidationIssue[] {
+  const decision = policyContradictionDecision(segment.text, policyTruthRulesForBasis(segment.basis, context), context.customerMessage ?? "");
+  return decision.kind === "ambiguous"
+    ? [{ index, code: "policy_truth_ambiguous", message: "The authoritative policy contains conflicting conditions, so the response was withheld rather than guessing." }]
+    : [];
+}
+
+function policyTextForRendering(
+  value: string,
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+): string {
+  const decision = policyContradictionDecision(value, policyTruthRulesForBasis(basis, context), context.customerMessage ?? "");
+  return decision.kind === "correct" ? replaceContradictoryPolicyText(value, decision.rule) : value;
+}
+
 function procedureStepPath(path: string, defaultResultIndex?: number): { resultIndex: number; stepIndex: number } | null {
   const normalized = normalizedDataPath(path);
   const match = normalized.match(/^results(?:\[(\d+)\]|\.(\d+))\.structured_data\.procedure_steps(?:\[(\d+)\]|\.(\d+))(?:\.text)?$/);
@@ -1171,6 +1419,7 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       return validateFact(segment, context, index);
     case "knowledge_guidance": {
       const issues = validateKnowledgeBasis(segment.basis, context, index);
+      if (!issues.length) issues.push(...validatePolicyTruth(segment, context, index));
       if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
         issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
       }
@@ -2693,9 +2942,12 @@ function isPolicyKnowledgeBasis(basis: KnowledgeBasis, context: ResponseValidati
 export function adaptCustomerFacingKnowledgeText(
   value: string,
   context: ResponseValidationContext,
-  options: { policy?: boolean } = {},
+  options: { policy?: boolean; basis?: KnowledgeBasis } = {},
 ) {
-  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+  const policyText = options.policy && options.basis
+    ? policyTextForRendering(value, options.basis, context)
+    : value;
+  const paragraphs = String(policyText ?? "").split(/\n\s*\n/);
   const adapted = paragraphs.flatMap((paragraph) => {
     const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
     const nextLines = lines.map((line) => {
@@ -3158,7 +3410,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(
       segment.text,
       context,
-      { policy: isPolicyKnowledgeBasis(segment.basis, context) },
+      { policy: isPolicyKnowledgeBasis(segment.basis, context), basis: segment.basis },
     ));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));

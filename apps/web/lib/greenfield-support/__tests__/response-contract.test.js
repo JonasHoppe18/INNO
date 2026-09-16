@@ -1910,13 +1910,14 @@ function answerEvidenceRecord(records) {
   };
 }
 
-function policyRecord(content, title = "Authoritative support policy") {
+function policyRecord(content, title = "Authoritative support policy", structuredData) {
   return {
     title,
     knowledge_type: "policy",
     authority: "authoritative",
     evidence_sections: [{ heading: "Relevant policy section", content }],
     provenance: { source_kind: "merchant_authored", source_id: title },
+    ...(structuredData ? { structured_data: structuredData } : {}),
   };
 }
 
@@ -1937,6 +1938,24 @@ async function answerCompletenessCase(customerMessage, modelText, records) {
   }] }, context);
   const completed = ensureAnswerCompleteness(initial, context);
   return { context, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function policyTruthCase(customerMessage, modelText, records, fieldPaths = ["results"]) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const evidence = answerEvidenceRecord(records);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => resultId === evidence.resultId ? evidence : getResult(resultId),
+  };
+  const result = validateStructuredResponse({ segments: [{
+    type: "knowledge_guidance",
+    text: modelText,
+    basis: { result_id: evidence.resultId, field_paths: fieldPaths },
+  }] }, context);
+  return { context, result, rendered: renderResponseSegments(result.approvedSegments, context) };
 }
 
 describe("model-to-contract answer completeness", () => {
@@ -2039,5 +2058,159 @@ describe("model-to-contract answer completeness", () => {
 
     expect(result.completed.approvedSegments[0].text).toBe("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg");
     expect(result.rendered.match(/Return Street 10/g)).toHaveLength(1);
+  });
+});
+
+describe("policy truth safeguards", () => {
+  it("does not let a prohibition override an authoritative allowed outcome", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Returns are not accepted.",
+      [policyRecord("Returns are accepted.", "Allowed return policy", {
+        policy_truth: { eligibility: "allowed", source_text: "Returns are accepted." },
+      })],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("Returns are accepted.");
+    expect(result.rendered).not.toMatch(/not accepted/i);
+  });
+
+  it("fails closed instead of rewriting from incomplete prose policy evidence", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Returns are not accepted.",
+      [policyRecord("Returns may be accepted depending on the item.")],
+    );
+
+    expect(result.result.allValid).toBe(false);
+    expect(result.result.approvedSegments).toEqual([]);
+    expect(result.result.issues.at(-1).code).toBe("policy_truth_ambiguous");
+    expect(result.rendered).toBe("");
+  });
+
+  it("preserves a conditional return allowance and its deduction when the model says the return is rejected", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "The return is rejected.",
+      [policyRecord("Returns may still be accepted, but a EUR 50 deduction applies when the item is returned in acceptable condition.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("may still be accepted");
+    expect(result.rendered).toContain("EUR 50");
+    expect(result.rendered).not.toMatch(/rejected/i);
+  });
+
+  it("does not turn an opened-item deduction into an absolute return prohibition", async () => {
+    const result = await policyTruthCase(
+      "Can I return an opened item?",
+      "Opened items cannot be returned.",
+      [policyRecord("If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("may still be accepted");
+    expect(result.rendered).toContain("EUR 50");
+    expect(result.rendered).not.toMatch(/cannot be returned/i);
+  });
+
+  it("preserves an actual prohibition when the model says the item is returnable", async () => {
+    const result = await policyTruthCase(
+      "Can I return a final-sale item?",
+      "Yes, you can return the final-sale item.",
+      [policyRecord("Final-sale items are not eligible for return.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("not eligible for return");
+    expect(result.rendered).not.toMatch(/Yes, you can return/i);
+  });
+
+  it("keeps a proof-of-purchase condition instead of overstating warranty coverage", async () => {
+    const result = await policyTruthCase(
+      "Is my warranty claim covered?",
+      "Your warranty covers this issue.",
+      [policyRecord("Warranty coverage is available only with proof of purchase.", "Warranty policy", {
+        policy_truth: {
+          eligibility: "allowed",
+          condition: "proof of purchase",
+          consequence: "coverage requires proof of purchase",
+          source_text: "Warranty coverage is available only with proof of purchase.",
+        },
+      })],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("only with proof of purchase");
+    expect(result.rendered).not.toBe("Your warranty covers this issue.");
+  });
+
+  it("keeps a shipping restriction instead of accepting an overgeneralized worldwide claim", async () => {
+    const result = await policyTruthCase(
+      "Do you ship to my country?",
+      "We ship worldwide.",
+      [policyRecord("We ship to supported destinations except restricted regions.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("except restricted regions");
+    expect(result.rendered).not.toBe("We ship worldwide.");
+  });
+
+  it("withholds a response when authoritative policy conditions conflict", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Yes, you can return it.",
+      [
+        policyRecord("Returns are allowed for eligible items.", "Current eligible-item policy", {
+          policy_truth: { eligibility: "allowed", source_text: "Returns are allowed for eligible items." },
+        }),
+        policyRecord("Returns are not allowed for final-sale items.", "Current final-sale policy", {
+          policy_truth: { eligibility: "disallowed", source_text: "Returns are not allowed for final-sale items." },
+        }),
+      ],
+    );
+
+    expect(result.result.allValid).toBe(false);
+    expect(result.result.approvedSegments).toEqual([]);
+    expect(result.result.issues.at(-1).code).toBe("policy_truth_ambiguous");
+    expect(result.rendered).toBe("");
+  });
+
+  it("uses current authoritative policy over a conflicting historical example", async () => {
+    const historical = policyRecord("A previous customer was told the item could be returned.", "Historical support example");
+    historical.authority = "reference";
+    historical.provenance = { source_kind: "historical_support", source_id: historical.title };
+    const result = await policyTruthCase(
+      "Can I return this final-sale item?",
+      "Yes, the item can be returned.",
+      [
+        policyRecord("Current policy: final-sale items are not eligible for return.", "Current return policy"),
+        historical,
+      ],
+      ["results[0]"],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("not eligible for return");
+    expect(result.rendered).not.toMatch(/can be returned/i);
+  });
+
+  it.each([
+    ["English", "Can I return an opened item?", "Opened items cannot be returned.", "If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition.", /may still be accepted/i],
+    ["Danish", "Kan jeg returnere en åbnet vare?", "Hvis emballagen er åbnet, kan returneringen afvises.", "Hvis produktet er åbnet, kan returneringen stadig accepteres, men ved mint stand fratrækkes 50 EUR.", /stadig accepteres/i],
+    ["German", "Kann ich einen geöffneten Artikel zurückgeben?", "Wenn die Verpackung geöffnet ist, kann die Rückgabe abgelehnt werden.", "Wenn das Produkt geöffnet wurde, kann die Rückgabe weiterhin akzeptiert werden, aber bei einwandfreiem Zustand fällt ein Abzug von 50 EUR an.", /weiterhin akzeptiert/i],
+  ])("corrects the conditional opened-return interpretation in %s", async (_language, customerMessage, modelText, sourceText, expectedAllowance) => {
+    const result = await policyTruthCase(
+      customerMessage,
+      modelText,
+      [policyRecord(sourceText)],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toMatch(expectedAllowance);
+    expect(result.rendered).toMatch(/50\s*EUR|EUR\s*50/i);
+    expect(result.rendered).not.toMatch(/cannot be returned|afvises|abgelehnt/i);
   });
 });
