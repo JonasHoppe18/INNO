@@ -2400,7 +2400,8 @@ function isReturnShippingResponsibility(value: string) {
 
 function isRefundTiming(value: string) {
   const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally|efter|inden\s+for|indenfor|behandl\w*|modtag\w*|betaling|dage|normalt|igangsæt\w*|tid)\b/i.test(value);
-  return hasRefundTiming && (
+  const hasConcreteTiming = /\b(?:after|once|when|within|received|receipt|processed|initiated|business\s+days?|bank|payment\s+provider|display|funds?|efter|når|modtaget|behandlet|igangsat|dage|bank|betalingsudbyder|wann|nach|erhalten|bearbeitet|ausgezahlt|bank)\b/i.test(value);
+  return hasRefundTiming && hasConcreteTiming && (
     /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(value)
     || /\b(?:bank|payment\s+provider|bank|betalingsudbyder)\b[\s\S]{0,50}\b(?:display|post|funds?|vise|beløb)\b/i.test(value)
   );
@@ -2518,6 +2519,14 @@ function answerCompletenessMessageCues(message: string, focus: CustomerKnowledge
   if (focus.questionShape === "status") cues.push("status");
   if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) cues.push("contact");
   return Array.from(new Set(cues));
+}
+
+function policyAnswerNeedsCustomerSpecificLookup(cue: AnswerBearingCue, message: string) {
+  if (cue !== "timing") return false;
+  const text = String(message ?? "");
+  if (isExplicitOrderReference(text)) return true;
+  return /\b(?:has|was|is|been|already|did|have)\b[\s\S]{0,40}\b(?:my|the)?\s*(?:refund|money\s+back|tilbagebetaling|pengene\s+tilbage|rückerstattung)\b/i.test(text)
+    || /\b(?:refund|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage|rückerstattung)\b[\s\S]{0,40}\b(?:processed|issued|received|arrived|behandl\w*|modtag\w*|erhalten|bearbeitet)\b/i.test(text);
 }
 
 function physicalAddressMarker(value: string) {
@@ -2661,7 +2670,7 @@ type ProcedureRecovery =
   | { kind: "ambiguous" }
   | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; blockIds: string[] };
 
-function successfulKnowledgeResults(context: ResponseValidationContext, toolName: string) {
+function successfulKnowledgeResults(context: Pick<ResponseValidationContext, "getResults">, toolName: string) {
   return (context.getResults?.() ?? []).filter((evidence) => {
     if (evidence.toolName !== toolName || evidence.result.status !== "ok") return false;
     return Array.isArray(objectValue(evidence.result.data)?.results);
@@ -2705,7 +2714,34 @@ function recoveryCandidatesForRecord(
   return uniqueAnswerCandidates(candidates);
 }
 
-function recoverPolicyAnswer(context: ResponseValidationContext, cue: AnswerBearingCue): EvidenceRecovery {
+function mergeRecordAnswerCandidates(cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
+  const unique = uniqueAnswerCandidates(candidates);
+  if (unique.length <= 1) return unique;
+  if (cue === "eligibility") {
+    const stateCandidates = unique.filter((candidate) =>
+      isAnswerBearingEligibility(candidate.value) || isReturnProhibition(candidate.value) || isReturnEligibility(candidate.value));
+    const consequenceCandidates = unique.filter((candidate) => isReturnConditionConsequence(candidate.value));
+    if (!stateCandidates.length) return [];
+    if (!consequenceCandidates.length) return stateCandidates;
+  }
+  if (cue === "timing" || cue === "cost") {
+    // Multiple answer-bearing sentences from one authoritative policy can be
+    // complementary (for example, merchant processing followed by payment
+    // provider display time). Keep the relation instead of treating every
+    // sentence as a conflicting scalar value.
+    return [{
+      value: unique.map((candidate) => candidate.value).join(" "),
+      normalized: normalizeAnswerCompletenessValue(unique.map((candidate) => candidate.value).join(" ")),
+    }];
+  }
+  return unique;
+}
+
+function recoverPolicyAnswer(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults">,
+  cue: AnswerBearingCue,
+): EvidenceRecovery {
+  if (policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")) return { kind: "none" };
   for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
     const data = objectValue(evidence.result.data);
     const results = Array.isArray(data?.results) ? data : null;
@@ -2717,15 +2753,35 @@ function recoverPolicyAnswer(context: ResponseValidationContext, cue: AnswerBear
     })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
       Boolean(item.record) && String(item.record.authority ?? "") === "authoritative" && String(item.record.knowledge_type ?? "") === "policy");
     const matches = records.flatMap((item) => {
-      const candidates = recoveryCandidatesForRecord(cue, item.record, context.customerMessage ?? "");
+      const candidates = mergeRecordAnswerCandidates(cue, recoveryCandidatesForRecord(cue, item.record, context.customerMessage ?? ""));
       return candidates.length ? [{ ...item, candidates }] : [];
     });
     if (!matches.length) continue;
-    const candidates = uniqueAnswerCandidates(matches.flatMap((item) => item.candidates));
-    if (matches.length !== 1 || candidates.length !== 1) return { kind: "ambiguous" };
+    const candidateSets = matches.map((item) => item.candidates.map((candidate) => candidate.normalized).sort().join("\u001f"));
+    const sameAnswerAcrossRecords = candidateSets.every((value) => value === candidateSets[0]);
+    if (!sameAnswerAcrossRecords) return { kind: "ambiguous" };
+    const candidates = uniqueAnswerCandidates(matches[0].candidates);
+    if (candidates.length !== 1) return { kind: "ambiguous" };
     return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
   }
   return { kind: "none" };
+}
+
+/**
+ * Returns only propositions that can be resolved from one or more successful,
+ * authoritative policy results. This is also used by the transport fallback
+ * path when the SDK cannot produce a structured final output.
+ */
+export function recoverAuthoritativePolicyAnswer(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults">,
+) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const values: string[] = [];
+  for (const cue of answerCompletenessMessageCues(context.customerMessage ?? "", focus)) {
+    const recovery = recoverPolicyAnswer(context, cue);
+    if (recovery.kind === "usable" && recovery.candidate) values.push(recovery.candidate.value);
+  }
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).join("\n\n") || null;
 }
 
 function recoverProcedureAnswer(context: ResponseValidationContext): ProcedureRecovery {
@@ -2835,9 +2891,9 @@ export function ensureAnswerCompleteness(
   validation: ResponseValidationResult,
   context: ResponseValidationContext,
 ): ResponseValidationResult {
-  if (!validation.schemaValid) return validation;
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  if (!validation.schemaValid && !cues.length) return validation;
   const procedureRequested = /\b(?:procedure|steps?|troubleshoot(?:ing)?|pair(?:ing)?|connect(?:ion|ing)?|reset|firmware|microphone|interference|not\s+working|won['’]?t|will\s+not|problem|issue|fejl|forbinder|parre|funktioniert|verbinden|koppeln)\b/i.test([
     context.customerMessage,
     context.customerProvidedContext?.issue,
@@ -2939,7 +2995,7 @@ export function ensureAnswerCompleteness(
   if (!changed) return validation;
   return {
     ...validation,
-    allValid: rejectedSegments.length === 0,
+    allValid: validation.schemaValid && rejectedSegments.length === 0,
     approvedSegments: [...recoveredSegments, ...approvedSegments],
     rejectedSegments,
     issues,

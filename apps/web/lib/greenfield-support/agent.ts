@@ -20,6 +20,7 @@ import {
   composeSafeKnowledgeGapResponse,
   ensureAnswerCompleteness,
   inferResponseLocale,
+  recoverAuthoritativePolicyAnswer,
   renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
   summarizeResponseValidation,
@@ -129,6 +130,11 @@ export function fallbackResponse(context?: {
     getResults: context?.getResults,
   });
   if (knowledgeGap) return knowledgeGap;
+  const recoveredPolicyAnswer = recoverAuthoritativePolicyAnswer({
+    customerMessage: context?.customerMessage,
+    getResults: context?.getResults,
+  });
+  if (recoveredPolicyAnswer) return recoveredPolicyAnswer;
   const orderClarification = renderOrderCandidateClarificationFromResults(context?.getResults, context?.locale);
   if (orderClarification) return orderClarification;
   return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";

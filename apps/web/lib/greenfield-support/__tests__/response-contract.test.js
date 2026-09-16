@@ -1967,6 +1967,21 @@ async function recoveryCase(customerMessage, modelSegments, evidenceRecords, cus
   return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
 }
 
+async function invalidResponseRecoveryCase(customerMessage, evidenceRecords) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse("The model returned an unstructured fallback.", context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
 async function answerCompletenessCase(customerMessage, modelText, records) {
   const dependencies = await createDemoDependencies();
   const registry = createCapabilityRegistry(dependencies);
@@ -2131,6 +2146,62 @@ describe("evidence-aware fallback recovery", () => {
 
     expect(result.rendered).toContain("pay for the return shipment");
     expect(result.rendered).not.toContain("30 days");
+  });
+
+  it("recovers a general timing answer when the model asks for an unnecessary order number", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed. Your bank or payment provider may take additional time to display the funds.",
+    )]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments.filter((segment) => segment.type === "knowledge_guidance")).toHaveLength(1);
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).toContain("payment provider may take additional time");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("recovers a payer answer when an SDK fallback has no structured output", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer is responsible for return shipping costs.")]);
+    const result = await invalidResponseRecoveryCase("Who pays return shipping?", [evidence]);
+
+    expect(result.initial.schemaValid).toBe(false);
+    expect(result.completed.schemaValid).toBe(false);
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.rendered).toContain("responsible for return shipping costs");
+  });
+
+  it("does not recover general policy timing for a customer-specific order status question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When was my refund processed for order #123?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("question");
+    expect(result.rendered).not.toContain("refund is initiated");
+  });
+
+  it("fails closed when prose mentions refund timing without stating an answer", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Refund timing depends on a case review and may vary.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("depends on a case review");
   });
 
   it("recovers a compound eligibility and consequence proposition", async () => {
