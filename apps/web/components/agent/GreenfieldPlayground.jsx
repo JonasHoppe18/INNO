@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
+  FileText,
+  Globe2,
   Loader2,
   Search,
   Send,
@@ -30,29 +33,11 @@ function formatTime(value) {
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function TypingDots() {
-  return (
-    <div className="flex items-center gap-1.5 py-0.5" aria-label="Sona is typing">
-      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.3s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80 [animation-delay:-0.15s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-[pulse_1.15s_cubic-bezier(0.4,0,0.6,1)_infinite] rounded-full bg-sky-400/80" />
-    </div>
-  );
-}
-
-function GeneratingActivity() {
-  return (
-    <div className="mt-1 w-full max-w-[min(88%,24rem)] rounded-[18px] rounded-tr-md bg-sky-50 px-4 py-3 shadow-[0_1px_3px_rgba(14,116,144,0.06)] dark:bg-sky-950/30">
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">Working through it…</span>
-        <TypingDots />
-      </div>
-      <div className="mt-2 border-l border-sky-200/80 pl-3 text-[10.5px] leading-relaxed dark:border-sky-800/70">
-        <p className="text-slate-600 dark:text-slate-300">Reviewing your message</p>
-        <p className="mt-1 text-slate-400 dark:text-slate-500">Preparing a verified reply</p>
-      </div>
-    </div>
-  );
+function formatDuration(value) {
+  const milliseconds = Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "";
+  if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))}ms`;
+  return `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
 function actionLabel(value) {
@@ -122,6 +107,98 @@ function buildReasoningSteps(trace) {
     status: "complete",
   });
   return steps;
+}
+
+function activityIconForStep(title) {
+  const normalized = String(title || "").toLowerCase();
+  if (normalized.includes("search") || normalized.includes("policy") || normalized.includes("knowledge")) return Search;
+  if (normalized.includes("source") || normalized.includes("order") || normalized.includes("customer") || normalized.includes("product")) return Globe2;
+  if (normalized.includes("reply") || normalized.includes("composed")) return FileText;
+  return Check;
+}
+
+const WORKING_STEPS = [
+  { title: "Reviewing your message", detail: "Understanding the request and intent." },
+  { title: "Checking relevant context", detail: "Looking for the details needed to answer safely." },
+  { title: "Verifying the right information", detail: "Checking policies, order and product details." },
+  { title: "Preparing a verified reply", detail: "Writing a response from the verified context." },
+];
+
+function AgentActivity({ trace, working = false, inline = false }) {
+  const [isOpen, setIsOpen] = useState(working);
+  const [workingStep, setWorkingStep] = useState(0);
+  const steps = working
+    ? WORKING_STEPS.slice(0, Math.min(workingStep + 2, WORKING_STEPS.length)).map((step, index) => ({
+        ...step,
+        status: index < workingStep ? "complete" : index === workingStep ? "active" : "pending",
+      }))
+    : buildReasoningSteps(trace);
+  const sources = Array.isArray(trace?.evidence_sources) ? trace.evidence_sources : [];
+
+  useEffect(() => {
+    setIsOpen(working);
+    if (!working) {
+      setWorkingStep(0);
+      return undefined;
+    }
+
+    setWorkingStep(0);
+    const interval = window.setInterval(() => {
+      setWorkingStep((current) => Math.min(current + 1, WORKING_STEPS.length - 1));
+    }, 1050);
+    return () => window.clearInterval(interval);
+  }, [working]);
+
+  const layoutClassName = inline
+    ? "min-w-0 flex-1"
+    : `mt-3 w-full ${working ? "ml-auto max-w-[min(88%,32rem)]" : "max-w-full"}`;
+
+  return (
+    <section className={layoutClassName} aria-label="Sona activity">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        className="group inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50/80 hover:text-violet-800 active:scale-[0.985] dark:text-violet-300 dark:hover:bg-violet-950/30 dark:hover:text-violet-200"
+      >
+        <span className={`flex size-4 items-center justify-center rounded-full ${working ? "bg-violet-100 dark:bg-violet-950/60" : "bg-violet-50 dark:bg-violet-950/40"}`}>
+          {working ? <Loader2 className="size-3 animate-spin text-violet-600 dark:text-violet-300" /> : <Check className="size-3 text-violet-600 dark:text-violet-300" strokeWidth={2.5} />}
+        </span>
+        <span>
+          {working ? "Working through it…" : `Completed ${steps.length} steps`}
+          {!working && formatDuration(trace?.latency_ms) ? <span className="ml-1.5 font-normal text-violet-400/90">· {formatDuration(trace.latency_ms)}</span> : null}
+        </span>
+        <ChevronDown className={`size-3.5 text-violet-400 transition-transform duration-150 ease-out ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden">
+          <div className="relative ml-2 border-l border-violet-200/80 pl-3.5 pt-1 dark:border-violet-400/25">
+            {steps.map((step, index) => {
+              const active = working && step.status === "active";
+              const pending = working && step.status === "pending";
+              const StepIcon = active ? Loader2 : activityIconForStep(step.title);
+              return (
+                <div key={`${step.title}-${index}`} className={`flex items-start gap-2.5 px-2 py-1.5 ${pending ? "animate-in fade-in-0 slide-in-from-bottom-1 duration-200" : ""}`} aria-current={active ? "step" : undefined}>
+                  <StepIcon className={`mt-0.5 size-3.5 shrink-0 ${active ? "animate-spin text-violet-500" : pending ? "text-muted-foreground/45" : "text-violet-500/85 dark:text-violet-300"}`} strokeWidth={active ? 2 : 2.25} />
+                  <span className="min-w-0">
+                    <span className={`block text-[12px] ${active ? "font-semibold text-violet-800 dark:text-violet-200" : pending ? "font-medium text-muted-foreground/65" : "font-medium text-foreground"}`}>{step.title}</span>
+                    <span className={`mt-0.5 block text-[10.5px] leading-relaxed ${pending ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{step.detail}</span>
+                  </span>
+                </div>
+              );
+            })}
+            {!working && sources.length ? (
+              <div className="flex items-center gap-2 px-2 py-1.5 text-[10.5px] text-muted-foreground">
+                <Globe2 className="size-3.5 shrink-0 text-violet-500/80 dark:text-violet-300" />
+                <span>{sources.length} verified source{sources.length === 1 ? "" : "s"} used</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function SourceCard({ source, index }) {
@@ -291,10 +368,12 @@ function MessageBubble({ message, onInspect, inspected }) {
   const isUser = message.role === "user";
   const comparisonOnly = message.comparison_only === true;
   const canInspect = !isUser && !comparisonOnly && message.trace;
+  const hasActivity = !isUser && !comparisonOnly && message.trace;
   return (
     <div className={`flex animate-in fade-in-0 slide-in-from-bottom-2 duration-200 ${isUser ? "justify-start" : "justify-end"}`}>
       <div className="w-full max-w-[min(78%,44rem)]">
-        <div className={`flex items-center gap-2 ${isUser ? "" : "justify-end"}`}>
+        <div className={`flex items-center gap-2 ${isUser ? "" : hasActivity ? "justify-between" : "justify-end"}`}>
+          {hasActivity ? <AgentActivity trace={message.trace} inline /> : null}
           <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
             {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
             {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
@@ -731,7 +810,7 @@ export function GreenfieldPlayground() {
               <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
                 <div className="flex w-full max-w-[min(88%,42rem)] flex-col items-end">
                   <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
-                  <GeneratingActivity />
+                  <AgentActivity working />
                 </div>
               </div>
             ) : null}

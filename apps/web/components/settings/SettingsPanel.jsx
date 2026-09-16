@@ -8,8 +8,6 @@ import Link from "next/link";
 import {
   Bot,
   Building2,
-  Check,
-  CircleAlert,
   Clock,
   CreditCard,
   Globe,
@@ -4464,14 +4462,6 @@ export function SettingsPanel() {
     [updateSettingsUrl]
   );
 
-  const currentTabSaveStatus = loading
-    ? null
-    : activeTab === "general" || activeTab === "email"
-      ? hasCurrentTabChanges
-        ? "unsaved"
-        : "saved"
-      : null;
-
   const renderContent = () => {
     if (loading) {
       return <TabSkeleton />;
@@ -4632,9 +4622,8 @@ export function SettingsPanel() {
         </select>
       </div>
       <aside className="hidden h-full w-[224px] shrink-0 flex-col border-r border-border bg-background md:flex">
-        <div className="border-b border-border px-5 pb-5 pt-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Workspace</p>
-          <h1 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Settings</h1>
+        <div className="px-5 pb-5 pt-8">
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Settings</h1>
         </div>
         <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
           {MENU_SECTIONS.map((section) => (
@@ -4678,47 +4667,6 @@ export function SettingsPanel() {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
-          <div className="mb-8 flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Workspace
-              </p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">Workspace settings</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Configure how your team works with Sona.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {currentTabSaveStatus ? (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
-                    currentTabSaveStatus === "unsaved"
-                      ? "bg-amber-500/10 text-amber-700"
-                      : "bg-emerald-500/10 text-emerald-700"
-                  )}
-                >
-                  {currentTabSaveStatus === "unsaved" ? (
-                    <CircleAlert className="h-3.5 w-3.5" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5" />
-                  )}
-                  {currentTabSaveStatus === "unsaved" ? "Unsaved changes" : "All changes saved"}
-                </span>
-              ) : null}
-              {testMode ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700">
-                  <CircleAlert className="h-3.5 w-3.5" />
-                  Test mode on
-                </span>
-              ) : null}
-              <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                <Building2 className="h-3.5 w-3.5 shrink-0" />
-                <span>Workspace</span>
-                <span className="truncate text-foreground">{teamName.trim() || "Your workspace"}</span>
-              </span>
-            </div>
-          </div>
           <div className="min-w-0">
             {renderContent()}
           </div>
