@@ -137,7 +137,7 @@ function AgentActivity({ trace, working = false }) {
   }, [working]);
 
   return (
-    <section className="mt-3 w-full max-w-[31rem]" aria-label="Sona activity">
+    <section className="mt-3 ml-auto w-full max-w-[31rem]" aria-label="Sona activity">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -517,16 +517,18 @@ export function GreenfieldPlayground() {
         </div>
         <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <span className="text-[11px] font-medium text-muted-foreground">Read-only</span>
-          {selectedSession ? (
-            <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
-              New conversation
-            </Button>
-          ) : null}
           <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
             {ticketRequired ? "Choose ticket" : "Load previous ticket"}
           </Button>
-          {!ticketRequired ? (
-            <Button type="button" size="sm" onClick={newConversation} className="gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+          {(!ticketRequired || selectedSession) ? (
+            <Button
+              type="button"
+              variant={!ticketRequired ? "default" : "outline"}
+              size="sm"
+              onClick={ticketRequired ? deleteSession : newConversation}
+              disabled={sending}
+              className={!ticketRequired ? "gap-1.5 rounded-lg bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.12)] transition-[transform,background-color] duration-150 ease-out hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white" : "gap-1.5 rounded-lg transition-transform active:scale-[0.97]"}
+            >
               New conversation
             </Button>
           ) : null}
@@ -560,7 +562,7 @@ export function GreenfieldPlayground() {
       </details>
 
       <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <section className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
