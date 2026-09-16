@@ -86,19 +86,6 @@ const baseData = {
   ],
 }
 
-function SonaWordmark() {
-  return (
-    <span className="flex min-w-0 items-center gap-2.5">
-      <span className="flex size-8 shrink-0 items-center justify-center" aria-hidden="true">
-        <SonaLogo size={32} className="shrink-0" />
-      </span>
-      <span className="truncate text-[26px] font-semibold leading-none tracking-[-0.055em] text-sidebar-foreground">
-        Sona AI
-      </span>
-    </span>
-  )
-}
-
 function SidebarWorkspaceRail({
   items,
   pathname,
@@ -234,13 +221,16 @@ function SidebarExpandedNavigation({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
-      <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-3">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-2 pt-2">
         <Link
           href="/dashboard"
           aria-label="Sona AI home"
-          className="flex min-w-0 items-center rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          className="flex min-w-0 items-center gap-2 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
-          <SonaWordmark />
+          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+            <SonaLogo size={22} className="shrink-0" />
+          </span>
+          <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
         </Link>
         <SidebarTrigger className="size-8 shrink-0" />
       </div>
@@ -746,9 +736,12 @@ export function AppSidebar({
         )
       ) : (
         <>
-          <SidebarHeader className="h-16 flex-row items-center justify-between gap-2 px-3">
-            <Link href="/dashboard" aria-label="Sona AI home" className="flex min-w-0 items-center rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
-              <SonaWordmark />
+          <SidebarHeader className="h-12 flex-row items-center justify-between gap-2">
+            <Link href="/dashboard" aria-label="Sona AI home" className="flex min-w-0 items-center gap-2 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+              <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+                <SonaLogo size={22} className="shrink-0" />
+              </span>
+              <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
             </Link>
             <SidebarTrigger className="size-8 shrink-0" />
           </SidebarHeader>
