@@ -31,6 +31,10 @@ import {
   formatTicketReference,
   ticketReferenceSearchTerms,
 } from "@/lib/tickets/reference";
+import {
+  isWaitingTicketStatus,
+  normalizeTicketStatusLabel,
+} from "@/lib/inbox/ticket-table-status";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -79,15 +83,6 @@ function getTime(value) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-function normalizeStatusLabel(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "solved" || normalized === "resolved") return "Resolved";
-  if (normalized === "pending") return "Pending";
-  if (normalized === "waiting") return "Waiting";
-  if (normalized === "new") return "New";
-  return "Open";
-}
-
 function statusClasses(status) {
   if (status === "Resolved") return "border-green-200 bg-green-50 text-green-700";
   if (status === "Pending") return "border-orange-200 bg-orange-50 text-orange-700";
@@ -118,7 +113,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
         const assigneeId = String(thread?.assignee_id || "").trim();
         const assignee = assigneeId ? membersById.get(assigneeId) || null : null;
         const subject = String(thread?.subject || "").trim() || "Untitled ticket";
-        const status = normalizeStatusLabel(thread?.status);
+        const status = normalizeTicketStatusLabel(thread?.status);
         const createdAt = thread?.created_at || null;
         const lastActivity = thread?.last_message_at || thread?.updated_at || createdAt || null;
         const ticketRef = formatTicketReference(thread?.ticket_number);
@@ -142,7 +137,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
     return {
       all: allRows.length,
       open: allRows.filter((row) => row.status !== "Resolved").length,
-      waiting: allRows.filter((row) => row.status === "Waiting" || row.status === "Pending").length,
+      waiting: allRows.filter((row) => isWaitingTicketStatus(row.status)).length,
       resolved: allRows.filter((row) => row.status === "Resolved").length,
       unassigned: allRows.filter((row) => row.assigneeLabel === "Unassigned").length,
     };
@@ -159,7 +154,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
     return allRows
       .filter((row) => {
         if (activeFilter === "open") return row.status !== "Resolved";
-        if (activeFilter === "waiting") return row.status === "Waiting" || row.status === "Pending";
+        if (activeFilter === "waiting") return isWaitingTicketStatus(row.status);
         if (activeFilter === "resolved") return row.status === "Resolved";
         if (activeFilter === "unassigned") return row.assigneeLabel === "Unassigned";
         return true;
