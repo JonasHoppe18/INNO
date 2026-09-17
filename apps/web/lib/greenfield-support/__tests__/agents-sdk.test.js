@@ -75,6 +75,103 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.response).toContain("5 business days");
   });
 
+  it("lets Greenfield validate contract-invalid JSON after SDK parsing", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(JSON.stringify({ segments: [] }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.events.some((event) => event.type === "error" && event.data.code === "agent_failed")).toBe(false);
+    expect(result.trace.events.some((event) => event.type === "model_response")).toBe(true);
+    expect(result.trace.diagnostics).toMatchObject({
+      validation: {
+        schema_valid: false,
+        all_valid: false,
+        approved_count: 1,
+      },
+      completeness_check_entered: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+    });
+    expect(result.response).toContain("5 business days");
+    expect(model.firstCall.request.outputType).toMatchObject({
+      type: "json_schema",
+      name: "greenfield_model_output",
+      strict: false,
+      schema: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: true,
+      },
+    });
+    expect(model.firstCall.request.tools.filter((item) => item.type === "function").every((item) => item.strict === true)).toBe(true);
+  });
+
+  it("keeps invalid evidence references rejected inside the Greenfield contract", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "Returns are accepted within 30 days of delivery.",
+        basis: { result_id: "missing-result", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "What is your return window?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.events.some((event) => event.type === "error" && event.data.code === "agent_failed")).toBe(false);
+    expect(result.trace.diagnostics.validation.rejected_segments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        issues: expect.arrayContaining([expect.objectContaining({ code: "unknown_result_id" })]),
+      }),
+    ]));
+    expect(result.trace.diagnostics.completeness_check_entered).toBe(true);
+  });
+
+  it("keeps malformed or unrecoverable output on the safe fallback path", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage("not valid JSON")]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Can you help me?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.response).toBe("I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?");
+    expect(result.trace.events).toContainEqual(expect.objectContaining({
+      type: "error",
+      data: expect.objectContaining({ code: "agent_failed" }),
+    }));
+    expect(result.trace.diagnostics).toMatchObject({
+      validation: null,
+      completeness_check_entered: false,
+      fallback_reason: "agent_error",
+    });
+  });
+
   it("does not let an approved order clarification hide a resolvable general timing answer", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

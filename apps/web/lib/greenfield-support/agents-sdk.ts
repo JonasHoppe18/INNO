@@ -1,5 +1,5 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
-import type { AgentInputItem, Model } from "@openai/agents";
+import type { AgentInputItem, JsonSchemaDefinition, Model } from "@openai/agents";
 import { composeEmailBodyWithSignature, inferGermanLanguage, selectSignatureText } from "@/lib/server/email-signature";
 import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
@@ -25,6 +25,20 @@ import type {
 } from "./types";
 
 type CapabilityRegistry = ReturnType<typeof createCapabilityRegistry>;
+
+// Keep JSON deserialization at the SDK boundary, but leave the Greenfield
+// response contract as the only semantic validation layer.
+const GREENFIELD_SDK_OUTPUT_TYPE: JsonSchemaDefinition = {
+  type: "json_schema",
+  name: "greenfield_model_output",
+  strict: false,
+  schema: {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: true,
+  },
+};
 
 interface SonaAgentContext {
   registry: CapabilityRegistry;
@@ -375,11 +389,11 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     reasoningEffort: options.reasoningEffort,
   });
   const model = options.model ?? runtimeConfig.model;
-  const agent = new Agent<SonaAgentContext, typeof StructuredResponseSchema>({
+  const agent = new Agent<SonaAgentContext, JsonSchemaDefinition>({
     name: "Sona Support Agent",
     instructions,
     model,
-    outputType: StructuredResponseSchema,
+    outputType: GREENFIELD_SDK_OUTPUT_TYPE,
     modelSettings: {
       parallelToolCalls: false,
       ...(runtimeConfig.reasoningEffort ? { reasoning: { effort: runtimeConfig.reasoningEffort } } : {}),
