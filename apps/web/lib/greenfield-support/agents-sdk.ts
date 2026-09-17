@@ -1,5 +1,6 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, JsonSchemaDefinition, Model } from "@openai/agents";
+import { z } from "zod";
 import { composeEmailBodyWithSignature, inferGermanLanguage, selectSignatureText } from "@/lib/server/email-signature";
 import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
@@ -26,18 +27,18 @@ import type {
 
 type CapabilityRegistry = ReturnType<typeof createCapabilityRegistry>;
 
-// Keep JSON deserialization at the SDK boundary, but leave the Greenfield
-// response contract as the only semantic validation layer.
+// Derive model-facing structural guidance from the same contract that
+// Greenfield validates below. A raw JSON Schema output type is parsed by the
+// SDK without applying local schema validation, so the application contract
+// remains the only semantic validation layer.
 const GREENFIELD_SDK_OUTPUT_TYPE: JsonSchemaDefinition = {
   type: "json_schema",
   name: "greenfield_model_output",
   strict: false,
-  schema: {
-    type: "object",
-    properties: {},
-    required: [],
-    additionalProperties: true,
-  },
+  schema: z.toJSONSchema(StructuredResponseSchema, {
+    target: "openai",
+    unrepresentable: "any",
+  }) as JsonSchemaDefinition["schema"],
 };
 
 interface SonaAgentContext {

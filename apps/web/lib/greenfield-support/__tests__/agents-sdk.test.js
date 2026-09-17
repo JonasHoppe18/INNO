@@ -78,7 +78,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
   it("lets Greenfield validate contract-invalid JSON after SDK parsing", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
-      modelResponse([assistantMessage(JSON.stringify({ segments: [] }))]),
+      modelResponse([assistantMessage(JSON.stringify({ segments: [{ kind: "FACT" }] }))]),
     ]);
 
     const result = await runGreenfieldAgentWithAgentsSdk({
@@ -109,11 +109,20 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
       strict: false,
       schema: {
         type: "object",
-        properties: {},
-        required: [],
-        additionalProperties: true,
+        required: ["segments"],
+        additionalProperties: false,
       },
     });
+    const segmentSchemas = model.firstCall.request.outputType.schema.properties.segments.items.oneOf;
+    expect(segmentSchemas.map((schema) => schema.properties.type.const)).toEqual([
+      "fact",
+      "question",
+      "limitation",
+      "action_offer",
+      "knowledge_guidance",
+      "procedure_guidance",
+      "acknowledgement",
+    ]);
     expect(model.firstCall.request.tools.filter((item) => item.type === "function").every((item) => item.strict === true)).toBe(true);
   });
 
