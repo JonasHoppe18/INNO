@@ -26,11 +26,6 @@ export function isGreenfieldPlaygroundDevTarget(env = process.env) {
   return actualProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF;
 }
 
-function isExplicitGreenfieldDevEnvironment(env = process.env) {
-  const environment = String(env.GREENFIELD_PLAYGROUND_ENVIRONMENT || "").trim().toLowerCase();
-  return environment === "dev" || environment === "development";
-}
-
 const RUNTIME_REVISION_ENV_KEYS = [
   "GREENFIELD_RUNTIME_REVISION",
   "DIGITALOCEAN_DEPLOYMENT_COMMIT_SHA",
@@ -42,9 +37,8 @@ const RUNTIME_REVISION_ENV_KEYS = [
 
 export function isGreenfieldPlaygroundDevDiagnosticsEnabled(env = process.env) {
   const configuredProjectRef = String(env.GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF || "").trim();
-  return env.GREENFIELD_PLAYGROUND_DISABLED !== "true"
-    && env.GREENFIELD_PLAYGROUND_ENABLED === "true"
-    && isExplicitGreenfieldDevEnvironment(env)
+  return isGreenfieldPlaygroundEnabled(env)
+    && String(env.GREENFIELD_DEPLOYMENT_ENV || "").trim().toLowerCase() === "development"
     && configuredProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF
     && isGreenfieldPlaygroundDevTarget(env);
 }

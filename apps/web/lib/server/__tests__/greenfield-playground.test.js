@@ -177,7 +177,8 @@ describe("greenfield playground boundary", () => {
     const devEnv = {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
-      GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
       GREENFIELD_RUNTIME_REVISION: "8f6e1270443274f3b7341f1e8e72e5066e172abc",
@@ -284,7 +285,8 @@ describe("greenfield playground boundary", () => {
       env: {
         NODE_ENV: "production",
         GREENFIELD_PLAYGROUND_ENABLED: "true",
-        GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
+        GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+        GREENFIELD_DEPLOYMENT_ENV: "development",
         GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
         NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
       },
@@ -296,32 +298,51 @@ describe("greenfield playground boundary", () => {
     ["A: production-style DEV", {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
-      GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
     }, true],
-    ["B: production Supabase ref", {
+    ["B: production deployment identity", {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
-      GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
-      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "ikuupzjaxzvatdnmyzoy",
-      NEXT_PUBLIC_SUPABASE_URL: "https://ikuupzjaxzvatdnmyzoy.supabase.co",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "production",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
+      NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
     }, false],
-    ["C: explicit production environment", {
+    ["C: missing deployment identity", {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
       GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
     }, false],
-    ["D: disabled Playground", {
+    ["D: DEV marker with production Supabase", {
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ENABLED: "true",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "ikuupzjaxzvatdnmyzoy",
+      NEXT_PUBLIC_SUPABASE_URL: "https://ikuupzjaxzvatdnmyzoy.supabase.co",
+    }, false],
+    ["E: DEV marker with Supabase mismatch", {
+      NODE_ENV: "production",
+      GREENFIELD_PLAYGROUND_ENABLED: "true",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
+      GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
+      NEXT_PUBLIC_SUPABASE_URL: "https://ikuupzjaxzvatdnmyzoy.supabase.co",
+    }, false],
+    ["F: normal Playground gate fails", {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "false",
-      GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
     }, false],
-    ["E: missing environment identity", {
+    ["G: missing deployment identity", {
       NODE_ENV: "production",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
@@ -335,7 +356,8 @@ describe("greenfield playground boundary", () => {
     expect(isGreenfieldPlaygroundDevDiagnosticsEnabled({
       NODE_ENV: "development",
       GREENFIELD_PLAYGROUND_ENABLED: "true",
-      GREENFIELD_PLAYGROUND_ENVIRONMENT: "development",
+      GREENFIELD_PLAYGROUND_ENVIRONMENT: "production",
+      GREENFIELD_DEPLOYMENT_ENV: "development",
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://other.supabase.co",
     })).toBe(false);
