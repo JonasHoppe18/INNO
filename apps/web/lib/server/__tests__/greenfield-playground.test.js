@@ -3,6 +3,7 @@ import {
   historyFromPlaygroundRows,
   isInternalGreenfieldPlaygroundUser,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundNoPersistenceEnabled,
   isGreenfieldPlaygroundDevDiagnosticsEnabled,
   isGreenfieldPlaygroundFreeformEnabled,
   isGreenfieldPlaygroundTicketRequired,
@@ -54,6 +55,12 @@ describe("greenfield playground boundary", () => {
       GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk",
       NEXT_PUBLIC_SUPABASE_URL: "https://other.supabase.co",
     })).toBe(true);
+  });
+
+  it("enables no-persistence mode only for the local development runtime", () => {
+    expect(isGreenfieldPlaygroundNoPersistenceEnabled({ NODE_ENV: "development", GREENFIELD_PLAYGROUND_NO_PERSISTENCE: "true" })).toBe(true);
+    expect(isGreenfieldPlaygroundNoPersistenceEnabled({ NODE_ENV: "development", GREENFIELD_PLAYGROUND_NO_PERSISTENCE: "false" })).toBe(false);
+    expect(isGreenfieldPlaygroundNoPersistenceEnabled({ NODE_ENV: "production", GREENFIELD_PLAYGROUND_NO_PERSISTENCE: "true" })).toBe(false);
   });
 
   it("A2: limits access to workspace administrators", async () => {

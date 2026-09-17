@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
@@ -16,6 +17,7 @@ import {
   historyFromPlaygroundRows,
   isGreenfieldPlaygroundDevDiagnosticsEnabled,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundNoPersistenceEnabled,
   isGreenfieldPlaygroundTicketRequired,
   isGreenfieldPlaygroundProduction,
   isInternalGreenfieldPlaygroundUser,
@@ -300,28 +302,33 @@ export async function GET(request: Request) {
     const access = await requirePlaygroundRequest();
     if (access.response) return access.response;
     const { authState, serviceClient, scope } = access;
+    const noPersistence = isGreenfieldPlaygroundNoPersistenceEnabled();
     const url = new URL(request.url);
     const view = String(url.searchParams.get("view") || "").trim().toLowerCase();
     if (view === "tickets") {
-      const tickets = await listScopedTicketSummaries(serviceClient, scope, {
-        search: url.searchParams.get("search") || "",
-        limit: Number(url.searchParams.get("limit") || 50),
-      });
+      const tickets = noPersistence
+        ? []
+        : await listScopedTicketSummaries(serviceClient, scope, {
+            search: url.searchParams.get("search") || "",
+            limit: Number(url.searchParams.get("limit") || 50),
+          });
       return NextResponse.json({
         environment: greenfieldPlaygroundEnvironment(),
         ticket_required: isGreenfieldPlaygroundTicketRequired(),
+        ...(noPersistence ? { no_persistence: true } : {}),
         tickets,
       });
     }
     const sessionId = String(url.searchParams.get("session_id") || "").trim();
-    const rows = await listSessions(serviceClient, scope, authState.userId);
-    const selected = sessionId ? await loadSession(serviceClient, scope, authState.userId, sessionId) : null;
-    if (sessionId && !selected) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    const rows = noPersistence ? [] : await listSessions(serviceClient, scope, authState.userId);
+    const selected = noPersistence || !sessionId ? null : await loadSession(serviceClient, scope, authState.userId, sessionId);
+    if (!noPersistence && sessionId && !selected) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const messages = selected ? await loadMessages(serviceClient, scope, authState.userId, selected.id) : [];
     const shop = await resolveVisibleShop(serviceClient, scope);
     return NextResponse.json({
       environment: greenfieldPlaygroundEnvironment(),
       ticket_required: isGreenfieldPlaygroundTicketRequired(),
+      ...(noPersistence ? { no_persistence: true } : {}),
       workspace_id: scope.workspaceId,
       active_store: shop ? { id: shop.id, domain: shop.shop_domain } : null,
       sessions: rows.map(publicPlaygroundSession),
@@ -341,6 +348,7 @@ export async function POST(request: Request) {
     const { authState, serviceClient, scope } = access;
     const body = await request.json().catch(() => null);
     const action = String(body?.action || "send").trim().toLowerCase();
+    const noPersistence = isGreenfieldPlaygroundNoPersistenceEnabled();
 
     if (action === "create") {
       if (isGreenfieldPlaygroundTicketRequired()) {
@@ -348,6 +356,27 @@ export async function POST(request: Request) {
       }
       const customer = normalizePlaygroundCustomerEmail(body?.customer_email);
       if (customer.error) return NextResponse.json({ error: customer.error }, { status: 400 });
+      if (noPersistence) {
+        const now = new Date().toISOString();
+        const session = {
+          id: `ephemeral-${randomUUID()}`,
+          workspace_id: scope.workspaceId,
+          owner_clerk_user_id: authState.userId,
+          customer_email: customer.value,
+          title: "New conversation",
+          conversation_context_json: null,
+          created_at: now,
+          updated_at: now,
+        };
+        return NextResponse.json({
+          environment: greenfieldPlaygroundEnvironment(),
+          ticket_required: isGreenfieldPlaygroundTicketRequired(),
+          no_persistence: true,
+          session: publicPlaygroundSession(session),
+          messages: [],
+          context: null,
+        });
+      }
       const { data, error } = await serviceClient
         .from(SESSIONS_TABLE)
         .insert({
@@ -363,6 +392,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "import_ticket") {
+      if (noPersistence) return NextResponse.json({ error: "Ticket imports are disabled in no-persistence mode." }, { status: 400 });
       const threadId = String(body?.thread_id || "").trim();
       if (!threadId) return NextResponse.json({ error: "thread_id is required." }, { status: 400 });
       const ticket = await loadScopedTicket(serviceClient, scope, threadId);
@@ -423,18 +453,30 @@ export async function POST(request: Request) {
 
     const runImportedTicket = action === "run_ticket";
     if (action !== "send" && !runImportedTicket) return NextResponse.json({ error: "Unsupported playground action." }, { status: 400 });
+    if (noPersistence && runImportedTicket) return NextResponse.json({ error: "Ticket runs are disabled in no-persistence mode." }, { status: 400 });
     const messageInput = runImportedTicket
       ? { value: "", error: null }
       : normalizePlaygroundMessage(body?.message);
     if (messageInput.error) return NextResponse.json({ error: messageInput.error }, { status: 400 });
     const sessionId = String(body?.session_id || "").trim();
-    if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
-    const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
+    const customer = noPersistence ? normalizePlaygroundCustomerEmail(body?.customer_email) : { value: null, error: null };
+    if (customer.error) return NextResponse.json({ error: customer.error }, { status: 400 });
+    if (!noPersistence && !sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
+    const session = noPersistence
+      ? {
+          id: sessionId || `ephemeral-${randomUUID()}`,
+          workspace_id: scope.workspaceId,
+          owner_clerk_user_id: authState.userId,
+          customer_email: customer.value,
+          title: "New conversation",
+          conversation_context_json: null,
+        }
+      : await loadSession(serviceClient, scope, authState.userId, sessionId);
     if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
-    if (isGreenfieldPlaygroundTicketRequired() && !String(session.conversation_context_json?.sourceThreadId || "").trim()) {
+    if (!noPersistence && isGreenfieldPlaygroundTicketRequired() && !String(session.conversation_context_json?.sourceThreadId || "").trim()) {
       return NextResponse.json({ error: "Only a server-imported production ticket can be evaluated." }, { status: 400 });
     }
-    const messages = await loadMessages(serviceClient, scope, authState.userId, session.id);
+    const messages = noPersistence ? [] : await loadMessages(serviceClient, scope, authState.userId, session.id);
     let messageForAgent = messageInput.value;
     let historyRows = messages;
     if (runImportedTicket) {
@@ -510,6 +552,30 @@ export async function POST(request: Request) {
           content: messageForAgent,
           trace_json: null,
         }, assistantMessage];
+    if (noPersistence) {
+      const now = new Date().toISOString();
+      const ephemeralSession = {
+        ...session,
+        title: nextTitle,
+        conversation_context_json: contextToPersist,
+        created_at: now,
+        updated_at: now,
+      };
+      const ephemeralMessages = messagesToInsert.map((message) => ({
+        ...message,
+        id: `ephemeral-${randomUUID()}`,
+        created_at: now,
+      }));
+      return NextResponse.json({
+        environment: greenfieldPlaygroundEnvironment(),
+        ticket_required: isGreenfieldPlaygroundTicketRequired(),
+        no_persistence: true,
+        session: publicPlaygroundSession(ephemeralSession),
+        messages: ephemeralMessages.map(publicPlaygroundMessage),
+        context: contextAfter,
+        active_store: { id: shop.id, domain: shop.shop_domain },
+      });
+    }
     const { data: insertedMessages, error: messageError } = await serviceClient
       .from(MESSAGES_TABLE)
       .insert(messagesToInsert)
@@ -554,6 +620,9 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url);
     const sessionId = String(url.searchParams.get("session_id") || "").trim();
     if (!sessionId) return NextResponse.json({ error: "session_id is required." }, { status: 400 });
+    if (isGreenfieldPlaygroundNoPersistenceEnabled()) {
+      return NextResponse.json({ deleted: false, no_persistence: true, session_id: sessionId });
+    }
     const session = await loadSession(serviceClient, scope, authState.userId, sessionId);
     if (!session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const { error } = await serviceClient

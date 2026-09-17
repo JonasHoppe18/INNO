@@ -78,6 +78,12 @@ export function isGreenfieldPlaygroundProduction(env = process.env) {
   return greenfieldPlaygroundEnvironment(env) === "production";
 }
 
+export function isGreenfieldPlaygroundNoPersistenceEnabled(env = process.env) {
+  return isGreenfieldPlaygroundEnabled(env)
+    && !isGreenfieldPlaygroundProduction(env)
+    && env.GREENFIELD_PLAYGROUND_NO_PERSISTENCE === "true";
+}
+
 export function isGreenfieldPlaygroundFreeformEnabled(env = process.env) {
   if (!isGreenfieldPlaygroundProduction(env)) return true;
   if (env.GREENFIELD_PLAYGROUND_ALLOW_FREEFORM !== "true") return false;

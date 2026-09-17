@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   loadUserEmailSignatureConfig: vi.fn(),
   isInternalGreenfieldPlaygroundUser: vi.fn(),
   isGreenfieldPlaygroundTicketRequired: vi.fn(),
+  isGreenfieldPlaygroundNoPersistenceEnabled: vi.fn(),
   isGreenfieldPlaygroundProduction: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
   PlaygroundDryRunExecutor: class PlaygroundDryRunExecutor {},
@@ -43,6 +44,7 @@ vi.mock("@/lib/server/greenfield-playground", () => ({
   isGreenfieldPlaygroundEnabled: () => true,
   isGreenfieldPlaygroundProduction: mocks.isGreenfieldPlaygroundProduction,
   isGreenfieldPlaygroundTicketRequired: mocks.isGreenfieldPlaygroundTicketRequired,
+  isGreenfieldPlaygroundNoPersistenceEnabled: mocks.isGreenfieldPlaygroundNoPersistenceEnabled,
   isInternalGreenfieldPlaygroundUser: mocks.isInternalGreenfieldPlaygroundUser,
   greenfieldPlaygroundEnvironment: () => "development",
   isOwnedPlaygroundSession: (session, scope) => session?.workspace_id === scope.workspaceId && session?.owner_clerk_user_id === scope.clerkUserId,
@@ -88,6 +90,7 @@ beforeEach(() => {
   authScope();
   mocks.isInternalGreenfieldPlaygroundUser.mockResolvedValue(true);
   mocks.isGreenfieldPlaygroundTicketRequired.mockReturnValue(false);
+  mocks.isGreenfieldPlaygroundNoPersistenceEnabled.mockReturnValue(false);
   mocks.isGreenfieldPlaygroundProduction.mockReturnValue(false);
   mocks.resolveScopedShop.mockResolvedValue({ id: "shop-a", workspace_id: "workspace-a", shop_domain: "test-shop.example" });
   mocks.listScopedShops.mockResolvedValue([{ id: "shop-a", workspace_id: "workspace-a" }]);
@@ -126,6 +129,54 @@ describe("greenfield agent playground API", () => {
     }));
     expect(response.status).toBe(400);
     expect(mocks.createClient.mock.results[0].value.from).not.toHaveBeenCalledWith("greenfield_playground_sessions");
+  });
+
+  it("blocks every Playground persistence operation in no-persistence mode", async () => {
+    const client = { from: vi.fn(() => { throw new Error("Supabase persistence must not be accessed"); }) };
+    mocks.createClient.mockReturnValue(client);
+    mocks.isGreenfieldPlaygroundNoPersistenceEnabled.mockReturnValue(true);
+    mocks.runGreenfieldAgentWithAgentsSdk.mockResolvedValue({
+      response: "A read-only answer.",
+      trace: { traceId: "trace-ephemeral" },
+      conversationContext: { turn: 1, activeOrder: null, customerSignal: null },
+    });
+
+    const getResponse = await GET(new Request("http://localhost/api/agent-playground"));
+    expect(getResponse.status).toBe(200);
+    await expect(getResponse.json()).resolves.toMatchObject({ no_persistence: true, sessions: [], selected_session: null, messages: [] });
+
+    const createResponse = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", customer_email: "customer@example.test" }),
+    }));
+    expect(createResponse.status).toBe(200);
+    const created = await createResponse.json();
+    expect(created.session.id).toMatch(/^ephemeral-/);
+
+    const sendResponse = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "send", session_id: created.session.id, customer_email: "customer@example.test", message: "Where is my order?" }),
+    }));
+    expect(sendResponse.status).toBe(200);
+    await expect(sendResponse.json()).resolves.toMatchObject({ no_persistence: true, session: { id: created.session.id } });
+    expect(mocks.resolveScopedShop).toHaveBeenCalled();
+    expect(mocks.resolveShopifyCredentialsWithDiagnostics).toHaveBeenCalled();
+    expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalled();
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ history: [], conversationContext: undefined }));
+
+    const importResponse = await POST(new Request("http://localhost/api/agent-playground", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "import_ticket", thread_id: "thread-a" }),
+    }));
+    expect(importResponse.status).toBe(400);
+
+    const deleteResponse = await DELETE(new Request(`http://localhost/api/agent-playground?session_id=${created.session.id}`, { method: "DELETE" }));
+    expect(deleteResponse.status).toBe(200);
+    await expect(deleteResponse.json()).resolves.toMatchObject({ deleted: false, no_persistence: true });
+    expect(client.from).not.toHaveBeenCalled();
   });
 
   it("B/C: resolves ticket search through scoped mailboxes on the server", async () => {
