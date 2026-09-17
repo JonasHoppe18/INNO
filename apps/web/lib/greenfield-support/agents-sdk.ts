@@ -601,6 +601,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           locale: inferResponseLocale(options.message),
           customerMessage: options.message,
           customerProvidedContext: responseContext.customerProvidedContext,
+          interactionChannel: responseContext.interactionChannel,
           getResults: registry.getResults,
         });
     const response = composeGreenfieldResponse(responseWithoutSignature, options.signature, options.message);
@@ -643,6 +644,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    interactionChannel: options.interactionChannel,
     getResults: registry.getResults,
   });
   const response = composeGreenfieldResponse(fallback, options.signature, options.message);

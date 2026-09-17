@@ -2301,6 +2301,10 @@ function isActiveSupportChannel(channel?: GreenfieldInteractionChannel) {
     || channel === "web_chat";
 }
 
+function isMerchantSideProcessInstruction(value: string) {
+  return /\b(?:we|our\s+(?:team|support)|the\s+(?:merchant|store|seller))\s+(?:will|may|might|can|could|shall)\s+(?:contact|ask|process|review|deduct|notify|email|send)\b/i.test(value);
+}
+
 function hasKnownOrderReference(context: ResponseValidationContext) {
   return Boolean(context.activeOrder?.requestedOrderId);
 }
@@ -2559,6 +2563,55 @@ function isReturnProcessInstruction(value: string) {
   return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
 }
 
+function isCustomerContentRequirement(value: string) {
+  return /\b(?:provide|share|send|include|attach|upload|submit|enter|tell|give)\b/i.test(value)
+    && /\b(?:photo|picture|image|video|screenshot|screen\s*shot|serial(?:\s+(?:number|no\.?)|number)?|document|receipt|proof|evidence|measurement\w*|reason|details?|description|sku|barcode|form)\b/i.test(value);
+}
+
+function isProcessAnswerBearingInstruction(value: string) {
+  return isReturnProcessInstruction(value) || isCustomerContentRequirement(value) || isSupportContactInstruction(value);
+}
+
+function isSupportContactInstruction(value: string) {
+  const supportTarget = "(?:us|our\\s+support(?:\\s+team)?|support(?:\\s+team)?|customer\\s+service|the\\s+merchant|the\\s+store|the\\s+seller)";
+  return new RegExp(`\\b(?:contact|email|e-?mail|write\\s+to|reach\\s+out\\s+to)\\s+${supportTarget}\\b`, "i").test(value)
+    || new RegExp(`\\bsend\\s+${supportTarget}\\s+(?:an?\\s+)?e-?mail\\b`, "i").test(value)
+    || /\b(?:use|via|through|using)\s+(?:our|the)?\s*(?:support|contact)\s+form\b/i.test(value)
+    || /\b(?:let|letting)\s+(?:us|the\s+merchant|support)\s+know\b/i.test(value)
+    || (/\b(?:submit|request)\s+(?:a|the)?\s*(?:return|refund|claim)\s*(?:request)?\b/i.test(value)
+      && !/\b(?:portal|online|website|app)\b/i.test(value));
+}
+
+function isNegatedSupportContactInstruction(value: string) {
+  return /\b(?:do\s+not|don't|must\s+not|never|without)\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function hasSupportContactContentRequirement(value: string) {
+  const text = value.replace(/\b(?:support|contact)\s+form\b/gi, "");
+  return /\b(?:photo|picture|image|video|screenshot|screen\s*shot|serial(?:\s+(?:number|no\.?)|number)?|document|receipt|proof|evidence|measurement\w*|reason|details?|description|sku|barcode|form)\b/i.test(text);
+}
+
+function customerMessagePerformsSupportRequest(value: string) {
+  return /\b(?:i\s+(?:would|want|need|wish)|please|can\s+you|could\s+you|would\s+you|how\s+(?:do|can)\s+i|request(?:ing)?|submit(?:ted)?|contact(?:ed)?|email(?:ed)?|help)\b/i.test(value);
+}
+
+function isSatisfiedSupportContactPrerequisite(
+  value: string,
+  context: Pick<ResponseValidationContext, "customerMessage" | "interactionChannel">,
+) {
+  return isActiveSupportChannel(context.interactionChannel)
+    && customerMessagePerformsSupportRequest(context.customerMessage ?? "")
+    && isSupportContactInstruction(value)
+    && !isNegatedSupportContactInstruction(value)
+    && !hasSupportContactContentRequirement(value);
+}
+
+function hasContradictoryProcessInstructions(values: string[]) {
+  const actionable = values.filter((value) => !isMerchantSideProcessInstruction(value));
+  return actionable.some((value) => isSupportContactInstruction(value) && !isNegatedSupportContactInstruction(value))
+    && actionable.some(isNegatedSupportContactInstruction);
+}
+
 type AnswerBearingCue = "process" | "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
 
 function answerBearingCueFor(value: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
@@ -2590,6 +2643,10 @@ function hasAnswerBearingValueMarker(value: string, cue: AnswerBearingCue) {
 type AnswerCompletenessCandidate = {
   value: string;
   normalized: string;
+};
+
+type AnswerCompletenessContext = Pick<ResponseValidationContext, "customerMessage" | "interactionChannel"> & {
+  preserveProcessConflicts?: boolean;
 };
 
 function normalizeAnswerCompletenessValue(value: string) {
@@ -2702,7 +2759,12 @@ function answerEvidenceRecords(
   });
 }
 
-function answerCompletenessCandidates(cue: AnswerBearingCue, evidenceTexts: string[], customerMessage: string) {
+function answerCompletenessCandidates(
+  cue: AnswerBearingCue,
+  evidenceTexts: string[],
+  customerMessage: string,
+  context?: AnswerCompletenessContext,
+) {
   const candidates: AnswerCompletenessCandidate[] = [];
   const pushUrls = (text: string) => {
     for (const match of text.match(/https?:\/\/[^\s<>)]+/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
@@ -2710,6 +2772,14 @@ function answerCompletenessCandidates(cue: AnswerBearingCue, evidenceTexts: stri
   const pushEmails = (text: string) => {
     for (const match of text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
   };
+  const processUnits = cue === "process"
+    ? evidenceTexts
+      .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+      .filter(isProcessAnswerBearingInstruction)
+      .filter((unit) => !isMerchantSideProcessInstruction(unit))
+    : [];
+  const preserveProcessConflicts = cue === "process"
+    && (context?.preserveProcessConflicts ?? hasContradictoryProcessInstructions(processUnits));
 
   for (const evidenceText of evidenceTexts) {
     if (cue === "destination") {
@@ -2767,8 +2837,16 @@ function answerCompletenessCandidates(cue: AnswerBearingCue, evidenceTexts: stri
 
     const units = answerEvidenceUnits(evidenceText);
     if (cue === "process") {
-      const nextStep = units.find((unit) => isReturnProcessInstruction(unit));
-      if (nextStep) pushAnswerCompletenessCandidate(candidates, nextStep);
+      const processUnitsForEvidence = units
+        .filter(isProcessAnswerBearingInstruction)
+        .filter((unit) => !isMerchantSideProcessInstruction(unit));
+      const nextSteps = preserveProcessConflicts
+        ? processUnitsForEvidence
+        : processUnitsForEvidence.filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, {
+          customerMessage: context?.customerMessage ?? customerMessage,
+          interactionChannel: context?.interactionChannel,
+        })).slice(0, 1);
+      nextSteps.forEach((nextStep) => pushAnswerCompletenessCandidate(candidates, nextStep));
     }
     if (cue === "timing") units.filter(isRefundTiming).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
     if (cue === "cost") units.filter(isReturnShippingResponsibility).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
@@ -2818,9 +2896,14 @@ function uniqueAnswerCandidates(candidates: AnswerCompletenessCandidate[]) {
 function recoveryCandidatesForRecord(
   cue: AnswerBearingCue,
   record: JsonObject,
-  customerMessage: string,
+  context: AnswerCompletenessContext,
 ): AnswerCompletenessCandidate[] {
-  const candidates = answerCompletenessCandidates(cue, answerEvidenceSections([record]), customerMessage);
+  const candidates = answerCompletenessCandidates(
+    cue,
+    answerEvidenceSections([record]),
+    context.customerMessage ?? "",
+    context,
+  );
   if (cue === "destination") {
     return uniqueAnswerCandidates(candidates.filter((candidate) =>
       /^https?:\/\//i.test(candidate.value) || physicalAddressMarker(candidate.value)));
@@ -2872,7 +2955,7 @@ function mergeRecordAnswerCandidates(cue: AnswerBearingCue, candidates: AnswerCo
 }
 
 function recoverPolicyAnswer(
-  context: Pick<ResponseValidationContext, "customerMessage" | "getResults">,
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
   cue: AnswerBearingCue,
 ): EvidenceRecovery {
   if (policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")) return { kind: "none" };
@@ -2886,8 +2969,15 @@ function recoverPolicyAnswer(
       rank: Number(objectValue(value)?.rank ?? resultIndex + 1),
     })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
       Boolean(item.record) && String(item.record.authority ?? "") === "authoritative" && String(item.record.knowledge_type ?? "") === "policy");
+    const preserveProcessConflicts = cue === "process" && hasContradictoryProcessInstructions(
+      records
+        .flatMap((item) => answerEvidenceSections([item.record]))
+        .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+        .filter(isProcessAnswerBearingInstruction),
+    );
+    const candidateContext = { ...context, preserveProcessConflicts };
     const matches = records.flatMap((item) => {
-      const candidates = mergeRecordAnswerCandidates(cue, recoveryCandidatesForRecord(cue, item.record, context.customerMessage ?? ""));
+      const candidates = mergeRecordAnswerCandidates(cue, recoveryCandidatesForRecord(cue, item.record, candidateContext));
       return candidates.length ? [{ ...item, candidates }] : [];
     });
     if (!matches.length) continue;
@@ -2918,6 +3008,7 @@ function approvedSegmentResolvesCue(
     cue,
     answerEvidenceSections(records),
     context.customerMessage ?? "",
+    context,
   );
   if (candidates.length && answerCompletenessValuePresent(segment.text, cue, candidates)) return true;
 
@@ -2969,7 +3060,7 @@ export function shouldPreferAuthoritativeEvidenceFallback(
  * path when the SDK cannot produce a structured final output.
  */
 export function recoverAuthoritativePolicyAnswer(
-  context: Pick<ResponseValidationContext, "customerMessage" | "getResults">,
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
 ) {
   const focus = customerKnowledgeFocus(context.customerMessage);
   const values: string[] = [];
@@ -3118,7 +3209,12 @@ export function ensureAnswerCompleteness(
     let rejected = false;
     for (const cue of cues) {
       const records = answerEvidenceRecords(currentSegment.basis, context, cue);
-      const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(records), context.customerMessage ?? "");
+      const candidates = answerCompletenessCandidates(
+        cue,
+        answerEvidenceSections(records),
+        context.customerMessage ?? "",
+        context,
+      );
       if (!candidates.length || answerCompletenessValuePresent(currentSegment.text, cue, candidates)) {
         candidates.forEach((candidate) => {
           if (normalizeAnswerCompletenessValue(currentSegment.text).includes(candidate.normalized)) restoredValues.add(candidate.normalized);
@@ -3173,7 +3269,12 @@ export function ensureAnswerCompleteness(
       if (segment.type !== "knowledge_guidance") return false;
       const evidence = resultFor(segment.basis, context);
       if (evidence?.toolName !== "search_policy") return false;
-      const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(answerEvidenceRecords(segment.basis, context, cue)), context.customerMessage ?? "");
+      const candidates = answerCompletenessCandidates(
+        cue,
+        answerEvidenceSections(answerEvidenceRecords(segment.basis, context, cue)),
+        context.customerMessage ?? "",
+        context,
+      );
       return candidates.length > 0 && answerCompletenessValuePresent(segment.text, cue, candidates);
     });
     if (hasAnswer) {
@@ -3473,7 +3574,10 @@ export function adaptCustomerFacingKnowledgeText(
       return sentences.map((sentence) => {
         const hadSupportContactInstruction = isActiveSupportChannel(context.interactionChannel)
           && /\b(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\b/i.test(sentence);
-        let current = isActiveSupportChannel(context.interactionChannel)
+        const satisfiedSupportContactPrerequisite = isSatisfiedSupportContactPrerequisite(sentence, context);
+        let current = satisfiedSupportContactPrerequisite
+          ? ""
+          : isActiveSupportChannel(context.interactionChannel)
           ? adaptSupportContactInstruction(sentence)
           : sentence;
         const adaptedRequirementList = adaptKnownRequirementList(current, context, hadSupportContactInstruction);

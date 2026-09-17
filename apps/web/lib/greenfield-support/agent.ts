@@ -115,6 +115,7 @@ export function fallbackResponse(context?: {
   locale?: "da" | "en";
   customerMessage?: string;
   customerProvidedContext?: ResponseValidationContext["customerProvidedContext"];
+  interactionChannel?: GreenfieldInteractionChannel;
   getResults?: () => ResponseEvidenceRecord[];
 }) {
   const requestedOrderId = context?.activeOrder?.requestedOrderId;
@@ -133,6 +134,7 @@ export function fallbackResponse(context?: {
   if (knowledgeGap) return knowledgeGap;
   const recoveredPolicyAnswer = recoverAuthoritativePolicyAnswer({
     customerMessage: context?.customerMessage,
+    interactionChannel: context?.interactionChannel,
     getResults: context?.getResults,
   });
   if (recoveredPolicyAnswer) return recoveredPolicyAnswer;
@@ -286,6 +288,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
               locale: inferResponseLocale(options.message),
               customerMessage: options.message,
               customerProvidedContext: responseContext.customerProvidedContext,
+              interactionChannel: responseContext.interactionChannel,
               getResults: registry.getResults,
             });
         pushEvent(trace, "final_response", {
@@ -328,6 +331,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    interactionChannel: options.interactionChannel,
     getResults: registry.getResults,
   });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());

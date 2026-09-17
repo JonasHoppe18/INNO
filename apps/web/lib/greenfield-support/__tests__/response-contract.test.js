@@ -1951,7 +1951,7 @@ function procedureEvidenceRecord({ taskSpecificity = "sufficient", procedureEvid
   };
 }
 
-async function recoveryCase(customerMessage, modelSegments, evidenceRecords, customerProvidedContext = {}) {
+async function recoveryCase(customerMessage, modelSegments, evidenceRecords, customerProvidedContext = {}, interactionChannel) {
   const dependencies = await createDemoDependencies();
   const registry = createCapabilityRegistry(dependencies);
   const getResult = registry.getResult;
@@ -1959,6 +1959,7 @@ async function recoveryCase(customerMessage, modelSegments, evidenceRecords, cus
     ...registry,
     customerMessage,
     customerProvidedContext,
+    interactionChannel,
     getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
     getResults: () => [...evidenceRecords, ...registry.getResults()],
   };
@@ -2124,6 +2125,118 @@ describe("model-to-contract answer completeness", () => {
 });
 
 describe("evidence-aware fallback recovery", () => {
+  it.each(["support_email", "support_inbox", "playground", "web_chat"])(
+    "treats a support contact prerequisite as satisfied on %s",
+    async (interactionChannel) => {
+      const evidence = answerEvidenceRecord([policyRecord(
+        "Contact us to request a return. Send the return with tracked shipping.",
+      )]);
+      const result = await recoveryCase("I would like to return my order.", [{
+        type: "limitation",
+        text: "I couldn't verify that policy detail from our current policy information.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }], [evidence], {}, interactionChannel);
+
+      expect(result.completed.allValid).toBe(true);
+      expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+      expect(result.rendered).toContain("Send the return with tracked shipping");
+      expect(result.rendered).not.toMatch(/contact us/i);
+    },
+  );
+
+  it.each([
+    "Email support to request a return.",
+    "Use the support form to request a return.",
+    "Let us know you want to return.",
+    "Submit a return request.",
+  ])("recognizes a satisfied support-request variant: %s", async (policyText) => {
+    const evidence = answerEvidenceRecord([policyRecord(policyText)]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "knowledge_guidance",
+      text: policyText,
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "web_chat");
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.rendered).toBe("");
+  });
+
+  it("keeps a content-bearing contact requirement unresolved", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Email us a photo of the damage.")]);
+    const result = await recoveryCase("My product is damaged. How do I get help?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+    expect(result.rendered).toContain("photo");
+  });
+
+  it("keeps a missing serial-number requirement unresolved", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Provide your serial number.")]);
+    const result = await recoveryCase("My product is damaged. How do I get help?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+    expect(result.rendered).toContain("serial number");
+  });
+
+  it("does not treat a merchant-side contact as a customer process step", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("We will contact you about deductions.")]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "knowledge_guidance",
+      text: "The policy mentions possible deductions.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.completed.issues).not.toContainEqual(expect.objectContaining({ code: "answer_value_ambiguous" }));
+  });
+
+  it("keeps contradictory customer process instructions ambiguous", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("Contact support before returning.", "Contact-first policy"),
+      policyRecord("Do not contact support; send the item directly.", "Direct-send policy"),
+    ]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("does not make the #1063 policy contact or merchant follow-up ambiguous", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "If not, we will contact you concerning a further deduction from the refund. Please contact us via e-mail letting us know that you want to return.",
+      "Refund policy",
+    )]);
+    const result = await recoveryCase(
+      "Hi, I would like to return my order 1063 since I'm not happy with my product. How do I return it?",
+      [{
+        type: "knowledge_guidance",
+        text: "Your return request is being reviewed.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }],
+      [evidence],
+      {},
+      "playground",
+    );
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.completed.issues).not.toContainEqual(expect.objectContaining({ code: "answer_value_ambiguous" }));
+  });
+
   it.each([
     ["P1 active", "You pay return shipping.", true],
     ["P2 passive", "Return shipping must be paid by you.", true],
