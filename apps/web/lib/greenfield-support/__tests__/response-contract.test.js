@@ -2220,6 +2220,15 @@ describe("evidence-aware fallback recovery", () => {
     expect(result.rendered).toContain("customer pays the return shipping");
   });
 
+  it("wires a resolvable payer question directly to payer recovery even without model cues", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.cues).toContain("cost");
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+  });
+
   it("does not recover general policy timing for a customer-specific order status question", async () => {
     const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
     const result = await recoveryCase("When was my refund processed for order #123?", [{

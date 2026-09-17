@@ -2556,9 +2556,9 @@ function answerCompletenessMessageCues(message: string, focus: CustomerKnowledge
   const cues: AnswerBearingCue[] = [];
   if (focus.asksProcess) cues.push("process");
   if (focus.asksReturnDestination) cues.push("destination");
-  if (focus.asksRefundTiming) cues.push("timing");
-  if (focus.asksShippingResponsibility) cues.push("cost");
-  if (focus.asksEligibility) cues.push("eligibility");
+  if (focus.questionShape === "timing" || focus.asksRefundTiming) cues.push("timing");
+  if (focus.questionShape === "cost" || focus.asksShippingResponsibility) cues.push("cost");
+  if (focus.questionShape === "eligibility" || focus.asksEligibility) cues.push("eligibility");
   if (focus.questionShape === "status"
     && /\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|sporing|forsendelse)\b/i.test(text)) cues.push("tracking");
   if (focus.questionShape === "status") cues.push("status");

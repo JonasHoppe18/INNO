@@ -585,6 +585,34 @@ describe("greenfield knowledge store", () => {
     expect(sections.flatMap((section) => section.chunkIds)).not.toContain("chunk-2");
   });
 
+  it("keeps a later answer-bearing timing section when an earlier process section ranks higher", () => {
+    const sections = selectEvidenceSections([
+      { chunkId: "process", chunkIndex: 0, content: "Refund process\n\nStart a return request and send the parcel back." },
+      { chunkId: "timing", chunkIndex: 1, content: "Refund timing\n\nThe refund is initiated after the return is received and processed." },
+    ], 0, "return policy", 220, "When will I get my refund?");
+
+    expect(sections.flatMap((section) => section.chunkIds)).toContain("timing");
+    expect(sections.some((section) => section.content.includes("received and processed"))).toBe(true);
+  });
+
+  it("keeps a complete compound timing proposition in the selected section", () => {
+    const sections = selectEvidenceSections([
+      { chunkId: "timing", chunkIndex: 0, content: "Refund timing\n\nAs soon as we have received and processed your return we will initiate the refund and you will be notified." },
+    ], 0, "refund policy", 220, "Hvornår får jeg pengene tilbage?");
+
+    expect(sections[0].content).toContain("received and processed");
+    expect(sections[0].content).toContain("initiate the refund");
+  });
+
+  it("does not invent timing evidence when the selected policy has none", () => {
+    const sections = selectEvidenceSections([
+      { chunkId: "policy", chunkIndex: 0, content: "Refund policy\n\nReturns require an order number." },
+    ], 0, "refund policy", 220, "When will I get my refund?");
+
+    expect(sections[0].content).toContain("Returns require an order number");
+    expect(sections[0].content).not.toContain("processed");
+  });
+
   it("enforces generic applicability while preserving global and matching product knowledge", async () => {
     const store = new InMemoryKnowledgeStore();
     await ingestScopedCorpus(store);
