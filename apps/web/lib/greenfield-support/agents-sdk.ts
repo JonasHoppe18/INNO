@@ -7,6 +7,7 @@ import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
 import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import type { ResponseCompletenessDiagnostics, ResponseValidationResult } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
@@ -15,6 +16,7 @@ import type {
   AgentTrace,
   ConversationContext,
   GreenfieldInteractionChannel,
+  JsonObject,
   JsonValue,
   ProposedAction,
   TenantContext,
@@ -43,6 +45,8 @@ export interface GreenfieldAgentsSdkOptions {
   now?: () => string;
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  /** Enables sanitized diagnostics only for the internal DEV Playground. */
+  enableDevDiagnostics?: boolean;
   /** Server-resolved support-user signature configuration; never supplied to the model. */
   signature?: string | {
     defaultClosingText?: string | null;
@@ -108,6 +112,116 @@ function toolCallId(details: any): string {
 
 function toolArguments(args: unknown): JsonValue {
   return traceValue(args ?? {});
+}
+
+function diagnosticQuestionShape(message: string) {
+  const value = String(message ?? "").toLowerCase();
+  if (/\b(?:when|hvornår|wann)\b[\s\S]{0,80}\b(?:refund|refusion|refundering|money|pengene|geld|zurück|back)\b/.test(value)) return "timing";
+  if (/\b(?:who|hvem|wer)\b[\s\S]{0,80}\b(?:pay|betaler|zahlt|postage|shipping|fragt|returfragt|versand)\b/.test(value)) return "payer";
+  if (/\b(?:where|hvor|wo)\b[\s\S]{0,80}\b(?:send|return|retur|rück|adresse|address|sende)\b/.test(value)) return "destination";
+  if (/\b(?:can|kan|kann)\b[\s\S]{0,80}\b(?:return|returnere|zurück|opened|åbnet|geöffnet)\b/.test(value)) return "eligibility";
+  if (/\b(?:how|hvordan|wie)\b/.test(value)) return "process";
+  if (/\b(?:pair|parr|koppel|connect|forbind|verbinden|troubleshoot|fejl|problem|issue)\b/.test(value)) return "procedure";
+  if (/\b(?:policy|politik|policy|refund|return|retur|warranty|garanti|shipping|levering)\b/.test(value)) return "policy";
+  return "general";
+}
+
+function looksLikeFallbackText(value: unknown) {
+  return /\b(?:couldn['’]?t|cannot|can't|unable|try again|safely complete|could not|beklager|kan ikke|prøv igen|nicht sicher|erneut versuchen)\b/i.test(String(value ?? ""));
+}
+
+function modelOutputDiagnostics(output: unknown) {
+  const parsed = StructuredResponseSchema.safeParse(output);
+  const segments = parsed.success ? parsed.data.segments : [];
+  const knowledgeSegments = segments.filter((segment) => segment.type === "knowledge_guidance");
+  const answerSegments = segments.filter((segment) => ["fact", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
+  const clarificationRequested = segments.some((segment) => segment.type === "question");
+  const fallbackLikeContent = segments.some((segment) => "text" in segment && looksLikeFallbackText(segment.text));
+  const hasAnswer = answerSegments.length > 0 && !fallbackLikeContent;
+  return {
+    structured_parse_failed: !parsed.success,
+    knowledge_guidance_exists: knowledgeSegments.length > 0,
+    knowledge_guidance_has_answer_text: knowledgeSegments.some((segment) => Boolean(segment.text?.trim())),
+    knowledge_guidance_basis_refs: knowledgeSegments.filter((segment) => Boolean(segment.basis?.result_id)).length,
+    clarification_requested: clarificationRequested,
+    fallback_like_content: fallbackLikeContent,
+    segment_count: segments.length,
+    response_mode: hasAnswer ? "answered" : clarificationRequested ? "clarification" : "fallback",
+  };
+}
+
+function evidenceDiagnostics(registry: CapabilityRegistry) {
+  const sourceIds = new Set<string>();
+  const evidenceSectionIds = new Set<string>();
+  const providerStatuses: Record<string, string> = {};
+  let resolvableIntent = false;
+  for (const evidence of registry.getResults()) {
+    providerStatuses[evidence.toolName] = evidence.result.status;
+    const data = evidence.result.data && typeof evidence.result.data === "object" && !Array.isArray(evidence.result.data)
+      ? evidence.result.data as Record<string, unknown>
+      : null;
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (evidence.result.status === "ok" && (results.length > 0 || evidence.toolName !== "search_policy" && evidence.toolName !== "search_procedures")) {
+      resolvableIntent = true;
+    }
+    for (const item of results) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      const provenance = record.provenance && typeof record.provenance === "object" && !Array.isArray(record.provenance)
+        ? record.provenance as Record<string, unknown>
+        : null;
+      const sourceId = String(record.source_id ?? provenance?.source_id ?? "").trim();
+      if (sourceId) sourceIds.add(sourceId);
+      const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
+      for (const section of sections) {
+        if (!section || typeof section !== "object" || Array.isArray(section)) continue;
+        const chunkIds = Array.isArray((section as Record<string, unknown>).chunk_ids)
+          ? (section as Record<string, unknown>).chunk_ids as unknown[]
+          : [];
+        for (const chunkId of chunkIds) {
+          const normalized = String(chunkId ?? "").trim();
+          if (normalized) evidenceSectionIds.add(normalized);
+        }
+      }
+    }
+  }
+  return {
+    selected_source_ids: [...sourceIds].slice(0, 20),
+    selected_evidence_section_ids: [...evidenceSectionIds].slice(0, 40),
+    provider_status: providerStatuses,
+    resolvable_intent: resolvableIntent,
+  };
+}
+
+function completenessDiagnostics(validation: ResponseValidationResult): ResponseCompletenessDiagnostics {
+  return validation.completenessDiagnostics ?? { entered: false, cues: [], recovery: [] };
+}
+
+function recoverySummary(validation: ResponseValidationResult) {
+  const diagnostics = completenessDiagnostics(validation);
+  const recovered = diagnostics.recovery.filter((item) => item.result === "recovered");
+  const attempted = diagnostics.recovery.some((item) => ["recovered", "ambiguous", "unavailable"].includes(item.result));
+  return {
+    recovery_attempted: attempted,
+    recovery_type: [...new Set(diagnostics.recovery.map((item) => item.type))],
+    recovery_result: recovered.length > 0
+      ? "recovered"
+      : diagnostics.recovery.some((item) => item.result === "ambiguous")
+        ? "ambiguous"
+        : diagnostics.recovery.some((item) => item.result === "unavailable")
+          ? "unavailable"
+          : diagnostics.recovery.some((item) => item.result === "skipped")
+            ? "skipped"
+            : "unavailable",
+    recovery_details: diagnostics.recovery,
+  };
+}
+
+function responseCompositionSource(modelDiagnostics: ReturnType<typeof modelOutputDiagnostics>, validation: ResponseValidationResult) {
+  const recovery = recoverySummary(validation);
+  if (!validation.approvedSegments.length) return "fallback";
+  if (recovery.recovery_result === "recovered") return modelDiagnostics.response_mode === "answered" ? "mixed" : "recovered_evidence";
+  return "model";
 }
 
 function createSdkTools(context: SonaAgentContext) {
@@ -368,6 +482,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {
       trace.usage.push(traceValue(result.runContext.usage) as Record<string, JsonValue>);
     }
+    const modelDiagnostics = options.enableDevDiagnostics ? modelOutputDiagnostics(result?.finalOutput) : null;
     pushEvent(
       trace,
       "model_response",
@@ -376,12 +491,29 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         raw_response_count: Array.isArray(result?.rawResponses) ? result.rawResponses.length : 0,
         item_types: Array.isArray(result?.newItems) ? result.newItems.map((item: any) => item?.type).filter(Boolean) : [],
         interruptions: Array.isArray(result?.interruptions) ? result.interruptions.map((item: any) => ({ name: item?.name, call_id: item?.rawItem?.callId })) : [],
+        ...(modelDiagnostics ? { model_output: modelDiagnostics } : {}),
       },
       now(),
     );
 
     if (Array.isArray(result?.interruptions) && result.interruptions.length) {
       pushEvent(trace, "error", { code: "approval_required", message: "The SDK paused for tool approval; no action was executed." }, now());
+      if (options.enableDevDiagnostics && modelDiagnostics) {
+        const evidence = evidenceDiagnostics(registry);
+        trace.diagnostics = traceValue({
+          question_shape: diagnosticQuestionShape(options.message),
+          ...evidence,
+          validation: null,
+          model_output: modelDiagnostics,
+          model_response_mode: modelDiagnostics.response_mode,
+          completeness_check_entered: false,
+          recovery_attempted: false,
+          recovery_type: [],
+          recovery_result: "skipped",
+          fallback_reason: "approval_required",
+          final_composition_source: "fallback",
+        }) as JsonObject;
+      }
       const response = composeGreenfieldResponse(
         "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.",
         options.signature,
@@ -417,6 +549,28 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       validateStructuredResponse(result?.finalOutput, responseContext),
       responseContext,
     );
+    if (options.enableDevDiagnostics && modelDiagnostics) {
+      const evidence = evidenceDiagnostics(registry);
+      const recovery = recoverySummary(validation);
+      const fallbackReason = validation.approvedSegments.length
+        ? null
+        : modelDiagnostics.structured_parse_failed
+          ? "structured_parse_failed"
+          : validation.rejectedSegments.length
+            ? "contract_rejected_segments"
+            : "no_approved_segments";
+      trace.diagnostics = traceValue({
+        question_shape: diagnosticQuestionShape(options.message),
+        ...evidence,
+        validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
+        model_output: modelDiagnostics,
+        model_response_mode: modelDiagnostics.response_mode,
+        completeness_check_entered: validation.completenessDiagnostics?.entered === true,
+        ...recovery,
+        fallback_reason: fallbackReason,
+        final_composition_source: responseCompositionSource(modelDiagnostics, validation),
+      }) as JsonObject;
+    }
     const actionExecutions = await executeActionProposals({
       executor: options.actionExecutor,
       proposals: proposedActions,
@@ -450,7 +604,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposed_actions: proposedActions,
       action_executions: actionExecutions,
       structured_response: validation.parsed,
-      validation: summarizeResponseValidation(validation),
+      validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
     }, now());
     trace.finishedAt = now();
     return {
@@ -462,6 +616,21 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
+    if (options.enableDevDiagnostics) {
+      trace.diagnostics = traceValue({
+        question_shape: diagnosticQuestionShape(options.message),
+        ...evidenceDiagnostics(registry),
+        validation: null,
+        model_output: null,
+        model_response_mode: "fallback",
+        completeness_check_entered: false,
+        recovery_attempted: false,
+        recovery_type: [],
+        recovery_result: "skipped",
+        fallback_reason: "agent_error",
+        final_composition_source: "fallback",
+      }) as JsonObject;
+    }
   }
 
   const fallback = fallbackResponse({

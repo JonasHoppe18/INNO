@@ -14,6 +14,7 @@ import {
 import {
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT,
   historyFromPlaygroundRows,
+  isGreenfieldPlaygroundDevDiagnosticsEnabled,
   isGreenfieldPlaygroundEnabled,
   isGreenfieldPlaygroundTicketRequired,
   isGreenfieldPlaygroundProduction,
@@ -469,6 +470,7 @@ export async function POST(request: Request) {
       customerDisplayName: customerFirstName,
       message: messageForAgent,
       interactionChannel: "playground",
+      enableDevDiagnostics: isGreenfieldPlaygroundDevDiagnosticsEnabled(),
       history: historyFromPlaygroundRows(historyRows),
       conversationContext: (contextBefore || undefined) as any,
       signature,

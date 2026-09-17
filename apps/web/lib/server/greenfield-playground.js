@@ -26,6 +26,30 @@ export function isGreenfieldPlaygroundDevTarget(env = process.env) {
   return actualProjectRef === GREENFIELD_DEV_SUPABASE_PROJECT_REF;
 }
 
+const RUNTIME_REVISION_ENV_KEYS = [
+  "GREENFIELD_RUNTIME_REVISION",
+  "DIGITALOCEAN_DEPLOYMENT_COMMIT_SHA",
+  "DO_APP_COMMIT_SHA",
+  "VERCEL_GIT_COMMIT_SHA",
+  "GIT_COMMIT_SHA",
+  "COMMIT_SHA",
+];
+
+export function isGreenfieldPlaygroundDevDiagnosticsEnabled(env = process.env) {
+  return greenfieldPlaygroundEnvironment(env) !== "production"
+    && isGreenfieldPlaygroundEnabled(env)
+    && isGreenfieldPlaygroundDevTarget(env);
+}
+
+export function greenfieldPlaygroundRuntimeRevision(env = process.env) {
+  if (!isGreenfieldPlaygroundDevDiagnosticsEnabled(env)) return null;
+  for (const key of RUNTIME_REVISION_ENV_KEYS) {
+    const value = String(env[key] || "").trim();
+    if (/^[0-9a-f]{7,64}$/i.test(value)) return value;
+  }
+  return "unknown";
+}
+
 export function greenfieldPlaygroundEnvironment(env = process.env) {
   return env.NODE_ENV === "production" ? "production" : "development";
 }
@@ -330,6 +354,20 @@ function traceEventSummary(event) {
       duration_ms: Number.isFinite(data.duration_ms) ? data.duration_ms : null,
       runtime: "@openai/agents",
       item_types: Array.isArray(data.item_types) ? data.item_types.slice(0, 12).map((item) => text(item, 80)) : [],
+      model_output: isRecord(data.model_output)
+        ? {
+            structured_parse_failed: data.model_output.structured_parse_failed === true,
+            knowledge_guidance_exists: data.model_output.knowledge_guidance_exists === true,
+            knowledge_guidance_has_answer_text: data.model_output.knowledge_guidance_has_answer_text === true,
+            knowledge_guidance_basis_refs: Number.isInteger(data.model_output.knowledge_guidance_basis_refs)
+              ? data.model_output.knowledge_guidance_basis_refs
+              : 0,
+            clarification_requested: data.model_output.clarification_requested === true,
+            fallback_like_content: data.model_output.fallback_like_content === true,
+            segment_count: Number.isInteger(data.model_output.segment_count) ? data.model_output.segment_count : 0,
+            response_mode: text(data.model_output.response_mode, 40) || null,
+          }
+        : null,
     };
   }
   if (event?.type === "action_execution") {
@@ -356,16 +394,39 @@ function traceEventSummary(event) {
   }
   if (event?.type === "final_response") {
     const validation = isRecord(data.validation) ? data.validation : null;
+    const approvedSegments = validation && Number.isInteger(validation.approvedSegments)
+      ? validation.approvedSegments
+      : validation && Number.isInteger(validation.approved_count)
+        ? validation.approved_count
+        : null;
+    const rejectedSegments = validation && Number.isInteger(validation.rejectedSegments)
+      ? validation.rejectedSegments
+      : validation && Array.isArray(validation.rejected_segments)
+        ? validation.rejected_segments.length
+        : null;
+    const validationSummary = validation
+      ? {
+          approved_segments: approvedSegments,
+          rejected_segments: rejectedSegments,
+          valid: validation.valid === true || validation.all_valid === true,
+        }
+      : null;
+    if (validationSummary && isRecord(validation.completeness)) {
+      validationSummary.completeness = {
+        entered: validation.completeness.entered === true,
+        cues: Array.isArray(validation.completeness.cues) ? validation.completeness.cues.slice(0, 12).map((cue) => text(cue, 40)) : [],
+        recovery: Array.isArray(validation.completeness.recovery)
+          ? validation.completeness.recovery.slice(0, 16).map((item) => ({
+              type: text(item?.type, 40),
+              result: text(item?.result, 40),
+            }))
+          : [],
+      };
+    }
     return {
       at: event.at,
       type: event.type,
-      validation: validation
-        ? {
-            approved_segments: Number.isInteger(validation.approvedSegments) ? validation.approvedSegments : null,
-            rejected_segments: Number.isInteger(validation.rejectedSegments) ? validation.rejectedSegments : null,
-            valid: validation.valid === true,
-          }
-        : null,
+      validation: validationSummary,
       proposed_actions: Array.isArray(data.proposed_actions)
         ? data.proposed_actions.map((action) => ({ action: text(action?.action, 80), status: "proposed", executed: false })).slice(0, 8)
         : [],
@@ -385,7 +446,63 @@ function traceEventSummary(event) {
   };
 }
 
-export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAfter = null } = {}) {
+function sanitizeGreenfieldDiagnostics(value) {
+  if (!isRecord(value)) return null;
+  const modelOutput = isRecord(value.model_output) ? value.model_output : null;
+  const validation = isRecord(value.validation) ? value.validation : null;
+  return {
+    question_shape: text(value.question_shape, 40) || "general",
+    selected_source_ids: Array.isArray(value.selected_source_ids) ? value.selected_source_ids.slice(0, 20).map((id) => text(id, 160)).filter(Boolean) : [],
+    selected_evidence_section_ids: Array.isArray(value.selected_evidence_section_ids)
+      ? value.selected_evidence_section_ids.slice(0, 40).map((id) => text(id, 180)).filter(Boolean)
+      : [],
+    provider_status: isRecord(value.provider_status)
+      ? Object.fromEntries(Object.entries(value.provider_status).slice(0, 20).map(([tool, status]) => [text(tool, 80), text(status, 40)]))
+      : {},
+    validation: validation
+      ? {
+          schema_valid: validation.schema_valid === true,
+          all_valid: validation.all_valid === true,
+          approved_count: Number.isInteger(validation.approved_count) ? validation.approved_count : 0,
+          rejected_count: Array.isArray(validation.rejected_segments) ? validation.rejected_segments.length : 0,
+          completeness: isRecord(validation.completeness)
+            ? {
+                entered: validation.completeness.entered === true,
+                cues: Array.isArray(validation.completeness.cues) ? validation.completeness.cues.slice(0, 12).map((cue) => text(cue, 40)) : [],
+                recovery: Array.isArray(validation.completeness.recovery)
+                  ? validation.completeness.recovery.slice(0, 16).map((item) => ({ type: text(item?.type, 40), result: text(item?.result, 40) }))
+                  : [],
+              }
+            : null,
+        }
+      : null,
+    model_output: modelOutput
+      ? {
+          structured_parse_failed: modelOutput.structured_parse_failed === true,
+          knowledge_guidance_exists: modelOutput.knowledge_guidance_exists === true,
+          knowledge_guidance_has_answer_text: modelOutput.knowledge_guidance_has_answer_text === true,
+          knowledge_guidance_basis_refs: Number.isInteger(modelOutput.knowledge_guidance_basis_refs) ? modelOutput.knowledge_guidance_basis_refs : 0,
+          clarification_requested: modelOutput.clarification_requested === true,
+          fallback_like_content: modelOutput.fallback_like_content === true,
+          segment_count: Number.isInteger(modelOutput.segment_count) ? modelOutput.segment_count : 0,
+          response_mode: text(modelOutput.response_mode, 40) || null,
+        }
+      : null,
+    model_response_mode: text(value.model_response_mode, 40) || null,
+    completeness_check_entered: value.completeness_check_entered === true,
+    resolvable_intent: value.resolvable_intent === true,
+    recovery_attempted: value.recovery_attempted === true,
+    recovery_type: Array.isArray(value.recovery_type) ? value.recovery_type.slice(0, 12).map((item) => text(item, 40)).filter(Boolean) : [],
+    recovery_result: text(value.recovery_result, 40) || "unavailable",
+    recovery_details: Array.isArray(value.recovery_details)
+      ? value.recovery_details.slice(0, 16).map((item) => ({ type: text(item?.type, 40), result: text(item?.result, 40) }))
+      : [],
+    fallback_reason: text(value.fallback_reason, 80) || null,
+    final_composition_source: text(value.final_composition_source, 40) || null,
+  };
+}
+
+export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAfter = null, env = process.env } = {}) {
   const events = Array.isArray(trace?.events) ? trace.events.map(traceEventSummary) : [];
   const resultEvents = events.filter((event) => event.type === "tool_result");
   const evidence = resultEvents.flatMap((event) => event.result?.data?.results || []);
@@ -407,12 +524,15 @@ export function sanitizeGreenfieldTrace(trace, { contextBefore = null, contextAf
     .find(Boolean) || null;
   const startedAt = Date.parse(trace?.startedAt || "");
   const finishedAt = Date.parse(trace?.finishedAt || "");
+  const devDiagnosticsEnabled = isGreenfieldPlaygroundDevDiagnosticsEnabled(env);
   return {
     trace_id: text(trace?.traceId, 120),
     runtime: "@openai/agents",
     started_at: trace?.startedAt || null,
     finished_at: trace?.finishedAt || null,
     latency_ms: Number.isFinite(startedAt) && Number.isFinite(finishedAt) ? Math.max(0, finishedAt - startedAt) : null,
+    runtime_revision: devDiagnosticsEnabled ? greenfieldPlaygroundRuntimeRevision(env) : null,
+    diagnostics: devDiagnosticsEnabled ? sanitizeGreenfieldDiagnostics(trace?.diagnostics) : null,
     tools: Array.isArray(trace?.tools)
       ? trace.tools.map((tool) => ({ name: text(tool?.name, 80), sensitivity: text(tool?.sensitivity, 40) })).filter((tool) => tool.name)
       : [],

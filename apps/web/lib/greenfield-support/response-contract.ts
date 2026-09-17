@@ -117,6 +117,17 @@ export interface ResponseValidationIssue {
   message: string;
 }
 
+export interface CompletenessRecoveryDiagnostic {
+  type: string;
+  result: "recovered" | "ambiguous" | "unavailable" | "skipped";
+}
+
+export interface ResponseCompletenessDiagnostics {
+  entered: boolean;
+  cues: string[];
+  recovery: CompletenessRecoveryDiagnostic[];
+}
+
 export interface ResponseValidationResult {
   schemaValid: boolean;
   allValid: boolean;
@@ -124,6 +135,7 @@ export interface ResponseValidationResult {
   rejectedSegments: Array<{ index: number; type?: string; issues: ResponseValidationIssue[] }>;
   issues: ResponseValidationIssue[];
   parsed: StructuredResponse | null;
+  completenessDiagnostics?: ResponseCompletenessDiagnostics;
 }
 
 export type ResponseFailureClass =
@@ -1511,8 +1523,11 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
   };
 }
 
-export function summarizeResponseValidation(result: ResponseValidationResult) {
-  return {
+export function summarizeResponseValidation(
+  result: ResponseValidationResult,
+  { includeCompleteness = false }: { includeCompleteness?: boolean } = {},
+) {
+  const summary = {
     schema_valid: result.schemaValid,
     all_valid: result.allValid,
     approved_count: result.approvedSegments.length,
@@ -1522,6 +1537,18 @@ export function summarizeResponseValidation(result: ResponseValidationResult) {
       issues: issues.map(({ code, message }) => ({ code, message })),
     })),
   };
+  return includeCompleteness
+    ? {
+        ...summary,
+        completeness: result.completenessDiagnostics
+          ? {
+              entered: result.completenessDiagnostics.entered,
+              cues: result.completenessDiagnostics.cues,
+              recovery: result.completenessDiagnostics.recovery,
+            }
+          : null,
+      }
+    : summary;
 }
 
 const DANISH_MARKERS = [
@@ -2893,7 +2920,14 @@ export function ensureAnswerCompleteness(
 ): ResponseValidationResult {
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
-  if (!validation.schemaValid && !cues.length) return validation;
+  const completenessDiagnostics: ResponseCompletenessDiagnostics = {
+    entered: true,
+    cues: [...cues],
+    recovery: [],
+  };
+  if (!validation.schemaValid && !cues.length) {
+    return { ...validation, completenessDiagnostics };
+  }
   const procedureRequested = /\b(?:procedure|steps?|troubleshoot(?:ing)?|pair(?:ing)?|connect(?:ion|ing)?|reset|firmware|microphone|interference|not\s+working|won['’]?t|will\s+not|problem|issue|fejl|forbinder|parre|funktioniert|verbinden|koppeln)\b/i.test([
     context.customerMessage,
     context.customerProvidedContext?.issue,
@@ -2929,6 +2963,7 @@ export function ensureAnswerCompleteness(
           text: restoreAnswerCompletenessValue(currentSegment.text, focus, cue, candidates[0]),
         };
         restoredValues.add(candidates[0].normalized);
+        completenessDiagnostics.recovery.push({ type: cue, result: "recovered" });
         changed = true;
         continue;
       }
@@ -2953,7 +2988,17 @@ export function ensureAnswerCompleteness(
   const recoveredTools = new Set<string>();
   for (const cue of cues) {
     const recovery = recoverPolicyAnswer(context, cue);
-    if (recovery.kind !== "usable") continue;
+    let recoveryResult: CompletenessRecoveryDiagnostic["result"] = recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : recovery.kind === "usable"
+        ? "unavailable"
+        : policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")
+          ? "skipped"
+          : "unavailable";
+    if (recovery.kind !== "usable") {
+      completenessDiagnostics.recovery.push({ type: cue, result: recoveryResult });
+      continue;
+    }
     const hasAnswer = approvedSegments.some((segment) => {
       if (segment.type !== "knowledge_guidance") return false;
       const evidence = resultFor(segment.basis, context);
@@ -2961,25 +3006,40 @@ export function ensureAnswerCompleteness(
       const candidates = answerCompletenessCandidates(cue, answerEvidenceSections(answerEvidenceRecords(segment.basis, context, cue)), context.customerMessage ?? "");
       return candidates.length > 0 && answerCompletenessValuePresent(segment.text, cue, candidates);
     });
-    if (hasAnswer) continue;
-    const segment = recoveredPolicySegment(recovery);
-    if (!segment || validateSegment(segment, context, -1).length) continue;
-    recoveredSegments.push(segment);
-    recoveredTools.add("search_policy");
-    changed = true;
+    if (hasAnswer) {
+      recoveryResult = "skipped";
+    } else {
+      const segment = recoveredPolicySegment(recovery);
+      if (segment && !validateSegment(segment, context, -1).length) {
+        recoveredSegments.push(segment);
+        recoveredTools.add("search_policy");
+        recoveryResult = "recovered";
+        changed = true;
+      }
+    }
+    completenessDiagnostics.recovery.push({ type: cue, result: recoveryResult });
   }
 
   if (procedureRequested) {
     const recovery = recoverProcedureAnswer(context);
+    let recoveryResult: CompletenessRecoveryDiagnostic["result"] = recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : recovery.kind === "usable"
+        ? "unavailable"
+        : "unavailable";
     const hasProcedure = approvedSegments.some((segment) => segment.type === "procedure_guidance");
     if (recovery.kind === "usable" && !hasProcedure) {
       const segment = recoveredProcedureSegment(recovery);
       if (segment && !validateSegment(segment, context, -1).length) {
         recoveredSegments.push(segment);
         recoveredTools.add("search_procedures");
+        recoveryResult = "recovered";
         changed = true;
       }
+    } else if (hasProcedure) {
+      recoveryResult = "skipped";
     }
+    completenessDiagnostics.recovery.push({ type: "procedure", result: recoveryResult });
   }
 
   if (recoveredTools.size) {
@@ -2992,13 +3052,14 @@ export function ensureAnswerCompleteness(
     }
   }
 
-  if (!changed) return validation;
+  if (!changed) return { ...validation, completenessDiagnostics };
   return {
     ...validation,
     allValid: validation.schemaValid && rejectedSegments.length === 0,
     approvedSegments: [...recoveredSegments, ...approvedSegments],
     rejectedSegments,
     issues,
+    completenessDiagnostics,
   };
 }
 

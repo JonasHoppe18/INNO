@@ -39,6 +39,7 @@ vi.mock("@/lib/greenfield-support", () => ({
 }));
 vi.mock("@/lib/server/greenfield-playground", () => ({
   GREENFIELD_PLAYGROUND_HISTORY_LIMIT: 20,
+  isGreenfieldPlaygroundDevDiagnosticsEnabled: () => true,
   isGreenfieldPlaygroundEnabled: () => true,
   isGreenfieldPlaygroundProduction: mocks.isGreenfieldPlaygroundProduction,
   isGreenfieldPlaygroundTicketRequired: mocks.isGreenfieldPlaygroundTicketRequired,

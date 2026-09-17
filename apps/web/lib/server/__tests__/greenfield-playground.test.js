@@ -3,12 +3,14 @@ import {
   historyFromPlaygroundRows,
   isInternalGreenfieldPlaygroundUser,
   isGreenfieldPlaygroundEnabled,
+  isGreenfieldPlaygroundDevDiagnosticsEnabled,
   isGreenfieldPlaygroundFreeformEnabled,
   isGreenfieldPlaygroundTicketRequired,
   isOwnedPlaygroundSession,
   normalizePlaygroundContext,
   normalizePlaygroundCustomerEmail,
   normalizePlaygroundMessage,
+  greenfieldPlaygroundRuntimeRevision,
   sanitizeGreenfieldTrace,
 } from "../greenfield-playground.js";
 
@@ -169,6 +171,139 @@ describe("greenfield playground boundary", () => {
     expect(sanitized.events[0].validation).toEqual({ approved_segments: 1, rejected_segments: 0, valid: true });
     expect(sanitized.events[0]).not.toHaveProperty("response");
     expect(sanitized.tools).toEqual([{ name: "update_address", sensitivity: "proposed_action" }]);
+  });
+
+  it("maps snake_case validation summaries and keeps DEV diagnostics bounded", () => {
+    const devEnv = {
+      NODE_ENV: "development",
+      NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
+      GREENFIELD_RUNTIME_REVISION: "8f6e1270443274f3b7341f1e8e72e5066e172abc",
+    };
+    const sanitized = sanitizeGreenfieldTrace({
+      traceId: "trace-diagnostics",
+      events: [{
+        type: "final_response",
+        at: "now",
+        data: {
+          validation: {
+            schema_valid: true,
+            all_valid: true,
+            approved_count: 1,
+            rejected_segments: [],
+            completeness: {
+              entered: true,
+              cues: ["timing"],
+              recovery: [{ type: "timing", result: "recovered" }],
+            },
+          },
+        },
+      }],
+      diagnostics: {
+        question_shape: "timing",
+        selected_source_ids: ["shopify:refund-policy"],
+        selected_evidence_section_ids: ["refund:section:3:0"],
+        provider_status: { search_policy: "ok" },
+        validation: {
+          schema_valid: true,
+          all_valid: true,
+          approved_count: 1,
+          rejected_segments: [],
+          completeness: { entered: true, cues: ["timing"], recovery: [{ type: "timing", result: "recovered" }] },
+        },
+        model_output: {
+          structured_parse_failed: false,
+          knowledge_guidance_exists: true,
+          knowledge_guidance_has_answer_text: false,
+          knowledge_guidance_basis_refs: 1,
+          clarification_requested: false,
+          fallback_like_content: true,
+          segment_count: 1,
+          response_mode: "fallback",
+        },
+        model_response_mode: "fallback",
+        completeness_check_entered: true,
+        resolvable_intent: true,
+        recovery_attempted: true,
+        recovery_type: ["timing"],
+        recovery_result: "recovered",
+        recovery_details: [{ type: "timing", result: "recovered" }],
+        fallback_reason: null,
+        final_composition_source: "recovered_evidence",
+      },
+    }, { env: devEnv });
+
+    expect(sanitized.runtime_revision).toBe(devEnv.GREENFIELD_RUNTIME_REVISION);
+    expect(sanitized.diagnostics).toMatchObject({
+      question_shape: "timing",
+      selected_source_ids: ["shopify:refund-policy"],
+      selected_evidence_section_ids: ["refund:section:3:0"],
+      completeness_check_entered: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+    });
+    expect(sanitized.events[0].validation).toEqual({
+      approved_segments: 1,
+      rejected_segments: 0,
+      valid: true,
+      completeness: {
+        entered: true,
+        cues: ["timing"],
+        recovery: [{ type: "timing", result: "recovered" }],
+      },
+    });
+  });
+
+  it.each([
+    ["A model answers directly", { model_response_mode: "answered", recovery_result: "skipped", final_composition_source: "model" }],
+    ["B model fallback recovers", { model_response_mode: "fallback", recovery_result: "recovered", final_composition_source: "recovered_evidence" }],
+    ["C clarification has resolvable evidence", { model_response_mode: "clarification", resolvable_intent: true, final_composition_source: "model" }],
+    ["D ambiguous evidence", { model_response_mode: "fallback", recovery_result: "ambiguous", final_composition_source: "fallback" }],
+    ["E structured parse failure", { model_response_mode: "fallback", fallback_reason: "structured_parse_failed" }],
+    ["F customer-specific recovery skipped", { recovery_result: "skipped", recovery_type: ["timing"], final_composition_source: "fallback" }],
+  ])("reports diagnostics for %s", (_label, expected) => {
+    const sanitized = sanitizeGreenfieldTrace({
+      traceId: "trace-case",
+      diagnostics: {
+        question_shape: "timing",
+        provider_status: { search_policy: "ok" },
+        model_response_mode: "fallback",
+        completeness_check_entered: true,
+        resolvable_intent: false,
+        recovery_attempted: true,
+        recovery_type: ["timing"],
+        recovery_result: "unavailable",
+        fallback_reason: "no_approved_segments",
+        final_composition_source: "fallback",
+        model_output: { response_mode: "fallback", structured_parse_failed: false },
+        ...expected,
+      },
+    }, {
+      env: {
+        NODE_ENV: "development",
+        NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co",
+      },
+    });
+    expect(sanitized.diagnostics).toMatchObject(expected);
+  });
+
+  it("fails closed for diagnostics outside the authorized DEV target", () => {
+    expect(isGreenfieldPlaygroundDevDiagnosticsEnabled({ NODE_ENV: "development" })).toBe(false);
+    expect(greenfieldPlaygroundRuntimeRevision({
+      NODE_ENV: "production",
+      GREENFIELD_RUNTIME_REVISION: "8f6e127",
+      NEXT_PUBLIC_SUPABASE_URL: "https://ikuupzjaxzvatdnmyzoy.supabase.co",
+    })).toBeNull();
+    const sanitized = sanitizeGreenfieldTrace({
+      traceId: "trace-prod",
+      diagnostics: { final_composition_source: "recovered_evidence" },
+    }, {
+      env: {
+        NODE_ENV: "production",
+        NEXT_PUBLIC_SUPABASE_URL: "https://ikuupzjaxzvatdnmyzoy.supabase.co",
+      },
+    });
+    expect(sanitized.runtime_revision).toBeNull();
+    expect(sanitized.diagnostics).toBeNull();
   });
 
   it("J: exposes dry-run action details without exposing execution or credentials", () => {

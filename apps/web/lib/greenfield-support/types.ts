@@ -475,6 +475,8 @@ export interface AgentTrace {
   developerInstructions: string;
   tools: unknown[];
   usage: JsonObject[];
+  /** Sanitized, DEV-playground-only diagnostics; never model-facing. */
+  diagnostics?: JsonObject;
 }
 
 export interface ToolExecutionResult {

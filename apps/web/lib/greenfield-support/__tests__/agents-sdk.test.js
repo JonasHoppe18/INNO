@@ -10,6 +10,90 @@ function structured(...segments) {
 }
 
 describe("greenfield OpenAI Agents SDK runtime", () => {
+  it("records a minimal direct-answer model-to-contract diagnostic", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "Refunds are normally processed within 5 business days after approval.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.diagnostics).toMatchObject({
+      model_response_mode: "answered",
+      completeness_check_entered: true,
+      recovery_result: "skipped",
+      final_composition_source: "model",
+      model_output: {
+        structured_parse_failed: false,
+        knowledge_guidance_exists: true,
+        knowledge_guidance_has_answer_text: true,
+        knowledge_guidance_basis_refs: 1,
+      },
+    });
+  });
+
+  it("records when usable policy evidence recovers a model fallback", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "I’m sorry, but I couldn’t safely complete that lookup right now.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.diagnostics).toMatchObject({
+      model_response_mode: "fallback",
+      completeness_check_entered: true,
+      recovery_attempted: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+      model_output: {
+        fallback_like_content: true,
+      },
+    });
+    expect(result.response).toContain("5 business days");
+  });
+
+  it("does not emit the new diagnostics without explicit DEV Playground opt-in", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace).not.toHaveProperty("diagnostics");
+    expect(result.trace.events.find((event) => event.type === "model_response")?.data).not.toHaveProperty("model_output");
+    expect(result.trace.events.find((event) => event.type === "final_response")?.data.validation).not.toHaveProperty("completeness");
+  });
+
   it("greets from the verified commerce profile when the message has no sign-off", async () => {
     const dependencies = await createDemoDependencies();
     const commerce = new InMemoryCommerceProvider({
