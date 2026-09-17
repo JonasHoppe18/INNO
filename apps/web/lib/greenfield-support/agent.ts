@@ -23,6 +23,7 @@ import {
   recoverAuthoritativePolicyAnswer,
   renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
+  shouldPreferAuthoritativeEvidenceFallback,
   summarizeResponseValidation,
   validateStructuredResponse,
 } from "./response-contract";
@@ -258,6 +259,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           validateStructuredResponse(rawText, responseContext),
           responseContext,
         );
+        const useAuthoritativeFallback = shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,
           proposals: proposedActions,
@@ -270,7 +272,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           },
         });
         for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
-        const finalResponse = validation.approvedSegments.length
+        const finalResponse = validation.approvedSegments.length && !useAuthoritativeFallback
           ? renderResponseSegments(validation.approvedSegments, {
               ...responseContext,
               locale: inferResponseLocale(options.message),

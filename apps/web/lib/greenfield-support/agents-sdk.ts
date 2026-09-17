@@ -6,7 +6,7 @@ import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
 import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, shouldPreferAuthoritativeEvidenceFallback, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import type { ResponseCompletenessDiagnostics, ResponseValidationResult } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
@@ -217,8 +217,13 @@ function recoverySummary(validation: ResponseValidationResult) {
   };
 }
 
-function responseCompositionSource(modelDiagnostics: ReturnType<typeof modelOutputDiagnostics>, validation: ResponseValidationResult) {
+function responseCompositionSource(
+  modelDiagnostics: ReturnType<typeof modelOutputDiagnostics>,
+  validation: ResponseValidationResult,
+  usedAuthoritativeFallback = false,
+) {
   const recovery = recoverySummary(validation);
+  if (usedAuthoritativeFallback) return recovery.recovery_result === "recovered" ? "recovered_evidence" : "fallback";
   if (!validation.approvedSegments.length) return "fallback";
   if (recovery.recovery_result === "recovered") return modelDiagnostics.response_mode === "answered" ? "mixed" : "recovered_evidence";
   return "model";
@@ -549,10 +554,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       validateStructuredResponse(result?.finalOutput, responseContext),
       responseContext,
     );
+    const useAuthoritativeFallback = shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
     if (options.enableDevDiagnostics && modelDiagnostics) {
       const evidence = evidenceDiagnostics(registry);
       const recovery = recoverySummary(validation);
-      const fallbackReason = validation.approvedSegments.length
+      const fallbackReason = useAuthoritativeFallback
+        ? "approved_segments_do_not_resolve_intent"
+        : validation.approvedSegments.length
         ? null
         : modelDiagnostics.structured_parse_failed
           ? "structured_parse_failed"
@@ -565,10 +573,11 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
         model_output: modelDiagnostics,
         model_response_mode: modelDiagnostics.response_mode,
+        intent_resolved_by_approved_segment: validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? null,
         completeness_check_entered: validation.completenessDiagnostics?.entered === true,
         ...recovery,
         fallback_reason: fallbackReason,
-        final_composition_source: responseCompositionSource(modelDiagnostics, validation),
+        final_composition_source: responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
       }) as JsonObject;
     }
     const actionExecutions = await executeActionProposals({
@@ -583,7 +592,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
     });
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
-    const responseWithoutSignature = validation.approvedSegments.length
+    const responseWithoutSignature = validation.approvedSegments.length && !useAuthoritativeFallback
       ? renderResponseSegments(validation.approvedSegments, {
           ...responseContext,
           locale: inferResponseLocale(options.message),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { ensureAnswerCompleteness, inferResponseLocale, inspectTimingCandidateDiagnostics, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, inspectTimingCandidateDiagnostics, shouldPreferAuthoritativeEvidenceFallback, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
@@ -2293,6 +2293,126 @@ describe("evidence-aware fallback recovery", () => {
     expect(result.rendered).toContain("refund is initiated after the return is received and processed");
     expect(result.rendered).toContain("payment provider may take additional time");
     expect(result.rendered).not.toContain("order number");
+  });
+
+  it("does not let an approved clarification block timing recovery when the answer segment is rejected", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed.",
+    )]);
+    const result = await recoveryCase("When will I get my refund?", [
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      },
+      {
+        type: "knowledge_guidance",
+        text: "The refund is initiated after the return is received and processed.",
+        basis: { result_id: evidence.resultId, field_paths: ["results[0].missing"] },
+      },
+    ], [evidence]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.initial.approvedSegments[0].type).toBe("question");
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("treats an approved payer clarification as non-answering when payer evidence is usable", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("keeps a customer-specific clarification when general policy cannot resolve the requested status", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When was my refund processed for order #123?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "skipped" });
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("question");
+  });
+
+  it("does not prefer fallback when an approved answer already resolves the intent", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "knowledge_guidance",
+      text: "The refund is initiated after the return is received and processed.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }, {
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: true,
+    });
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(false);
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("attempts recovery when every approved segment is a non-answer question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Could you share more details?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+  });
+
+  it("allows clarification when policy evidence is ambiguous", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("The customer pays the return shipping.", "Customer payer policy"),
+      policyRecord("The merchant pays the return shipping.", "Merchant payer policy"),
+    ]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Could you share more details?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "ambiguous" });
+    expect(result.rendered).toContain("Could you share more details?");
+    expect(result.rendered).not.toContain("customer pays");
+    expect(result.rendered).not.toContain("merchant pays");
   });
 
   it("recovers event-trigger timing for a general Danish question", async () => {

@@ -75,6 +75,37 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.response).toContain("5 business days");
   });
 
+  it("does not let an approved order clarification hide a resolvable general timing answer", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.response).toMatch(/refund/i);
+    expect(result.response).not.toContain("order number");
+    expect(result.trace.diagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+      recovery_attempted: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+    });
+  });
+
   it("does not emit the new diagnostics without explicit DEV Playground opt-in", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

@@ -126,6 +126,7 @@ export interface ResponseCompletenessDiagnostics {
   entered: boolean;
   cues: string[];
   recovery: CompletenessRecoveryDiagnostic[];
+  intent_resolved_by_approved_segment?: boolean;
   timing_candidates?: TimingCandidateDiagnostic[];
 }
 
@@ -1557,6 +1558,7 @@ export function summarizeResponseValidation(
         completeness: result.completenessDiagnostics
           ? {
               entered: result.completenessDiagnostics.entered,
+              intent_resolved_by_approved_segment: result.completenessDiagnostics.intent_resolved_by_approved_segment ?? null,
               cues: result.completenessDiagnostics.cues,
               recovery: result.completenessDiagnostics.recovery,
               ...(result.completenessDiagnostics.timing_candidates
@@ -2899,6 +2901,68 @@ function recoverPolicyAnswer(
   return { kind: "none" };
 }
 
+function approvedSegmentResolvesCue(
+  segment: ResponseSegment,
+  cue: AnswerBearingCue,
+  context: ResponseValidationContext,
+) {
+  if (segment.type === "question" || segment.type === "limitation" || segment.type === "acknowledgement") return false;
+
+  if (segment.type === "procedure_guidance") return cue === "process";
+  if (segment.type === "fact") return cue === "status";
+  if (segment.type === "action_offer") return cue === "process";
+  if (segment.type !== "knowledge_guidance") return false;
+
+  const records = answerEvidenceRecords(segment.basis, context, cue);
+  const candidates = answerCompletenessCandidates(
+    cue,
+    answerEvidenceSections(records),
+    context.customerMessage ?? "",
+  );
+  if (candidates.length && answerCompletenessValuePresent(segment.text, cue, candidates)) return true;
+
+  // A model may faithfully answer in language that is not an exact substring
+  // of the cited source. Keep this fallback limited to the same answer-bearing
+  // classifiers used by deterministic recovery; it never treats a question
+  // or a generic acknowledgement as resolving the intent.
+  if (cue === "timing") return isRefundTiming(segment.text);
+  if (cue === "cost") return isPayerProposition(segment.text);
+  if (cue === "eligibility") {
+    return isAnswerBearingEligibility(segment.text)
+      || isReturnProhibition(segment.text)
+      || isReturnEligibility(segment.text)
+      || isReturnConditionConsequence(segment.text);
+  }
+  if (cue === "destination") return isReturnDestinationInstruction(segment.text) && hasAnswerBearingValueMarker(segment.text, cue);
+  if (cue === "process") return isReturnProcessInstruction(segment.text) || hasAnswerBearingValueMarker(segment.text, cue);
+  return hasAnswerBearingValueMarker(segment.text, cue);
+}
+
+function approvedSegmentsResolveIntent(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+  cues: AnswerBearingCue[],
+) {
+  if (!cues.length) return true;
+  return cues.every((cue) => validation.approvedSegments.some((segment) => approvedSegmentResolvesCue(segment, cue, context)));
+}
+
+/**
+ * An approved segment can still be a non-answer clarification. Prefer the
+ * deterministic evidence fallback only when the customer intent is otherwise
+ * resolvable from authoritative policy evidence. This keeps required
+ * customer-specific clarifications and ambiguous evidence fail-closed.
+ */
+export function shouldPreferAuthoritativeEvidenceFallback(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  if (!cues.length || approvedSegmentsResolveIntent(validation, context, cues)) return false;
+  return cues.some((cue) => recoverPolicyAnswer(context, cue).kind === "usable");
+}
+
 /**
  * Returns only propositions that can be resolved from one or more successful,
  * authoritative policy results. This is also used by the transport fallback
@@ -3028,6 +3092,7 @@ export function ensureAnswerCompleteness(
     entered: true,
     cues: [...cues],
     recovery: [],
+    intent_resolved_by_approved_segment: approvedSegmentsResolveIntent(validation, context, cues),
     ...(cues.includes("timing") ? { timing_candidates: timingCandidateDiagnosticsForContext(context) } : {}),
   };
   if (!validation.schemaValid && !cues.length) {
