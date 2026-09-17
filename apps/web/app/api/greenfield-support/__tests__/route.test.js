@@ -127,6 +127,7 @@ describe("greenfield support request wiring", () => {
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledTimes(1);
     expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalledWith(expect.anything(), "user-a", { workspaceId: "workspace-a" });
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: expect.objectContaining({ closingText: "Mvh\nJonas" }) }));
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].enableDevDiagnostics).not.toBe(true);
   });
 
   it("does not run without an explicit support message", async () => {
