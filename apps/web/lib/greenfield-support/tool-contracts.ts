@@ -51,7 +51,7 @@ export function isExplicitAddressChangeRequest(message: string): boolean {
 
 export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   readOnly("search_policy", "Find authoritative tenant policy relevant to the customer question, including returns, refunds, warranty, shipping destinations, and timing. Use this alongside other needed lookups when one customer message contains multiple requests.", { query: stringProperty("The policy question in customer language, including return, refund, warranty, shipping destination, or timing details.") }),
-  readOnly("search_product_knowledge", "Search product and reference knowledge: specifications, features, compatibility, usage, manuals, and descriptive facts. Do not use this for troubleshooting, setup, pairing, reset, or other step-by-step support procedures; use search_procedures instead.", { query: stringProperty("The product fact, specification, compatibility, or descriptive question in customer language; exclude troubleshooting and how-to procedures.") }),
+  readOnly("search_product_knowledge", "Search product and reference knowledge: specifications, features, compatibility, usage, manuals, and descriptive facts. Use this for directly documented product and usage knowledge; do not invent unsupported troubleshooting steps.", { query: stringProperty("The product fact, specification, compatibility, or descriptive question in customer language, including directly documented usage or setup information.") }),
   readOnly("search_historical_cases", "Find solved support cases as examples. Results are not business policy.", { query: stringProperty("The support situation to use for examples.") }),
   readOnly("get_brand_guidance", "Find tenant-specific communication guidance for the reply.", { query: stringProperty("The communication decision needing guidance.") }),
   readOnly("search_procedures", "Search merchant-authored step-by-step procedures for troubleshooting, setup, pairing, reset, configuration, and support handling. Use this when the customer asks how to fix, configure, perform, or handle something; include the product or model when known.", { query: stringProperty("The troubleshooting, setup, how-to, or support-procedure request in customer language, including known product or model context when available.") }),
@@ -68,6 +68,11 @@ export const GREENFIELD_TOOL_DEFINITIONS: StrictToolDefinition[] = [
   proposed("create_refund", "Propose a refund. This capability never issues money or modifies an order.", { order_id: stringProperty("The order number or order ID."), amount: stringProperty("Requested amount, if known; do not invent an amount."), reason: stringProperty("Reason for the requested refund.") }),
   proposed("send_replacement", "Propose a replacement. This capability never creates a shipment.", { order_id: stringProperty("The order number or order ID."), item_id: stringProperty("Line item ID to replace."), reason: stringProperty("Reason a replacement is requested.") }),
 ];
+
+/** Runtime tool set for the local Greenfield simplification experiment. */
+export const GREENFIELD_RUNTIME_TOOL_DEFINITIONS = GREENFIELD_TOOL_DEFINITIONS.filter(
+  (tool) => tool.name !== "search_procedures",
+);
 
 export const READ_ONLY_TOOL_NAMES = new Set(
   GREENFIELD_TOOL_DEFINITIONS.filter((tool) => tool.sensitivity === "read_only").map((tool) => tool.name),

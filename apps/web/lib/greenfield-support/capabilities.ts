@@ -1,4 +1,5 @@
 import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
+import type { StrictToolDefinition } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
 import { structuredKnowledgeData } from "./knowledge";
 import type {
@@ -30,6 +31,8 @@ export interface CapabilityContext {
   /** Trusted server-owned continuity state; never supplied by the model. */
   conversationContext?: ConversationContext;
   now?: () => string;
+  /** Optional runtime boundary; omitted callers retain the complete registry. */
+  toolDefinitions?: StrictToolDefinition[];
 }
 
 interface RequestOrderFocus {
@@ -319,11 +322,12 @@ function validatedProposedAction(
 }
 
 function buildCapabilityManifest(context: CapabilityContext): CapabilityManifest {
+  const definitions = context.toolDefinitions ?? GREENFIELD_TOOL_DEFINITIONS;
   return {
-    readTools: GREENFIELD_TOOL_DEFINITIONS
+    readTools: definitions
       .filter((definition) => definition.sensitivity === "read_only")
       .map((definition) => definition.name),
-    proposalOnlyTools: GREENFIELD_TOOL_DEFINITIONS
+    proposalOnlyTools: definitions
       .filter((definition) => definition.sensitivity === "proposed_action")
       .map((definition) => definition.name),
     configured: {
@@ -488,6 +492,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     : [];
   let preloadedOrderHistory: OrderSnapshot[] | null = null;
   const manifest = buildCapabilityManifest(context);
+  const definitions = context.toolDefinitions ?? GREENFIELD_TOOL_DEFINITIONS;
   let resultSequence = 0;
   const resultRecords = new Map<string, { resultId: string; toolName: string; result: ToolExecutionResult }>();
   const recordResult = (toolName: string, result: ToolExecutionResult): ToolExecutionResult => {
@@ -498,7 +503,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   };
 
   const registry = {
-    definitions: GREENFIELD_TOOL_DEFINITIONS,
+    definitions,
     manifest,
     getResult(resultId: string) {
       return resultRecords.get(resultId);
@@ -562,6 +567,12 @@ export function createCapabilityRegistry(context: CapabilityContext) {
       }
     },
     async execute(toolName: string, rawArguments: string): Promise<ToolExecutionResult> {
+      if (!definitions.some((definition) => definition.name === toolName)) {
+        return recordResult(toolName, {
+          status: "invalid_arguments",
+          error: { code: "unknown_tool", message: `Unknown capability: ${toolName}` },
+        });
+      }
       const parsed = parseToolArguments(toolName, rawArguments);
       if (parsed.ok === false) return recordResult(toolName, parsed.result);
       const args = parsed.value;

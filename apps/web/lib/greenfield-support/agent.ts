@@ -15,7 +15,7 @@ import type {
   TraceEvent,
 } from "./types";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
-import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS } from "./tool-contracts";
 import {
   composeSafeKnowledgeGapResponse,
   ensureAnswerCompleteness,
@@ -154,7 +154,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     finishedAt: null,
     events: [],
     developerInstructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
-    tools: GREENFIELD_TOOL_DEFINITIONS,
+    tools: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
     usage: [],
   };
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
@@ -163,6 +163,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+    toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
   });
   let continuityInput = modelConversationContext(
     conversationContext,

@@ -5,7 +5,7 @@ import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
-import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS } from "./tool-contracts";
 import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, shouldPreferAuthoritativeEvidenceFallback, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
 import type { ResponseCompletenessDiagnostics, ResponseValidationResult } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
@@ -161,7 +161,7 @@ function evidenceDiagnostics(registry: CapabilityRegistry) {
       ? evidence.result.data as Record<string, unknown>
       : null;
     const results = Array.isArray(data?.results) ? data.results : [];
-    if (evidence.result.status === "ok" && (results.length > 0 || evidence.toolName !== "search_policy" && evidence.toolName !== "search_procedures")) {
+    if (evidence.result.status === "ok" && (results.length > 0 || evidence.toolName !== "search_policy")) {
       resolvableIntent = true;
     }
     for (const item of results) {
@@ -229,8 +229,8 @@ function responseCompositionSource(
   return "model";
 }
 
-function createSdkTools(context: SonaAgentContext) {
-  return GREENFIELD_TOOL_DEFINITIONS.map((definition) =>
+function createSdkTools(context: SonaAgentContext, definitions: typeof GREENFIELD_RUNTIME_TOOL_DEFINITIONS) {
+  return definitions.map((definition) =>
     tool({
       name: definition.name,
       description: definition.description,
@@ -297,22 +297,6 @@ function shouldPreloadPolicyEvidence(message: string): boolean {
   return /\b(?:return|refund|warranty|shipping|delivery|destination)\b/i.test(String(message ?? ""));
 }
 
-function shouldPreloadProcedureEvidence(message: string, customerProvidedContext?: ReturnType<typeof extractCustomerProvidedContext>): boolean {
-  return /\b(?:not working|broken|damaged|defective|troubleshoot(?:ing)?|connect(?:ion|ing)?|pair(?:ing)?|reset|firmware|microphone|interference|issue|problem)\b/i.test([
-    message,
-    customerProvidedContext?.issue,
-  ].filter(Boolean).join(" "));
-}
-
-function procedureEvidenceQuery(message: string, customerProvidedContext?: ReturnType<typeof extractCustomerProvidedContext>): string {
-  return [
-    message,
-    customerProvidedContext?.product,
-    customerProvidedContext?.platform,
-    customerProvidedContext?.issue,
-  ].filter(Boolean).join(" ");
-}
-
 function policyEvidenceQuery(message: string): string {
   const categories = ["return", "refund", "warranty", "shipping", "delivery", "destination"]
     .filter((term) => new RegExp(`\\b${term}\\b`, "i").test(String(message ?? "")));
@@ -347,7 +331,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     finishedAt: null,
     events: [],
     developerInstructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
-    tools: GREENFIELD_TOOL_DEFINITIONS,
+    tools: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
     usage: [],
   };
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
@@ -361,6 +345,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+    toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
   });
   let continuityInput = modelConversationContext(
     conversationContext,
@@ -399,7 +384,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       parallelToolCalls: false,
       ...(runtimeConfig.reasoningEffort ? { reasoning: { effort: runtimeConfig.reasoningEffort } } : {}),
     },
-    tools: createSdkTools(context),
+    tools: createSdkTools(context, registry.definitions),
   });
   const runner = new Runner({
     workflowName: "Sona support agent",
@@ -414,7 +399,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       history: options.history ?? [],
       conversation_context: continuityInput,
       runtime: "@openai/agents",
-      capabilities: GREENFIELD_TOOL_DEFINITIONS.map((definition) => ({
+      capabilities: registry.definitions.map((definition) => ({
         name: definition.name,
         sensitivity: definition.sensitivity,
       })),
@@ -423,10 +408,9 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     now(),
   );
 
-  // These are read-only evidence lookups. Preload the explicitly signalled
-  // policy/procedure segments so one agent can preserve each supported part
-  // while also handling another request in the same turn. This adds no model
-  // call, router, or second agent.
+  // This is a read-only evidence lookup. Preload explicitly signalled policy
+  // evidence so one agent can preserve a supported policy answer while also
+  // handling another request in the same turn.
   const preloadedResults: Array<{ tool: string; result: ToolExecutionResult }> = [];
   const orderContextResults = await registry.resolveCustomerOrderContext();
   for (const { tool, result, arguments: toolArguments } of orderContextResults) {
@@ -453,7 +437,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     options.interactionChannel,
     registry.getOrderCandidates(),
   );
-  const preload = async (toolName: "search_policy" | "search_procedures", query: string) => {
+  const preload = async (toolName: "search_policy", query: string) => {
     const startedPreload = Date.now();
     pushEvent(trace, "tool_call", {
       call_id: `preloaded_${toolName}`,
@@ -473,9 +457,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   const hasPolicyRequest = shouldPreloadPolicyEvidence(options.message);
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
-  if (shouldPreloadProcedureEvidence(options.message, customerProvidedContext)) {
-    await preload("search_procedures", procedureEvidenceQuery(options.message, customerProvidedContext));
-  }
   const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
 
   try {

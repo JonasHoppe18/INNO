@@ -194,7 +194,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.firstCall.request.input.at(-1).content).toContain('"order_resolution":"candidate"');
   });
 
-  it("reselects procedure evidence when a multi-turn final message only adds platform context", async () => {
+  it("does not expose or preload procedures for a multi-turn troubleshooting request", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
       modelResponse([assistantMessage(structured({
@@ -229,8 +229,10 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     });
 
     model.assertComplete();
-    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toContain("search_procedures");
-    expect(model.firstCall.request.input.at(-1).content).toContain('"tool":"search_procedures"');
+    expect(result.trace.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.input.at(-1).content).not.toContain('"tool":"search_procedures"');
   });
 
   it("uses one model response for a pure acknowledgement", async () => {
@@ -411,7 +413,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.at(-1).type).toBe("final_response");
   });
 
-  it("preloads policy evidence so a mixed request can preserve both supported parts", async () => {
+  it("preloads policy evidence without preloading procedures", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
       modelResponse([assistantMessage(structured(
@@ -419,12 +421,6 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
           type: "knowledge_guidance",
           text: "A return can be requested within 30 days of delivery when the item is unused and in its original packaging.",
           basis: { result_id: "tool_result_1", field_paths: ["results"] },
-        },
-        {
-          type: "procedure_guidance",
-          text: "For a damaged item, collect the details needed for review.",
-          basis: { result_id: "tool_result_2", field_paths: ["data.results[0].structured_data.procedure_steps"] },
-          block_ids: ["block_1"],
         },
       ))]),
     ]);
@@ -440,25 +436,19 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.calls).toHaveLength(1);
     expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual([
       "search_policy",
-      "search_procedures",
     ]);
     expect(result.response).toContain("30 days");
-    expect(result.response).toContain("clear photos");
+    expect(result.trace.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.input.at(-1).content).not.toContain('"tool":"search_procedures"');
   });
 
-  it("turns an unusable procedure result into a normal knowledge-gap response", async () => {
+  it("does not recover procedural evidence when the runtime has no procedure result", async () => {
     const dependencies = await createDemoDependencies();
-    const knowledge = {
-      ingest: (...args) => dependencies.knowledge.ingest(...args),
-      search: async () => [],
-    };
     const model = new ScriptedModel([
-      modelResponse([functionCall("search_procedures", { query: "headset troubleshooting" }, { callId: "missing-procedure" })]),
       modelResponse([assistantMessage(structured({
-        type: "procedure_guidance",
-        text: "Follow the returned support procedure.",
-        basis: { result_id: "tool_result_1", field_paths: ["results[0]"] },
-        block_ids: ["missing-block"],
+        type: "knowledge_guidance",
+        text: "I’m sorry, but I couldn’t safely complete that lookup right now.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
       }))]),
     ]);
 
@@ -466,12 +456,12 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
       ...dependencies,
       message: "My headset will not connect and I need help.",
       model,
-      capabilities: { ...dependencies, knowledge },
+      capabilities: dependencies,
     });
 
     model.assertComplete();
-    expect(result.response).toContain("couldn’t verify a support procedure");
-    expect(result.response).not.toContain("couldn’t safely complete that lookup");
+    expect(result.response).toContain("couldn’t safely complete that lookup");
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).not.toContain("search_procedures");
     expect(result.trace.events.at(-1).data.validation.all_valid).toBe(false);
   });
 

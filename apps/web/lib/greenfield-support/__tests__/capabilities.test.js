@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry, extractOrderReferences } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { GREENFIELD_TOOL_DEFINITIONS } from "../tool-contracts";
+import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS, GREENFIELD_TOOL_DEFINITIONS } from "../tool-contracts";
 import { InMemoryCommerceProvider } from "../providers";
 
 function order(orderNumber) {
@@ -229,12 +229,40 @@ describe("greenfield capabilities", () => {
     expect(withoutTracking.manifest.configured.tracking).toBe(false);
   });
 
+  it("isolates procedures from the runtime while preserving knowledge and live read tools", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      tenant: dependencies.tenant,
+      toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
+    });
+    const runtimeToolNames = registry.definitions.map((tool) => tool.name);
+
+    expect(runtimeToolNames).not.toContain("search_procedures");
+    expect(registry.manifest.readTools).not.toContain("search_procedures");
+    expect(runtimeToolNames).toEqual(expect.arrayContaining([
+      "search_policy",
+      "search_product_knowledge",
+      "get_order",
+      "get_product",
+      "get_tracking",
+      "get_brand_guidance",
+    ]));
+    expect(await registry.execute("search_procedures", JSON.stringify({ query: "headset troubleshooting" }))).toMatchObject({
+      status: "invalid_arguments",
+      error: { code: "unknown_tool" },
+    });
+    expect((await registry.execute("search_policy", JSON.stringify({ query: "return policy" }))).status).toBe("ok");
+    expect((await registry.execute("search_product_knowledge", JSON.stringify({ query: "Orion Wireless" }))).status).toBe("ok");
+    expect((await registry.execute("get_brand_guidance", JSON.stringify({ query: "customer communication" }))).status).toBe("ok");
+  });
+
   it("keeps product reference and procedure search semantically distinct", async () => {
     const product = GREENFIELD_TOOL_DEFINITIONS.find((tool) => tool.name === "search_product_knowledge");
     const procedures = GREENFIELD_TOOL_DEFINITIONS.filter((tool) => tool.name === "search_procedures");
 
-    expect(product?.description).toContain("Do not use this for troubleshooting");
-    expect(product?.parameters.properties.query.description).toContain("exclude troubleshooting");
+    expect(product?.description).toContain("do not invent unsupported troubleshooting steps");
+    expect(product?.parameters.properties.query.description).toContain("directly documented usage");
     expect(procedures).toHaveLength(1);
     expect(procedures[0].description).toContain("step-by-step procedures");
     expect(procedures[0].parameters.properties.query.description).toContain("troubleshooting");
