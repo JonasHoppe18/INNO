@@ -2382,6 +2382,7 @@ function adaptSupportContactInstruction(value: string) {
 type CustomerQuestionShape = "process" | "destination" | "eligibility" | "timing" | "cost" | "status" | "troubleshooting" | "action" | "unknown";
 
 type CustomerKnowledgeFocus = {
+  hasReturnIntent: boolean;
   asksProcess: boolean;
   asksReturnDestination: boolean;
   asksRefundTiming: boolean;
@@ -2430,6 +2431,7 @@ function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocu
                   ? "troubleshooting"
                   : "unknown";
   return {
+    hasReturnIntent,
     asksProcess: questionShape === "process",
     asksReturnDestination,
     asksRefundTiming,
@@ -2457,7 +2459,7 @@ function isPayerProposition(value: string) {
   const responsibilityVerb = "(?:pay|paid|pays|cover\\w*|responsib\\w*|borne|prepaid|free|betaler|betalt|ansvar\\w*|zahlt|verantwort\\w*|übernommen)";
   const passiveResponsibility = new RegExp(`\\b${responsibilityVerb}\\b[\\s\\S]{0,48}\\b(?:by|af|von)\\s+(?:the\\s+)?${actor}\\b`, "i");
   const activeResponsibility = new RegExp(`\\b${actor}\\b[\\s\\S]{0,48}\\b${responsibilityVerb}\\b`, "i");
-  const expenseResponsibility = new RegExp(`\\b(?:at|on|til|på|zu)\\s+(?:your|customer['’]s|merchant['’]s|our|din|kundens|forhandlerens|vores|ihre|deine|unsere)\\s+(?:expense|cost|omkostning\\w*|udgift\\w*|bekostning|kosten)\\b`, "i");
+  const expenseResponsibility = new RegExp(`\\b(?:at|on|til|på|zu)\\s+(?:your|customer['’]s|merchant['’]s|our|din|kundens|forhandlerens|vores|ihre|deine|unsere)(?:\\s+own)?\\s+(?:expense|cost|omkostning\\w*|udgift\\w*|bekostning|kosten)\\b`, "i");
   const returnShippingConcept = /\breturn\s+(?:shipping|shipment|postage|label)\b|\bretur(?:fragt|porto)\w*\b|\brücksend(?:ung|e|ekosten|etikett)\w*\b/i;
   const prepaidReturnLabel = /\b(?:we|merchant|store|seller|vi|forhandler|butik|wir)\b[\s\S]{0,64}\b(?:provide|offer|send|give|tilbyd\w*|leverer|geben|bieten)\b[\s\S]{0,64}\bprepaid\b[\s\S]{0,32}\b(?:return\s+label|returlabel|return\s+shipping|returfragt|rücksendeetikett)\b/i;
   return activeResponsibility.test(value)
@@ -2558,9 +2560,20 @@ function isReturnDestinationInstruction(value: string) {
   return /\b(?:address|portal|label|return\s+to|send\s+(?:it|the\s+(?:return|item|product|order))?\s+to|ship\s+(?:it|the\s+(?:return|item|product|order))?\s+to|adresse|retur(?:adresse|label)|send\w*\s+(?:den|die|das|die\s+retoure|die\s+ware)?\s*(?:an|zu|til)|rücksendeadresse|zurückschick\w*\s+an|retoure\s+an)\b/i.test(value);
 }
 
+function isConcreteReturnDestinationInstruction(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+    && isReturnDestinationInstruction(value);
+}
+
 function isReturnProcessInstruction(value: string) {
   if (isRefundTiming(value)) return false;
   return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
+}
+
+function isReturnShippingMethodInstruction(value: string) {
+  if (isReturnShippingResponsibility(value)) return false;
+  return /\b(?:tracked|trackable|insured|registered|prepaid)\b/i.test(value)
+    && /\b(?:return|shipping|shipment|postage|label|send|ship|retur|returfragt|returporto|rücksend|versand)\w*\b/i.test(value);
 }
 
 function isCustomerContentRequirement(value: string) {
@@ -2569,7 +2582,9 @@ function isCustomerContentRequirement(value: string) {
 }
 
 function isProcessAnswerBearingInstruction(value: string) {
-  return isReturnProcessInstruction(value) || isCustomerContentRequirement(value) || isSupportContactInstruction(value);
+  if (isCustomerContentRequirement(value) || isSupportContactInstruction(value)) return true;
+  return isReturnProcessInstruction(value)
+    && /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value);
 }
 
 function isSupportContactInstruction(value: string) {
@@ -2584,6 +2599,14 @@ function isSupportContactInstruction(value: string) {
 
 function isNegatedSupportContactInstruction(value: string) {
   return /\b(?:do\s+not|don't|must\s+not|never|without)\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function isExplicitSupportContactProhibition(value: string) {
+  return /\b(?:do\s+not|don't|must\s+not|never)\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function isConditionalSupportContactInstruction(value: string) {
+  return /\bwithout\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
 }
 
 function hasSupportContactContentRequirement(value: string) {
@@ -2602,14 +2625,14 @@ function isSatisfiedSupportContactPrerequisite(
   return isActiveSupportChannel(context.interactionChannel)
     && customerMessagePerformsSupportRequest(context.customerMessage ?? "")
     && isSupportContactInstruction(value)
-    && !isNegatedSupportContactInstruction(value)
+    && (!isNegatedSupportContactInstruction(value) || isConditionalSupportContactInstruction(value))
     && !hasSupportContactContentRequirement(value);
 }
 
 function hasContradictoryProcessInstructions(values: string[]) {
   const actionable = values.filter((value) => !isMerchantSideProcessInstruction(value));
   return actionable.some((value) => isSupportContactInstruction(value) && !isNegatedSupportContactInstruction(value))
-    && actionable.some(isNegatedSupportContactInstruction);
+    && actionable.some(isExplicitSupportContactProhibition);
 }
 
 type AnswerBearingCue = "process" | "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
@@ -2709,7 +2732,7 @@ function policyAnswerNeedsCustomerSpecificLookup(cue: AnswerBearingCue, message:
 }
 
 function physicalAddressMarker(value: string) {
-  return /\b(?:street|st\.?|road|avenue|lane|boulevard|vej|gade|strasse|straße|postcode|postal|city|by)\b|\b\d{4,6}\s+[\p{L}][\p{L}'’-]*/iu.test(value);
+  return /\b(?:street|st\.?|road|avenue|lane|boulevard|vej|gade|strasse|straße|postcode|postal|city)\b|[\p{L}\p{N}]+(?:vej|gade)\b|\b\d{4,6}\s+[\p{L}][\p{L}'’-]*/iu.test(value);
 }
 
 function simpleAddressLabel(value: string) {
@@ -2726,6 +2749,10 @@ function answerEvidenceUnits(value: string) {
     .flatMap((line) => line.split(/(?<=[.!?])\s+/))
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function answerProcessEvidenceUnits(value: string) {
+  return answerEvidenceUnits(String(value ?? "").replace(/\r?\n/g, " "));
 }
 
 function answerEvidenceSections(records: unknown[]) {
@@ -2774,7 +2801,7 @@ function answerCompletenessCandidates(
   };
   const processUnits = cue === "process"
     ? evidenceTexts
-      .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+      .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
       .filter(isProcessAnswerBearingInstruction)
       .filter((unit) => !isMerchantSideProcessInstruction(unit))
     : [];
@@ -2783,11 +2810,10 @@ function answerCompletenessCandidates(
 
   for (const evidenceText of evidenceTexts) {
     if (cue === "destination") {
-      pushUrls(evidenceText);
       const lines = evidenceText.split(/\r?\n/);
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index].trim();
-        if (!line || !isReturnDestinationInstruction(line)) continue;
+        if (!line || !isConcreteReturnDestinationInstruction(line)) continue;
         const inline = line.match(/https?:\/\/[^\s<>)]+/i)?.[0];
         if (inline) pushAnswerCompletenessCandidate(candidates, inline);
 
@@ -2795,7 +2821,9 @@ function answerCompletenessCandidates(
         if (physicalAddressMarker(afterCue)) pushAnswerCompletenessCandidate(candidates, afterCue);
 
         const block: string[] = [];
-        for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+        let nextIndex = index + 1;
+        while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex += 1;
+        for (; nextIndex < lines.length; nextIndex += 1) {
           const next = lines[nextIndex].trim();
           if (!next) break;
           const nextIsAddress = physicalAddressMarker(next);
@@ -2807,8 +2835,14 @@ function answerCompletenessCandidates(
         if (block.some(physicalAddressMarker)) pushAnswerCompletenessCandidate(candidates, block.join("\n"));
         if (isReturnApprovalPrerequisite(line)) pushAnswerCompletenessCandidate(candidates, line);
       }
-      for (const unit of answerEvidenceUnits(evidenceText)) {
-        if (isReturnDestinationInstruction(unit) && physicalAddressMarker(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+      const units = answerEvidenceUnits(evidenceText);
+      for (let unitIndex = 0; unitIndex < units.length; unitIndex += 1) {
+        const unit = units[unitIndex];
+        if (isConcreteReturnDestinationInstruction(unit) && physicalAddressMarker(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+        if (isConcreteReturnDestinationInstruction(unit)) {
+          pushUrls(unit);
+          pushUrls(units[unitIndex + 1] ?? "");
+        }
         if (isReturnApprovalPrerequisite(unit)) pushAnswerCompletenessCandidate(candidates, unit);
       }
       continue;
@@ -2835,17 +2869,21 @@ function answerCompletenessCandidates(
       continue;
     }
 
-    const units = answerEvidenceUnits(evidenceText);
+    const units = cue === "process"
+      ? answerProcessEvidenceUnits(evidenceText)
+      : answerEvidenceUnits(evidenceText);
     if (cue === "process") {
       const processUnitsForEvidence = units
         .filter(isProcessAnswerBearingInstruction)
         .filter((unit) => !isMerchantSideProcessInstruction(unit));
       const nextSteps = preserveProcessConflicts
         ? processUnitsForEvidence
-        : processUnitsForEvidence.filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, {
-          customerMessage: context?.customerMessage ?? customerMessage,
-          interactionChannel: context?.interactionChannel,
-        })).slice(0, 1);
+        : processUnitsForEvidence
+          .filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, {
+            customerMessage: context?.customerMessage ?? customerMessage,
+            interactionChannel: context?.interactionChannel,
+          }))
+          .slice(0, 1);
       nextSteps.forEach((nextStep) => pushAnswerCompletenessCandidate(candidates, nextStep));
     }
     if (cue === "timing") units.filter(isRefundTiming).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
@@ -2864,6 +2902,10 @@ type EvidenceRecovery =
   | { kind: "none" }
   | { kind: "ambiguous" }
   | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; candidate?: AnswerCompletenessCandidate };
+
+type PolicyRecoveryOptions = {
+  allowCustomerSpecificTiming?: boolean;
+};
 
 type ProcedureRecovery =
   | { kind: "none" }
@@ -2957,8 +2999,10 @@ function mergeRecordAnswerCandidates(cue: AnswerBearingCue, candidates: AnswerCo
 function recoverPolicyAnswer(
   context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
   cue: AnswerBearingCue,
+  options: PolicyRecoveryOptions = {},
 ): EvidenceRecovery {
-  if (policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")) return { kind: "none" };
+  if (!options.allowCustomerSpecificTiming
+    && policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")) return { kind: "none" };
   for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
     const data = objectValue(evidence.result.data);
     const results = Array.isArray(data?.results) ? data : null;
@@ -2972,7 +3016,7 @@ function recoverPolicyAnswer(
     const preserveProcessConflicts = cue === "process" && hasContradictoryProcessInstructions(
       records
         .flatMap((item) => answerEvidenceSections([item.record]))
-        .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+        .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
         .filter(isProcessAnswerBearingInstruction),
     );
     const candidateContext = { ...context, preserveProcessConflicts };
@@ -2989,6 +3033,205 @@ function recoverPolicyAnswer(
     return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
   }
   return { kind: "none" };
+}
+
+function shippingMethodCandidatesForRecord(
+  record: JsonObject,
+  context: AnswerCompletenessContext,
+) {
+  const units = answerEvidenceSections([record])
+    .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+    .filter(isReturnShippingMethodInstruction)
+    .filter((unit) => !isMerchantSideProcessInstruction(unit))
+    .filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, context));
+  return uniqueAnswerCandidates(
+    units.map((unit) => ({
+      value: unit,
+      normalized: normalizeAnswerCompletenessValue(unit),
+    })),
+  );
+}
+
+function mergedFacetCandidates(candidates: AnswerCompletenessCandidate[]) {
+  const unique = uniqueAnswerCandidates(candidates);
+  if (unique.length <= 1) return unique;
+  const value = unique.map((candidate) => candidate.value).join(" ");
+  return [{ value, normalized: normalizeAnswerCompletenessValue(value) }];
+}
+
+function recoverShippingMethodAnswer(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+): EvidenceRecovery {
+  for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const records = results.map((value, resultIndex) => ({
+      record: objectValue(value),
+      resultIndex,
+      rank: Number(objectValue(value)?.rank ?? resultIndex + 1),
+    })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
+      Boolean(item.record)
+      && String(item.record.authority ?? "") === "authoritative"
+      && String(item.record.knowledge_type ?? "") === "policy");
+    const matches = records.flatMap((item) => {
+      const candidates = mergedFacetCandidates(shippingMethodCandidatesForRecord(item.record, context));
+      return candidates.length ? [{ ...item, candidates }] : [];
+    });
+    if (!matches.length) continue;
+    const candidateSets = matches.map((item) => item.candidates.map((candidate) => candidate.normalized).sort().join("\u001f"));
+    if (!candidateSets.every((value) => value === candidateSets[0])) return { kind: "ambiguous" };
+    const candidates = uniqueAnswerCandidates(matches[0].candidates);
+    if (candidates.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
+  }
+  return { kind: "none" };
+}
+
+type ActionablePolicyFacetKind = "eligibility" | "destination" | "shipping_method" | "cost" | "timing" | "process";
+type ActionablePolicyFacetStatus = "satisfied" | "required" | "useful" | "irrelevant" | "ambiguous" | "unavailable";
+type ActionablePolicyFacet = {
+  kind: ActionablePolicyFacetKind;
+  cue: AnswerBearingCue;
+  status: ActionablePolicyFacetStatus;
+  recovery: EvidenceRecovery;
+};
+type ActionablePolicyPlan = {
+  task: "return_request";
+  facets: ActionablePolicyFacet[];
+};
+
+function processInstructionState(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+) {
+  const instructions = successfulKnowledgeResults(context, "search_policy")
+    .flatMap((evidence) => {
+      const data = objectValue(evidence.result.data);
+      const records = Array.isArray(data?.results) ? data.results : [];
+      return records
+        .filter((value) => {
+          const record = objectValue(value);
+          return Boolean(record)
+            && String(record.authority ?? "") === "authoritative"
+            && String(record.knowledge_type ?? "") === "policy";
+        })
+        .flatMap((record) => answerEvidenceSections([objectValue(record)!]))
+        .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
+        .filter(isProcessAnswerBearingInstruction)
+        .filter((unit) => !isMerchantSideProcessInstruction(unit));
+    });
+  const remaining = instructions.filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, context));
+  return {
+    hasInstructions: instructions.length > 0,
+    hasRemaining: remaining.length > 0,
+  };
+}
+
+function actionablePolicyPlan(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+): ActionablePolicyPlan | null {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  if (!focus.hasReturnIntent || !focus.asksProcess) return null;
+
+  const processState = processInstructionState(context);
+  const facets = [
+    {
+      kind: "eligibility",
+      cue: "eligibility",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "eligibility"),
+    },
+    {
+      kind: "destination",
+      cue: "destination",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "destination"),
+    },
+    {
+      kind: "shipping_method",
+      cue: "process",
+      status: "required",
+      recovery: recoverShippingMethodAnswer(context),
+    },
+    {
+      kind: "cost",
+      cue: "cost",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "cost"),
+    },
+    {
+      kind: "timing",
+      cue: "timing",
+      status: "useful",
+      recovery: recoverPolicyAnswer(context, "timing", { allowCustomerSpecificTiming: true }),
+    },
+    {
+      kind: "process",
+      cue: "process",
+      status: processState.hasRemaining
+        ? "required"
+        : processState.hasInstructions
+          ? "satisfied"
+          : "unavailable",
+      recovery: recoverPolicyAnswer(context, "process"),
+    },
+  ] satisfies ActionablePolicyFacet[];
+  const normalizedFacets: ActionablePolicyFacet[] = facets.map((facet) => ({
+    ...facet,
+    status: facet.recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : facet.recovery.kind === "usable"
+        ? facet.status
+        : facet.status === "satisfied"
+          ? "satisfied"
+          : "unavailable",
+  } as ActionablePolicyFacet));
+
+  return {
+    task: "return_request",
+    facets: normalizedFacets.filter((facet) => facet.status !== "unavailable"),
+  };
+}
+
+function actionablePolicyFacetCovered(
+  facet: ActionablePolicyFacet,
+  segments: ResponseSegment[],
+  context: ResponseValidationContext,
+) {
+  if (facet.status === "satisfied") return true;
+  const recovery = facet.recovery;
+  if (recovery.kind !== "usable" || !recovery.candidate) return false;
+  const candidate = recovery.candidate;
+  return segments.some((segment) => {
+    if (segment.type !== "knowledge_guidance" || !isPolicyKnowledgeBasis(segment.basis, context)) return false;
+    if (normalizeAnswerCompletenessValue(segment.text).includes(candidate.normalized)) return true;
+    if (facet.kind === "shipping_method") {
+      return isReturnShippingMethodInstruction(segment.text);
+    }
+    if (facet.kind === "eligibility") {
+      return isAnswerBearingEligibility(segment.text)
+        || isReturnProhibition(segment.text)
+        || isReturnEligibility(segment.text)
+        || isReturnConditionConsequence(segment.text);
+    }
+    if (facet.kind === "destination") {
+      return isReturnDestinationInstruction(segment.text)
+        && (/https?:\/\//i.test(segment.text) || physicalAddressMarker(segment.text));
+    }
+    if (facet.kind === "cost") return isPayerProposition(segment.text);
+    if (facet.kind === "timing") return isRefundTiming(segment.text);
+    return isReturnProcessInstruction(segment.text) || isCustomerContentRequirement(segment.text);
+  });
+}
+
+function actionablePolicyPlanComplete(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+  plan: ActionablePolicyPlan | null,
+) {
+  if (!plan) return true;
+  return !plan.facets.some((facet) =>
+    (facet.status === "required" || facet.status === "useful")
+    && !actionablePolicyFacetCovered(facet, validation.approvedSegments, context));
 }
 
 function approvedSegmentResolvesCue(
@@ -3033,9 +3276,11 @@ function approvedSegmentsResolveIntent(
   validation: Pick<ResponseValidationResult, "approvedSegments">,
   context: ResponseValidationContext,
   cues: AnswerBearingCue[],
+  plan: ActionablePolicyPlan | null = actionablePolicyPlan(context),
 ) {
   if (!cues.length) return true;
-  return cues.every((cue) => validation.approvedSegments.some((segment) => approvedSegmentResolvesCue(segment, cue, context)));
+  return cues.every((cue) => validation.approvedSegments.some((segment) => approvedSegmentResolvesCue(segment, cue, context)))
+    && actionablePolicyPlanComplete(validation, context, plan);
 }
 
 /**
@@ -3050,6 +3295,13 @@ export function shouldPreferAuthoritativeEvidenceFallback(
 ) {
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  const plan = actionablePolicyPlan(context);
+  if (plan?.facets.some((facet) =>
+    facet.status === "ambiguous"
+    || ((facet.status === "required" || facet.status === "useful")
+      && !actionablePolicyFacetCovered(facet, validation.approvedSegments, context)))) {
+    return true;
+  }
   if (!cues.length || approvedSegmentsResolveIntent(validation, context, cues)) return false;
   return cues.some((cue) => recoverPolicyAnswer(context, cue).kind === "usable");
 }
@@ -3132,6 +3384,26 @@ function recoveredPolicySegment(recovery: EvidenceRecovery): ResponseSegment | n
   } satisfies Extract<ResponseSegment, { type: "knowledge_guidance" }>;
 }
 
+/**
+ * Recovered policy text is copied from an already selected authoritative
+ * candidate. Keep grounding and operational-safety validation, but do not run
+ * model-claim policy conflict detection over that source text a second time.
+ */
+function validateRecoveredPolicySegment(
+  segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>,
+  context: ResponseValidationContext,
+  index: number,
+) {
+  const issues = validateKnowledgeBasis(segment.basis, context, index);
+  if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
+    issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
+  }
+  if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
+    issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+  }
+  return issues;
+}
+
 function recoveredProcedureSegment(recovery: ProcedureRecovery): ResponseSegment | null {
   if (recovery.kind !== "usable") return null;
   return {
@@ -3179,11 +3451,12 @@ export function ensureAnswerCompleteness(
 ): ResponseValidationResult {
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  const plan = actionablePolicyPlan(context);
   const completenessDiagnostics: ResponseCompletenessDiagnostics = {
     entered: true,
     cues: [...cues],
     recovery: [],
-    intent_resolved_by_approved_segment: approvedSegmentsResolveIntent(validation, context, cues),
+    intent_resolved_by_approved_segment: approvedSegmentsResolveIntent(validation, context, cues, plan),
     ...(cues.includes("timing") ? { timing_candidates: timingCandidateDiagnosticsForContext(context) } : {}),
   };
   if (!validation.schemaValid && !cues.length) {
@@ -3281,7 +3554,7 @@ export function ensureAnswerCompleteness(
       recoveryResult = "skipped";
     } else {
       const segment = recoveredPolicySegment(recovery);
-      if (segment && !validateSegment(segment, context, -1).length) {
+      if (segment?.type === "knowledge_guidance" && !validateRecoveredPolicySegment(segment, context, -1).length) {
         recoveredSegments.push(segment);
         recoveredTools.add("search_policy");
         recoveryResult = "recovered";
@@ -3289,6 +3562,34 @@ export function ensureAnswerCompleteness(
       }
     }
     completenessDiagnostics.recovery.push({ type: cue, result: recoveryResult });
+  }
+
+  for (const facet of plan?.facets ?? []) {
+    if (facet.kind === "process") continue;
+    if (facet.status === "ambiguous") {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "ambiguous" });
+      continue;
+    }
+    if (facet.recovery.kind !== "usable") {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "unavailable" });
+      continue;
+    }
+    if (actionablePolicyFacetCovered(facet, [...recoveredSegments, ...approvedSegments], context)) {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "skipped" });
+      continue;
+    }
+    const segment = recoveredPolicySegment(facet.recovery);
+    const segmentIssues = segment && segment.type === "knowledge_guidance"
+      ? validateRecoveredPolicySegment(segment, context, -1)
+      : [];
+    if (segment && !segmentIssues.length) {
+      recoveredSegments.push(segment);
+      recoveredTools.add("search_policy");
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "recovered" });
+      changed = true;
+    } else {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "unavailable" });
+    }
   }
 
   if (procedureRequested) {
@@ -3321,6 +3622,15 @@ export function ensureAnswerCompleteness(
         changed = true;
       }
     }
+  }
+
+  if (plan) {
+    completenessDiagnostics.intent_resolved_by_approved_segment = approvedSegmentsResolveIntent(
+      { approvedSegments: [...recoveredSegments, ...approvedSegments] },
+      context,
+      cues,
+      plan,
+    );
   }
 
   if (!changed) return { ...validation, completenessDiagnostics };
@@ -3520,13 +3830,13 @@ function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus
   lines.forEach((line) => {
     const composed = composePolicyLine(line, focus);
     if (composed && (focus.questionShape === "eligibility"
-      ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isAnswerBearingEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
-      : focus.questionShape === "timing"
-        ? composed.split(/(?<=[.!?])\s+/).some(isRefundTiming)
-        : focus.questionShape === "cost"
-          ? composed.split(/(?<=[.!?])\s+/).some(isReturnShippingResponsibility)
-          : focus.questionShape === "process"
-            ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnProcessInstruction(sentenceValue) || isReturnEligibility(sentenceValue) || isReturnApprovalPrerequisite(sentenceValue))
+          ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isAnswerBearingEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
+          : focus.questionShape === "timing"
+            ? composed.split(/(?<=[.!?])\s+/).some(isRefundTiming)
+            : focus.questionShape === "cost"
+              ? composed.split(/(?<=[.!?])\s+/).some(isReturnShippingResponsibility)
+              : focus.questionShape === "process"
+            ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnProcessInstruction(sentenceValue) || isReturnEligibility(sentenceValue) || isReturnApprovalPrerequisite(sentenceValue) || physicalAddressMarker(sentenceValue))
             : true)) {
       pushLine(composed);
     }

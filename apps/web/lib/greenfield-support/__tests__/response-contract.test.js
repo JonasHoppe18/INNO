@@ -1968,6 +1968,29 @@ async function recoveryCase(customerMessage, modelSegments, evidenceRecords, cus
   return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
 }
 
+async function proposalRecoveryCase(customerMessage, modelSegments, evidenceRecords, interactionChannel = "playground") {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry({ ...dependencies, customerMessage, orderReferences: ["10231"] });
+  await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+  const proposal = await registry.execute("create_return", JSON.stringify({
+    order_id: "10231",
+    item_ids: ["line-10231"],
+    reason: "Customer requested a return",
+  }));
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    interactionChannel,
+    proposedActions: proposal.proposedAction ? [proposal.proposedAction] : [],
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
 async function invalidResponseRecoveryCase(customerMessage, evidenceRecords) {
   const dependencies = await createDemoDependencies();
   const registry = createCapabilityRegistry(dependencies);
@@ -2216,7 +2239,7 @@ describe("evidence-aware fallback recovery", () => {
 
   it("does not make the #1063 policy contact or merchant follow-up ambiguous", async () => {
     const evidence = answerEvidenceRecord([policyRecord(
-      "If not, we will contact you concerning a further deduction from the refund. Please contact us via e-mail letting us know that you want to return.",
+      "If not, we will contact you concerning a further deduction from the refund. Please contact us via e-mail letting us know that you want to return. You cannot use your right to regret by refusing to accept the goods at delivery, or by omitting to collect it, without at the same time letting us know that you wish to return.",
       "Refund policy",
     )]);
     const result = await recoveryCase(
@@ -2788,6 +2811,101 @@ describe("evidence-aware fallback recovery", () => {
     }], [evidence]);
 
     expect(result.rendered.match(/refund is initiated/gi)).toHaveLength(1);
+  });
+});
+
+describe("actionable policy answer plan", () => {
+  it("recovers the destination from the imported return policy shape", async () => {
+    const result = await proposalRecoveryCase("Hi, I would like to return my order 1063 since I'm not happy with my product. How do I return it?", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([policyRecord(
+      "Warranty and Returns policy REGRET PURCHASE This means that you can return your package up to 30 days after receiving it. HOW TO MAKE USE OF YOUR RIGHT TO REGRET YOUR PURCHASE Please contact us via e-mail letting us know that you want to return. You cannot use your right to regret by refusing to accept the goods at delivery, or by omitting to collect it, without at the same time letting us know that you wish to return. Return of the goods and return costs To return a product delivered to you within the last 30 days: 1. Get in touch with us through our contact form, including the reason you want to return the headset, the name used at purchase, and the order number (#xxxx). 2. Once we have accepted the return, package the originally sealed AceZone product. 3. Book and print a return label and tape it securely to the face of the shipping package. Please address it to: AceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\nAtt: AceZone\nPhone: +45 31501800\nEmail: support@example.com 4. Hand in the package for return at your local return access point/shop 5. As soon as we have received and processed your return we will initiate the refund and you will be notified. Postage as well as any other expenses in relation to returning such as secure packaging must be paid by you. We recommend using track and trace so that you may follow the shipment. REFUNDS If you\'re looking to return your newly purchased product, AceZone offers a 30-day return policy.", "Refund policy",
+    )])]);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "destination", result: "recovered" });
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.completed.allValid).toBe(true);
+  });
+
+  const returnPolicy = policyRecord(
+    "Returns are accepted within 30 days of delivery when the item is unused and in its original packaging. Send the return to:\n\nAceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping. The refund is initiated after the return is received and processed. Unrelated legal wording does not change the return steps.",
+  );
+
+  it.each([
+    "I would like to return my order.",
+    "How do I return my order?",
+  ])("recovers minimum actionable guidance for a return process request: %s", async (customerMessage) => {
+    const result = await proposalRecoveryCase(customerMessage, [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments.filter((segment) => segment.type === "knowledge_guidance").length).toBeGreaterThan(1);
+    expect(result.completed.completenessDiagnostics.intent_resolved_by_approved_segment).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toEqual(expect.arrayContaining([
+      { type: "eligibility", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "destination", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "shipping_method", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "cost", result: "recovered" },
+      { type: "timing", result: "recovered" },
+    ]));
+    expect(result.rendered).toContain("30 days");
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("tracked shipping");
+    expect(result.rendered).toContain("customer pays");
+    expect(result.rendered).toContain("refund is initiated");
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+    expect(result.rendered).not.toContain("Unrelated legal wording");
+  });
+
+  it("does not let an action offer replace material policy guidance", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments.some((segment) => segment.type === "knowledge_guidance")).toBe(true);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+  });
+
+  it("keeps an action-only response when policy has no remaining customer requirement", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([policyRecord("Contact us to request a return.")])]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("action_offer");
+    expect(result.completed.completenessDiagnostics.intent_resolved_by_approved_segment).toBe(true);
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+  });
+
+  it("fails closed when a required destination is ambiguous even with an action offer", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([
+      policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North policy"),
+      policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "destination", result: "ambiguous" });
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(true);
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
   });
 });
 
