@@ -148,23 +148,32 @@ describe("greenfield agent playground API", () => {
     const createResponse = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "create", customer_email: "customer@example.test" }),
+      body: JSON.stringify({ action: "create", customer_email: " Customer@Example.Test " }),
     }));
     expect(createResponse.status).toBe(200);
     const created = await createResponse.json();
     expect(created.session.id).toMatch(/^ephemeral-/);
+    expect(created.session.customer_email).toBe("customer@example.test");
 
     const sendResponse = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "send", session_id: created.session.id, customer_email: "customer@example.test", message: "Where is my order?" }),
+      body: JSON.stringify({ action: "send", session_id: created.session.id, customer_email: created.session.customer_email, message: "Where is my order?" }),
     }));
     expect(sendResponse.status).toBe(200);
     await expect(sendResponse.json()).resolves.toMatchObject({ no_persistence: true, session: { id: created.session.id } });
     expect(mocks.resolveScopedShop).toHaveBeenCalled();
     expect(mocks.resolveShopifyCredentialsWithDiagnostics).toHaveBeenCalled();
     expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalled();
-    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ history: [], conversationContext: undefined }));
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
+      tenant: { workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: null },
+      customerDisplayName: null,
+      history: [],
+      conversationContext: undefined,
+    }));
+    expect(mocks.ShopifyReadOnlyProvider).toHaveBeenCalledWith(expect.objectContaining({
+      customer: { email: "customer@example.test", name: null },
+    }));
 
     const importResponse = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",

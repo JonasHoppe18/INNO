@@ -640,7 +640,7 @@ export function GreenfieldPlayground() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ action: "send", session_id: session.id, customer_email: customerEmail, message }),
+        body: JSON.stringify({ action: "send", session_id: session.id, customer_email: session.customer_email || customerEmail, message }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "The read-only agent run failed.");
