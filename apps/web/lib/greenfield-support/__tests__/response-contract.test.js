@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { ensureAnswerCompleteness, inferResponseLocale, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, inspectTimingCandidateDiagnostics, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
@@ -2124,6 +2124,135 @@ describe("model-to-contract answer completeness", () => {
 });
 
 describe("evidence-aware fallback recovery", () => {
+  it.each([
+    ["P1 active", "You pay return shipping.", true],
+    ["P2 passive", "Return shipping must be paid by you.", true],
+    ["P3 borne", "Return postage is borne by the customer.", true],
+    ["P4 prepaid", "We provide a prepaid return label.", true],
+    ["P5 unrelated payment", "Your order has already been paid.", false],
+  ])("extracts payer responsibility safely: %s", async (_name, policyText, shouldRecover) => {
+    const evidence = answerEvidenceRecord([policyRecord(policyText)]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "cost",
+      result: shouldRecover ? "recovered" : "unavailable",
+    });
+    if (shouldRecover) expect(result.rendered).not.toContain("couldn't verify");
+    else expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("fails closed for conflicting payer responsibility", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("You pay return shipping.", "Customer-pays policy"),
+      policyRecord("We pay return shipping.", "Merchant-pays policy"),
+    ]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "cost",
+      result: "ambiguous",
+    });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("exposes candidate-level diagnostics for timing propositions", () => {
+    const [certified] = inspectTimingCandidateDiagnostics([
+      "As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+    ]);
+
+    expect(certified).toMatchObject({
+      timing_pattern_detected: true,
+      event_trigger_detected: true,
+      duration_detected: false,
+      explicit_date_detected: false,
+      subject_outcome_detected: true,
+      rejected: false,
+      rejection_reason: [],
+      certified_candidate: true,
+      conflict_group: null,
+    });
+  });
+
+  it.each([
+    ["T1 event-triggered receipt and processing", "As soon as the return is received and processed, the refund is initiated.", true, true],
+    ["T2 event-triggered receipt and inspection", "The refund is initiated once the return has been received and inspected.", true, true],
+    ["T3 incomplete event and outcome", "After the return, the outcome follows.", false, true],
+  ])("classifies timing candidates safely: %s", (_name, text, shouldCertify, shouldDetectEvent) => {
+    const [candidate] = inspectTimingCandidateDiagnostics([text]);
+    expect(candidate.certified_candidate).toBe(shouldCertify);
+    expect(candidate.event_trigger_detected).toBe(shouldDetectEvent);
+  });
+
+  it("keeps compatible timing stages together", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed. Your payment provider may take additional time to display the funds.",
+    )])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "timing",
+      result: "recovered",
+    });
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).toContain("payment provider may take additional time");
+  });
+
+  it("fails closed for contradictory timing stages", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The refund is initiated within 5 business days.", "Five-day refund policy"),
+      policyRecord("The refund is initiated within 30 business days.", "Thirty-day refund policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "timing",
+      result: "ambiguous",
+    });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("certifies the exact selected Refund-policy timing evidence", () => {
+    const [candidate] = inspectTimingCandidateDiagnostics([
+      "As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+    ]);
+
+    expect(candidate.certified_candidate).toBe(true);
+    expect(candidate.rejection_reason).toEqual([]);
+  });
+
+  it("distinguishes a certified timing candidate from policy-truth rejection", async () => {
+    const result = await answerCompletenessCase(
+      "Hvornår får jeg pengene tilbage?",
+      "As soon as we have received and processed your return we will initiate the refund",
+      [
+        policyRecord(
+          "Returns are accepted within 30 days. If the seal is broken, the refund may be reduced by EUR 50. As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+          "Current refund policy",
+        ),
+        policyRecord("Returns are not accepted.", "Conflicting return policy"),
+      ],
+    );
+
+    expect(result.completed.completenessDiagnostics.timing_candidates.some((candidate) => candidate.certified_candidate)).toBe(true);
+    expect(result.completed.issues.some((issue) => issue.code === "policy_truth_ambiguous")).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery.some((entry) => entry.type === "timing")).toBe(true);
+  });
+
   it("recovers a usable policy answer when the model emits a generic fallback", async () => {
     const evidence = answerEvidenceRecord([policyRecord("Your refund is initiated after the return is received and processed.")]);
     const result = await recoveryCase("When will I get my refund?", [{

@@ -126,6 +126,20 @@ export interface ResponseCompletenessDiagnostics {
   entered: boolean;
   cues: string[];
   recovery: CompletenessRecoveryDiagnostic[];
+  timing_candidates?: TimingCandidateDiagnostic[];
+}
+
+export interface TimingCandidateDiagnostic {
+  text: string;
+  timing_pattern_detected: boolean;
+  event_trigger_detected: boolean;
+  duration_detected: boolean;
+  explicit_date_detected: boolean;
+  subject_outcome_detected: boolean;
+  rejected: boolean;
+  rejection_reason: string[];
+  certified_candidate: boolean;
+  conflict_group: string | null;
 }
 
 export interface ResponseValidationResult {
@@ -1545,6 +1559,9 @@ export function summarizeResponseValidation(
               entered: result.completenessDiagnostics.entered,
               cues: result.completenessDiagnostics.cues,
               recovery: result.completenessDiagnostics.recovery,
+              ...(result.completenessDiagnostics.timing_candidates
+                ? { timing_candidates: result.completenessDiagnostics.timing_candidates }
+                : {}),
             }
           : null,
       }
@@ -2424,32 +2441,90 @@ function isReturnConditionConsequence(value: string) {
 }
 
 function isReturnShippingResponsibility(value: string) {
-  return /\b(?:return\s+)?(?:shipping|shipment)\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
+  return /\b(?:return\s+)?(?:shipping|shipment)\b|\breturn\s+(?:postage|label)\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
     && /\b(?:responsib|covered|cover|cost|pay|paid|pays|expense|borne|prepaid|free|ansvar|omkostning|udgift|betal|betalt|zahlt|kosten|verantwort|übernommen)\w*\b/i.test(value);
 }
 
 function isPayerProposition(value: string) {
   if (!isReturnShippingResponsibility(value)) return false;
-  return /\b(?:customer|merchant|store|seller|buyer|you|we|kunden|forhandler|butik|sælger|køber|du|vi|kunden)\b[\s\S]{0,48}\b(?:pay|paid|pays|cover\w*|responsib\w*|borne|prepaid|free|betaler|betalt|ansvar\w*|zahlt|verantwort\w*|übernommen)\b/i.test(value)
-    || /\b(?:paid|covered|borne|betalt|dækket|zahlt|übernommen)\s+(?:by|af|von)\s+\b(?:the\s+)?(?:customer|merchant|store|seller|buyer|kunden|forhandler|butik|sælger|køber|du|kunden)\b/i.test(value)
-    || /\b(?:free|prepaid)\s+(?:return\s+)?(?:shipping|shipment|postage|returfragt|returporto|versand)\b/i.test(value)
-    || /\b(?:shipping|shipment|postage|returfragt|returporto|versand)\b[\s\S]{0,40}\b(?:free|prepaid)\b/i.test(value);
+  const actor = "(?:customer|merchant|store|seller|buyer|you|we|us|kunden|forhandler|butik|sælger|køber|du|vi|os)";
+  const responsibilityVerb = "(?:pay|paid|pays|cover\\w*|responsib\\w*|borne|prepaid|free|betaler|betalt|ansvar\\w*|zahlt|verantwort\\w*|übernommen)";
+  const passiveResponsibility = new RegExp(`\\b${responsibilityVerb}\\b[\\s\\S]{0,48}\\b(?:by|af|von)\\s+(?:the\\s+)?${actor}\\b`, "i");
+  const activeResponsibility = new RegExp(`\\b${actor}\\b[\\s\\S]{0,48}\\b${responsibilityVerb}\\b`, "i");
+  const expenseResponsibility = new RegExp(`\\b(?:at|on|til|på|zu)\\s+(?:your|customer['’]s|merchant['’]s|our|din|kundens|forhandlerens|vores|ihre|deine|unsere)\\s+(?:expense|cost|omkostning\\w*|udgift\\w*|bekostning|kosten)\\b`, "i");
+  const returnShippingConcept = /\breturn\s+(?:shipping|shipment|postage|label)\b|\bretur(?:fragt|porto)\w*\b|\brücksend(?:ung|e|ekosten|etikett)\w*\b/i;
+  const prepaidReturnLabel = /\b(?:we|merchant|store|seller|vi|forhandler|butik|wir)\b[\s\S]{0,64}\b(?:provide|offer|send|give|tilbyd\w*|leverer|geben|bieten)\b[\s\S]{0,64}\bprepaid\b[\s\S]{0,32}\b(?:return\s+label|returlabel|return\s+shipping|returfragt|rücksendeetikett)\b/i;
+  return activeResponsibility.test(value)
+    || passiveResponsibility.test(value)
+    || expenseResponsibility.test(value)
+    || prepaidReturnLabel.test(value)
+    || (returnShippingConcept.test(value) && /\b(?:free|prepaid)\b/i.test(value));
 }
 
-function isRefundTiming(value: string) {
+function timingCandidateEvaluation(value: string) {
   const text = String(value ?? "");
   const mentionsRefund = /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(text);
   const mentionsProviderTiming = /\b(?:bank|payment\s+provider|betalingsudbyder)\b[\s\S]{0,80}\b(?:display|post|funds?|vise|beløb|time|tid|dage|tage)\b/i.test(text);
-  if (!mentionsRefund && !mentionsProviderTiming) return false;
-
   const hasDuration = /\b(?:within|inden\s+for|indenfor)\s+\d{1,3}\s+(?:business\s+)?(?:days?|dage|tage|wochen|monate)\b/i.test(text);
   const hasEventTrigger = /\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b[\s\S]{0,180}\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|igangsæt\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b/i.test(text)
     || /\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b[\s\S]{0,180}\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b/i.test(text);
   const hasRefundAction = /\b(?:initiat\w*|process\w*|issu\w*|releas\w*|pay\w*|display\w*|udbetal\w*|igangsæt\w*|behandl\w*|ausgezahlt|erstatt\w*)\b/i.test(text);
   const hasExplicitDate = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/i.test(text)
     || /\b(?:on|den|am|d\.)\s+\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+\d{2,4}\b/i.test(text);
-  return (hasDuration || (hasEventTrigger && hasRefundAction) || mentionsProviderTiming || hasExplicitDate)
+  const timingPatternDetected = hasDuration || hasEventTrigger || mentionsProviderTiming || hasExplicitDate;
+  const subjectOutcomeDetected = mentionsProviderTiming
+    || hasExplicitDate
+    || hasDuration
+    || (hasEventTrigger && hasRefundAction);
+  const certifiedCandidate = (mentionsRefund || mentionsProviderTiming)
+    && (hasDuration || (hasEventTrigger && hasRefundAction) || mentionsProviderTiming || hasExplicitDate)
     && (hasExplicitDate || /\b(?:after|once|when|upon|as\s+soon\s+as|within|efter|når|så\s+snart|nach|sobald|wann|wie\s+lange|inden\s+for|indenfor|dage|days?|tage|wochen|monate|bank|payment\s+provider|betalingsudbyder)\b/i.test(text));
+  const rejectionReason: string[] = [];
+  if (!mentionsRefund && !mentionsProviderTiming) rejectionReason.push("missing_refund_or_payment_subject");
+  if (!timingPatternDetected) rejectionReason.push("missing_timing_pattern");
+  if (!subjectOutcomeDetected) rejectionReason.push("missing_timing_outcome");
+  if (!certifiedCandidate && !rejectionReason.length) rejectionReason.push("timing_requirements_not_met");
+  return {
+    mentionsRefund,
+    mentionsProviderTiming,
+    hasDuration,
+    hasEventTrigger,
+    hasExplicitDate,
+    hasRefundAction,
+    timingPatternDetected,
+    subjectOutcomeDetected,
+    certifiedCandidate,
+    rejectionReason,
+  };
+}
+
+function isRefundTiming(value: string) {
+  return timingCandidateEvaluation(value).certifiedCandidate;
+}
+
+function timingCandidateDiagnostics(evidenceTexts: string[]): TimingCandidateDiagnostic[] {
+  return evidenceTexts
+    .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+    .map((candidate) => {
+      const evaluation = timingCandidateEvaluation(candidate);
+      return {
+        text: candidate.slice(0, 240),
+        timing_pattern_detected: evaluation.timingPatternDetected,
+        event_trigger_detected: evaluation.hasEventTrigger,
+        duration_detected: evaluation.hasDuration,
+        explicit_date_detected: evaluation.hasExplicitDate,
+        subject_outcome_detected: evaluation.subjectOutcomeDetected,
+        rejected: !evaluation.certifiedCandidate,
+        rejection_reason: evaluation.rejectionReason,
+        certified_candidate: evaluation.certifiedCandidate,
+        conflict_group: null,
+      };
+    });
+}
+
+/** @internal DEV/test-only candidate diagnostics; not exposed by any route. */
+export function inspectTimingCandidateDiagnostics(evidenceTexts: string[]): TimingCandidateDiagnostic[] {
+  return timingCandidateDiagnostics(evidenceTexts);
 }
 
 function isReturnEligibility(value: string) {
@@ -2722,6 +2797,18 @@ function successfulKnowledgeResults(context: Pick<ResponseValidationContext, "ge
   });
 }
 
+function timingCandidateDiagnosticsForContext(context: Pick<ResponseValidationContext, "getResults">): TimingCandidateDiagnostic[] {
+  return successfulKnowledgeResults(context, "search_policy").flatMap((evidence) => {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results.flatMap((record) => {
+      const value = objectValue(record);
+      if (!value || String(value.authority ?? "") !== "authoritative" || String(value.knowledge_type ?? "") !== "policy") return [];
+      return timingCandidateDiagnostics(answerEvidenceSections([value]));
+    });
+  }).slice(0, 64);
+}
+
 function uniqueAnswerCandidates(candidates: AnswerCompletenessCandidate[]) {
   return candidates.filter((candidate, index) => candidates.findIndex((item) => item.normalized === candidate.normalized) === index);
 }
@@ -2941,6 +3028,7 @@ export function ensureAnswerCompleteness(
     entered: true,
     cues: [...cues],
     recovery: [],
+    ...(cues.includes("timing") ? { timing_candidates: timingCandidateDiagnosticsForContext(context) } : {}),
   };
   if (!validation.schemaValid && !cues.length) {
     return { ...validation, completenessDiagnostics };
