@@ -2309,6 +2309,24 @@ function hasKnownOrderReference(context: ResponseValidationContext) {
   return Boolean(context.activeOrder?.requestedOrderId);
 }
 
+function hasVerifiedOrderReference(context: Pick<ResponseValidationContext, "activeOrder">) {
+  return context.activeOrder?.state === "verified"
+    && Boolean(context.activeOrder.requestedOrderId);
+}
+
+function verifiedOrderItemTitle(context: Pick<ResponseValidationContext, "activeOrder">) {
+  if (context.activeOrder?.state !== "verified") return null;
+  const titles = Array.from(new Set((context.activeOrder.order?.items ?? [])
+    .map((item) => String(item.title ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)));
+  return titles.length === 1 ? titles[0] : null;
+}
+
+function customerFacingReturnSubject(context: Pick<ResponseValidationContext, "activeOrder">) {
+  const title = verifiedOrderItemTitle(context);
+  return title ? `the ${title}` : "the item";
+}
+
 function cleanContextualizedKnowledgeSentence(value: string) {
   return value
     .replace(/\s+/g, " ")
@@ -2322,7 +2340,13 @@ function cleanContextualizedKnowledgeSentence(value: string) {
 }
 
 function requirementListFromSentence(value: string) {
-  const match = String(value ?? "").match(/\b(?:with|provide|share|send|include)\s+(.+?)(?:[.!?]|$)/i);
+  const text = String(value ?? "");
+  const contentRequirement = "(?:reason|name|order|email|photo|picture|image|video|screenshot|serial|document|receipt|proof|evidence|measurement|details?|description|sku|barcode|form)";
+  const match = [
+    text.match(/\bincluding\s+(.+?)(?:[.!?]|$)/i),
+    text.match(new RegExp(`\\b(?:provide|share|send|include)\\s+((?:(?:the|your|an?|any)\\s+)?${contentRequirement}\\b.+?)(?:[.!?]|$)`, "i")),
+    text.match(new RegExp(`\\bwith\\s+((?:(?:the|your|an?|any)\\s+)?${contentRequirement}\\b.+?)(?:[.!?]|$)`, "i")),
+  ].find((candidate) => candidate?.[1]);
   if (!match?.[1]) return null;
   const items = match[1]
     .split(/,\s*|\s+(?:and|or)\s+/i)
@@ -2331,23 +2355,141 @@ function requirementListFromSentence(value: string) {
   return items.length ? items : null;
 }
 
+type ProcessRequirementKind = "contact_support" | "customer_name" | "order_reference" | "return_reason" | "customer_content";
+
+type ProcessRequirement = {
+  kind: ProcessRequirementKind;
+  value: string;
+  satisfied: boolean;
+};
+
+function isReturnReasonRequirement(value: string) {
+  return /\breason\b/i.test(value);
+}
+
+function customerMessageProvidesReturnReason(
+  context: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext">,
+) {
+  const text = [context.customerMessage, context.customerProvidedContext?.returnDetails]
+    .filter(Boolean)
+    .join(" ");
+  if (!text.trim()) return false;
+  return /\b(?:because|since|as|due\s+to|because\s+of|reason\s*(?:is|:))\s+[^.!?]{2,}/i.test(text)
+    || /\b(?:damaged|defective|dissatisf(?:ied|ying)|unhappy|not\s+happy|doesn['’]?t\s+fit|does\s+not\s+fit|wrong|unwanted|changed\s+my\s+mind)\b/i.test(text);
+}
+
+function processRequirementKind(value: string): ProcessRequirementKind | null {
+  if (isSupportContactInstruction(value)) return "contact_support";
+  if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return "order_reference";
+  if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) return "customer_name";
+  if (isReturnReasonRequirement(value)) return "return_reason";
+  if (isCustomerContentRequirement(value) || /\b(?:photo|picture|image|video|screenshot|serial|document|receipt|proof|measurement|details?|description|sku|barcode|form)\b/i.test(value)) return "customer_content";
+  return null;
+}
+
+function processRequirementSatisfied(
+  kind: ProcessRequirementKind,
+  value: string,
+  context: AnswerCompletenessContext,
+) {
+  if (kind === "contact_support") {
+    return isActiveSupportChannel(context.interactionChannel)
+      && customerMessagePerformsSupportRequest(context.customerMessage ?? "")
+      && isSupportContactInstruction(value)
+      && (!isNegatedSupportContactInstruction(value) || isConditionalSupportContactInstruction(value));
+  }
+  if (kind === "order_reference") return hasVerifiedOrderReference(context);
+  if (kind === "customer_name") return Boolean(context.trustedCustomerIdentity?.verified && context.trustedCustomerIdentity.hasName);
+  if (kind === "return_reason") return customerMessageProvidesReturnReason(context);
+  return false;
+}
+
+function processRequirementsForInstruction(
+  value: string,
+  context: AnswerCompletenessContext,
+): ProcessRequirement[] | null {
+  if (!isSupportContactInstruction(value)) return null;
+  const items = requirementListFromSentence(value);
+  if (!items) {
+    if (hasSupportContactContentRequirement(value)) return null;
+    return [{
+      kind: "contact_support",
+      value,
+      satisfied: processRequirementSatisfied("contact_support", value, context),
+    }];
+  }
+  return [
+    {
+      kind: "contact_support",
+      value,
+      satisfied: processRequirementSatisfied("contact_support", value, context),
+    },
+    ...items.map((item) => {
+      const kind = processRequirementKind(item) ?? "customer_content";
+      return { kind, value: item, satisfied: processRequirementSatisfied(kind, item, context) };
+    }),
+  ];
+}
+
+function processRequirementCandidateValue(requirement: ProcessRequirement) {
+  if (requirement.kind === "customer_name"
+    || requirement.kind === "order_reference"
+    || requirement.kind === "return_reason"
+    || requirement.kind === "customer_content") {
+    return `Please provide ${requirement.value}`;
+  }
+  return requirement.value;
+}
+
+function processInstructionCandidates(value: string, context: AnswerCompletenessContext) {
+  if (isMerchantSideProcessInstruction(value)) return [];
+  if (!isActiveSupportChannel(context.interactionChannel)
+    || !customerMessagePerformsSupportRequest(context.customerMessage ?? "")) return [value];
+  const requirements = processRequirementsForInstruction(value, context);
+  if (!requirements) return [value];
+  return requirements
+    .filter((requirement) => !requirement.satisfied)
+    .map(processRequirementCandidateValue);
+}
+
 function requirementAlreadyKnown(value: string, context: ResponseValidationContext) {
   if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return hasKnownOrderReference(context);
   if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
-    return Boolean(context.trustedCustomerIdentity?.verified);
+    return Boolean(context.trustedCustomerIdentity?.verified && context.trustedCustomerIdentity.hasName);
   }
   if (/\bemail(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
     return Boolean(context.trustedCustomerIdentity?.verified);
   }
+  if (isReturnReasonRequirement(value)) return customerMessageProvidesReturnReason(context);
   return false;
+}
+
+function requirementPromptLabel(value: string, context: ResponseValidationContext) {
+  return isReturnReasonRequirement(value)
+    ? (localeFor(context) === "da"
+      ? `årsagen til at returnere ${customerFacingReturnSubject(context)}`
+      : `the reason for returning ${customerFacingReturnSubject(context)}`)
+    : value;
 }
 
 function naturalMissingRequirementQuestion(items: string[], context: ResponseValidationContext) {
   const locale = localeFor(context);
-  if (items.length === 1) {
-    return locale === "da" ? `Hvad er ${items[0]}?` : `What’s the ${items[0]}?`;
+  if (items.length === 1 && isReturnReasonRequirement(items[0])) {
+    const verifiedOrder = context.activeOrder?.state === "verified"
+      && Boolean(context.activeOrder.requestedOrderId);
+    return locale === "da"
+      ? verifiedOrder
+        ? `Hvad er årsagen til, at du returnerer ${customerFacingReturnSubject(context)}?`
+        : "Hvad er årsagen til returneringen?"
+      : verifiedOrder
+        ? `What’s the reason for returning ${customerFacingReturnSubject(context)}?`
+        : "What’s the reason for return?";
   }
-  const information = joinList(items, locale);
+  const promptedItems = items.map((item) => requirementPromptLabel(item, context));
+  if (items.length === 1) {
+    return locale === "da" ? `Hvad er ${promptedItems[0]}?` : `What’s the ${promptedItems[0]}?`;
+  }
+  const information = joinList(promptedItems, locale);
   return locale === "da" ? `Kan du sende ${information}?` : `Could you share ${information}?`;
 }
 
@@ -2359,7 +2501,7 @@ function naturalMissingRequirementQuestion(items: string[], context: ResponseVal
 function adaptKnownRequirementList(value: string, context: ResponseValidationContext, allowWithClause: boolean) {
   if (!allowWithClause && !/\b(?:provide|share|send|include)\b/i.test(value)) return undefined;
   const items = requirementListFromSentence(value);
-  if (!items?.some((item) => requirementAlreadyKnown(item, context))) return undefined;
+  if (!items) return undefined;
   const missing = items.filter((item) => !requirementAlreadyKnown(item, context));
   return missing.length ? naturalMissingRequirementQuestion(missing, context) : "";
 }
@@ -2622,10 +2764,7 @@ function isSatisfiedSupportContactPrerequisite(
   value: string,
   context: Pick<ResponseValidationContext, "customerMessage" | "interactionChannel">,
 ) {
-  return isActiveSupportChannel(context.interactionChannel)
-    && customerMessagePerformsSupportRequest(context.customerMessage ?? "")
-    && isSupportContactInstruction(value)
-    && (!isNegatedSupportContactInstruction(value) || isConditionalSupportContactInstruction(value))
+  return processRequirementSatisfied("contact_support", value, context)
     && !hasSupportContactContentRequirement(value);
 }
 
@@ -2668,7 +2807,7 @@ type AnswerCompletenessCandidate = {
   normalized: string;
 };
 
-type AnswerCompletenessContext = Pick<ResponseValidationContext, "customerMessage" | "interactionChannel"> & {
+type AnswerCompletenessContext = Pick<ResponseValidationContext, "customerMessage" | "interactionChannel" | "activeOrder" | "trustedCustomerIdentity" | "customerProvidedContext" | "proposedActions" | "getResults"> & {
   preserveProcessConflicts?: boolean;
 };
 
@@ -2793,20 +2932,32 @@ function answerCompletenessCandidates(
   context?: AnswerCompletenessContext,
 ) {
   const candidates: AnswerCompletenessCandidate[] = [];
+  const processContext: AnswerCompletenessContext = {
+    customerMessage: context?.customerMessage ?? customerMessage,
+    interactionChannel: context?.interactionChannel,
+    activeOrder: context?.activeOrder,
+    trustedCustomerIdentity: context?.trustedCustomerIdentity,
+    customerProvidedContext: context?.customerProvidedContext,
+    proposedActions: context?.proposedActions,
+  };
   const pushUrls = (text: string) => {
     for (const match of text.match(/https?:\/\/[^\s<>)]+/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
   };
   const pushEmails = (text: string) => {
     for (const match of text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
   };
-  const processUnits = cue === "process"
+  const rawProcessUnits = cue === "process"
     ? evidenceTexts
       .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
       .filter(isProcessAnswerBearingInstruction)
       .filter((unit) => !isMerchantSideProcessInstruction(unit))
     : [];
+  const processUnits = cue === "process"
+    ? rawProcessUnits
+      .flatMap((unit) => processInstructionCandidates(unit, processContext))
+    : [];
   const preserveProcessConflicts = cue === "process"
-    && (context?.preserveProcessConflicts ?? hasContradictoryProcessInstructions(processUnits));
+    && (context?.preserveProcessConflicts ?? hasContradictoryProcessInstructions(rawProcessUnits));
 
   for (const evidenceText of evidenceTexts) {
     if (cue === "destination") {
@@ -2879,10 +3030,7 @@ function answerCompletenessCandidates(
       const nextSteps = preserveProcessConflicts
         ? processUnitsForEvidence
         : processUnitsForEvidence
-          .filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, {
-            customerMessage: context?.customerMessage ?? customerMessage,
-            interactionChannel: context?.interactionChannel,
-          }))
+          .flatMap((unit) => processInstructionCandidates(unit, processContext))
           .slice(0, 1);
       nextSteps.forEach((nextStep) => pushAnswerCompletenessCandidate(candidates, nextStep));
     }
@@ -2997,7 +3145,7 @@ function mergeRecordAnswerCandidates(cue: AnswerBearingCue, candidates: AnswerCo
 }
 
 function recoverPolicyAnswer(
-  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+  context: AnswerCompletenessContext,
   cue: AnswerBearingCue,
   options: PolicyRecoveryOptions = {},
 ): EvidenceRecovery {
@@ -3117,12 +3265,11 @@ function processInstructionState(
         .flatMap((record) => answerEvidenceSections([objectValue(record)!]))
         .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
         .filter(isProcessAnswerBearingInstruction)
-        .filter((unit) => !isMerchantSideProcessInstruction(unit));
+        .flatMap((unit) => processInstructionCandidates(unit, context));
     });
-  const remaining = instructions.filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, context));
   return {
     hasInstructions: instructions.length > 0,
-    hasRemaining: remaining.length > 0,
+    hasRemaining: instructions.length > 0,
   };
 }
 
@@ -3312,7 +3459,7 @@ export function shouldPreferAuthoritativeEvidenceFallback(
  * path when the SDK cannot produce a structured final output.
  */
 export function recoverAuthoritativePolicyAnswer(
-  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+  context: AnswerCompletenessContext,
 ) {
   const focus = customerKnowledgeFocus(context.customerMessage);
   const values: string[] = [];
@@ -3420,6 +3567,11 @@ function recoveredProcedureSegment(recovery: ProcedureRecovery): ResponseSegment
 function answerCompletenessValuePresent(value: string, cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
   const normalizedValue = normalizeAnswerCompletenessValue(value);
   if (candidates.some((candidate) => normalizedValue.includes(candidate.normalized))) return true;
+  if (cue === "process" && candidates.some((candidate) => {
+    const sourceRequirement = candidate.value.replace(/^please\s+provide\s+/i, "");
+    const normalizedRequirement = normalizeAnswerCompletenessValue(sourceRequirement);
+    return normalizedRequirement.length > 3 && normalizedValue.includes(normalizedRequirement);
+  })) return true;
   if (cue === "cost") {
     const hasAmount = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:kr|dkk|eur|euro|euros?)\b/i.test(value);
     const hasNamedPayer = isPayerProposition(value);

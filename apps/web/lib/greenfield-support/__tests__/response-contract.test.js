@@ -1980,10 +1980,40 @@ async function proposalRecoveryCase(customerMessage, modelSegments, evidenceReco
   const getResult = registry.getResult;
   const context = {
     ...registry,
+    activeOrder: registry.getActiveOrderFocus(),
     customerMessage,
     interactionChannel,
+    trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
     proposedActions: proposal.proposedAction ? [proposal.proposedAction] : [],
     getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function verifiedReturnRecoveryCase(customerMessage, modelSegments, evidenceRecords, options = {}) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry({ ...dependencies, customerMessage, orderReferences: ["1063"] });
+  const context = {
+    ...registry,
+    customerMessage,
+    interactionChannel: options.interactionChannel ?? "playground",
+    activeOrder: options.activeOrder ?? {
+      requestedOrderId: "1063",
+      state: "verified",
+      order: {
+        id: "shopify-1063",
+        orderNumber: "1063",
+        status: "fulfilled",
+        items: [{ id: "line-1063", title: "Chaos Mousepad 21", quantity: 1 }],
+      },
+    },
+    customerName: "Jonas Hoppe",
+    trustedCustomerIdentity: options.trustedCustomerIdentity ?? { verified: true, hasName: true, hasEmail: true },
+    proposedActions: options.proposedActions ?? [],
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? registry.getResult(resultId),
     getResults: () => [...evidenceRecords, ...registry.getResults()],
   };
   const initial = validateStructuredResponse({ segments: modelSegments }, context);
@@ -2832,6 +2862,84 @@ describe("actionable policy answer plan", () => {
   const returnPolicy = policyRecord(
     "Returns are accepted within 30 days of delivery when the item is unused and in its original packaging. Send the return to:\n\nAceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping. The refund is initiated after the return is received and processed. Unrelated legal wording does not change the return steps.",
   );
+
+  const compositeReturnPolicy = policyRecord(
+    "Returns are accepted within 30 days. Get in touch with us through our contact form, including the reason you want to return the headset, the name used at purchase, and the order number. Send the return to:\n\nAceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping. The refund is initiated after the return is received and processed.",
+  );
+
+  it.each(["support_email", "support_inbox", "playground", "web_chat"])(
+    "decomposes composite return requirements on %s",
+    async (interactionChannel) => {
+      const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+      const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+        type: "limitation",
+        text: "I couldn't verify that policy detail from our current policy information.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }], [evidence], { interactionChannel });
+
+      expect(result.completed.allValid).toBe(true);
+      expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+      expect(result.rendered).toContain("Nordre Fasanvej 113");
+      expect(result.rendered).toContain("tracked shipping");
+      expect(result.rendered).toContain("customer pays return shipping");
+      expect(result.rendered).toContain("refund is initiated");
+      expect(result.rendered).toContain("reason for returning the Chaos Mousepad 21");
+      expect(result.rendered).not.toMatch(/contact form|name used at purchase|order number|headset/i);
+    },
+  );
+
+  it("recognizes a customer-supplied return reason without repeating composite prerequisites", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063 because the item does not fit", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.rendered).not.toContain("reason for returning");
+    expect(result.rendered).not.toMatch(/contact form|name used at purchase|order number|headset/i);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+  });
+
+  it("does not let an unverified display name satisfy the purchase-name requirement", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063 because the item does not fit", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+    });
+
+    expect(result.rendered).toContain("name used at purchase");
+  });
+
+  it("uses a neutral subject when verified order items are ambiguous", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      activeOrder: {
+        requestedOrderId: "1063",
+        state: "verified",
+        order: {
+          id: "shopify-1063",
+          orderNumber: "1063",
+          status: "fulfilled",
+          items: [
+            { id: "line-1063-a", title: "Chaos Mousepad 21", quantity: 1 },
+            { id: "line-1063-b", title: "Chaos Headset", quantity: 1 },
+          ],
+        },
+      },
+    });
+
+    expect(result.rendered).toContain("reason for returning the item");
+    expect(result.rendered).not.toContain("headset");
+  });
 
   it.each([
     "I would like to return my order.",
