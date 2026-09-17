@@ -2166,6 +2166,34 @@ describe("evidence-aware fallback recovery", () => {
     expect(result.rendered).not.toContain("order number");
   });
 
+  it("recovers event-trigger timing for a general Danish question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "As soon as your return is received and inspected, we will release the refund.",
+    )]);
+    const result = await recoveryCase("Hvornår får jeg pengene tilbage?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("release the refund");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("recognizes an explicitly grounded refund date as timing evidence", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord("The refund will be issued on 16/09/2026.")])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("issued on 16/09/2026");
+  });
+
   it("recovers a payer answer when an SDK fallback has no structured output", async () => {
     const evidence = answerEvidenceRecord([policyRecord("The customer is responsible for return shipping costs.")]);
     const result = await invalidResponseRecoveryCase("Who pays return shipping?", [evidence]);
@@ -2174,6 +2202,22 @@ describe("evidence-aware fallback recovery", () => {
     expect(result.completed.schemaValid).toBe(false);
     expect(result.completed.approvedSegments).toHaveLength(1);
     expect(result.rendered).toContain("responsible for return shipping costs");
+  });
+
+  it("recovers a Danish payer answer when every model segment is rejected", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "not_a_real_capability",
+      missing_arguments: ["unsupported"],
+    }], [evidence]);
+
+    expect(result.initial.approvedSegments).toEqual([]);
+    expect(result.initial.rejectedSegments).toHaveLength(1);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
   });
 
   it("does not recover general policy timing for a customer-specific order status question", async () => {
@@ -2301,6 +2345,67 @@ describe("evidence-aware fallback recovery", () => {
     expect(result.rendered).toContain("couldn't verify");
     expect(result.rendered).not.toContain("North Street 1");
     expect(result.rendered).not.toContain("South Street 2");
+  });
+
+  it("fails closed when authoritative payer evidence conflicts", async () => {
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The customer pays the return shipping.", "Customer payer policy"),
+      policyRecord("The merchant pays the return shipping.", "Merchant payer policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("customer pays");
+    expect(result.rendered).not.toContain("merchant pays");
+  });
+
+  it("fails closed when authoritative timing values conflict", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The refund is issued within 5 business days.", "Five-day refund policy"),
+      policyRecord("The refund is issued within 30 business days.", "Thirty-day refund policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("5 business days");
+    expect(result.rendered).not.toContain("30 business days");
+  });
+
+  it("keeps compatible timing stages together as one recovered proposition", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "The refund is released after the return is received. The payment provider then displays the funds within 5 business days.",
+    )])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("return is received");
+    expect(result.rendered).toContain("within 5 business days");
+  });
+
+  it("recovers only the current timing proposition from an otherwise broad policy", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. The customer pays return shipping. The refund is initiated after the return is received and processed.",
+    )])]);
+
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("30 days");
+    expect(result.rendered).not.toContain("EUR 50");
+    expect(result.rendered).not.toContain("return shipping");
   });
 
   it("does not duplicate a complete model answer", async () => {

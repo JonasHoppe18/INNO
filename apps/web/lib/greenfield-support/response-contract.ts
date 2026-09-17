@@ -2378,7 +2378,10 @@ function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocu
   const hasRefundIntent = /\b(?:refund\w*|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage|erstatt\w*|rückerstatt\w*)\b/i.test(message);
   const hasTimingQuestion = /\b(?:when|how\s+long|tim(?:e|ing)|within|after|hvornår|hvor\s+lang\s+tid|hvor\s+hurtigt|tid|wann|wie\s+lange|zeit)\b/i.test(message);
   const asksRefundTiming = hasRefundIntent && hasTimingQuestion;
-  const mentionsShipping = /\b(?:shipping|returfragt|fragt|levering|versand|rückversand)\b/i.test(message);
+  // Keep inflected forms in the same intent family (for example Danish
+  // "returfragten"), while still requiring an explicit shipping term before
+  // treating a payer question as return-shipping related.
+  const mentionsShipping = /\b(?:shipping\w*|returfragt\w*|fragt\w*|levering\w*|versand\w*|rückversand\w*)\b/i.test(message);
   const asksShippingResponsibility = mentionsShipping && /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*\b|\b(?:hvem\s+betaler|betaler\s+jeg|ansvar|omkostning|udgift)\w*\b|\b(?:wer\s+zahlt|kosten|verantwort)\w*\b/i.test(message);
   const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|beskadiget|geöffnet|benutzt|versiegelt|unbenutzt|beschädigt)\b/i.test(message);
   const asksCondition = hasReturnIntent && mentionsCondition;
@@ -2422,16 +2425,31 @@ function isReturnConditionConsequence(value: string) {
 
 function isReturnShippingResponsibility(value: string) {
   return /\b(?:return\s+)?(?:shipping|shipment)\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
-    && /\b(?:responsib|covered|cover|cost|pay|expense|ansvar|omkostning|udgift|betal|zahlt|kosten|verantwort)\w*\b/i.test(value);
+    && /\b(?:responsib|covered|cover|cost|pay|paid|pays|expense|borne|prepaid|free|ansvar|omkostning|udgift|betal|betalt|zahlt|kosten|verantwort|übernommen)\w*\b/i.test(value);
+}
+
+function isPayerProposition(value: string) {
+  if (!isReturnShippingResponsibility(value)) return false;
+  return /\b(?:customer|merchant|store|seller|buyer|you|we|kunden|forhandler|butik|sælger|køber|du|vi|kunden)\b[\s\S]{0,48}\b(?:pay|paid|pays|cover\w*|responsib\w*|borne|prepaid|free|betaler|betalt|ansvar\w*|zahlt|verantwort\w*|übernommen)\b/i.test(value)
+    || /\b(?:paid|covered|borne|betalt|dækket|zahlt|übernommen)\s+(?:by|af|von)\s+\b(?:the\s+)?(?:customer|merchant|store|seller|buyer|kunden|forhandler|butik|sælger|køber|du|kunden)\b/i.test(value)
+    || /\b(?:free|prepaid)\s+(?:return\s+)?(?:shipping|shipment|postage|returfragt|returporto|versand)\b/i.test(value)
+    || /\b(?:shipping|shipment|postage|returfragt|returporto|versand)\b[\s\S]{0,40}\b(?:free|prepaid)\b/i.test(value);
 }
 
 function isRefundTiming(value: string) {
-  const hasRefundTiming = /\b(?:after|within|process\w*|receipt|bank|payment|display|business\s+days?|tim(?:e|ing)|normally|efter|inden\s+for|indenfor|behandl\w*|modtag\w*|betaling|dage|normalt|igangsæt\w*|tid)\b/i.test(value);
-  const hasConcreteTiming = /\b(?:after|once|when|within|received|receipt|processed|initiated|business\s+days?|bank|payment\s+provider|display|funds?|efter|når|modtaget|behandlet|igangsat|dage|bank|betalingsudbyder|wann|nach|erhalten|bearbeitet|ausgezahlt|bank)\b/i.test(value);
-  return hasRefundTiming && hasConcreteTiming && (
-    /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(value)
-    || /\b(?:bank|payment\s+provider|bank|betalingsudbyder)\b[\s\S]{0,50}\b(?:display|post|funds?|vise|beløb)\b/i.test(value)
-  );
+  const text = String(value ?? "");
+  const mentionsRefund = /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(text);
+  const mentionsProviderTiming = /\b(?:bank|payment\s+provider|betalingsudbyder)\b[\s\S]{0,80}\b(?:display|post|funds?|vise|beløb|time|tid|dage|tage)\b/i.test(text);
+  if (!mentionsRefund && !mentionsProviderTiming) return false;
+
+  const hasDuration = /\b(?:within|inden\s+for|indenfor)\s+\d{1,3}\s+(?:business\s+)?(?:days?|dage|tage|wochen|monate)\b/i.test(text);
+  const hasEventTrigger = /\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b[\s\S]{0,180}\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|igangsæt\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b/i.test(text)
+    || /\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b[\s\S]{0,180}\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b/i.test(text);
+  const hasRefundAction = /\b(?:initiat\w*|process\w*|issu\w*|releas\w*|pay\w*|display\w*|udbetal\w*|igangsæt\w*|behandl\w*|ausgezahlt|erstatt\w*)\b/i.test(text);
+  const hasExplicitDate = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/i.test(text)
+    || /\b(?:on|den|am|d\.)\s+\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+\d{2,4}\b/i.test(text);
+  return (hasDuration || (hasEventTrigger && hasRefundAction) || mentionsProviderTiming || hasExplicitDate)
+    && (hasExplicitDate || /\b(?:after|once|when|upon|as\s+soon\s+as|within|efter|når|så\s+snart|nach|sobald|wann|wie\s+lange|inden\s+for|indenfor|dage|days?|tage|wochen|monate|bank|payment\s+provider|betalingsudbyder)\b/i.test(text));
 }
 
 function isReturnEligibility(value: string) {
@@ -2724,7 +2742,7 @@ function recoveryCandidatesForRecord(
   }
   if (cue === "cost") {
     return uniqueAnswerCandidates(candidates.filter((candidate) =>
-      /\b(?:pay|payer|paid|pays|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(candidate.value)));
+      isPayerProposition(candidate.value)));
   }
   if (cue === "eligibility") {
     const stateCandidates = candidates.filter((candidate) =>
@@ -2890,8 +2908,7 @@ function answerCompletenessValuePresent(value: string, cue: AnswerBearingCue, ca
   if (candidates.some((candidate) => normalizedValue.includes(candidate.normalized))) return true;
   if (cue === "cost") {
     const hasAmount = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:kr|dkk|eur|euro|euros?)\b/i.test(value);
-    const hasNamedPayer = /\b(?:customer|merchant|store|seller|buyer|recipient|sender|you|we|kunden|forhandler|butik|sælger|køber|modtager|afsender|du|vi)\b[\s\S]{0,32}\b(?:pay|pays|paid|cover\w*|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(value)
-      || /\b(?:paid|covered|betalt|dækket|zahlt|übernommen)\s+(?:by|af|von)\s+\b(?:the\s+)?(?:customer|merchant|store|seller|buyer|kunden|forhandler|butik|sælger|køber|du|kunden)\b/i.test(value);
+    const hasNamedPayer = isPayerProposition(value);
     return hasAmount || hasNamedPayer;
   }
   return hasAnswerBearingValueMarker(value, cue);
