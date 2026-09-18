@@ -577,6 +577,40 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.firstCall.request.input.at(-1).content).not.toContain('"tool":"search_procedures"');
   });
 
+  it("composes recovered actionable policy guidance before using the narrow fallback", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([functionCall("create_return", {
+        order_id: "10231",
+        item_ids: ["line-10231"],
+        reason: "Customer requested a return",
+      }, { callId: "return" })]),
+      modelResponse([assistantMessage(structured({
+        type: "action_offer",
+        capability: "create_return",
+        mode: "proposal",
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "I want to return order 10231",
+      model,
+      capabilities: dependencies,
+      actionExecutor: new PlaygroundDryRunExecutor(),
+      enableDevDiagnostics: true,
+    });
+
+    model.assertComplete();
+    expect(result.response).toContain("Nothing will be changed until you confirm");
+    expect(result.response).toContain("30 days");
+    expect(result.response).not.toContain("couldn’t safely complete that lookup");
+    expect(result.trace.diagnostics.final_composition_source).not.toBe("fallback");
+    expect(result.actionExecutions).toHaveLength(1);
+    expect(result.actionExecutions[0].executed).toBe(false);
+  });
+
   it("does not recover procedural evidence when the runtime has no procedure result", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([

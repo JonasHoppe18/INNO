@@ -3732,6 +3732,12 @@ export function shouldPreferAuthoritativeEvidenceFallback(
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
   const plan = actionablePolicyPlan(context);
+  const hasSafeActionableComposition = Boolean(
+    plan
+    && !plan.facets.some((facet) => facet.status === "ambiguous")
+    && composeActionableResponse(validation.approvedSegments, context),
+  );
+  if (hasSafeActionableComposition) return false;
   if (plan?.facets.some((facet) =>
     facet.status === "ambiguous"
     || ((facet.status === "required" || facet.status === "useful")

@@ -2990,6 +2990,33 @@ describe("actionable policy answer plan", () => {
     expect(result.rendered).toContain("Nothing will be changed until you confirm");
   });
 
+  it("routes a complete recovered actionable plan through the composer", async () => {
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])], {
+      proposedActions: [{
+        action: "create_return",
+        arguments: { order_id: "1063", item_ids: ["line-1063"], reason: "Customer requested a return" },
+        reason: "Customer requested a return",
+        requiresConfirmation: true,
+        status: "proposed",
+      }],
+    });
+
+    expect(result.completed.completenessDiagnostics.recovery).toEqual(expect.arrayContaining([
+      { type: "destination", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "shipping_method", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "cost", result: "recovered" },
+      { type: "timing", result: "recovered" },
+    ]));
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(false);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("You can request a return");
+  });
+
   it("neutralizes agent-owned policy wording while composing merchant guidance", async () => {
     const evidence = answerEvidenceRecord([returnPolicy]);
     const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
