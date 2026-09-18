@@ -2880,11 +2880,16 @@ describe("actionable policy answer plan", () => {
       expect(result.completed.allValid).toBe(true);
       expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
       expect(result.rendered).toContain("Nordre Fasanvej 113");
+      expect(result.rendered).toContain("Please send it with tracked shipping to:");
       expect(result.rendered).toContain("tracked shipping");
-      expect(result.rendered).toContain("customer pays return shipping");
-      expect(result.rendered).toContain("refund is initiated");
+      expect(result.rendered).toContain("Return shipping is at your own cost.");
+      expect(result.rendered).toContain("Once the return is received and processed, your refund will be issued.");
       expect(result.rendered).toContain("reason for returning the Chaos Mousepad 21");
       expect(result.rendered).not.toMatch(/contact form|name used at purchase|order number|headset/i);
+      expect(result.rendered).not.toMatch(/Sona['’]s policy/i);
+      expect(result.rendered.indexOf("You can request a return")).toBeLessThan(result.rendered.indexOf("Please send it with tracked shipping"));
+      expect(result.rendered.indexOf("Please send it with tracked shipping")).toBeLessThan(result.rendered.indexOf("Return shipping is at your own cost."));
+      expect(result.rendered.indexOf("Return shipping is at your own cost.")).toBeLessThan(result.rendered.indexOf("What’s the reason"));
     },
   );
 
@@ -2965,8 +2970,8 @@ describe("actionable policy answer plan", () => {
     expect(result.rendered).toContain("30 days");
     expect(result.rendered).toContain("Nordre Fasanvej 113");
     expect(result.rendered).toContain("tracked shipping");
-    expect(result.rendered).toContain("customer pays");
-    expect(result.rendered).toContain("refund is initiated");
+    expect(result.rendered).toContain("Return shipping is at your own cost.");
+    expect(result.rendered).toContain("Once the return is received and processed, your refund will be issued.");
     expect(result.rendered).toContain("Nothing will be changed until you confirm");
     expect(result.rendered).not.toContain("Unrelated legal wording");
   });
@@ -2983,6 +2988,34 @@ describe("actionable policy answer plan", () => {
     expect(result.completed.approvedSegments.some((segment) => segment.type === "knowledge_guidance")).toBe(true);
     expect(result.rendered).toContain("Nordre Fasanvej 113");
     expect(result.rendered).toContain("Nothing will be changed until you confirm");
+  });
+
+  it("neutralizes agent-owned policy wording while composing merchant guidance", async () => {
+    const evidence = answerEvidenceRecord([returnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "knowledge_guidance",
+      text: "Sona’s policy allows returns within 30 days of delivery.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).not.toMatch(/Sona['’]s policy/i);
+    expect(result.rendered).toContain("Returns are accepted within 30 days");
+  });
+
+  it("omits an unavailable useful outcome instead of inventing refund timing", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days. Send the return to:\n\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping.",
+    )]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("You can request a return");
+    expect(result.rendered).toContain("Return Street 10");
+    expect(result.rendered).not.toContain("refund will be issued");
+    expect(result.rendered).not.toContain("refund is initiated");
   });
 
   it("keeps an action-only response when policy has no remaining customer requirement", async () => {

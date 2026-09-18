@@ -1758,6 +1758,295 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
   return `I can help you ${action}. Nothing will be changed until you confirm.`;
 }
 
+type CustomerCompositionRole = "resolution" | "destination" | "method" | "obligation" | "eligibility" | "outcome" | "clarification" | "action_offer";
+
+type CustomerCompositionPiece = {
+  role: CustomerCompositionRole;
+  segment: ResponseSegment;
+  facet?: ActionablePolicyFacet;
+};
+
+function compositionFacetRole(kind: ActionablePolicyFacetKind): CustomerCompositionRole | null {
+  switch (kind) {
+    case "eligibility": return "eligibility";
+    case "destination": return "destination";
+    case "shipping_method": return "method";
+    case "cost": return "obligation";
+    case "timing": return "outcome";
+    case "process": return null;
+  }
+}
+
+function compositionPolicySegmentForFacet(
+  facet: ActionablePolicyFacet,
+  segments: ResponseSegment[],
+  context: ResponseValidationContext,
+) {
+  const role = compositionFacetRole(facet.kind);
+  if (!role || facet.status === "satisfied") return null;
+  return segments.find((segment) => segment.type === "knowledge_guidance"
+    && isPolicyKnowledgeBasis(segment.basis, context)
+    && actionablePolicyFacetCovered(facet, [segment], context));
+}
+
+function compositionPieces(
+  segments: ResponseSegment[],
+  plan: ActionablePolicyPlan,
+  context: ResponseValidationContext,
+) {
+  const pieces: CustomerCompositionPiece[] = [];
+  for (const facet of plan.facets) {
+    const role = compositionFacetRole(facet.kind);
+    if (!role) continue;
+    const segment = compositionPolicySegmentForFacet(facet, segments, context);
+    if (segment) pieces.push({ role, segment, facet });
+  }
+  segments.forEach((segment) => {
+    if (segment.type === "action_offer") pieces.push({ role: "action_offer", segment });
+    else if (segment.type === "question"
+      && segment.purpose !== "enable_capability"
+      && segment.purpose !== "disambiguate_entity"
+      && segment.purpose !== "disambiguate_variant"
+      && segment.purpose !== "resolve_required_argument") {
+      pieces.push({ role: "clarification", segment });
+    }
+  });
+  return pieces;
+}
+
+function compositionFacetSourceText(
+  piece: CustomerCompositionPiece,
+  context: ResponseValidationContext,
+) {
+  if (!piece.facet || piece.segment.type !== "knowledge_guidance") return piece.segment.type === "knowledge_guidance" ? piece.segment.text : "";
+  const records = answerEvidenceRecords(piece.segment.basis, context, piece.facet.cue);
+  const units = answerEvidenceSections(records).flatMap(policyEvidenceUnits);
+  const relevant = piece.facet.kind === "eligibility"
+    ? units.filter((unit) => isAnswerBearingEligibility(unit) || isReturnProhibition(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
+    : piece.facet.kind === "shipping_method"
+      ? units.filter(isReturnShippingMethodInstruction)
+      : piece.facet.kind === "cost"
+        ? units.filter(isReturnShippingResponsibility)
+        : piece.facet.kind === "timing"
+          ? units.filter(isRefundTiming)
+          : [];
+  if (relevant.length) return Array.from(new Set(relevant)).join(" ");
+  if (piece.facet.recovery.kind === "usable" && piece.facet.recovery.candidate) return piece.facet.recovery.candidate.value;
+  return piece.segment.text;
+}
+
+function compositionPieceText(piece: CustomerCompositionPiece, context: ResponseValidationContext) {
+  if (piece.segment.type !== "knowledge_guidance") return "";
+  const sourceText = compositionFacetSourceText(piece, context);
+  return adaptCustomerFacingKnowledgeText(sourceText, context, {
+    policy: true,
+    basis: piece.segment.basis,
+  });
+}
+
+function neutralizeAgentPolicyOwnership(value: string) {
+  return value
+    .replace(/\bSona(?:['’]s)?\s+policy\s+(?=(?:allows?|accepts?|permits?|covers?)\b)/gi, "")
+    .replace(/^\s*(?:as\s+per|according\s+to)\s+(?:Sona(?:['’]s)?|our|the\s+support\s+agent(?:['’]s)?)\s+policy\s*[:,]?\s*/i, "")
+    .replace(/\bwe\s+(?:accept|allow|permit)\s+returns?\b/gi, "returns are accepted")
+    .replace(/\bSona(?:['’]s)?\s+policy\b/gi, "the store's policy")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compositionEligibilityText(value: string, locale: ResponseLocale) {
+  const normalized = neutralizeAgentPolicyOwnership(value);
+  if (!normalized) return "";
+  const directEligibility = policyEvidenceUnits(normalized).filter((unit) =>
+    isReturnEligibility(unit)
+    && !/^\s*(?:to|in\s+order\s+to)\s+return\b/i.test(unit)
+    && !/:\s*\d+\./.test(unit),
+  );
+  const concise = directEligibility.length ? directEligibility.join(" ") : normalized;
+  if (locale === "da") {
+    return concise
+      .replace(/^returns?\s+are\s+accepted\b/i, "Returneringer accepteres")
+      .replace(/^returns?\s+are\s+allowed\b/i, "Returneringer er tilladt");
+  }
+  return concise
+    .replace(/^returns?\s+are\s+accepted\b/i, "Returns are accepted")
+    .replace(/^returns?\s+are\s+allowed\b/i, "Returns are allowed");
+}
+
+function compositionShippingMethodText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  if (/\b(?:tracked|trackable|track\s+and\s+trace|tracking)\b/i.test(text)) {
+    return locale === "da" ? "sporbar forsendelse" : "tracked shipping";
+  }
+  if (/\b(?:insured|registered)\b/i.test(text)) {
+    return locale === "da" ? "forsikret eller registreret forsendelse" : "insured or registered shipping";
+  }
+  if (/\bprepaid\b/i.test(text)) return locale === "da" ? "forudbetalt forsendelse" : "prepaid shipping";
+  return text.replace(/[.!?]+$/g, "").trim();
+}
+
+function compositionObligationText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  const customerPays = /\b(?:you|your|customer|buyer|du|din|kunden|køber)\b[\s\S]{0,64}\b(?:pay|paid|pays|cost|expense|responsib|betaler|betalt|omkostning|udgift|ansvar)\w*\b/i.test(text)
+    || /\b(?:paid|borne|covered|betalt|båret|dækket)\s+by\s+(?:you|the\s+customer|kunden|dig)\b/i.test(text)
+    || /\b(?:at|on|til|på)\s+(?:your|customer['’]s|din|kundens)(?:\s+own)?\s+(?:cost|expense|omkostning\w*|udgift\w*)\b/i.test(text);
+  const merchantPays = /\b(?:we|our|merchant|store|seller|vi|forhandler|butik|sælger)\b[\s\S]{0,64}\b(?:pay|paid|pays|cover|covered|cost|expense|betaler|betalt|dækker|omkostning|udgift)\w*\b/i.test(text);
+  const mentionsPackaging = /\b(?:secure|protective)\s+packaging\b|\bemballage\b|\bverpackung\b/i.test(text);
+  if (customerPays) {
+    if (mentionsPackaging) {
+      return locale === "da"
+        ? "Du betaler returfragt og andre returomkostninger, f.eks. forsvarlig emballage."
+        : "Return shipping and other return-related costs, such as secure packaging, are your responsibility.";
+    }
+    return locale === "da" ? "Du betaler returfragten." : "Return shipping is at your own cost.";
+  }
+  if (merchantPays) return locale === "da" ? "Butikken dækker returfragten." : "The store covers return shipping.";
+  return text;
+}
+
+function compositionOutcomeText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  const receivedAndProcessed = /(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,120}\b(?:receive\w*|receipt|return\w*|process\w*)\b[\s\S]{0,80}\b(?:refund|refunder\w*|tilbagebetaling\w*)\b/i.test(text)
+    || /\b(?:receive\w*|receipt|return\w*|process\w*)\b[\s\S]{0,120}\b(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,80}\b(?:refund|refunder\w*|tilbagebetaling\w*)\b/i.test(text)
+    || /\b(?:refund|refunder\w*|tilbagebetaling\w*)\b[\s\S]{0,120}\b(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,120}\b(?:receive\w*|receipt|return\w*|process\w*)\b/i.test(text);
+  if (receivedAndProcessed && /\brefund\w*\b/i.test(text)) {
+    return locale === "da"
+      ? "Når returneringen er modtaget og behandlet, bliver refunderingen igangsat."
+      : "Once the return is received and processed, your refund will be issued.";
+  }
+  return text;
+}
+
+function destinationComponentsFromEvidence(segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>, context: ResponseValidationContext) {
+  const records = answerEvidenceRecords(segment.basis, context, "destination");
+  for (const evidenceText of answerEvidenceSections(records)) {
+    const lines = evidenceText.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      if (!line || !isConcreteReturnDestinationInstruction(line)) continue;
+      const afterCue = line.replace(/^.*?(?::|\bto\b|\btil\b|\ban\b|\bzu\b)\s*/i, "").trim();
+      const block: string[] = [];
+      if (afterCue && simpleAddressLabel(afterCue) && physicalAddressMarker(lines[index + 1] ?? "")) block.push(afterCue);
+      let nextIndex = index + 1;
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex += 1;
+      for (; nextIndex < lines.length; nextIndex += 1) {
+        const next = lines[nextIndex].trim();
+        if (!next) break;
+        const nextIsAddress = physicalAddressMarker(next);
+        const nextCouldBeName = block.length === 0 && simpleAddressLabel(next) && physicalAddressMarker(lines[nextIndex + 1] ?? "");
+        const nextCouldBeCity = block.length > 0 && block.some(physicalAddressMarker) && simpleAddressLabel(next);
+        if (!nextIsAddress && !nextCouldBeName && !nextCouldBeCity) break;
+        block.push(next);
+      }
+      if (block.some(physicalAddressMarker)) return block.join("\n");
+    }
+  }
+  return null;
+}
+
+function compositionOrderFacts(segments: ResponseSegment[]) {
+  return segments.filter((segment): segment is Extract<ResponseSegment, { type: "fact" }> => segment.type === "fact" && ORDER_FACT_KINDS.has(segment.fact_kind));
+}
+
+function compositionQuestionText(piece: CustomerCompositionPiece) {
+  return piece.segment.type === "question" ? renderTextSegment(piece.segment.text) : "";
+}
+
+function compositionProcessClarification(plan: ActionablePolicyPlan, context: ResponseValidationContext) {
+  const processFacet = plan.facets.find((facet) => facet.kind === "process");
+  const candidate = processFacet?.recovery.kind === "usable" ? processFacet.recovery.candidate : null;
+  if (!candidate) return "";
+  const requirement = candidate.value.replace(/^please\s+provide\s+/i, "").trim();
+  if (!requirement) return "";
+  return naturalMissingRequirementQuestion([requirement], context);
+}
+
+function composeActionableResponse(segments: ResponseSegment[], context: ResponseValidationContext): string | null {
+  const plan = actionablePolicyPlan(context);
+  if (!plan || plan.facets.some((facet) => facet.status === "ambiguous")) return null;
+  const hasVerifiedOrder = context.activeOrder?.state === "verified";
+  const hasActionOffer = segments.some((segment) => segment.type === "action_offer");
+  if (!hasVerifiedOrder && !hasActionOffer) return null;
+  const pieces = compositionPieces(segments, plan, context);
+  const byRole = (role: CustomerCompositionRole) => pieces.filter((piece) => piece.role === role);
+  const eligibility = byRole("eligibility")[0];
+  const destination = byRole("destination")[0];
+  const method = byRole("method")[0];
+  const obligation = byRole("obligation")[0];
+  const outcome = byRole("outcome")[0];
+  const action = byRole("action_offer")[0];
+  const clarifications = byRole("clarification");
+  const orderFacts = compositionOrderFacts(segments);
+  const locale = localeFor(context);
+  const clarificationTexts = Array.from(new Set([
+    ...clarifications.map(compositionQuestionText).filter(Boolean),
+    compositionProcessClarification(plan, context),
+  ].filter(Boolean)));
+  const composed: string[] = [];
+  const canResolveVerifiedOrder = context.activeOrder?.state === "verified"
+    && Boolean(context.activeOrder.requestedOrderId)
+    && Boolean(eligibility)
+    && Boolean(verifiedOrderItemTitle(context));
+
+  if (canResolveVerifiedOrder) {
+    const reference = context.activeOrder!.requestedOrderId!.replace(/^#/, "");
+    const subject = customerFacingReturnSubject(context);
+    composed.push(locale === "da"
+      ? `Du kan anmode om at returnere ${subject} fra ordre #${reference}.`
+      : `You can request a return for ${subject} from order #${reference}.`);
+  } else if (orderFacts.length) {
+    composed.push(renderOrderFacts(orderFacts, context));
+  }
+
+  if (eligibility) {
+    const text = compositionEligibilityText(compositionPieceText(eligibility, context), locale);
+    if (text && !composed.some((item) => item.includes(text))) composed.push(text);
+  }
+
+  if (destination) {
+    const destinationSegment = destination.segment.type === "knowledge_guidance" ? destination.segment : null;
+    const address = destinationSegment ? destinationComponentsFromEvidence(destinationSegment, context) : null;
+    const renderedAddress = address ?? compositionPieceText(destination, context);
+    const methodText = method ? compositionShippingMethodText(compositionPieceText(method, context), locale) : "";
+    if (renderedAddress) {
+      if (methodText) {
+        composed.push(locale === "da"
+          ? `Send den med ${methodText} til:\n\n${renderedAddress}`
+          : `Please send it with ${methodText} to:\n\n${renderedAddress}`);
+      } else {
+        composed.push(locale === "da" ? `Send den til:\n\n${renderedAddress}` : `Please send it to:\n\n${renderedAddress}`);
+      }
+    }
+  } else if (method) {
+    const methodText = compositionShippingMethodText(compositionPieceText(method, context), locale);
+    if (methodText) composed.push(locale === "da" ? `Brug ${methodText}.` : `Please use ${methodText}.`);
+  }
+
+  if (obligation) {
+    const text = compositionObligationText(compositionPieceText(obligation, context), locale);
+    if (text) composed.push(text);
+  }
+  if (outcome) {
+    const text = compositionOutcomeText(compositionPieceText(outcome, context), locale);
+    if (text) composed.push(text);
+  }
+
+  const actionText = action && action.segment.type === "action_offer" ? renderActionOffer(action.segment, context) : "";
+  if (actionText && action?.segment.type === "action_offer" && action.segment.missing_arguments.length === 0 && clarificationTexts.length) {
+    const question = clarificationTexts[0];
+    composed.push(`${actionText.replace(/\.$/, "")}. ${locale === "da" ? `Hvis du vil have mig til at gøre det, ${lowerFirst(question)}` : `If you'd like me to do that, ${lowerFirst(question)}`}`);
+  } else {
+    if (clarificationTexts.length) composed.push(...clarificationTexts);
+    if (actionText) composed.push(actionText);
+  }
+
+  const response = composed.filter(Boolean).join("\n\n");
+  if (!response) return null;
+  const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
+  const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
+  return greeting && response ? `${greeting}\n\n${response}` : response;
+}
+
 function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
   return segment.evidence.flatMap((basis) => {
     const evidence = resultFor(basis, context);
@@ -4427,6 +4716,9 @@ function isRedundantPolicyQuestion(
 
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
+  const actionableComposition = composeActionableResponse(segments, context);
+  if (actionableComposition) return actionableComposition;
+
   const rendered: string[] = [];
   const consumed = new Set<number>();
   const policyFocus = customerKnowledgeFocus(context.customerMessage);
