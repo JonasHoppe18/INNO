@@ -475,7 +475,7 @@ function orderResolutionResult(
 export function createCapabilityRegistry(context: CapabilityContext) {
   if (!context?.tenant?.workspaceId) throw new Error("Trusted workspace context is required.");
 
-  const initialOrderReferences = context.orderReferences ?? [];
+  const initialOrderReferences = context.orderReferences ?? extractOrderReferences(context.customerMessage ?? "");
   const persistedOrder = context.conversationContext?.activeOrder ?? null;
   const persistedMatchesCurrent = persistedOrder && initialOrderReferences.length === 1
     ? sameOrderReference(persistedOrder.requestedOrderId, initialOrderReferences[0])
@@ -524,9 +524,20 @@ export function createCapabilityRegistry(context: CapabilityContext) {
     },
     async resolveCustomerOrderContext(): Promise<Array<{ tool: string; result: ToolExecutionResult; arguments?: JsonObject }>> {
       const product = context.conversationContext?.customerProvided?.product;
-      const hasExplicitOrder = extractOrderReferences(context.customerMessage ?? "").length > 0;
+      const explicitOrderReference = initialOrderReferences.length === 1 ? initialOrderReferences[0] : null;
+      const hasExplicitOrder = initialOrderReferences.length > 0;
       const previousSelection = hasExplicitOrder ? null : selectedCandidate(orderCandidates, context.customerMessage ?? "", product);
-      if (!context.tenant.customerEmail || orderFocus || (!shouldPreResolveCustomerOrders(context.customerMessage ?? "") && !previousSelection)) return [];
+      if (!context.tenant.customerEmail) return [];
+      if (explicitOrderReference) {
+        if (orderFocus?.state === "verified") return [];
+        const requestedOrderId = orderFocus?.requestedOrderId ?? explicitOrderReference;
+        return [{
+          tool: "get_order",
+          arguments: { order_id: requestedOrderId },
+          result: await registry.execute("get_order", JSON.stringify({ order_id: requestedOrderId })),
+        }];
+      }
+      if (orderFocus || (!shouldPreResolveCustomerOrders(context.customerMessage ?? "") && !previousSelection)) return [];
       if (previousSelection) {
         orderCandidates = [];
         return [{

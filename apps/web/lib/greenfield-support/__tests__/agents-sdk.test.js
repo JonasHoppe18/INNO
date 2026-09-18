@@ -300,6 +300,35 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.firstCall.request.input.at(-1).content).toContain('"order_resolution":"candidate"');
   });
 
+  it.each([
+    "I want to return order 10231",
+    "How do I return order 10231?",
+  ])("pre-resolves an explicit order before model wording or tool selection: %s", async (message) => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "fact",
+        fact_kind: "order_reference",
+        evidence: [{ result_id: "tool_result_1", field_paths: ["data.orderNumber"] }],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message,
+      model,
+      capabilities: dependencies,
+      enableDevDiagnostics: true,
+    });
+
+    model.assertComplete();
+    expect(model.calls).toHaveLength(1);
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toContain("get_order");
+    expect(result.trace.events.find((event) => event.type === "tool_call" && event.data.name === "get_order").data.preloaded).toBe(true);
+    expect(result.conversationContext.activeOrder).toMatchObject({ requestedOrderId: "10231", state: "verified" });
+    expect(result.trace.diagnostics.validation.schema_valid).toBe(true);
+  });
+
   it("does not expose or preload procedures for a multi-turn troubleshooting request", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
@@ -595,7 +624,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
     expect(result.response).toContain("Nothing will be changed until you confirm");
-    expect(result.trace.events.filter((event) => event.type === "tool_result")).toHaveLength(2);
+    expect(result.trace.events.filter((event) => event.type === "tool_result")).toHaveLength(3);
   });
 
   it("runs one verified proposal through the Playground dry-run boundary", async () => {

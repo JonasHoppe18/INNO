@@ -153,7 +153,7 @@ describe("greenfield capabilities", () => {
     expect(secondRun.getOrderCandidates()).toBeUndefined();
   });
 
-  it("does not pre-resolve or bypass ownership for an explicit order reference", async () => {
+  it("deterministically pre-resolves an explicit order reference for the trusted customer", async () => {
     const dependencies = await candidateDependencies([labeledOrder("1063", "Chaos Headset 4")]);
     const registry = createCapabilityRegistry({
       ...dependencies,
@@ -161,14 +161,36 @@ describe("greenfield capabilities", () => {
       orderReferences: extractOrderReferences("I want to return order 1054."),
     });
 
-    expect(await registry.resolveCustomerOrderContext()).toEqual([]);
-    const result = await registry.execute("get_order", JSON.stringify({ order_id: "1054" }));
-    expect(result.status).toBe("not_found");
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded.map(({ tool }) => tool)).toEqual(["get_order"]);
+    expect(preloaded[0].result.status).toBe("not_found");
     expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "unresolved" });
   });
 
-  it("keeps an explicit owned order on the exact requested focus", async () => {
+  it.each([
+    "I want to return order 1054.",
+    "How do I return order 1054?",
+  ])("pre-resolves the exact explicit order before model wording can affect lookup: %s", async (message) => {
     const dependencies = await candidateDependencies([labeledOrder("1054", "Chaos Headset 4")]);
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      customerMessage: message,
+      orderReferences: extractOrderReferences(message),
+    });
+
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded.map(({ tool }) => tool)).toEqual(["get_order"]);
+    expect(preloaded[0].result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "1054" } } });
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "verified" });
+  });
+
+  it("never substitutes another customer order during explicit pre-resolution", async () => {
+    const dependencies = await candidateDependencies([
+      labeledOrder("1054", "Chaos Headset 4"),
+      labeledOrder("1055", "Chaos Mic 6"),
+    ]);
     const message = "I want to return order 1054.";
     const registry = createCapabilityRegistry({
       ...dependencies,
@@ -176,9 +198,12 @@ describe("greenfield capabilities", () => {
       orderReferences: extractOrderReferences(message),
     });
 
-    expect(await registry.resolveCustomerOrderContext()).toEqual([]);
-    const result = await registry.execute("get_order", JSON.stringify({ order_id: "1054" }));
-    expect(result).toMatchObject({ status: "ok", data: { order_focus: { state: "verified", verified_order_number: "1054" } } });
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded).toHaveLength(1);
+    expect(preloaded[0]).toMatchObject({ tool: "get_order", arguments: { order_id: "1054" } });
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "verified" });
+    expect(registry.getActiveOrderFocus().order.orderNumber).toBe("1054");
   });
 
   it("reports no matching customer orders without making a global claim", async () => {
@@ -190,6 +215,26 @@ describe("greenfield capabilities", () => {
     expect(preloaded).toHaveLength(1);
     expect(preloaded[0].result).toMatchObject({ status: "not_found", data: { order_resolution: "none", has_order_history: false } });
     expect(registry.getActiveOrderFocus()).toBeNull();
+  });
+
+  it("does not verify an explicit order when the customer-bound provider returns no match", async () => {
+    const dependencies = await candidateDependencies([labeledOrder("1054", "Chaos Headset 4")]);
+    const commerce = {
+      ...dependencies.commerce,
+      getOrder: async () => null,
+    };
+    const message = "I want to return order 1054.";
+    const registry = createCapabilityRegistry({
+      ...dependencies,
+      commerce,
+      customerMessage: message,
+      orderReferences: extractOrderReferences(message),
+    });
+
+    const preloaded = await registry.resolveCustomerOrderContext();
+
+    expect(preloaded[0].result.status).toBe("not_found");
+    expect(registry.getActiveOrderFocus()).toMatchObject({ requestedOrderId: "1054", state: "unresolved", order: null });
   });
 
   it("does not perform an identity-backed preflight when no trusted email exists", async () => {
