@@ -1,6 +1,7 @@
 type ReplyParserStrategy =
   | "empty"
   | "raw_fallback"
+  | "stripped_text_reply"
   | "zendesk_marker"
   | "on_wrote"
   | "forwarded_separator"
@@ -298,6 +299,33 @@ function stripLeadingNoiseHtml(html: string) {
   return next.trim();
 }
 
+function decodeBasicHtmlEntities(value: string) {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
+function htmlToText(html: string) {
+  return decodeBasicHtmlEntities(
+    String(html || "")
+      // Only remove CSS/script content when it is represented as HTML markup.
+      // Do not apply CSS-word stripping to arbitrary customer-authored text.
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(?:div|p|li|tr|h[1-6])\s*>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function findHtmlQuotedSplit(html: string) {
   const matches = HTML_MARKERS
     .map(({ strategy, pattern }) => {
@@ -330,11 +358,19 @@ function buildPreview(value: string, maxLength = 160) {
 export function parseEmailReplyBodies(input: {
   text?: string | null;
   html?: string | null;
+  strippedTextReply?: string | null;
+  hasReplyHeaders?: boolean;
 }): ParsedEmailBodies {
   const rawText = normalizeWhitespace(String(input?.text || ""));
   const rawHtml = String(input?.html || "").trim();
+  const strippedTextReply = normalizeWhitespace(
+    String(input?.strippedTextReply || ""),
+  );
+  const useStrippedTextReply = Boolean(
+    strippedTextReply && input?.hasReplyHeaders === true,
+  );
 
-  if (!rawText && !rawHtml) {
+  if (!rawText && !rawHtml && !useStrippedTextReply) {
     return {
       cleanBodyText: "",
       quotedBodyText: null,
@@ -365,7 +401,6 @@ export function parseEmailReplyBodies(input: {
   const initialCleanText = textResult.index >= 0
     ? rawText.slice(0, textResult.index).trim()
     : rawText;
-  const cleanBodyText = stripLeadingNoise(initialCleanText);
 
   const cleanBodyHtml = htmlResult.index >= 0
     ? trimHtmlBoundary(
@@ -379,19 +414,36 @@ export function parseEmailReplyBodies(input: {
     ? trimHtmlBoundary(rawHtml.slice(htmlResult.index), true) || null
     : null;
 
-  const parserStrategy = textResult.strategy ||
+  const htmlDerivedText = cleanBodyHtml ? htmlToText(cleanBodyHtml) : "";
+  const htmlQuotedText = quotedBodyHtml ? htmlToText(quotedBodyHtml) : "";
+  const effectiveQuotedBodyText = quotedBodyText || htmlQuotedText || null;
+  const canTrustHtmlBoundary = Boolean(
+    htmlResult.index >= 0 &&
+      (!rawText || input?.hasReplyHeaders === true || textResult.index >= 0),
+  );
+  const cleanBodyText = useStrippedTextReply
+    ? stripLeadingNoise(strippedTextReply)
+    : textResult.index >= 0
+    ? stripLeadingNoise(initialCleanText)
+    : canTrustHtmlBoundary && htmlDerivedText
+    ? htmlDerivedText
+    : rawText || htmlToText(stripLeadingNoiseHtml(rawHtml));
+
+  const parserStrategy = useStrippedTextReply
+    ? "stripped_text_reply"
+    : textResult.strategy ||
     htmlResult.strategy ||
     (cleanBodyText && cleanBodyText !== rawText
       ? "zendesk_marker"
       : rawText || rawHtml
       ? "raw_fallback"
       : "empty");
-  const quotedHistoryDetected = Boolean(quotedBodyText || quotedBodyHtml);
+  const quotedHistoryDetected = Boolean(
+    effectiveQuotedBodyText || quotedBodyHtml || useStrippedTextReply,
+  );
   const cleanExtractionSucceeded = Boolean(
     cleanBodyText &&
       normalizeWhitespace(cleanBodyText) &&
-      normalizeWhitespace(cleanBodyText) !==
-        normalizeWhitespace(rawText || "") &&
       quotedHistoryDetected,
   );
   const matchedBoundaryLine = textResult.boundaryLine ||
@@ -400,7 +452,7 @@ export function parseEmailReplyBodies(input: {
 
   return {
     cleanBodyText: cleanBodyText || rawText,
-    quotedBodyText,
+    quotedBodyText: effectiveQuotedBodyText,
     cleanBodyHtml,
     quotedBodyHtml,
     parserStrategy,

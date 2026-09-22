@@ -5,7 +5,10 @@ import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { formatBytes, getEffectiveSenderEmail, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { deriveMessageBodies } from "@/components/inbox/message-body";
+import {
+  deriveMessageBodies,
+  selectMessagePreview,
+} from "@/components/inbox/message-body";
 import {
   escapeHtml,
   getAttachmentInlineSrc,
@@ -498,7 +501,13 @@ function MessageBubbleComponent({
         : "",
     [rawBodyHtml, attachments, viewEmailOpen]
   );
-  const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = useMemo(
+  const {
+    cleanBodyText,
+    quotedBodyText,
+    cleanBodyHtml,
+    quotedBodyHtml,
+    hasQuotedHistory,
+  } = useMemo(
     () => deriveMessageBodies(message),
     [message]
   );
@@ -522,7 +531,10 @@ function MessageBubbleComponent({
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
   const attachmentCards = (attachments || []).filter((attachment) => Boolean(getAttachmentInlineSrc(attachment) || attachment?.id));
-  const inlineBodyImageIds = useMemo(() => collectInlineAttachmentIds(safeBodyHtml), [safeBodyHtml]);
+  const inlineBodyImageIds = useMemo(
+    () => collectInlineAttachmentIds(safeCleanBodyHtml || (!hasQuotedHistory ? safeBodyHtml : "")),
+    [hasQuotedHistory, safeBodyHtml, safeCleanBodyHtml]
+  );
   const inlineImageAttachments = useMemo(
     () => attachmentCards.filter((a) => isImageAttachment(a) && inlineBodyImageIds.has(String(a?.id || ""))),
     [attachmentCards, inlineBodyImageIds]
@@ -578,28 +590,19 @@ function MessageBubbleComponent({
   const formattedStructuredHtml = linkifyText(
     structuredFormText || cleanBodyText || rawPlainBody
   );
-  const rawBodyForPlaceholderCheck = String(cleanBodyText || rawPlainBodyFull || "");
-  const containsInlineImagePlaceholder =
-    /\[[^\]]+\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)\]/i.test(rawBodyForPlaceholderCheck) ||
-    /\[cid:[^\]]+\]/i.test(rawBodyForPlaceholderCheck);
-  const bodyHtmlHasRenderableImage = /<img\b/i.test(String(safeBodyHtml || ""));
-  const bodyHtmlHasLink = /<a\b/i.test(String(safeBodyHtml || ""));
-  const cleanHtmlTextOnly = stripHtmlToText(safeCleanBodyHtml || "");
-  const hasCleanHtmlContent = Boolean(String(cleanHtmlTextOnly || "").trim());
-  const shouldPreferFullBodyPreview =
-    !isStructuredForm &&
-    !hasCleanHtmlContent &&
-    (containsInlineImagePlaceholder || bodyHtmlHasRenderableImage || bodyHtmlHasLink);
-  const previewBodyHtml = shouldPreferFullBodyPreview ? safeBodyHtml : safeCleanBodyHtml;
+  const selectedPreview = selectMessagePreview({
+    cleanBodyHtml: safeCleanBodyHtml,
+    cleanBodyText,
+    rawBodyText: rawPlainBody,
+    hasQuotedHistory,
+    isStructuredForm,
+  });
+  const previewBodyHtml = selectedPreview.bodyHtml;
   const previewHtml = isStructuredForm
     ? formattedStructuredHtml
     : previewBodyHtml
     ? previewBodyHtml
-    : linkifyText(
-        isStructuredForm
-          ? structuredFormText || cleanBodyText || rawPlainBody
-          : cleanBodyText || rawPlainBody
-      );
+    : linkifyText(selectedPreview.bodyText);
   const modalHtml = isStructuredForm
     ? formattedStructuredHtml
     : safeModalBodyHtml;

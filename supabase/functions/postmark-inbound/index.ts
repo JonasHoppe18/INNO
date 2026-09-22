@@ -1555,7 +1555,17 @@ Deno.serve(async (req) => {
   const htmlBody = String(payload?.HtmlBody ?? "").trim();
   const textBodyRaw = String(payload?.TextBody ?? "").trim();
   const textBody = textBodyRaw || (htmlBody ? stripHtml(htmlBody) : "");
-  const parsedBodies = parseEmailReplyBodies({ text: textBody, html: htmlBody });
+  const strippedTextReply = String(payload?.StrippedTextReply ?? "").trim();
+  const hasReplyHeaders = Boolean(
+    findHeader(headers, "In-Reply-To") || findHeader(headers, "References"),
+  );
+  const parsedBodies = parseEmailReplyBodies({
+    text: textBody,
+    html: htmlBody,
+    strippedTextReply,
+    hasReplyHeaders,
+  });
+  const classificationBody = parsedBodies.cleanBodyText || textBody;
   const replyToEmail =
     extractEmail(findHeader(headers, "Reply-To") || "") || extractEmail(asString(payload?.ReplyTo));
   const shopifyContact = parseShopifyContactIdentity({
@@ -1586,7 +1596,7 @@ Deno.serve(async (req) => {
       from: fromRaw,
       subject,
       snippet,
-      body: textBody,
+      body: classificationBody,
       headers: headers.map((header) => ({
         name: header?.Name ?? "",
         value: header?.Value ?? "",
@@ -1754,14 +1764,14 @@ Deno.serve(async (req) => {
       reason: `blocklist:${blockedSender?.id}`,
       source: "fallback",
       subject,
-      excerpt: textBody.slice(0, 420),
+      excerpt: classificationBody.slice(0, 420),
     };
   } else if (activeRoutingCategories.length > 0) {
     try {
       routingClassification = await classifyInboundRouting(
         {
           subject,
-          body: textBody,
+          body: classificationBody,
         },
         { activeCategories: activeRoutingCategories },
       );
@@ -1776,7 +1786,7 @@ Deno.serve(async (req) => {
         reason: "fallback:classifier_error",
         source: "fallback",
         subject,
-        excerpt: textBody.slice(0, 420),
+        excerpt: classificationBody.slice(0, 420),
       };
     }
   } else {
@@ -1786,7 +1796,7 @@ Deno.serve(async (req) => {
       reason: "fallback:no_active_categories",
       source: "fallback",
       subject,
-      excerpt: textBody.slice(0, 420),
+      excerpt: classificationBody.slice(0, 420),
     };
   }
 
@@ -1849,7 +1859,7 @@ Deno.serve(async (req) => {
   const inboxClassification = classifyInboxBucket({
     from: fromRaw,
     subject,
-    body: textBody,
+    body: classificationBody,
     headers: headers.map((header) => ({
       name: header?.Name ?? "",
       value: header?.Value ?? "",
@@ -1883,7 +1893,7 @@ Deno.serve(async (req) => {
     try {
       inboundCategory = await categorizeEmail({
         subject,
-        body: textBody,
+        body: classificationBody,
         from: fromEmail || fromRaw || "",
       });
     } catch (error) {
@@ -2332,7 +2342,7 @@ Deno.serve(async (req) => {
           fromRaw,
           fromEmail: shopifyContact.customerEmail || fromEmail,
           fromName: shopifyContact.customerName || fromName,
-          body: textBody,
+          body: classificationBody,
           headers,
         });
         const draftId = await ensureDraftLog({
