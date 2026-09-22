@@ -102,6 +102,9 @@ export function deriveMessageBodies(message) {
       quotedBodyText: storedQuotedText || null,
       cleanBodyHtml: storedCleanHtml || null,
       quotedBodyHtml: storedQuotedHtml || null,
+      hasQuotedHistory: Boolean(
+        storedQuotedText || storedQuotedHtml || message?.quoted_history_detected,
+      ),
     };
   }
 
@@ -112,5 +115,20 @@ export function deriveMessageBodies(message) {
     quotedBodyText: fallback.quotedBodyText,
     cleanBodyHtml: null,
     quotedBodyHtml: null,
+    hasQuotedHistory: Boolean(fallback.quotedBodyText),
+  };
+}
+
+export function selectMessagePreview({
+  cleanBodyHtml = "",
+  cleanBodyText = "",
+  rawBodyText = "",
+  hasQuotedHistory = false,
+  isStructuredForm = false,
+} = {}) {
+  return {
+    bodyHtml: isStructuredForm ? "" : String(cleanBodyHtml || ""),
+    bodyText: String(cleanBodyText || "") ||
+      (hasQuotedHistory ? "No preview available." : String(rawBodyText || "")),
   };
 }
