@@ -29,7 +29,10 @@ import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 import {
   addTicketReference,
+  buildCustomerConfirmationTokens,
+  buildCustomerConfirmationReplyHeaders,
   isAutomatedSender,
+  resolveCustomerConfirmationSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
 import {
@@ -86,6 +89,7 @@ type MailboxLookup = {
   shop_id: string | null;
   provider_email: string | null;
   from_name: string | null;
+  metadata: Record<string, unknown> | null;
   status?: string | null;
 };
 
@@ -320,7 +324,7 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, user_id, workspace_id, shop_id, provider_email, from_name, inbound_slug, status")
+    .select("id, user_id, workspace_id, shop_id, provider_email, from_name, metadata, inbound_slug, status")
     .ilike("inbound_slug", slug)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -362,6 +366,7 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
     shop_id: shopId,
     provider_email: data.provider_email ?? null,
     from_name: data.from_name ?? null,
+    metadata: data.metadata && typeof data.metadata === "object" ? data.metadata : null,
     status: shopId && data.status !== "disconnected" ? "active" : data.status,
   };
 }
@@ -712,12 +717,6 @@ function decideRouteForClassification(
   };
 }
 
-function firstName(value: string | null | undefined): string {
-  const next = asString(value);
-  if (!next) return "";
-  return next.split(/\s+/)[0] || "";
-}
-
 function fillTemplateTokens(template: string, values: Record<string, string>): string {
   let result = String(template || "");
   Object.entries(values).forEach(([key, value]) => {
@@ -846,12 +845,7 @@ async function sendPostmarkAutoReply(payload: {
       TextBody: payload.textBody,
       HtmlBody: payload.htmlBody,
       ReplyTo: payload.replyTo || undefined,
-      Headers: payload.replyMessageId
-        ? [
-            { Name: "In-Reply-To", Value: `<${payload.replyMessageId}>` },
-            { Name: "References", Value: `<${payload.replyMessageId}>` },
-          ]
-        : undefined,
+      Headers: buildCustomerConfirmationReplyHeaders(payload.replyMessageId),
     }),
   });
   const data = await response.json().catch(() => null);
@@ -1195,13 +1189,12 @@ async function maybeSendAutoReply(options: {
     });
     return { sent: false, providerMessageId: null };
   }
-  const customerFirstName = firstName(options.fromName || options.fromEmail);
-  const tokenValues = {
-    customer_name: asString(options.fromName),
-    customer_first_name: customerFirstName || "there",
-    team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
-    subject: asString(options.subject),
-  };
+  const tokenValues = buildCustomerConfirmationTokens({
+    customerName: options.fromName,
+    customerEmail: options.fromEmail,
+    mailboxFromName: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
+    subject: options.subject,
+  });
   const renderedSubject = fillTemplateTokens(setting.subject_template, tokenValues);
   const renderedText = fillTemplateTokens(setting.body_text_template, tokenValues);
   const renderedBodyHtml =
@@ -1218,16 +1211,18 @@ async function maybeSendAutoReply(options: {
   const mergedHtml = templateHtml.includes("{{content}}")
     ? templateHtml.replace("{{content}}", rendered.html)
     : `${templateHtml}\n${rendered.html}`;
-  const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
-  const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
+  const sender = resolveCustomerConfirmationSender({
+    mailbox: options.mailbox,
+    sharedFromEmail: POSTMARK_FROM_EMAIL,
+  });
   const providerMessageId = await sendPostmarkAutoReply({
-    from: outgoingFrom,
-    fromName: outgoingName,
+    from: sender.fromEmail,
+    fromName: sender.fromName || POSTMARK_FROM_NAME,
     to: effectiveRecipient,
     subject: rendered.subject,
     textBody: rendered.text,
     htmlBody: mergedHtml,
-    replyTo: options.mailbox.provider_email,
+    replyTo: sender.replyTo,
     replyMessageId: normalizeMessageId(findHeader(options.headers, "Message-ID")),
   });
   if (!providerMessageId) return { sent: false, providerMessageId: null };
@@ -1248,8 +1243,8 @@ async function maybeSendAutoReply(options: {
     clean_body_html: mergedHtml,
     quoted_body_text: null,
     quoted_body_html: null,
-    from_name: outgoingName,
-    from_email: outgoingFrom,
+    from_name: sender.fromName || POSTMARK_FROM_NAME,
+    from_email: sender.fromEmail,
     to_emails: [effectiveRecipient],
     cc_emails: [],
     bcc_emails: [],

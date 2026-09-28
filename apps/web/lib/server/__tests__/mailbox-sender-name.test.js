@@ -7,6 +7,7 @@ import {
   resolveMailboxSenderName,
   validateMailboxSenderName,
 } from "../mailbox-sender-name.js";
+import { resolveCustomerConfirmationSender } from "../sending-identity.js";
 
 describe("mailbox sender name", () => {
   it("uses the mailbox name instead of the authenticated member name", () => {
@@ -101,5 +102,38 @@ describe("mailbox sender name", () => {
         memberName: "Elias Knudsen",
       }),
     ).toBe("AceZone Support");
+  });
+
+  it("uses the verified managed sender for customer confirmations and keeps provider email as Reply-To", () => {
+    expect(
+      resolveCustomerConfirmationSender({
+        provider_email: "support@merchant.example",
+        metadata: {
+          managed_sender: {
+            status: "verified",
+            domain: "merchant.sona-ai.dk",
+            from_email: "support@merchant.sona-ai.dk",
+          },
+        },
+      }),
+    ).toEqual({
+      fromEmail: "support@merchant.sona-ai.dk",
+      replyTo: "support@merchant.example",
+    });
+  });
+
+  it("does not use an unverified provider email as the customer-confirmation From", () => {
+    const sender = resolveCustomerConfirmationSender({
+      provider_email: "unverified@merchant.example",
+      metadata: {
+        managed_sender: {
+          status: "pending",
+          domain: "merchant.sona-ai.dk",
+          from_email: "support@merchant.sona-ai.dk",
+        },
+      },
+    });
+    expect(sender.fromEmail).toBe("support@sona-ai.dk");
+    expect(sender.fromEmail).not.toBe("unverified@merchant.example");
   });
 });

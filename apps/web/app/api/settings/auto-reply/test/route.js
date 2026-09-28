@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
-import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
+import { resolveCustomerConfirmationSender } from "@/lib/server/sending-identity";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
@@ -13,7 +13,6 @@ import {
 } from "@/lib/server/customer-confirmation";
 
 const { url: SUPABASE_URL, serviceKey: SERVICE_KEY } = resolveSupabaseServerConfig();
-const FALLBACK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const FALLBACK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona Support";
 
 function serviceClient() {
@@ -45,7 +44,7 @@ export async function POST(request) {
 
     let mailboxQuery = supabase
       .from("mail_accounts")
-      .select("id, provider_email, from_email, from_name")
+      .select("id, provider_email, from_email, from_name, metadata")
       .eq("workspace_id", scope.workspaceId);
     const mailboxId = string(body?.mailbox_id);
     if (mailboxId) mailboxQuery = mailboxQuery.eq("id", mailboxId);
@@ -58,21 +57,21 @@ export async function POST(request) {
     }
 
     const mailbox = mailboxes?.[0] || {};
-    const fromEmail =
-      string(buildEffectiveSharedFromEmail({ mailbox })) || FALLBACK_FROM_EMAIL;
+    const sender = resolveCustomerConfirmationSender(mailbox);
+    const fromEmail = sender.fromEmail;
     const fromName = string(mailbox.from_name) || FALLBACK_FROM_NAME;
     const rendered = renderCustomerConfirmation({
-      subjectTemplate: string(body?.subject_template) || CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
+      subjectTemplate: `[TEST] ${string(body?.subject_template) || CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT}`,
       bodyTextTemplate: string(body?.body_text_template) || CUSTOMER_CONFIRMATION_DEFAULT_TEXT,
       bodyHtmlTemplate: string(body?.body_html_template),
       templateHtml: string(body?.template_html) || CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT,
       includeTicketNumber: body?.include_ticket_number !== false,
       ticketNumber: 50001,
       tokens: {
-        customer_name: "Sample Customer",
-        customer_first_name: "Sam",
+        customer_name: "Test Customer",
+        customer_first_name: "Test",
         team_name: fromName,
-        subject: "Sample support request",
+        subject: "Test support request",
       },
     });
 
@@ -82,7 +81,7 @@ export async function POST(request) {
       Subject: rendered.subject,
       TextBody: rendered.text,
       HtmlBody: rendered.html,
-      ReplyTo: string(mailbox.from_email || mailbox.provider_email) || fromEmail,
+      ReplyTo: sender.replyTo || fromEmail,
       Tag: "customer-confirmation-test",
     });
     return NextResponse.json({ ok: true, sent_to: recipient }, { status: 200 });

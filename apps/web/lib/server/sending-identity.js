@@ -114,3 +114,26 @@ export function getVerifiedManagedSenderEmail(mailbox = {}) {
 export function buildEffectiveSharedFromEmail({ shop = {}, mailbox = {} } = {}) {
   return getVerifiedManagedSenderEmail(mailbox) || buildSharedSonaFromEmail({ shop, mailbox });
 }
+
+export function resolveCustomerConfirmationSender(mailbox = {}) {
+  const managed = getManagedSenderFromMailbox(mailbox);
+  const managedFromEmail =
+    managed?.status === "verified" &&
+    managed?.from_email &&
+    managed?.domain &&
+    managed.from_email.endsWith(`@${managed.domain}`)
+      ? managed.from_email
+      : null;
+  const fromEmail = String(
+    managedFromEmail || buildSharedSonaFromEmail({ mailbox }) || "",
+  )
+    .trim()
+    .toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+    throw new Error("Customer confirmation sender email could not be resolved.");
+  }
+  return {
+    fromEmail,
+    replyTo: asString(mailbox?.provider_email) || null,
+  };
+}
