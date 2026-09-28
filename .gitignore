@@ -47,6 +47,8 @@ yarn-error.*
 /android
 apps/web/.env.production
 .mcp.json
+.cursor/mcp.json
+.cursor/settings.json
 .claude/memory.json
 .claude/launch.json
 .worktrees/

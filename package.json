@@ -3,14 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/mobile",
     "apps/web"
   ],
   "scripts": {
-    "mobile": "npm --workspace apps/mobile run start",
-    "mobile:android": "npm --workspace apps/mobile run android",
-    "mobile:ios": "npm --workspace apps/mobile run ios",
-    "mobile:web": "npm --workspace apps/mobile run web",
     "web": "npm --workspace apps/web run dev",
     "web:build": "npm --workspace apps/web run build",
     "web:start": "npm --workspace apps/web run start",

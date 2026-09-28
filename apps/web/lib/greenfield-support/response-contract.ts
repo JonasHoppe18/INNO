@@ -102,6 +102,7 @@ export const StructuredResponseSchema = z.object({
 
 export type ResponseSegment = z.infer<typeof ResponseSegmentSchema>;
 export type StructuredResponse = z.infer<typeof StructuredResponseSchema>;
+type KnowledgeBasis = z.infer<typeof BasisSchema>;
 type FactKind = Extract<ResponseSegment, { type: "fact" }>["fact_kind"];
 
 export interface ResponseEvidenceRecord {
@@ -116,6 +117,32 @@ export interface ResponseValidationIssue {
   message: string;
 }
 
+export interface CompletenessRecoveryDiagnostic {
+  type: string;
+  result: "recovered" | "ambiguous" | "unavailable" | "skipped";
+}
+
+export interface ResponseCompletenessDiagnostics {
+  entered: boolean;
+  cues: string[];
+  recovery: CompletenessRecoveryDiagnostic[];
+  intent_resolved_by_approved_segment?: boolean;
+  timing_candidates?: TimingCandidateDiagnostic[];
+}
+
+export interface TimingCandidateDiagnostic {
+  text: string;
+  timing_pattern_detected: boolean;
+  event_trigger_detected: boolean;
+  duration_detected: boolean;
+  explicit_date_detected: boolean;
+  subject_outcome_detected: boolean;
+  rejected: boolean;
+  rejection_reason: string[];
+  certified_candidate: boolean;
+  conflict_group: string | null;
+}
+
 export interface ResponseValidationResult {
   schemaValid: boolean;
   allValid: boolean;
@@ -123,6 +150,7 @@ export interface ResponseValidationResult {
   rejectedSegments: Array<{ index: number; type?: string; issues: ResponseValidationIssue[] }>;
   issues: ResponseValidationIssue[];
   parsed: StructuredResponse | null;
+  completenessDiagnostics?: ResponseCompletenessDiagnostics;
 }
 
 export type ResponseFailureClass =
@@ -292,6 +320,254 @@ function validateKnowledgeBasis(
     return [{ index, code: "knowledge_authority_insufficient", message: "The cited knowledge source cannot support this guidance." }];
   }
   return [];
+}
+
+type PolicyTruthState = "allowed" | "disallowed" | "conditional";
+type PolicyTruthConfidence = "structured" | "prose_strong" | "prose_ambiguous";
+
+type PolicyTruthRule = {
+  state: PolicyTruthState;
+  confidence: PolicyTruthConfidence;
+  sourceText: string;
+  conditionText?: string;
+  consequenceText?: string;
+};
+
+type PolicyTruthDecision =
+  | { kind: "none" }
+  | { kind: "correct"; rule: PolicyTruthRule }
+  | { kind: "ambiguous" };
+
+function policyTextValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const values = value.map(policyTextValue).filter((item): item is string => Boolean(item));
+    return values.length ? values.join("; ") : undefined;
+  }
+  return undefined;
+}
+
+function policyTruthState(value: unknown, hasCondition = false, hasConsequence = false): PolicyTruthState | null {
+  if (value === false) return "disallowed";
+  if (value === true) return hasCondition || hasConsequence ? "conditional" : "allowed";
+  const text = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (hasCondition || hasConsequence || /conditional|subject_to|depends|with_condition/.test(text)) return "conditional";
+  if (/disallow|prohibit|forbidden|ineligible|not_eligible|not_allowed|rejected|reject|denied|not_covered|cannot/.test(text)) return "disallowed";
+  if (/allow|allowed|permit|permitted|eligible|accepted|covered|available|ship|return|refund|true/.test(text)) return "allowed";
+  return null;
+}
+
+function structuredPolicyTruthRules(record: JsonObject): PolicyTruthRule[] {
+  const structuredData = objectValue(record.structured_data);
+  if (!structuredData) return [];
+  const candidates: unknown[] = [
+    structuredData.policy_truth,
+    structuredData.policyTruth,
+    structuredData.policy_rules,
+    structuredData.policyRules,
+    structuredData.policy,
+  ];
+  const entries = candidates.flatMap((candidate) => {
+    if (Array.isArray(candidate)) return candidate;
+    const object = objectValue(candidate);
+    if (!object) return [];
+    return Array.isArray(object.rules) ? object.rules : [object];
+  });
+  return entries.flatMap((entry) => {
+    const rule = objectValue(entry);
+    if (!rule) return [];
+    const conditionText = policyTextValue(rule.condition ?? rule.conditions ?? rule.requirement ?? rule.requirements);
+    const consequenceText = policyTextValue(rule.consequence ?? rule.consequences ?? rule.deduction ?? rule.exception);
+    const state = policyTruthState(rule.eligibility ?? rule.outcome ?? rule.status ?? rule.allowed, Boolean(conditionText), Boolean(consequenceText));
+    if (!state) return [];
+    const sourceText = policyTextValue(rule.source_text ?? rule.sourceText ?? rule.text ?? rule.evidence)
+      ?? [conditionText, consequenceText].filter(Boolean).join(". ");
+    return sourceText ? [{ state, confidence: "structured", sourceText, conditionText, consequenceText }] : [];
+  });
+}
+
+function policyEvidenceUnits(value: string): string[] {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((unit) => unit.trim())
+    .filter(Boolean);
+}
+
+function policyAllowanceSignal(value: string): boolean {
+  return /\b(?:allow(?:ed)?|accept(?:ed|s)?|eligible|permit(?:ted)?|cover(?:ed|s)?|available|ship(?:ped|s)?|can|could|may|akzeptiert|kann|accepter(?:et|es)?|berettig(?:et|ede)?|dækk(?:et|es)?|kan|må|tilladt|angenommen|berechtigt|abgedeckt|versendet)\b/i.test(value);
+}
+
+function policyProhibitionSignal(value: string): boolean {
+  const explicitConditional = /\b(?:only\s+(?:if|when)|nur\s+(?:wenn|bei)|kun\s+hvis|alleen\s+als)\b/i.test(value);
+  const explicitNegative = /\b(?:not\s+(?:allowed|eligible|permitted|accepted|covered|available)|cannot|can't|prohibited|forbidden|rejected|denied|not\s+possible|ikke\s+(?:tilladt|berettiget|accepteret|dækket|muligt)|kan\s+ikke|må\s+ikke|afvis(?:es|t)?|nicht\s+(?:zulässig|berechtigt|angenommen|abgedeckt|möglich)|kann\s+nicht|darf\s+nicht|abgelehnt|verboten)\b/i.test(value)
+    || /\b(?:can|kan|kann)\b[\s\S]{0,48}\b(?:rejected|abgelehnt|afvist|afvises)\b/i.test(value);
+  if (explicitNegative) return true;
+  if (explicitConditional) return false;
+  return /\b(?:only|nur|kun)\b[\s\S]{0,120}\b(?:return|retur|rückgabe|zurück|eligible|berettig|tilladt|berechtigt)\b/i.test(value)
+    || /\b(?:return|retur|rückgabe|zurück|eligible|berettig|tilladt|berechtigt)\b[\s\S]{0,120}\b(?:only|nur|kun)\b/i.test(value);
+}
+
+function policyConditionSignal(value: string): boolean {
+  return /\b(?:if|when|unless|except|once|only\s+if|only\s+when|subject\s+to|provided|depending|may\s+still|can\s+still|within|under|before|after|requires?|requirement|condition|eligible|eligibility|for|deduct(?:ion|ed)?|fee|proof|restricted|hvis|når|medmindre|undtagen|kun\s+hvis|forudsat|afhængig|kan\s+stadig|inden|under|kræver|betingelse|berettig(?:et|ede)?|fradrag|gebyr|bevis|begrænset|wenn|außer|sobald|vorausgesetzt|abhängig|kann\s+weiterhin|innerhalb|erfordert|Bedingung|Abzug|Nachweis|beschränkt)\b/i.test(value);
+}
+
+function prosePolicyConsequenceSignal(value: string): boolean {
+  return /\b(?:deduct(?:ion|ed)?|fee|refund|restricted|responsib(?:le|ility)|shipping\s+cost|fradrag|fratrækk(?:es|e|et)?|trækk(?:es|e|et)?|gebyr|refunder(?:es|et)?|begrænset|ansvar(?:lig|et)?|returporto|returfragt|abzug|gebühr|erstatt(?:et|ung)|verantwortlich|versandkosten)\b/i.test(value)
+    || /\b(?:not|ikke|nicht)\b[\s\S]{0,32}\b(?:allowed|eligible|permitted|covered|tilladt|berettiget|zulässig|berechtigt)\b/i.test(value);
+}
+
+function prosePolicyTruthRules(record: JsonObject): PolicyTruthRule[] {
+  const sections = Array.isArray(record.evidence_sections)
+    ? record.evidence_sections
+      .map((section) => objectValue(section)?.content ?? objectValue(section)?.text)
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const content = [
+    typeof record.content === "string" ? record.content : "",
+    ...sections,
+  ].filter(Boolean).join("\n");
+  return policyEvidenceUnits(content).flatMap((unit): PolicyTruthRule[] => {
+    const hasAllowance = policyAllowanceSignal(unit);
+    const hasProhibition = policyProhibitionSignal(unit);
+    const hasCondition = policyConditionSignal(unit);
+    const hasConsequence = prosePolicyConsequenceSignal(unit);
+    if (!hasAllowance && !hasProhibition) return [];
+    if (hasProhibition && !/\b(?:may\s+still|can\s+still|kan\s+stadig|kann\s+weiterhin|still\s+(?:be|return)|weiterhin)\b/i.test(unit)) {
+      return [{
+        state: "disallowed" as const,
+        confidence: hasCondition ? "prose_strong" : "prose_ambiguous",
+        sourceText: unit,
+      }];
+    }
+    if (hasAllowance) {
+      return [{
+        state: hasCondition ? "conditional" as const : "allowed" as const,
+        confidence: hasCondition && hasConsequence ? "prose_strong" : "prose_ambiguous",
+        sourceText: unit,
+      }];
+    }
+    return [];
+  });
+}
+
+function policyTruthRulesForBasis(
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+): PolicyTruthRule[] {
+  const evidence = resultFor(basis, context);
+  if (!evidence || evidence.toolName !== "search_policy" || evidence.result.status !== "ok") return [];
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return citedKnowledgeRecords(results, basis.field_paths)
+    .flatMap((item) => {
+      const record = objectValue(item);
+      if (!record || String(record.authority ?? "") !== "authoritative") return [];
+      const structured = structuredPolicyTruthRules(record);
+      return structured.length ? structured : prosePolicyTruthRules(record);
+    });
+}
+
+function policyRuleMatchScore(rule: PolicyTruthRule, message: string): number {
+  const messageWords = new Set(String(message ?? "").toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []);
+  const ruleWords = `${rule.sourceText} ${rule.conditionText ?? ""} ${rule.consequenceText ?? ""}`.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+  return Array.from(new Set(ruleWords)).filter((word) => messageWords.has(word)).length;
+}
+
+function selectedPolicyTruthRule(rules: PolicyTruthRule[], customerMessage: string): PolicyTruthRule | null | "ambiguous" {
+  if (!rules.length) return null;
+  const focus = customerKnowledgeFocus(customerMessage);
+  const conditionRules = focus.asksCondition
+    ? rules.filter((rule) => rule.consequenceText || /\b(?:may\s+still|can\s+still|deduct(?:ion|ed)?|fee|proof|condition|restricted|kan\s+stadig|kann\s+weiterhin)\b/i.test(rule.sourceText))
+    : rules;
+  const scored = (conditionRules.length ? conditionRules : rules).map((rule) => ({ rule, score: policyRuleMatchScore(rule, customerMessage) }));
+  const highest = Math.max(...scored.map(({ score }) => score));
+  const candidates = scored.filter(({ score }) => score === highest).map(({ rule }) => rule);
+  const states = new Set(candidates.map((rule) => rule.state));
+  if (states.size > 1) return "ambiguous";
+  return candidates[0] ?? null;
+}
+
+function modelClaimsPolicySubject(value: string, rule: PolicyTruthRule): boolean {
+  const source = `${rule.sourceText} ${rule.conditionText ?? ""} ${rule.consequenceText ?? ""}`;
+  if (/\b(?:return\w*|retur\w*|rückgabe\w*|zurück\w*)\b/i.test(source)) return /\b(?:return\w*|retur\w*|rückgabe\w*|zurück\w*|items?|products?|varer?|vare|artik(?:el|ler))\b/i.test(value);
+  if (/\b(?:warranty|garanti\w*)\b/i.test(source)) return /\b(?:warranty|garanti\w*|claim|dækket|covered|abgedeckt)\b/i.test(value);
+  if (/\b(?:ship\w*|delivery|levering|versand)\b/i.test(source)) return /\b(?:ship\w*|delivery|lever\w*|versand|send)\b/i.test(value);
+  return true;
+}
+
+function modelClaimsPolicyPermission(value: string, rule: PolicyTruthRule): boolean {
+  return modelClaimsPolicySubject(value, rule)
+    && !policyConditionSignal(value)
+    && (/\b(?:return(?:s|ed|able)?|item|product|warranty|claim)\b[\s\S]{0,64}\b(?:allow(?:ed)?|accept(?:ed|s)?|eligible|permit(?:ted)?|cover(?:ed|s)?|available)\b/i.test(value)
+    || /\b(?:you|customers?|items?|products?|returns?)\b[\s\S]{0,24}\b(?:can|could|may)\b[\s\S]{0,24}\b(?:return(?:ed)?|be\s+returned|be\s+covered)\b/i.test(value)
+    || /\bwe\s+ship\b/i.test(value));
+}
+
+function modelClaimsPolicyProhibition(value: string, rule: PolicyTruthRule): boolean {
+  return modelClaimsPolicySubject(value, rule) && policyProhibitionSignal(value);
+}
+
+function modelHasUnqualifiedPermission(value: string, rule: PolicyTruthRule): boolean {
+  if (!policyAllowanceSignal(value) || !modelClaimsPolicyPermission(value, rule) || policyProhibitionSignal(value)) return false;
+  if (/:\s*$/.test(value)) return false;
+  if (rule.state === "disallowed") return true;
+  const absolute = /\b(?:always|every|all|any|regardless|without\s+(?:condition|restriction)|worldwide|everywhere|automatically|full(?:y)?|altid|alle|enhver|uanset|overalt|immer|alle|jeder|weltweit|überall)\b/i.test(value);
+  const repeatsCondition = Boolean(rule.conditionText && policyRuleMatchScore({ ...rule, sourceText: rule.conditionText ?? "" }, value) > 0);
+  return absolute || (!repeatsCondition && Boolean(rule.conditionText || rule.consequenceText || policyConditionSignal(rule.sourceText)) && !policyConditionSignal(value));
+}
+
+function policyContradictionDecision(value: string, rules: PolicyTruthRule[], customerMessage: string): PolicyTruthDecision {
+  const selected = selectedPolicyTruthRule(rules, customerMessage);
+  if (selected === "ambiguous") return { kind: "ambiguous" };
+  if (!selected) return { kind: "none" };
+  const hasPolicyProhibition = policyEvidenceUnits(value).some((unit) => modelClaimsPolicyProhibition(unit, selected));
+  const hasUnqualifiedPermission = policyEvidenceUnits(value).some((unit) => modelHasUnqualifiedPermission(unit, selected));
+  const contradiction = (selected.state === "conditional" && (hasPolicyProhibition || hasUnqualifiedPermission))
+    || (selected.state === "allowed" && hasPolicyProhibition)
+    || (selected.state === "disallowed" && hasUnqualifiedPermission);
+  if (contradiction && selected.confidence === "prose_ambiguous") return { kind: "ambiguous" };
+  if (selected.state === "conditional" && (hasPolicyProhibition || hasUnqualifiedPermission)) {
+    return { kind: "correct", rule: selected };
+  }
+  if (selected.state === "allowed" && hasPolicyProhibition) {
+    return { kind: "correct", rule: selected };
+  }
+  if (selected.state === "disallowed" && hasUnqualifiedPermission) {
+    return { kind: "correct", rule: selected };
+  }
+  return { kind: "none" };
+}
+
+function replaceContradictoryPolicyText(value: string, rule: PolicyTruthRule): string {
+  const units = policyEvidenceUnits(value);
+  const contradictory = units.map((unit) => modelClaimsPolicyProhibition(unit, rule) || modelHasUnqualifiedPermission(unit, rule));
+  const first = contradictory.findIndex(Boolean);
+  if (first < 0) return rule.sourceText;
+  return units
+    .map((unit, index) => index === first ? rule.sourceText : (contradictory[index] ? "" : unit))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function validatePolicyTruth(
+  segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>,
+  context: ResponseValidationContext,
+  index: number,
+): ResponseValidationIssue[] {
+  const decision = policyContradictionDecision(segment.text, policyTruthRulesForBasis(segment.basis, context), context.customerMessage ?? "");
+  return decision.kind === "ambiguous"
+    ? [{ index, code: "policy_truth_ambiguous", message: "The authoritative policy contains conflicting conditions, so the response was withheld rather than guessing." }]
+    : [];
+}
+
+function policyTextForRendering(
+  value: string,
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+): string {
+  const decision = policyContradictionDecision(value, policyTruthRulesForBasis(basis, context), context.customerMessage ?? "");
+  return decision.kind === "correct" ? replaceContradictoryPolicyText(value, decision.rule) : value;
 }
 
 function procedureStepPath(path: string, defaultResultIndex?: number): { resultIndex: number; stepIndex: number } | null {
@@ -1170,6 +1446,7 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       return validateFact(segment, context, index);
     case "knowledge_guidance": {
       const issues = validateKnowledgeBasis(segment.basis, context, index);
+      if (!issues.length) issues.push(...validatePolicyTruth(segment, context, index));
       if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
         issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
       }
@@ -1261,8 +1538,11 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
   };
 }
 
-export function summarizeResponseValidation(result: ResponseValidationResult) {
-  return {
+export function summarizeResponseValidation(
+  result: ResponseValidationResult,
+  { includeCompleteness = false }: { includeCompleteness?: boolean } = {},
+) {
+  const summary = {
     schema_valid: result.schemaValid,
     all_valid: result.allValid,
     approved_count: result.approvedSegments.length,
@@ -1272,6 +1552,22 @@ export function summarizeResponseValidation(result: ResponseValidationResult) {
       issues: issues.map(({ code, message }) => ({ code, message })),
     })),
   };
+  return includeCompleteness
+    ? {
+        ...summary,
+        completeness: result.completenessDiagnostics
+          ? {
+              entered: result.completenessDiagnostics.entered,
+              intent_resolved_by_approved_segment: result.completenessDiagnostics.intent_resolved_by_approved_segment ?? null,
+              cues: result.completenessDiagnostics.cues,
+              recovery: result.completenessDiagnostics.recovery,
+              ...(result.completenessDiagnostics.timing_candidates
+                ? { timing_candidates: result.completenessDiagnostics.timing_candidates }
+                : {}),
+            }
+          : null,
+      }
+    : summary;
 }
 
 const DANISH_MARKERS = [
@@ -1351,6 +1647,28 @@ function listArguments(argumentsList: string[], locale: ResponseLocale = "en") {
   return `${labels.slice(0, -1).join(", ")}${conjunction}${labels.at(-1)}`;
 }
 
+const CUSTOMER_FACING_ACTIONS: Record<ResponseLocale, Record<string, string>> = {
+  en: {
+    cancel_order: "request a cancellation",
+    update_address: "request an address change",
+    create_return: "request a return",
+    create_refund: "request a refund",
+    send_replacement: "request a replacement",
+  },
+  da: {
+    cancel_order: "anmode om at få ordren annulleret",
+    update_address: "anmode om at få leveringsadressen ændret",
+    create_return: "anmode om en returnering",
+    create_refund: "anmode om en refundering",
+    send_replacement: "anmode om en erstatning",
+  },
+};
+
+function customerFacingAction(capability: string, locale: ResponseLocale) {
+  return CUSTOMER_FACING_ACTIONS[locale][capability]
+    ?? (locale === "da" ? "gå videre med denne anmodning" : "continue with this request");
+}
+
 function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "question" }>, context: ResponseValidationContext) {
   const definition = definitionFor(segment.capability ?? "", context);
   const locale = localeFor(context);
@@ -1387,6 +1705,14 @@ function renderCapabilityQuestion(segment: Extract<ResponseSegment, { type: "que
       : "Which product name or SKU should I check for availability?";
   }
 
+  if (context.manifest.proposalOnlyTools.includes(segment.capability ?? "")) {
+    const information = listArguments(segment.missing_arguments, locale);
+    const action = customerFacingAction(segment.capability ?? "", locale);
+    return locale === "da"
+      ? `Kan du sende ${information} først? Når jeg har dem, kan jeg hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`
+      : `Could you share ${information} first? Once I have them, I can help you ${action}. Nothing will be changed until you confirm.`;
+  }
+
   const operation = firstSentence(definition.description)
     .replace(/^Read\s+/i, locale === "da" ? "slå op i " : "look up ")
     .replace(/^Propose\s+/i, locale === "da" ? "forberede et forslag om " : "prepare a proposal for ");
@@ -1416,16 +1742,309 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
   const locale = localeFor(context);
   if (!definition) {
     return locale === "da"
-      ? "Jeg kan forberede et forslag, når de nødvendige oplysninger er på plads."
-      : "I can prepare a proposal once the required information is available.";
+      ? "Jeg mangler nogle oplysninger, før jeg kan forberede den ønskede anmodning."
+      : "I still need a few details before I can prepare the requested change.";
   }
-  const operation = firstSentence(definition.description).replace(/^Propose\s+/i, "");
+  const action = customerFacingAction(segment.capability, locale);
   if (locale === "da") {
-    const missing = segment.missing_arguments.length ? `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? ` : "";
-    return `${missing}Jeg kan forberede et forslag om ${lowerFirst(operation)}. Det bliver ikke gennemført uden din bekræftelse.`;
+    if (segment.missing_arguments.length) {
+      return `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? Når jeg har dem, kan jeg hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`;
+    }
+    return `Jeg kan hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`;
   }
-  const missing = segment.missing_arguments.length ? `Could you share ${listArguments(segment.missing_arguments, locale)} first? ` : "";
-  return `${missing}I can prepare a proposal for ${lowerFirst(operation)}. It will not be completed without your confirmation.`;
+  if (segment.missing_arguments.length) {
+    return `Could you share ${listArguments(segment.missing_arguments, locale)} first? Once I have them, I can help you ${action}. Nothing will be changed until you confirm.`;
+  }
+  return `I can help you ${action}. Nothing will be changed until you confirm.`;
+}
+
+type CustomerCompositionRole = "resolution" | "destination" | "method" | "obligation" | "eligibility" | "outcome" | "clarification" | "action_offer";
+
+type CustomerCompositionPiece = {
+  role: CustomerCompositionRole;
+  segment: ResponseSegment;
+  facet?: ActionablePolicyFacet;
+};
+
+function compositionFacetRole(kind: ActionablePolicyFacetKind): CustomerCompositionRole | null {
+  switch (kind) {
+    case "eligibility": return "eligibility";
+    case "destination": return "destination";
+    case "shipping_method": return "method";
+    case "cost": return "obligation";
+    case "timing": return "outcome";
+    case "process": return null;
+  }
+}
+
+function compositionPolicySegmentForFacet(
+  facet: ActionablePolicyFacet,
+  segments: ResponseSegment[],
+  context: ResponseValidationContext,
+) {
+  const role = compositionFacetRole(facet.kind);
+  if (!role || facet.status === "satisfied") return null;
+  return segments.find((segment) => segment.type === "knowledge_guidance"
+    && isPolicyKnowledgeBasis(segment.basis, context)
+    && actionablePolicyFacetCovered(facet, [segment], context));
+}
+
+function compositionPieces(
+  segments: ResponseSegment[],
+  plan: ActionablePolicyPlan,
+  context: ResponseValidationContext,
+) {
+  const pieces: CustomerCompositionPiece[] = [];
+  for (const facet of plan.facets) {
+    const role = compositionFacetRole(facet.kind);
+    if (!role) continue;
+    const segment = compositionPolicySegmentForFacet(facet, segments, context);
+    if (segment) pieces.push({ role, segment, facet });
+  }
+  segments.forEach((segment) => {
+    if (segment.type === "action_offer") pieces.push({ role: "action_offer", segment });
+    else if (segment.type === "question"
+      && segment.purpose !== "enable_capability"
+      && segment.purpose !== "disambiguate_entity"
+      && segment.purpose !== "disambiguate_variant"
+      && segment.purpose !== "resolve_required_argument") {
+      pieces.push({ role: "clarification", segment });
+    }
+  });
+  return pieces;
+}
+
+function compositionFacetSourceText(
+  piece: CustomerCompositionPiece,
+  context: ResponseValidationContext,
+) {
+  if (!piece.facet || piece.segment.type !== "knowledge_guidance") return piece.segment.type === "knowledge_guidance" ? piece.segment.text : "";
+  const records = answerEvidenceRecords(piece.segment.basis, context, piece.facet.cue);
+  const units = answerEvidenceSections(records).flatMap(policyEvidenceUnits);
+  const relevant = piece.facet.kind === "eligibility"
+    ? units.filter((unit) => isAnswerBearingEligibility(unit) || isReturnProhibition(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
+    : piece.facet.kind === "shipping_method"
+      ? units.filter(isReturnShippingMethodInstruction)
+      : piece.facet.kind === "cost"
+        ? units.filter(isReturnShippingResponsibility)
+        : piece.facet.kind === "timing"
+          ? units.filter(isRefundTiming)
+          : [];
+  if (relevant.length) return Array.from(new Set(relevant)).join(" ");
+  if (piece.facet.recovery.kind === "usable" && piece.facet.recovery.candidate) return piece.facet.recovery.candidate.value;
+  return piece.segment.text;
+}
+
+function compositionPieceText(piece: CustomerCompositionPiece, context: ResponseValidationContext) {
+  if (piece.segment.type !== "knowledge_guidance") return "";
+  const sourceText = compositionFacetSourceText(piece, context);
+  return adaptCustomerFacingKnowledgeText(sourceText, context, {
+    policy: true,
+    basis: piece.segment.basis,
+  });
+}
+
+function neutralizeAgentPolicyOwnership(value: string) {
+  return value
+    .replace(/\bSona(?:['’]s)?\s+policy\s+(?=(?:allows?|accepts?|permits?|covers?)\b)/gi, "")
+    .replace(/^\s*(?:as\s+per|according\s+to)\s+(?:Sona(?:['’]s)?|our|the\s+support\s+agent(?:['’]s)?)\s+policy\s*[:,]?\s*/i, "")
+    .replace(/\bwe\s+(?:accept|allow|permit)\s+returns?\b/gi, "returns are accepted")
+    .replace(/\bSona(?:['’]s)?\s+policy\b/gi, "the store's policy")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compositionEligibilityText(value: string, locale: ResponseLocale) {
+  const normalized = neutralizeAgentPolicyOwnership(value);
+  if (!normalized) return "";
+  const directEligibility = policyEvidenceUnits(normalized).filter((unit) =>
+    isReturnEligibility(unit)
+    && !/^\s*(?:to|in\s+order\s+to)\s+return\b/i.test(unit)
+    && !/:\s*\d+\./.test(unit),
+  );
+  const concise = directEligibility.length ? directEligibility.join(" ") : normalized;
+  if (locale === "da") {
+    return concise
+      .replace(/^returns?\s+are\s+accepted\b/i, "Returneringer accepteres")
+      .replace(/^returns?\s+are\s+allowed\b/i, "Returneringer er tilladt");
+  }
+  return concise
+    .replace(/^returns?\s+are\s+accepted\b/i, "Returns are accepted")
+    .replace(/^returns?\s+are\s+allowed\b/i, "Returns are allowed");
+}
+
+function compositionShippingMethodText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  if (/\b(?:tracked|trackable|track\s+and\s+trace|tracking)\b/i.test(text)) {
+    return locale === "da" ? "sporbar forsendelse" : "tracked shipping";
+  }
+  if (/\b(?:insured|registered)\b/i.test(text)) {
+    return locale === "da" ? "forsikret eller registreret forsendelse" : "insured or registered shipping";
+  }
+  if (/\bprepaid\b/i.test(text)) return locale === "da" ? "forudbetalt forsendelse" : "prepaid shipping";
+  return text.replace(/[.!?]+$/g, "").trim();
+}
+
+function compositionObligationText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  const customerPays = /\b(?:you|your|customer|buyer|du|din|kunden|køber)\b[\s\S]{0,64}\b(?:pay|paid|pays|cost|expense|responsib|betaler|betalt|omkostning|udgift|ansvar)\w*\b/i.test(text)
+    || /\b(?:paid|borne|covered|betalt|båret|dækket)\s+by\s+(?:you|the\s+customer|kunden|dig)\b/i.test(text)
+    || /\b(?:at|on|til|på)\s+(?:your|customer['’]s|din|kundens)(?:\s+own)?\s+(?:cost|expense|omkostning\w*|udgift\w*)\b/i.test(text);
+  const merchantPays = /\b(?:we|our|merchant|store|seller|vi|forhandler|butik|sælger)\b[\s\S]{0,64}\b(?:pay|paid|pays|cover|covered|cost|expense|betaler|betalt|dækker|omkostning|udgift)\w*\b/i.test(text);
+  const mentionsPackaging = /\b(?:secure|protective)\s+packaging\b|\bemballage\b|\bverpackung\b/i.test(text);
+  if (customerPays) {
+    if (mentionsPackaging) {
+      return locale === "da"
+        ? "Du betaler returfragt og andre returomkostninger, f.eks. forsvarlig emballage."
+        : "Return shipping and other return-related costs, such as secure packaging, are your responsibility.";
+    }
+    return locale === "da" ? "Du betaler returfragten." : "Return shipping is at your own cost.";
+  }
+  if (merchantPays) return locale === "da" ? "Butikken dækker returfragten." : "The store covers return shipping.";
+  return text;
+}
+
+function compositionOutcomeText(value: string, locale: ResponseLocale) {
+  const text = neutralizeAgentPolicyOwnership(value);
+  const receivedAndProcessed = /(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,120}\b(?:receive\w*|receipt|return\w*|process\w*)\b[\s\S]{0,80}\b(?:refund|refunder\w*|tilbagebetaling\w*)\b/i.test(text)
+    || /\b(?:receive\w*|receipt|return\w*|process\w*)\b[\s\S]{0,120}\b(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,80}\b(?:refund|refunder\w*|tilbagebetaling\w*)\b/i.test(text)
+    || /\b(?:refund|refunder\w*|tilbagebetaling\w*)\b[\s\S]{0,120}\b(?:after|once|when|as\s+soon\s+as)\b[\s\S]{0,120}\b(?:receive\w*|receipt|return\w*|process\w*)\b/i.test(text);
+  if (receivedAndProcessed && /\brefund\w*\b/i.test(text)) {
+    return locale === "da"
+      ? "Når returneringen er modtaget og behandlet, bliver refunderingen igangsat."
+      : "Once the return is received and processed, your refund will be issued.";
+  }
+  return text;
+}
+
+function destinationComponentsFromEvidence(segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>, context: ResponseValidationContext) {
+  const records = answerEvidenceRecords(segment.basis, context, "destination");
+  for (const evidenceText of answerEvidenceSections(records)) {
+    const lines = evidenceText.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      if (!line || !isConcreteReturnDestinationInstruction(line)) continue;
+      const afterCue = line.replace(/^.*?(?::|\bto\b|\btil\b|\ban\b|\bzu\b)\s*/i, "").trim();
+      const block: string[] = [];
+      if (afterCue && simpleAddressLabel(afterCue) && physicalAddressMarker(lines[index + 1] ?? "")) block.push(afterCue);
+      let nextIndex = index + 1;
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex += 1;
+      for (; nextIndex < lines.length; nextIndex += 1) {
+        const next = lines[nextIndex].trim();
+        if (!next) break;
+        const nextIsAddress = physicalAddressMarker(next);
+        const nextCouldBeName = block.length === 0 && simpleAddressLabel(next) && physicalAddressMarker(lines[nextIndex + 1] ?? "");
+        const nextCouldBeCity = block.length > 0 && block.some(physicalAddressMarker) && simpleAddressLabel(next);
+        if (!nextIsAddress && !nextCouldBeName && !nextCouldBeCity) break;
+        block.push(next);
+      }
+      if (block.some(physicalAddressMarker)) return block.join("\n");
+    }
+  }
+  return null;
+}
+
+function compositionOrderFacts(segments: ResponseSegment[]) {
+  return segments.filter((segment): segment is Extract<ResponseSegment, { type: "fact" }> => segment.type === "fact" && ORDER_FACT_KINDS.has(segment.fact_kind));
+}
+
+function compositionQuestionText(piece: CustomerCompositionPiece) {
+  return piece.segment.type === "question" ? renderTextSegment(piece.segment.text) : "";
+}
+
+function compositionProcessClarification(plan: ActionablePolicyPlan, context: ResponseValidationContext) {
+  const processFacet = plan.facets.find((facet) => facet.kind === "process");
+  const candidate = processFacet?.recovery.kind === "usable" ? processFacet.recovery.candidate : null;
+  if (!candidate) return "";
+  const requirement = candidate.value.replace(/^please\s+provide\s+/i, "").trim();
+  if (!requirement) return "";
+  return naturalMissingRequirementQuestion([requirement], context);
+}
+
+function composeActionableResponse(segments: ResponseSegment[], context: ResponseValidationContext): string | null {
+  const plan = actionablePolicyPlan(context);
+  if (!plan || plan.facets.some((facet) => facet.status === "ambiguous")) return null;
+  const hasVerifiedOrder = context.activeOrder?.state === "verified";
+  const hasActionOffer = segments.some((segment) => segment.type === "action_offer");
+  if (!hasVerifiedOrder && !hasActionOffer) return null;
+  const pieces = compositionPieces(segments, plan, context);
+  const byRole = (role: CustomerCompositionRole) => pieces.filter((piece) => piece.role === role);
+  const eligibility = byRole("eligibility")[0];
+  const destination = byRole("destination")[0];
+  const method = byRole("method")[0];
+  const obligation = byRole("obligation")[0];
+  const outcome = byRole("outcome")[0];
+  const action = byRole("action_offer")[0];
+  const clarifications = byRole("clarification");
+  const orderFacts = compositionOrderFacts(segments);
+  const locale = localeFor(context);
+  const clarificationTexts = Array.from(new Set([
+    ...clarifications.map(compositionQuestionText).filter(Boolean),
+    compositionProcessClarification(plan, context),
+  ].filter(Boolean)));
+  const composed: string[] = [];
+  const canResolveVerifiedOrder = context.activeOrder?.state === "verified"
+    && Boolean(context.activeOrder.requestedOrderId)
+    && Boolean(eligibility)
+    && Boolean(verifiedOrderItemTitle(context));
+
+  if (canResolveVerifiedOrder) {
+    const reference = context.activeOrder!.requestedOrderId!.replace(/^#/, "");
+    const subject = customerFacingReturnSubject(context);
+    composed.push(locale === "da"
+      ? `Du kan anmode om at returnere ${subject} fra ordre #${reference}.`
+      : `You can request a return for ${subject} from order #${reference}.`);
+  } else if (orderFacts.length) {
+    composed.push(renderOrderFacts(orderFacts, context));
+  }
+
+  if (eligibility) {
+    const text = compositionEligibilityText(compositionPieceText(eligibility, context), locale);
+    if (text && !composed.some((item) => item.includes(text))) composed.push(text);
+  }
+
+  if (destination) {
+    const destinationSegment = destination.segment.type === "knowledge_guidance" ? destination.segment : null;
+    const address = destinationSegment ? destinationComponentsFromEvidence(destinationSegment, context) : null;
+    const renderedAddress = address ?? compositionPieceText(destination, context);
+    const methodText = method ? compositionShippingMethodText(compositionPieceText(method, context), locale) : "";
+    if (renderedAddress) {
+      if (methodText) {
+        composed.push(locale === "da"
+          ? `Send den med ${methodText} til:\n\n${renderedAddress}`
+          : `Please send it with ${methodText} to:\n\n${renderedAddress}`);
+      } else {
+        composed.push(locale === "da" ? `Send den til:\n\n${renderedAddress}` : `Please send it to:\n\n${renderedAddress}`);
+      }
+    }
+  } else if (method) {
+    const methodText = compositionShippingMethodText(compositionPieceText(method, context), locale);
+    if (methodText) composed.push(locale === "da" ? `Brug ${methodText}.` : `Please use ${methodText}.`);
+  }
+
+  if (obligation) {
+    const text = compositionObligationText(compositionPieceText(obligation, context), locale);
+    if (text) composed.push(text);
+  }
+  if (outcome) {
+    const text = compositionOutcomeText(compositionPieceText(outcome, context), locale);
+    if (text) composed.push(text);
+  }
+
+  const actionText = action && action.segment.type === "action_offer" ? renderActionOffer(action.segment, context) : "";
+  if (actionText && action?.segment.type === "action_offer" && action.segment.missing_arguments.length === 0 && clarificationTexts.length) {
+    const question = clarificationTexts[0];
+    composed.push(`${actionText.replace(/\.$/, "")}. ${locale === "da" ? `Hvis du vil have mig til at gøre det, ${lowerFirst(question)}` : `If you'd like me to do that, ${lowerFirst(question)}`}`);
+  } else {
+    if (clarificationTexts.length) composed.push(...clarificationTexts);
+    if (actionText) composed.push(actionText);
+  }
+
+  const response = composed.filter(Boolean).join("\n\n");
+  if (!response) return null;
+  const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
+  const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
+  return greeting && response ? `${greeting}\n\n${response}` : response;
 }
 
 function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
@@ -1971,8 +2590,30 @@ function isActiveSupportChannel(channel?: GreenfieldInteractionChannel) {
     || channel === "web_chat";
 }
 
+function isMerchantSideProcessInstruction(value: string) {
+  return /\b(?:we|our\s+(?:team|support)|the\s+(?:merchant|store|seller))\s+(?:will|may|might|can|could|shall)\s+(?:contact|ask|process|review|deduct|notify|email|send)\b/i.test(value);
+}
+
 function hasKnownOrderReference(context: ResponseValidationContext) {
   return Boolean(context.activeOrder?.requestedOrderId);
+}
+
+function hasVerifiedOrderReference(context: Pick<ResponseValidationContext, "activeOrder">) {
+  return context.activeOrder?.state === "verified"
+    && Boolean(context.activeOrder.requestedOrderId);
+}
+
+function verifiedOrderItemTitle(context: Pick<ResponseValidationContext, "activeOrder">) {
+  if (context.activeOrder?.state !== "verified") return null;
+  const titles = Array.from(new Set((context.activeOrder.order?.items ?? [])
+    .map((item) => String(item.title ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)));
+  return titles.length === 1 ? titles[0] : null;
+}
+
+function customerFacingReturnSubject(context: Pick<ResponseValidationContext, "activeOrder">) {
+  const title = verifiedOrderItemTitle(context);
+  return title ? `the ${title}` : "the item";
 }
 
 function cleanContextualizedKnowledgeSentence(value: string) {
@@ -1988,7 +2629,13 @@ function cleanContextualizedKnowledgeSentence(value: string) {
 }
 
 function requirementListFromSentence(value: string) {
-  const match = String(value ?? "").match(/\b(?:with|provide|share|send|include)\s+(.+?)(?:[.!?]|$)/i);
+  const text = String(value ?? "");
+  const contentRequirement = "(?:reason|name|order|email|photo|picture|image|video|screenshot|serial|document|receipt|proof|evidence|measurement|details?|description|sku|barcode|form)";
+  const match = [
+    text.match(/\bincluding\s+(.+?)(?:[.!?]|$)/i),
+    text.match(new RegExp(`\\b(?:provide|share|send|include)\\s+((?:(?:the|your|an?|any)\\s+)?${contentRequirement}\\b.+?)(?:[.!?]|$)`, "i")),
+    text.match(new RegExp(`\\bwith\\s+((?:(?:the|your|an?|any)\\s+)?${contentRequirement}\\b.+?)(?:[.!?]|$)`, "i")),
+  ].find((candidate) => candidate?.[1]);
   if (!match?.[1]) return null;
   const items = match[1]
     .split(/,\s*|\s+(?:and|or)\s+/i)
@@ -1997,23 +2644,141 @@ function requirementListFromSentence(value: string) {
   return items.length ? items : null;
 }
 
+type ProcessRequirementKind = "contact_support" | "customer_name" | "order_reference" | "return_reason" | "customer_content";
+
+type ProcessRequirement = {
+  kind: ProcessRequirementKind;
+  value: string;
+  satisfied: boolean;
+};
+
+function isReturnReasonRequirement(value: string) {
+  return /\breason\b/i.test(value);
+}
+
+function customerMessageProvidesReturnReason(
+  context: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext">,
+) {
+  const text = [context.customerMessage, context.customerProvidedContext?.returnDetails]
+    .filter(Boolean)
+    .join(" ");
+  if (!text.trim()) return false;
+  return /\b(?:because|since|as|due\s+to|because\s+of|reason\s*(?:is|:))\s+[^.!?]{2,}/i.test(text)
+    || /\b(?:damaged|defective|dissatisf(?:ied|ying)|unhappy|not\s+happy|doesn['’]?t\s+fit|does\s+not\s+fit|wrong|unwanted|changed\s+my\s+mind)\b/i.test(text);
+}
+
+function processRequirementKind(value: string): ProcessRequirementKind | null {
+  if (isSupportContactInstruction(value)) return "contact_support";
+  if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return "order_reference";
+  if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) return "customer_name";
+  if (isReturnReasonRequirement(value)) return "return_reason";
+  if (isCustomerContentRequirement(value) || /\b(?:photo|picture|image|video|screenshot|serial|document|receipt|proof|measurement|details?|description|sku|barcode|form)\b/i.test(value)) return "customer_content";
+  return null;
+}
+
+function processRequirementSatisfied(
+  kind: ProcessRequirementKind,
+  value: string,
+  context: AnswerCompletenessContext,
+) {
+  if (kind === "contact_support") {
+    return isActiveSupportChannel(context.interactionChannel)
+      && customerMessagePerformsSupportRequest(context.customerMessage ?? "")
+      && isSupportContactInstruction(value)
+      && (!isNegatedSupportContactInstruction(value) || isConditionalSupportContactInstruction(value));
+  }
+  if (kind === "order_reference") return hasVerifiedOrderReference(context);
+  if (kind === "customer_name") return Boolean(context.trustedCustomerIdentity?.verified && context.trustedCustomerIdentity.hasName);
+  if (kind === "return_reason") return customerMessageProvidesReturnReason(context);
+  return false;
+}
+
+function processRequirementsForInstruction(
+  value: string,
+  context: AnswerCompletenessContext,
+): ProcessRequirement[] | null {
+  if (!isSupportContactInstruction(value)) return null;
+  const items = requirementListFromSentence(value);
+  if (!items) {
+    if (hasSupportContactContentRequirement(value)) return null;
+    return [{
+      kind: "contact_support",
+      value,
+      satisfied: processRequirementSatisfied("contact_support", value, context),
+    }];
+  }
+  return [
+    {
+      kind: "contact_support",
+      value,
+      satisfied: processRequirementSatisfied("contact_support", value, context),
+    },
+    ...items.map((item) => {
+      const kind = processRequirementKind(item) ?? "customer_content";
+      return { kind, value: item, satisfied: processRequirementSatisfied(kind, item, context) };
+    }),
+  ];
+}
+
+function processRequirementCandidateValue(requirement: ProcessRequirement) {
+  if (requirement.kind === "customer_name"
+    || requirement.kind === "order_reference"
+    || requirement.kind === "return_reason"
+    || requirement.kind === "customer_content") {
+    return `Please provide ${requirement.value}`;
+  }
+  return requirement.value;
+}
+
+function processInstructionCandidates(value: string, context: AnswerCompletenessContext) {
+  if (isMerchantSideProcessInstruction(value)) return [];
+  if (!isActiveSupportChannel(context.interactionChannel)
+    || !customerMessagePerformsSupportRequest(context.customerMessage ?? "")) return [value];
+  const requirements = processRequirementsForInstruction(value, context);
+  if (!requirements) return [value];
+  return requirements
+    .filter((requirement) => !requirement.satisfied)
+    .map(processRequirementCandidateValue);
+}
+
 function requirementAlreadyKnown(value: string, context: ResponseValidationContext) {
   if (/\border\s+(?:number|no\.?|id|identifier)\b/i.test(value)) return hasKnownOrderReference(context);
   if (/\bname\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
-    return Boolean(context.trustedCustomerIdentity?.verified);
+    return Boolean(context.trustedCustomerIdentity?.verified && context.trustedCustomerIdentity.hasName);
   }
   if (/\bemail(?:\s+address)?\s+(?:used\s+(?:at|when)\s+(?:purchase|checkout|ordering)|on\s+the\s+order)\b/i.test(value)) {
     return Boolean(context.trustedCustomerIdentity?.verified);
   }
+  if (isReturnReasonRequirement(value)) return customerMessageProvidesReturnReason(context);
   return false;
+}
+
+function requirementPromptLabel(value: string, context: ResponseValidationContext) {
+  return isReturnReasonRequirement(value)
+    ? (localeFor(context) === "da"
+      ? `årsagen til at returnere ${customerFacingReturnSubject(context)}`
+      : `the reason for returning ${customerFacingReturnSubject(context)}`)
+    : value;
 }
 
 function naturalMissingRequirementQuestion(items: string[], context: ResponseValidationContext) {
   const locale = localeFor(context);
-  if (items.length === 1) {
-    return locale === "da" ? `Hvad er ${items[0]}?` : `What’s the ${items[0]}?`;
+  if (items.length === 1 && isReturnReasonRequirement(items[0])) {
+    const verifiedOrder = context.activeOrder?.state === "verified"
+      && Boolean(context.activeOrder.requestedOrderId);
+    return locale === "da"
+      ? verifiedOrder
+        ? `Hvad er årsagen til, at du returnerer ${customerFacingReturnSubject(context)}?`
+        : "Hvad er årsagen til returneringen?"
+      : verifiedOrder
+        ? `What’s the reason for returning ${customerFacingReturnSubject(context)}?`
+        : "What’s the reason for return?";
   }
-  const information = joinList(items, locale);
+  const promptedItems = items.map((item) => requirementPromptLabel(item, context));
+  if (items.length === 1) {
+    return locale === "da" ? `Hvad er ${promptedItems[0]}?` : `What’s the ${promptedItems[0]}?`;
+  }
+  const information = joinList(promptedItems, locale);
   return locale === "da" ? `Kan du sende ${information}?` : `Could you share ${information}?`;
 }
 
@@ -2025,7 +2790,7 @@ function naturalMissingRequirementQuestion(items: string[], context: ResponseVal
 function adaptKnownRequirementList(value: string, context: ResponseValidationContext, allowWithClause: boolean) {
   if (!allowWithClause && !/\b(?:provide|share|send|include)\b/i.test(value)) return undefined;
   const items = requirementListFromSentence(value);
-  if (!items?.some((item) => requirementAlreadyKnown(item, context))) return undefined;
+  if (!items) return undefined;
   const missing = items.filter((item) => !requirementAlreadyKnown(item, context));
   return missing.length ? naturalMissingRequirementQuestion(missing, context) : "";
 }
@@ -2045,12 +2810,1520 @@ function adaptSupportContactInstruction(value: string) {
   return adapted;
 }
 
+type CustomerQuestionShape = "process" | "destination" | "eligibility" | "timing" | "cost" | "status" | "troubleshooting" | "action" | "unknown";
+
+type CustomerKnowledgeFocus = {
+  hasReturnIntent: boolean;
+  asksProcess: boolean;
+  asksReturnDestination: boolean;
+  asksRefundTiming: boolean;
+  asksShippingResponsibility: boolean;
+  mentionsCondition: boolean;
+  asksCondition: boolean;
+  asksEligibility: boolean;
+  questionShape: CustomerQuestionShape;
+};
+
+function customerKnowledgeFocus(customerMessage?: string): CustomerKnowledgeFocus {
+  const message = String(customerMessage ?? "").replace(/[\u2019]/g, "'").trim();
+  const hasReturnIntent = /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*)|send\s+(?:it|the\s+item|the\s+order)\s+back|sende?\s+(?:den|varen|ordren)\s+tilbage)\b/i.test(message);
+  const asksHow = /\bhow\b|\b(?:steps?|process|procedure|initiate|start)\b|\bhvordan\b|\b(?:trin|proces|procedure|starte|påbegynde|gøre)\b|\bwie\b|\b(?:schritte|prozess|vorgehen)\b/i.test(message);
+  const asksReturnDestination = hasReturnIntent
+    && (/\b(?:where|hvor|wo)\b/i.test(message) || /\b(?:send|ship|sende|schick(?:en)?|sende)\b[\s\S]{0,40}\b(?:return|retur|rücksend|retoure)\b/i.test(message));
+  const hasRefundIntent = /\b(?:refund\w*|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage|erstatt\w*|rückerstatt\w*)\b/i.test(message);
+  const hasTimingQuestion = /\b(?:when|how\s+long|tim(?:e|ing)|within|after|hvornår|hvor\s+lang\s+tid|hvor\s+hurtigt|tid|wann|wie\s+lange|zeit)\b/i.test(message);
+  const asksRefundTiming = hasRefundIntent && hasTimingQuestion;
+  // Keep inflected forms in the same intent family (for example Danish
+  // "returfragten"), while still requiring an explicit shipping term before
+  // treating a payer question as return-shipping related.
+  const mentionsShipping = /\b(?:shipping\w*|returfragt\w*|fragt\w*|levering\w*|versand\w*|rückversand\w*)\b/i.test(message);
+  const asksShippingResponsibility = mentionsShipping && /\b(?:who\s+(?:pays|covers)|pay|cost|responsib)\w*\b|\b(?:hvem\s+betaler|betaler\s+jeg|ansvar|omkostning|udgift)\w*\b|\b(?:wer\s+zahlt|kosten|verantwort)\w*\b/i.test(message);
+  const mentionsCondition = /\b(?:open(?:ed)?|used|seal(?:ed|ed)?|unused|intact|defect(?:ive)?|damaged|åbnet|brudt|forsegling|forseglet|ubrugt|intakt|brugt|beskadiget|geöffnet|benutzt|versiegelt|unbenutzt|beschädigt)\b/i.test(message);
+  const asksCondition = hasReturnIntent && mentionsCondition;
+  const asksEligibility = hasReturnIntent && /\b(?:can\s+i|may\s+i|am\s+i\s+eligible|is\s+it\s+allowed|still\s+(?:return|send)|kan\s+jeg|må\s+jeg|er\s+det\s+muligt|berettiget|tilladt|darf\s+ich|kann\s+ich|ist\s+das\s+zulässig|berechtigt)\b/i.test(message);
+  const asksAction = /\b(?:cancel|annullere|annullér|change\s+(?:the\s+)?address|ændre\s+(?:leverings)?adressen|refund|refunder|remplacement|erstatning)\b/i.test(message);
+  const asksStatus = /\b(?:where\s+is|status|hvor\s+er|hvad\s+er\s+status|wo\s+ist)\b/i.test(message);
+  const asksTroubleshooting = /\b(?:not\s+working|won't|will\s+not|broken|pair|connect|problem|virker\s+ikke|forbinder|parre|fejl|funktioniert\s+nicht|verbinden|koppeln|problem)\b/i.test(message);
+  const questionShape: CustomerQuestionShape = asksCondition || asksEligibility
+    ? "eligibility"
+    : asksRefundTiming
+      ? "timing"
+      : asksShippingResponsibility
+        ? "cost"
+        : asksReturnDestination
+          ? "destination"
+          : asksHow || (hasReturnIntent && /\b(?:want|would\s+like|need|vil|ønsker|skal|ich\s+m(?:ö|oe)chte|ich\s+will)\b/i.test(message))
+            ? "process"
+            : asksAction
+              ? "action"
+              : asksStatus
+                ? "status"
+                : asksTroubleshooting
+                  ? "troubleshooting"
+                  : "unknown";
+  return {
+    hasReturnIntent,
+    asksProcess: questionShape === "process",
+    asksReturnDestination,
+    asksRefundTiming,
+    asksShippingResponsibility,
+    mentionsCondition,
+    asksCondition,
+    asksEligibility,
+    questionShape,
+  };
+}
+
+function isReturnConditionConsequence(value: string) {
+  return /\b(?:opened|open|used|seal(?:ed|ed)?|deduct(?:ion|ed)?|fee|charge|reduced|not\s+fully\s+refunded|åbnet|brudt|forsegling\w*|forseglet|ubrugt|intakt|brugt|fradrag|gebyr|reduceret|trækk\w*|ikke\s+fuldt\s+refunderet|geöffnet|benutzt|versiegelt|unbenutzt|beschädigt)\b/i.test(value)
+    && /\b(?:return\w*|refund\w*|product\w*|item\w*|packag\w*|condition\w*|retur\w*|refundering\w*|vare\w*|emballage\w*|forsegling\w*|deduct\w*|fradrag|gebyr|trækk\w*|fee|charge)\b/i.test(value);
+}
+
+function isReturnShippingResponsibility(value: string) {
+  return /\b(?:return\s+)?(?:shipping|shipment)\b|\breturn\s+(?:postage|label)\b|\breturfragt\w*\b|\breturporto\w*\b|\bfragt\w*\b|\bpostage\b|\bversand\w*\b|\brücksendekosten\w*\b/i.test(value)
+    && /\b(?:responsib|covered|cover|cost|pay|paid|pays|expense|borne|prepaid|free|ansvar|omkostning|udgift|betal|betalt|zahlt|kosten|verantwort|übernommen)\w*\b/i.test(value);
+}
+
+function isPayerProposition(value: string) {
+  if (!isReturnShippingResponsibility(value)) return false;
+  const actor = "(?:customer|merchant|store|seller|buyer|you|we|us|kunden|forhandler|butik|sælger|køber|du|vi|os)";
+  const responsibilityVerb = "(?:pay|paid|pays|cover\\w*|responsib\\w*|borne|prepaid|free|betaler|betalt|ansvar\\w*|zahlt|verantwort\\w*|übernommen)";
+  const passiveResponsibility = new RegExp(`\\b${responsibilityVerb}\\b[\\s\\S]{0,48}\\b(?:by|af|von)\\s+(?:the\\s+)?${actor}\\b`, "i");
+  const activeResponsibility = new RegExp(`\\b${actor}\\b[\\s\\S]{0,48}\\b${responsibilityVerb}\\b`, "i");
+  const expenseResponsibility = new RegExp(`\\b(?:at|on|til|på|zu)\\s+(?:your|customer['’]s|merchant['’]s|our|din|kundens|forhandlerens|vores|ihre|deine|unsere)(?:\\s+own)?\\s+(?:expense|cost|omkostning\\w*|udgift\\w*|bekostning|kosten)\\b`, "i");
+  const returnShippingConcept = /\breturn\s+(?:shipping|shipment|postage|label)\b|\bretur(?:fragt|porto)\w*\b|\brücksend(?:ung|e|ekosten|etikett)\w*\b/i;
+  const prepaidReturnLabel = /\b(?:we|merchant|store|seller|vi|forhandler|butik|wir)\b[\s\S]{0,64}\b(?:provide|offer|send|give|tilbyd\w*|leverer|geben|bieten)\b[\s\S]{0,64}\bprepaid\b[\s\S]{0,32}\b(?:return\s+label|returlabel|return\s+shipping|returfragt|rücksendeetikett)\b/i;
+  return activeResponsibility.test(value)
+    || passiveResponsibility.test(value)
+    || expenseResponsibility.test(value)
+    || prepaidReturnLabel.test(value)
+    || (returnShippingConcept.test(value) && /\b(?:free|prepaid)\b/i.test(value));
+}
+
+function timingCandidateEvaluation(value: string) {
+  const text = String(value ?? "");
+  const mentionsRefund = /\brefund\w*\b|\brefunder\w*\b|\btilbagebetaling\w*\b|\bpengene\s+tilbage\b|\berstatt\w*\b|\brückerstatt\w*\b/i.test(text);
+  const mentionsProviderTiming = /\b(?:bank|payment\s+provider|betalingsudbyder)\b[\s\S]{0,80}\b(?:display|post|funds?|vise|beløb|time|tid|dage|tage)\b/i.test(text);
+  const hasDuration = /\b(?:within|inden\s+for|indenfor)\s+\d{1,3}\s+(?:business\s+)?(?:days?|dage|tage|wochen|monate)\b/i.test(text);
+  const hasEventTrigger = /\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b[\s\S]{0,180}\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|igangsæt\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b/i.test(text)
+    || /\b(?:receive\w*|receipt|return\w*|process\w*|inspect\w*|approve\w*|modtag\w*|behandl\w*|modtaget|bearbeitet|erhalten|prüf\w*)\b[\s\S]{0,180}\b(?:after|once|when|upon|as\s+soon\s+as|efter|når|så\s+snart|nach|sobald|wenn)\b/i.test(text);
+  const hasRefundAction = /\b(?:initiat\w*|process\w*|issu\w*|releas\w*|pay\w*|display\w*|udbetal\w*|igangsæt\w*|behandl\w*|ausgezahlt|erstatt\w*)\b/i.test(text);
+  const hasExplicitDate = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/i.test(text)
+    || /\b(?:on|den|am|d\.)\s+\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+\d{2,4}\b/i.test(text);
+  const timingPatternDetected = hasDuration || hasEventTrigger || mentionsProviderTiming || hasExplicitDate;
+  const subjectOutcomeDetected = mentionsProviderTiming
+    || hasExplicitDate
+    || hasDuration
+    || (hasEventTrigger && hasRefundAction);
+  const certifiedCandidate = (mentionsRefund || mentionsProviderTiming)
+    && (hasDuration || (hasEventTrigger && hasRefundAction) || mentionsProviderTiming || hasExplicitDate)
+    && (hasExplicitDate || /\b(?:after|once|when|upon|as\s+soon\s+as|within|efter|når|så\s+snart|nach|sobald|wann|wie\s+lange|inden\s+for|indenfor|dage|days?|tage|wochen|monate|bank|payment\s+provider|betalingsudbyder)\b/i.test(text));
+  const rejectionReason: string[] = [];
+  if (!mentionsRefund && !mentionsProviderTiming) rejectionReason.push("missing_refund_or_payment_subject");
+  if (!timingPatternDetected) rejectionReason.push("missing_timing_pattern");
+  if (!subjectOutcomeDetected) rejectionReason.push("missing_timing_outcome");
+  if (!certifiedCandidate && !rejectionReason.length) rejectionReason.push("timing_requirements_not_met");
+  return {
+    mentionsRefund,
+    mentionsProviderTiming,
+    hasDuration,
+    hasEventTrigger,
+    hasExplicitDate,
+    hasRefundAction,
+    timingPatternDetected,
+    subjectOutcomeDetected,
+    certifiedCandidate,
+    rejectionReason,
+  };
+}
+
+function isRefundTiming(value: string) {
+  return timingCandidateEvaluation(value).certifiedCandidate;
+}
+
+function timingCandidateDiagnostics(evidenceTexts: string[]): TimingCandidateDiagnostic[] {
+  return evidenceTexts
+    .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+    .map((candidate) => {
+      const evaluation = timingCandidateEvaluation(candidate);
+      return {
+        text: candidate.slice(0, 240),
+        timing_pattern_detected: evaluation.timingPatternDetected,
+        event_trigger_detected: evaluation.hasEventTrigger,
+        duration_detected: evaluation.hasDuration,
+        explicit_date_detected: evaluation.hasExplicitDate,
+        subject_outcome_detected: evaluation.subjectOutcomeDetected,
+        rejected: !evaluation.certifiedCandidate,
+        rejection_reason: evaluation.rejectionReason,
+        certified_candidate: evaluation.certifiedCandidate,
+        conflict_group: null,
+      };
+    });
+}
+
+/** @internal DEV/test-only candidate diagnostics; not exposed by any route. */
+export function inspectTimingCandidateDiagnostics(evidenceTexts: string[]): TimingCandidateDiagnostic[] {
+  return timingCandidateDiagnostics(evidenceTexts);
+}
+
+function isReturnEligibility(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
+    && /\b(?:within|under|accepted|eligible|allowed|days?|dage|accepter\w*|berettig\w*|tilladt|inden|innerhalb|tage)\b/i.test(value)
+    && !isReturnConditionConsequence(value);
+}
+
+function isAnswerBearingEligibility(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
+    && /\b(?:yes|no|can|cannot|can't|may|still|ja|nej|kan|må|darf|kann|berechtigt|tilladt)\b/i.test(value);
+}
+
+function isReturnProhibition(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*|zurück(?:geben|schick\w*|send\w*))\b/i.test(value)
+    && /\b(?:not\s+(?:allowed|eligible|permitted|accepted)|cannot|can't|prohibited|forbidden|ikke\s+(?:tilladt|berettiget|accepteret|muligt)|kan\s+ikke|må\s+ikke|nicht\s+(?:zulässig|berechtigt|angenommen|möglich)|kann\s+nicht|darf\s+nicht|abgelehnt|verboten)\b/i.test(value);
+}
+
+function isReturnApprovalPrerequisite(value: string) {
+  return /\b(?:approval|approved|accepted\s+before|confirmation|godkend\w*|bekræft\w*|godkendt|bestätigung|genehmig\w*)\b/i.test(value)
+    && /\b(?:return\w*|retur\w*|send|ship|sende|schick|rücksend\w*|retoure)\b/i.test(value);
+}
+
+function isReturnDestinationInstruction(value: string) {
+  return /\b(?:address|portal|label|return\s+to|send\s+(?:it|the\s+(?:return|item|product|order))?\s+to|ship\s+(?:it|the\s+(?:return|item|product|order))?\s+to|adresse|retur(?:adresse|label)|send\w*\s+(?:den|die|das|die\s+retoure|die\s+ware)?\s*(?:an|zu|til)|rücksendeadresse|zurückschick\w*\s+an|retoure\s+an)\b/i.test(value);
+}
+
+function isConcreteReturnDestinationInstruction(value: string) {
+  return /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value)
+    && isReturnDestinationInstruction(value);
+}
+
+function isReturnProcessInstruction(value: string) {
+  if (isRefundTiming(value)) return false;
+  return /\b(?:start|initiate|request\s+(?:a\s+)?(?:return|refund|claim)|send|ship|portal|label|address|contact|email|next\s+steps?|follow\s+(?:the\s+)?instructions?|procedure|instructions?|anmod\w*|sende|returlabel|adresse|kontakt|kontaktformular\w*|formular|udfyld|næste\s+trin|beantrag\w*|schritt\w*|vorgehen)\b/i.test(value);
+}
+
+function isReturnShippingMethodInstruction(value: string) {
+  if (isReturnShippingResponsibility(value)) return false;
+  return /\b(?:tracked|trackable|insured|registered|prepaid)\b/i.test(value)
+    && /\b(?:return|shipping|shipment|postage|label|send|ship|retur|returfragt|returporto|rücksend|versand)\w*\b/i.test(value);
+}
+
+function isCustomerContentRequirement(value: string) {
+  return /\b(?:provide|share|send|include|attach|upload|submit|enter|tell|give)\b/i.test(value)
+    && /\b(?:photo|picture|image|video|screenshot|screen\s*shot|serial(?:\s+(?:number|no\.?)|number)?|document|receipt|proof|evidence|measurement\w*|reason|details?|description|sku|barcode|form)\b/i.test(value);
+}
+
+function isProcessAnswerBearingInstruction(value: string) {
+  if (isCustomerContentRequirement(value) || isSupportContactInstruction(value)) return true;
+  return isReturnProcessInstruction(value)
+    && /\b(?:return\w*|retur\w*|rücksend\w*|retoure\w*)\b/i.test(value);
+}
+
+function isSupportContactInstruction(value: string) {
+  const supportTarget = "(?:us|our\\s+support(?:\\s+team)?|support(?:\\s+team)?|customer\\s+service|the\\s+merchant|the\\s+store|the\\s+seller)";
+  return new RegExp(`\\b(?:contact|email|e-?mail|write\\s+to|reach\\s+out\\s+to)\\s+${supportTarget}\\b`, "i").test(value)
+    || new RegExp(`\\bsend\\s+${supportTarget}\\s+(?:an?\\s+)?e-?mail\\b`, "i").test(value)
+    || /\b(?:use|via|through|using)\s+(?:our|the)?\s*(?:support|contact)\s+form\b/i.test(value)
+    || /\b(?:let|letting)\s+(?:us|the\s+merchant|support)\s+know\b/i.test(value)
+    || (/\b(?:submit|request)\s+(?:a|the)?\s*(?:return|refund|claim)\s*(?:request)?\b/i.test(value)
+      && !/\b(?:portal|online|website|app)\b/i.test(value));
+}
+
+function isNegatedSupportContactInstruction(value: string) {
+  return /\b(?:do\s+not|don't|must\s+not|never|without)\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function isExplicitSupportContactProhibition(value: string) {
+  return /\b(?:do\s+not|don't|must\s+not|never)\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function isConditionalSupportContactInstruction(value: string) {
+  return /\bwithout\b[\s\S]{0,60}\b(?:contact|email|e-?mail|write\s+to|reach\s+out\s+to|support|customer\s+service|let\s+(?:us|the\s+merchant|support)\s+know)\b/i.test(value);
+}
+
+function hasSupportContactContentRequirement(value: string) {
+  const text = value.replace(/\b(?:support|contact)\s+form\b/gi, "");
+  return /\b(?:photo|picture|image|video|screenshot|screen\s*shot|serial(?:\s+(?:number|no\.?)|number)?|document|receipt|proof|evidence|measurement\w*|reason|details?|description|sku|barcode|form)\b/i.test(text);
+}
+
+function customerMessagePerformsSupportRequest(value: string) {
+  return /\b(?:i\s+(?:would|want|need|wish)|please|can\s+you|could\s+you|would\s+you|how\s+(?:do|can)\s+i|request(?:ing)?|submit(?:ted)?|contact(?:ed)?|email(?:ed)?|help)\b/i.test(value);
+}
+
+function isSatisfiedSupportContactPrerequisite(
+  value: string,
+  context: Pick<ResponseValidationContext, "customerMessage" | "interactionChannel">,
+) {
+  return processRequirementSatisfied("contact_support", value, context)
+    && !hasSupportContactContentRequirement(value);
+}
+
+function hasContradictoryProcessInstructions(values: string[]) {
+  const actionable = values.filter((value) => !isMerchantSideProcessInstruction(value));
+  return actionable.some((value) => isSupportContactInstruction(value) && !isNegatedSupportContactInstruction(value))
+    && actionable.some(isExplicitSupportContactProhibition);
+}
+
+type AnswerBearingCue = "process" | "destination" | "contact" | "tracking" | "timing" | "cost" | "eligibility" | "status";
+
+function answerBearingCueFor(value: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
+  const text = value.trim();
+  if (!text || !/:\s*$/.test(text)) return null;
+  if (focus.questionShape === "destination" && isReturnDestinationInstruction(text)) return "destination";
+  if (focus.questionShape === "process" && isReturnProcessInstruction(text)) return "process";
+  if (/\b(?:contact|support|email|e-mail|phone|telefon|tel\.?|kontakt)\b[\s\S]*:\s*$/i.test(text)) return "contact";
+  if (/\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|package)\b[\s\S]*:\s*$/i.test(text)) return "tracking";
+  if (focus.questionShape === "timing" || /\b(?:when|how\s+long|refund|refundering|tilbagebetaling|pengene\s+tilbage|wann|wie\s+lange)\b[\s\S]*:\s*$/i.test(text)) return "timing";
+  if (focus.questionShape === "cost" || /\b(?:cost|price|fee|amount|pay|payer|omkostning|udgift|betaler|kosten|zahlt)\b[\s\S]*:\s*$/i.test(text)) return "cost";
+  if (focus.questionShape === "eligibility" || /\b(?:eligible|allowed|can|may|must|berettiget|tilladt|kan|må|darf|kann)\b[\s\S]*:\s*$/i.test(text)) return "eligibility";
+  if (focus.questionShape === "status" || /\b(?:status|state|levering|shipment|order)\b[\s\S]*:\s*$/i.test(text)) return "status";
+  return null;
+}
+
+function hasAnswerBearingValueMarker(value: string, cue: AnswerBearingCue) {
+  const text = value.trim();
+  const hasLinkOrContact = /https?:\/\/|mailto:|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|\+?\d[\d\s().-]{5,}/i.test(text);
+  const hasNumericValue = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:business\s+)?(?:days?|hours?|weeks?|months?|dage|timer|uger|måneder|tage|stunden|wochen|monate)\b|\b\d{2,}\b/i.test(text);
+  const hasCostPayer = /\b(?:pay|payer|paid|pays|responsib\w*|betaler|ansvar\w*|zahlt|verantwort\w*)\b/i.test(text);
+  if (cue === "eligibility") return hasLinkOrContact || hasNumericValue || /\b(?:yes|no|can|cannot|can't|may|must|required|eligible|allowed|still|ja|nej|kan|må|skal|berettiget|tilladt|darf|kann|muss|berechtigt)\b/i.test(text);
+  if (cue === "process") return isReturnProcessInstruction(text) || hasLinkOrContact;
+  if (cue === "status") return hasLinkOrContact || hasNumericValue || /\b(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervjs|zugestellt|versendet)\b/i.test(text);
+  if (cue === "cost") return hasLinkOrContact || hasNumericValue || hasCostPayer;
+  return hasLinkOrContact || hasNumericValue;
+}
+
+type AnswerCompletenessCandidate = {
+  value: string;
+  normalized: string;
+};
+
+type AnswerCompletenessContext = Pick<ResponseValidationContext, "customerMessage" | "interactionChannel" | "activeOrder" | "trustedCustomerIdentity" | "customerProvidedContext" | "proposedActions" | "getResults"> & {
+  preserveProcessConflicts?: boolean;
+};
+
+function normalizeAnswerCompletenessValue(value: string) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\s+/g, " ")
+    .replace(/[\s.,;:!?]+$/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function pushAnswerCompletenessCandidate(candidates: AnswerCompletenessCandidate[], value: unknown) {
+  const cleaned = String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\s]+/g, " ")
+    .replace(/[\s.,;!?]+$/g, "")
+    .trim();
+  const normalized = normalizeAnswerCompletenessValue(cleaned);
+  if (!cleaned || !normalized || candidates.some((candidate) => candidate.normalized === normalized)) return;
+  candidates.push({ value: cleaned, normalized });
+}
+
+function answerCompletenessMessageCue(message: string, focus: CustomerKnowledgeFocus): AnswerBearingCue | null {
+  const text = String(message ?? "");
+  if (focus.questionShape === "process") return "process";
+  if (focus.questionShape === "destination") return "destination";
+  if (focus.questionShape === "timing") return "timing";
+  if (focus.questionShape === "cost") return "cost";
+  if (focus.questionShape === "eligibility") return "eligibility";
+  if (focus.questionShape === "status"
+    && /\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|sporing|forsendelse)\b/i.test(text)) return "tracking";
+  if (focus.questionShape === "status") return "status";
+  if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) return "contact";
+  return null;
+}
+
+function answerCompletenessMessageCues(message: string, focus: CustomerKnowledgeFocus): AnswerBearingCue[] {
+  const text = String(message ?? "");
+  const cues: AnswerBearingCue[] = [];
+  if (focus.asksProcess) cues.push("process");
+  if (focus.asksReturnDestination) cues.push("destination");
+  if (focus.questionShape === "timing" || focus.asksRefundTiming) cues.push("timing");
+  if (focus.questionShape === "cost" || focus.asksShippingResponsibility) cues.push("cost");
+  if (focus.questionShape === "eligibility" || focus.asksEligibility) cues.push("eligibility");
+  if (focus.questionShape === "status"
+    && /\b(?:tracking|track(?:ing)?\s+(?:link|url|number)|shipment|parcel|sporing|forsendelse)\b/i.test(text)) cues.push("tracking");
+  if (focus.questionShape === "status") cues.push("status");
+  if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(text)) cues.push("contact");
+  return Array.from(new Set(cues));
+}
+
+function policyAnswerNeedsCustomerSpecificLookup(cue: AnswerBearingCue, message: string) {
+  if (cue !== "timing") return false;
+  const text = String(message ?? "");
+  if (isExplicitOrderReference(text)) return true;
+  return /\b(?:has|was|is|been|already|did|have)\b[\s\S]{0,40}\b(?:my|the)?\s*(?:refund|money\s+back|tilbagebetaling|pengene\s+tilbage|rückerstattung)\b/i.test(text)
+    || /\b(?:refund|refundering\w*|tilbagebetaling\w*|pengene\s+tilbage|rückerstattung)\b[\s\S]{0,40}\b(?:processed|issued|received|arrived|behandl\w*|modtag\w*|erhalten|bearbeitet)\b/i.test(text);
+}
+
+function physicalAddressMarker(value: string) {
+  return /\b(?:street|st\.?|road|avenue|lane|boulevard|vej|gade|strasse|straße|postcode|postal|city)\b|[\p{L}\p{N}]+(?:vej|gade)\b|\b\d{4,6}\s+[\p{L}][\p{L}'’-]*/iu.test(value);
+}
+
+function simpleAddressLabel(value: string) {
+  const text = value.trim();
+  return text.length >= 2
+    && text.length <= 80
+    && /^[\p{L}\p{N}][\p{L}\p{N} &'.,\-/]*$/u.test(text)
+    && !/\b(?:return|retur|refund|shipping|fragt|versand|opened|åbnet|contact|kontakt|portal|policy)\b/i.test(text);
+}
+
+function answerEvidenceUnits(value: string) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function answerProcessEvidenceUnits(value: string) {
+  return answerEvidenceUnits(String(value ?? "").replace(/\r?\n/g, " "));
+}
+
+function answerEvidenceSections(records: unknown[]) {
+  return records.flatMap((item) => {
+    const record = objectValue(item);
+    if (!record) return [];
+    const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
+    const sectionText = sections
+      .map((section) => objectValue(section)?.content ?? objectValue(section)?.text)
+      .filter((content): content is string => typeof content === "string" && content.trim().length > 0)
+      .map((content) => content.trim());
+    if (sectionText.length) return sectionText;
+    return typeof record.content === "string" && record.content.trim() ? [record.content.trim()] : [];
+  });
+}
+
+function answerEvidenceRecords(
+  basis: KnowledgeBasis,
+  context: ResponseValidationContext,
+  cue: AnswerBearingCue,
+) {
+  const evidence = resultFor(basis, context);
+  if (!evidence || evidence.result.status !== "ok") return [];
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return citedKnowledgeRecords(results, basis.field_paths).filter((item) => {
+    const record = objectValue(item);
+    if (!record) return false;
+    const authority = String(record.authority ?? "");
+    return authority === "authoritative" || (cue === "tracking" && authority === "operational");
+  });
+}
+
+function answerCompletenessCandidates(
+  cue: AnswerBearingCue,
+  evidenceTexts: string[],
+  customerMessage: string,
+  context?: AnswerCompletenessContext,
+) {
+  const candidates: AnswerCompletenessCandidate[] = [];
+  const processContext: AnswerCompletenessContext = {
+    customerMessage: context?.customerMessage ?? customerMessage,
+    interactionChannel: context?.interactionChannel,
+    activeOrder: context?.activeOrder,
+    trustedCustomerIdentity: context?.trustedCustomerIdentity,
+    customerProvidedContext: context?.customerProvidedContext,
+    proposedActions: context?.proposedActions,
+  };
+  const pushUrls = (text: string) => {
+    for (const match of text.match(/https?:\/\/[^\s<>)]+/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
+  };
+  const pushEmails = (text: string) => {
+    for (const match of text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi) ?? []) pushAnswerCompletenessCandidate(candidates, match);
+  };
+  const rawProcessUnits = cue === "process"
+    ? evidenceTexts
+      .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
+      .filter(isProcessAnswerBearingInstruction)
+      .filter((unit) => !isMerchantSideProcessInstruction(unit))
+    : [];
+  const processUnits = cue === "process"
+    ? rawProcessUnits
+      .flatMap((unit) => processInstructionCandidates(unit, processContext))
+    : [];
+  const preserveProcessConflicts = cue === "process"
+    && (context?.preserveProcessConflicts ?? hasContradictoryProcessInstructions(rawProcessUnits));
+
+  for (const evidenceText of evidenceTexts) {
+    if (cue === "destination") {
+      const lines = evidenceText.split(/\r?\n/);
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index].trim();
+        if (!line || !isConcreteReturnDestinationInstruction(line)) continue;
+        const inline = line.match(/https?:\/\/[^\s<>)]+/i)?.[0];
+        if (inline) pushAnswerCompletenessCandidate(candidates, inline);
+
+        const afterCue = line.replace(/^.*?(?::|\bto\b|\btil\b|\ban\b|\bzu\b)\s*/i, "").trim();
+        if (physicalAddressMarker(afterCue)) pushAnswerCompletenessCandidate(candidates, afterCue);
+
+        const block: string[] = [];
+        let nextIndex = index + 1;
+        while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex += 1;
+        for (; nextIndex < lines.length; nextIndex += 1) {
+          const next = lines[nextIndex].trim();
+          if (!next) break;
+          const nextIsAddress = physicalAddressMarker(next);
+          const nextCouldBeName = block.length === 0 && simpleAddressLabel(next) && physicalAddressMarker(lines[nextIndex + 1] ?? "");
+          const nextCouldBeCity = block.length > 0 && block.some(physicalAddressMarker) && simpleAddressLabel(next);
+          if (!nextIsAddress && !nextCouldBeName && !nextCouldBeCity) break;
+          block.push(next);
+        }
+        if (block.some(physicalAddressMarker)) pushAnswerCompletenessCandidate(candidates, block.join("\n"));
+        if (isReturnApprovalPrerequisite(line)) pushAnswerCompletenessCandidate(candidates, line);
+      }
+      const units = answerEvidenceUnits(evidenceText);
+      for (let unitIndex = 0; unitIndex < units.length; unitIndex += 1) {
+        const unit = units[unitIndex];
+        if (isConcreteReturnDestinationInstruction(unit) && physicalAddressMarker(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+        if (isConcreteReturnDestinationInstruction(unit)) {
+          pushUrls(unit);
+          pushUrls(units[unitIndex + 1] ?? "");
+        }
+        if (isReturnApprovalPrerequisite(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+      }
+      continue;
+    }
+
+    if (cue === "contact") {
+      pushEmails(evidenceText);
+      pushUrls(evidenceText);
+      for (const unit of answerEvidenceUnits(evidenceText)) {
+        if (/\b(?:contact|support|email|e-mail|phone|telephone|telefon|kontakt)\b/i.test(unit) && !/:\s*$/.test(unit)) {
+          const phone = unit.match(/\+?\d[\d\s().-]{5,}\d/)?.[0];
+          if (phone) pushAnswerCompletenessCandidate(candidates, phone);
+        }
+      }
+      continue;
+    }
+
+    if (cue === "tracking") {
+      if (/\b(?:link|url)\b/i.test(customerMessage)) pushUrls(evidenceText);
+      for (const unit of answerEvidenceUnits(evidenceText)) {
+        if (/(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervejs|zugestellt|versendet)/i.test(unit)
+          && /(?:tracking|shipment|parcel|package|order|sporing|forsendelse|pakke)/i.test(unit)) pushAnswerCompletenessCandidate(candidates, unit);
+      }
+      continue;
+    }
+
+    const units = cue === "process"
+      ? answerProcessEvidenceUnits(evidenceText)
+      : answerEvidenceUnits(evidenceText);
+    if (cue === "process") {
+      const processUnitsForEvidence = units
+        .filter(isProcessAnswerBearingInstruction)
+        .filter((unit) => !isMerchantSideProcessInstruction(unit));
+      const nextSteps = preserveProcessConflicts
+        ? processUnitsForEvidence
+        : processUnitsForEvidence
+          .flatMap((unit) => processInstructionCandidates(unit, processContext))
+          .slice(0, 1);
+      nextSteps.forEach((nextStep) => pushAnswerCompletenessCandidate(candidates, nextStep));
+    }
+    if (cue === "timing") units.filter(isRefundTiming).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "cost") units.filter(isReturnShippingResponsibility).forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "eligibility") units
+      .filter((unit) => isAnswerBearingEligibility(unit) || isReturnProhibition(unit) || isReturnEligibility(unit) || isReturnConditionConsequence(unit))
+      .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+    if (cue === "status") units
+      .filter((unit) => /(?:delivered|shipped|dispatched|processing|in transit|leveret|afsendt|behandles|undervejs|zugestellt|versendet)/i.test(unit))
+      .forEach((unit) => pushAnswerCompletenessCandidate(candidates, unit));
+  }
+  return candidates;
+}
+
+type EvidenceRecovery =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; candidate?: AnswerCompletenessCandidate };
+
+type PolicyRecoveryOptions = {
+  allowCustomerSpecificTiming?: boolean;
+};
+
+type ProcedureRecovery =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | { kind: "usable"; evidence: ResponseEvidenceRecord; resultIndex: number; blockIds: string[] };
+
+function successfulKnowledgeResults(context: Pick<ResponseValidationContext, "getResults">, toolName: string) {
+  return (context.getResults?.() ?? []).filter((evidence) => {
+    if (evidence.toolName !== toolName || evidence.result.status !== "ok") return false;
+    return Array.isArray(objectValue(evidence.result.data)?.results);
+  });
+}
+
+function timingCandidateDiagnosticsForContext(context: Pick<ResponseValidationContext, "getResults">): TimingCandidateDiagnostic[] {
+  return successfulKnowledgeResults(context, "search_policy").flatMap((evidence) => {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results.flatMap((record) => {
+      const value = objectValue(record);
+      if (!value || String(value.authority ?? "") !== "authoritative" || String(value.knowledge_type ?? "") !== "policy") return [];
+      return timingCandidateDiagnostics(answerEvidenceSections([value]));
+    });
+  }).slice(0, 64);
+}
+
+function uniqueAnswerCandidates(candidates: AnswerCompletenessCandidate[]) {
+  return candidates.filter((candidate, index) => candidates.findIndex((item) => item.normalized === candidate.normalized) === index);
+}
+
+function recoveryCandidatesForRecord(
+  cue: AnswerBearingCue,
+  record: JsonObject,
+  context: AnswerCompletenessContext,
+): AnswerCompletenessCandidate[] {
+  const candidates = answerCompletenessCandidates(
+    cue,
+    answerEvidenceSections([record]),
+    context.customerMessage ?? "",
+    context,
+  );
+  if (cue === "destination") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      /^https?:\/\//i.test(candidate.value) || physicalAddressMarker(candidate.value)));
+  }
+  if (cue === "contact") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      /https?:\/\/|mailto:|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|\+?\d[\d\s().-]{5,}/i.test(candidate.value)));
+  }
+  if (cue === "cost") {
+    return uniqueAnswerCandidates(candidates.filter((candidate) =>
+      isPayerProposition(candidate.value)));
+  }
+  if (cue === "eligibility") {
+    const stateCandidates = candidates.filter((candidate) =>
+      isAnswerBearingEligibility(candidate.value) || isReturnProhibition(candidate.value) || isReturnEligibility(candidate.value));
+    const consequenceCandidates = candidates.filter((candidate) => isReturnConditionConsequence(candidate.value));
+    const relevant = uniqueAnswerCandidates([...stateCandidates, ...consequenceCandidates]);
+    if (!stateCandidates.length) return [];
+    if (!consequenceCandidates.length) return relevant;
+    return [{
+      value: relevant.map((candidate) => candidate.value).join(" "),
+      normalized: normalizeAnswerCompletenessValue(relevant.map((candidate) => candidate.value).join(" ")),
+    }];
+  }
+  return uniqueAnswerCandidates(candidates);
+}
+
+function mergeRecordAnswerCandidates(cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
+  const unique = uniqueAnswerCandidates(candidates);
+  if (unique.length <= 1) return unique;
+  if (cue === "eligibility") {
+    const stateCandidates = unique.filter((candidate) =>
+      isAnswerBearingEligibility(candidate.value) || isReturnProhibition(candidate.value) || isReturnEligibility(candidate.value));
+    const consequenceCandidates = unique.filter((candidate) => isReturnConditionConsequence(candidate.value));
+    if (!stateCandidates.length) return [];
+    if (!consequenceCandidates.length) return stateCandidates;
+  }
+  if (cue === "timing" || cue === "cost") {
+    // Multiple answer-bearing sentences from one authoritative policy can be
+    // complementary (for example, merchant processing followed by payment
+    // provider display time). Keep the relation instead of treating every
+    // sentence as a conflicting scalar value.
+    return [{
+      value: unique.map((candidate) => candidate.value).join(" "),
+      normalized: normalizeAnswerCompletenessValue(unique.map((candidate) => candidate.value).join(" ")),
+    }];
+  }
+  return unique;
+}
+
+function recoverPolicyAnswer(
+  context: AnswerCompletenessContext,
+  cue: AnswerBearingCue,
+  options: PolicyRecoveryOptions = {},
+): EvidenceRecovery {
+  if (!options.allowCustomerSpecificTiming
+    && policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")) return { kind: "none" };
+  for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data : null;
+    if (!results) continue;
+    const records = (Array.isArray(data.results) ? data.results : []).map((value, resultIndex) => ({
+      record: objectValue(value),
+      resultIndex,
+      rank: Number(objectValue(value)?.rank ?? resultIndex + 1),
+    })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
+      Boolean(item.record) && String(item.record.authority ?? "") === "authoritative" && String(item.record.knowledge_type ?? "") === "policy");
+    const preserveProcessConflicts = cue === "process" && hasContradictoryProcessInstructions(
+      records
+        .flatMap((item) => answerEvidenceSections([item.record]))
+        .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
+        .filter(isProcessAnswerBearingInstruction),
+    );
+    const candidateContext = { ...context, preserveProcessConflicts };
+    const matches = records.flatMap((item) => {
+      const candidates = mergeRecordAnswerCandidates(cue, recoveryCandidatesForRecord(cue, item.record, candidateContext));
+      return candidates.length ? [{ ...item, candidates }] : [];
+    });
+    if (!matches.length) continue;
+    const candidateSets = matches.map((item) => item.candidates.map((candidate) => candidate.normalized).sort().join("\u001f"));
+    const sameAnswerAcrossRecords = candidateSets.every((value) => value === candidateSets[0]);
+    if (!sameAnswerAcrossRecords) return { kind: "ambiguous" };
+    const candidates = uniqueAnswerCandidates(matches[0].candidates);
+    if (candidates.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
+  }
+  return { kind: "none" };
+}
+
+function shippingMethodCandidatesForRecord(
+  record: JsonObject,
+  context: AnswerCompletenessContext,
+) {
+  const units = answerEvidenceSections([record])
+    .flatMap((evidenceText) => answerEvidenceUnits(evidenceText))
+    .filter(isReturnShippingMethodInstruction)
+    .filter((unit) => !isMerchantSideProcessInstruction(unit))
+    .filter((unit) => !isSatisfiedSupportContactPrerequisite(unit, context));
+  return uniqueAnswerCandidates(
+    units.map((unit) => ({
+      value: unit,
+      normalized: normalizeAnswerCompletenessValue(unit),
+    })),
+  );
+}
+
+function mergedFacetCandidates(candidates: AnswerCompletenessCandidate[]) {
+  const unique = uniqueAnswerCandidates(candidates);
+  if (unique.length <= 1) return unique;
+  const value = unique.map((candidate) => candidate.value).join(" ");
+  return [{ value, normalized: normalizeAnswerCompletenessValue(value) }];
+}
+
+function recoverShippingMethodAnswer(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+): EvidenceRecovery {
+  for (const evidence of successfulKnowledgeResults(context, "search_policy").reverse()) {
+    const data = objectValue(evidence.result.data);
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const records = results.map((value, resultIndex) => ({
+      record: objectValue(value),
+      resultIndex,
+      rank: Number(objectValue(value)?.rank ?? resultIndex + 1),
+    })).filter((item): item is { record: JsonObject; resultIndex: number; rank: number } =>
+      Boolean(item.record)
+      && String(item.record.authority ?? "") === "authoritative"
+      && String(item.record.knowledge_type ?? "") === "policy");
+    const matches = records.flatMap((item) => {
+      const candidates = mergedFacetCandidates(shippingMethodCandidatesForRecord(item.record, context));
+      return candidates.length ? [{ ...item, candidates }] : [];
+    });
+    if (!matches.length) continue;
+    const candidateSets = matches.map((item) => item.candidates.map((candidate) => candidate.normalized).sort().join("\u001f"));
+    if (!candidateSets.every((value) => value === candidateSets[0])) return { kind: "ambiguous" };
+    const candidates = uniqueAnswerCandidates(matches[0].candidates);
+    if (candidates.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: matches[0].resultIndex, candidate: candidates[0] };
+  }
+  return { kind: "none" };
+}
+
+type ActionablePolicyFacetKind = "eligibility" | "destination" | "shipping_method" | "cost" | "timing" | "process";
+type ActionablePolicyFacetStatus = "satisfied" | "required" | "useful" | "irrelevant" | "ambiguous" | "unavailable";
+type ActionablePolicyFacet = {
+  kind: ActionablePolicyFacetKind;
+  cue: AnswerBearingCue;
+  status: ActionablePolicyFacetStatus;
+  recovery: EvidenceRecovery;
+};
+type ActionablePolicyPlan = {
+  task: "return_request";
+  facets: ActionablePolicyFacet[];
+};
+
+function processInstructionState(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+) {
+  const instructions = successfulKnowledgeResults(context, "search_policy")
+    .flatMap((evidence) => {
+      const data = objectValue(evidence.result.data);
+      const records = Array.isArray(data?.results) ? data.results : [];
+      return records
+        .filter((value) => {
+          const record = objectValue(value);
+          return Boolean(record)
+            && String(record.authority ?? "") === "authoritative"
+            && String(record.knowledge_type ?? "") === "policy";
+        })
+        .flatMap((record) => answerEvidenceSections([objectValue(record)!]))
+        .flatMap((evidenceText) => answerProcessEvidenceUnits(evidenceText))
+        .filter(isProcessAnswerBearingInstruction)
+        .flatMap((unit) => processInstructionCandidates(unit, context));
+    });
+  return {
+    hasInstructions: instructions.length > 0,
+    hasRemaining: instructions.length > 0,
+  };
+}
+
+function actionablePolicyPlan(
+  context: Pick<ResponseValidationContext, "customerMessage" | "getResults" | "interactionChannel">,
+): ActionablePolicyPlan | null {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  if (!focus.hasReturnIntent || !focus.asksProcess) return null;
+
+  const processState = processInstructionState(context);
+  const facets = [
+    {
+      kind: "eligibility",
+      cue: "eligibility",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "eligibility"),
+    },
+    {
+      kind: "destination",
+      cue: "destination",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "destination"),
+    },
+    {
+      kind: "shipping_method",
+      cue: "process",
+      status: "required",
+      recovery: recoverShippingMethodAnswer(context),
+    },
+    {
+      kind: "cost",
+      cue: "cost",
+      status: "required",
+      recovery: recoverPolicyAnswer(context, "cost"),
+    },
+    {
+      kind: "timing",
+      cue: "timing",
+      status: "useful",
+      recovery: recoverPolicyAnswer(context, "timing", { allowCustomerSpecificTiming: true }),
+    },
+    {
+      kind: "process",
+      cue: "process",
+      status: processState.hasRemaining
+        ? "required"
+        : processState.hasInstructions
+          ? "satisfied"
+          : "unavailable",
+      recovery: recoverPolicyAnswer(context, "process"),
+    },
+  ] satisfies ActionablePolicyFacet[];
+  const normalizedFacets: ActionablePolicyFacet[] = facets.map((facet) => ({
+    ...facet,
+    status: facet.recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : facet.recovery.kind === "usable"
+        ? facet.status
+        : facet.status === "satisfied"
+          ? "satisfied"
+          : "unavailable",
+  } as ActionablePolicyFacet));
+
+  return {
+    task: "return_request",
+    facets: normalizedFacets.filter((facet) => facet.status !== "unavailable"),
+  };
+}
+
+function actionablePolicyFacetCovered(
+  facet: ActionablePolicyFacet,
+  segments: ResponseSegment[],
+  context: ResponseValidationContext,
+) {
+  if (facet.status === "satisfied") return true;
+  const recovery = facet.recovery;
+  if (recovery.kind !== "usable" || !recovery.candidate) return false;
+  const candidate = recovery.candidate;
+  return segments.some((segment) => {
+    if (segment.type !== "knowledge_guidance" || !isPolicyKnowledgeBasis(segment.basis, context)) return false;
+    if (normalizeAnswerCompletenessValue(segment.text).includes(candidate.normalized)) return true;
+    if (facet.kind === "shipping_method") {
+      return isReturnShippingMethodInstruction(segment.text);
+    }
+    if (facet.kind === "eligibility") {
+      return isAnswerBearingEligibility(segment.text)
+        || isReturnProhibition(segment.text)
+        || isReturnEligibility(segment.text)
+        || isReturnConditionConsequence(segment.text);
+    }
+    if (facet.kind === "destination") {
+      return isReturnDestinationInstruction(segment.text)
+        && (/https?:\/\//i.test(segment.text) || physicalAddressMarker(segment.text));
+    }
+    if (facet.kind === "cost") return isPayerProposition(segment.text);
+    if (facet.kind === "timing") return isRefundTiming(segment.text);
+    return isReturnProcessInstruction(segment.text) || isCustomerContentRequirement(segment.text);
+  });
+}
+
+function actionablePolicyPlanComplete(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+  plan: ActionablePolicyPlan | null,
+) {
+  if (!plan) return true;
+  return !plan.facets.some((facet) =>
+    (facet.status === "required" || facet.status === "useful")
+    && !actionablePolicyFacetCovered(facet, validation.approvedSegments, context));
+}
+
+function approvedSegmentResolvesCue(
+  segment: ResponseSegment,
+  cue: AnswerBearingCue,
+  context: ResponseValidationContext,
+) {
+  if (segment.type === "question" || segment.type === "limitation" || segment.type === "acknowledgement") return false;
+
+  if (segment.type === "procedure_guidance") return cue === "process";
+  if (segment.type === "fact") return cue === "status";
+  if (segment.type === "action_offer") return cue === "process";
+  if (segment.type !== "knowledge_guidance") return false;
+
+  const records = answerEvidenceRecords(segment.basis, context, cue);
+  const candidates = answerCompletenessCandidates(
+    cue,
+    answerEvidenceSections(records),
+    context.customerMessage ?? "",
+    context,
+  );
+  if (candidates.length && answerCompletenessValuePresent(segment.text, cue, candidates)) return true;
+
+  // A model may faithfully answer in language that is not an exact substring
+  // of the cited source. Keep this fallback limited to the same answer-bearing
+  // classifiers used by deterministic recovery; it never treats a question
+  // or a generic acknowledgement as resolving the intent.
+  if (cue === "timing") return isRefundTiming(segment.text);
+  if (cue === "cost") return isPayerProposition(segment.text);
+  if (cue === "eligibility") {
+    return isAnswerBearingEligibility(segment.text)
+      || isReturnProhibition(segment.text)
+      || isReturnEligibility(segment.text)
+      || isReturnConditionConsequence(segment.text);
+  }
+  if (cue === "destination") return isReturnDestinationInstruction(segment.text) && hasAnswerBearingValueMarker(segment.text, cue);
+  if (cue === "process") return isReturnProcessInstruction(segment.text) || hasAnswerBearingValueMarker(segment.text, cue);
+  return hasAnswerBearingValueMarker(segment.text, cue);
+}
+
+function approvedSegmentsResolveIntent(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+  cues: AnswerBearingCue[],
+  plan: ActionablePolicyPlan | null = actionablePolicyPlan(context),
+) {
+  if (!cues.length) return true;
+  return cues.every((cue) => validation.approvedSegments.some((segment) => approvedSegmentResolvesCue(segment, cue, context)))
+    && actionablePolicyPlanComplete(validation, context, plan);
+}
+
+/**
+ * An approved segment can still be a non-answer clarification. Prefer the
+ * deterministic evidence fallback only when the customer intent is otherwise
+ * resolvable from authoritative policy evidence. This keeps required
+ * customer-specific clarifications and ambiguous evidence fail-closed.
+ */
+export function shouldPreferAuthoritativeEvidenceFallback(
+  validation: Pick<ResponseValidationResult, "approvedSegments">,
+  context: ResponseValidationContext,
+) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  const plan = actionablePolicyPlan(context);
+  const hasSafeActionableComposition = Boolean(
+    plan
+    && !plan.facets.some((facet) => facet.status === "ambiguous")
+    && composeActionableResponse(validation.approvedSegments, context),
+  );
+  if (hasSafeActionableComposition) return false;
+  if (plan?.facets.some((facet) =>
+    facet.status === "ambiguous"
+    || ((facet.status === "required" || facet.status === "useful")
+      && !actionablePolicyFacetCovered(facet, validation.approvedSegments, context)))) {
+    return true;
+  }
+  if (!cues.length || approvedSegmentsResolveIntent(validation, context, cues)) return false;
+  return cues.some((cue) => recoverPolicyAnswer(context, cue).kind === "usable");
+}
+
+/**
+ * Returns only propositions that can be resolved from one or more successful,
+ * authoritative policy results. This is also used by the transport fallback
+ * path when the SDK cannot produce a structured final output.
+ */
+export function recoverAuthoritativePolicyAnswer(
+  context: AnswerCompletenessContext,
+) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const values: string[] = [];
+  for (const cue of answerCompletenessMessageCues(context.customerMessage ?? "", focus)) {
+    const recovery = recoverPolicyAnswer(context, cue);
+    if (recovery.kind === "usable" && recovery.candidate) values.push(recovery.candidate.value);
+  }
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).join("\n\n") || null;
+}
+
+function recoverProcedureAnswer(context: ResponseValidationContext): ProcedureRecovery {
+  const customerMessage = [
+    context.customerMessage,
+    context.customerProvidedContext?.product,
+    context.customerProvidedContext?.platform,
+    context.customerProvidedContext?.issue,
+  ].filter(Boolean).join(" ");
+  for (const evidence of successfulKnowledgeResults(context, "search_procedures").reverse()) {
+    const data = objectValue(evidence.result.data);
+    if (data?.task_specificity !== "sufficient" || data?.procedure_evidence_quality !== "usable") continue;
+    const results = Array.isArray(data.results) ? data.results : [];
+    const matches = results.flatMap((value, resultIndex) => {
+      const record = objectValue(value);
+      if (!record || String(record.authority ?? "") !== "authoritative" || String(record.knowledge_type ?? "") !== "procedural") return [];
+      const blocks = procedureBlocks(evidence.result, resultIndex);
+      if (!blocks.length || blocks.length > 32 || blocks.some((entry) => !meaningful(entry.block.text))) return [];
+      if (procedureProductMismatch(results, customerMessage, resultIndex, -1).length) return [];
+      return [{
+        record,
+        resultIndex,
+        rank: Number(record.rank ?? resultIndex + 1),
+        blockIds: blocks.map((entry) => entry.blockId),
+      }];
+    });
+    if (!matches.length) continue;
+    const bestRank = Math.min(...matches.map((item) => item.rank));
+    const best = matches.filter((item) => item.rank === bestRank);
+    if (best.length !== 1) return { kind: "ambiguous" };
+    return { kind: "usable", evidence, resultIndex: best[0].resultIndex, blockIds: best[0].blockIds };
+  }
+  return { kind: "none" };
+}
+
+function looksLikeGenericEvidenceFallback(value: string) {
+  return /\b(?:couldn['’]?t|cannot|can't|unable|no\s+(?:support\s+)?(?:procedure|policy|guidance)|not\s+(?:available|found|verified)|try\s+again|safely\s+complete|verify\s+(?:a\s+)?(?:support\s+)?(?:procedure|policy))\b/i.test(value);
+}
+
+function isReplaceableEvidenceFallback(
+  segment: ResponseSegment,
+  context: ResponseValidationContext,
+  toolName: string,
+) {
+  if (!(segment.type === "limitation" || segment.type === "knowledge_guidance" || segment.type === "question")) return false;
+  if (!looksLikeGenericEvidenceFallback(segment.text ?? "")) return false;
+  const basis = "basis" in segment ? segment.basis : null;
+  const evidence = basis ? resultFor(basis, context) : undefined;
+  return evidence?.toolName === toolName && evidence.result.status === "ok";
+}
+
+function recoveredPolicySegment(recovery: EvidenceRecovery): ResponseSegment | null {
+  if (recovery.kind !== "usable" || !recovery.candidate) return null;
+  return {
+    type: "knowledge_guidance",
+    text: recovery.candidate.value,
+    basis: {
+      result_id: recovery.evidence.resultId,
+      field_paths: [`results[${recovery.resultIndex}]`],
+    },
+  } satisfies Extract<ResponseSegment, { type: "knowledge_guidance" }>;
+}
+
+/**
+ * Recovered policy text is copied from an already selected authoritative
+ * candidate. Keep grounding and operational-safety validation, but do not run
+ * model-claim policy conflict detection over that source text a second time.
+ */
+function validateRecoveredPolicySegment(
+  segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>,
+  context: ResponseValidationContext,
+  index: number,
+) {
+  const issues = validateKnowledgeBasis(segment.basis, context, index);
+  if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
+    issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
+  }
+  if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
+    issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+  }
+  return issues;
+}
+
+function recoveredProcedureSegment(recovery: ProcedureRecovery): ResponseSegment | null {
+  if (recovery.kind !== "usable") return null;
+  return {
+    type: "procedure_guidance",
+    text: "Relevant support steps.",
+    basis: {
+      result_id: recovery.evidence.resultId,
+      field_paths: [`results[${recovery.resultIndex}]`],
+    },
+    block_ids: recovery.blockIds,
+  } satisfies Extract<ResponseSegment, { type: "procedure_guidance" }>;
+}
+
+function answerCompletenessValuePresent(value: string, cue: AnswerBearingCue, candidates: AnswerCompletenessCandidate[]) {
+  const normalizedValue = normalizeAnswerCompletenessValue(value);
+  if (candidates.some((candidate) => normalizedValue.includes(candidate.normalized))) return true;
+  if (cue === "process" && candidates.some((candidate) => {
+    const sourceRequirement = candidate.value.replace(/^please\s+provide\s+/i, "");
+    const normalizedRequirement = normalizeAnswerCompletenessValue(sourceRequirement);
+    return normalizedRequirement.length > 3 && normalizedValue.includes(normalizedRequirement);
+  })) return true;
+  if (cue === "cost") {
+    const hasAmount = /(?:€|eur|usd|dkk|gbp|£|\$)\s*\d|\b\d+(?:[.,]\d+)?\s*(?:kr|dkk|eur|euro|euros?)\b/i.test(value);
+    const hasNamedPayer = isPayerProposition(value);
+    return hasAmount || hasNamedPayer;
+  }
+  return hasAnswerBearingValueMarker(value, cue);
+}
+
+function restoreAnswerCompletenessValue(value: string, focus: CustomerKnowledgeFocus, cue: AnswerBearingCue, candidate: AnswerCompletenessCandidate) {
+  const lines = String(value ?? "").trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const cueIndex = lines.findIndex((line) => answerBearingCueFor(line, focus) === cue);
+  if (cueIndex >= 0) {
+    lines.splice(cueIndex + 1, 0, ...candidate.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+    return lines.join("\n");
+  }
+  return `${String(value ?? "").trim()}\n\n${candidate.value}`.trim();
+}
+
+/**
+ * Ensures a model cannot silently omit the smallest answer-bearing value that
+ * is already present in the current authoritative evidence. This stays at the
+ * contract boundary: it neither retrieves new data nor asks the model to
+ * repair its own output. Server-recorded evidence may be used when the model
+ * emitted a generic fallback instead of citing the result itself.
+ */
+export function ensureAnswerCompleteness(
+  validation: ResponseValidationResult,
+  context: ResponseValidationContext,
+): ResponseValidationResult {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
+  const plan = actionablePolicyPlan(context);
+  const completenessDiagnostics: ResponseCompletenessDiagnostics = {
+    entered: true,
+    cues: [...cues],
+    recovery: [],
+    intent_resolved_by_approved_segment: approvedSegmentsResolveIntent(validation, context, cues, plan),
+    ...(cues.includes("timing") ? { timing_candidates: timingCandidateDiagnosticsForContext(context) } : {}),
+  };
+  if (!validation.schemaValid && !cues.length) {
+    return { ...validation, completenessDiagnostics };
+  }
+  const procedureRequested = /\b(?:procedure|steps?|troubleshoot(?:ing)?|pair(?:ing)?|connect(?:ion|ing)?|reset|firmware|microphone|interference|not\s+working|won['’]?t|will\s+not|problem|issue|fejl|forbinder|parre|funktioniert|verbinden|koppeln)\b/i.test([
+    context.customerMessage,
+    context.customerProvidedContext?.issue,
+  ].filter(Boolean).join(" "));
+
+  const approvedSegments: ResponseSegment[] = [];
+  const rejectedSegments = [...validation.rejectedSegments];
+  const issues = [...validation.issues];
+  const restoredValues = new Set<string>();
+  let changed = false;
+
+  validation.approvedSegments.forEach((segment) => {
+    if (segment.type !== "knowledge_guidance") {
+      approvedSegments.push(segment);
+      return;
+    }
+    let currentSegment = segment;
+    let rejected = false;
+    for (const cue of cues) {
+      const records = answerEvidenceRecords(currentSegment.basis, context, cue);
+      const candidates = answerCompletenessCandidates(
+        cue,
+        answerEvidenceSections(records),
+        context.customerMessage ?? "",
+        context,
+      );
+      if (!candidates.length || answerCompletenessValuePresent(currentSegment.text, cue, candidates)) {
+        candidates.forEach((candidate) => {
+          if (normalizeAnswerCompletenessValue(currentSegment.text).includes(candidate.normalized)) restoredValues.add(candidate.normalized);
+        });
+        continue;
+      }
+
+      const index = validation.parsed?.segments.indexOf(segment) ?? validation.approvedSegments.indexOf(segment);
+      if (candidates.length === 1 && !restoredValues.has(candidates[0].normalized)) {
+        currentSegment = {
+          ...currentSegment,
+          text: restoreAnswerCompletenessValue(currentSegment.text, focus, cue, candidates[0]),
+        };
+        restoredValues.add(candidates[0].normalized);
+        completenessDiagnostics.recovery.push({ type: cue, result: "recovered" });
+        changed = true;
+        continue;
+      }
+
+      const issue: ResponseValidationIssue = {
+        index,
+        code: candidates.length > 1 ? "answer_value_ambiguous" : "answer_value_duplicate",
+        message: candidates.length > 1
+          ? "The selected evidence contains multiple conflicting answer values, so the response was withheld rather than guessing."
+          : "The response repeated an incomplete answer-bearing segment, so it was withheld rather than rendered twice.",
+      };
+      rejectedSegments.push({ index, type: segment.type, issues: [issue] });
+      issues.push(issue);
+      rejected = true;
+      changed = true;
+      break;
+    }
+    if (!rejected) approvedSegments.push(currentSegment);
+  });
+
+  const recoveredSegments: ResponseSegment[] = [];
+  const recoveredTools = new Set<string>();
+  for (const cue of cues) {
+    const recovery = recoverPolicyAnswer(context, cue);
+    let recoveryResult: CompletenessRecoveryDiagnostic["result"] = recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : recovery.kind === "usable"
+        ? "unavailable"
+        : policyAnswerNeedsCustomerSpecificLookup(cue, context.customerMessage ?? "")
+          ? "skipped"
+          : "unavailable";
+    if (recovery.kind !== "usable") {
+      completenessDiagnostics.recovery.push({ type: cue, result: recoveryResult });
+      continue;
+    }
+    const hasAnswer = approvedSegments.some((segment) => {
+      if (segment.type !== "knowledge_guidance") return false;
+      const evidence = resultFor(segment.basis, context);
+      if (evidence?.toolName !== "search_policy") return false;
+      const candidates = answerCompletenessCandidates(
+        cue,
+        answerEvidenceSections(answerEvidenceRecords(segment.basis, context, cue)),
+        context.customerMessage ?? "",
+        context,
+      );
+      return candidates.length > 0 && answerCompletenessValuePresent(segment.text, cue, candidates);
+    });
+    if (hasAnswer) {
+      recoveryResult = "skipped";
+    } else {
+      const segment = recoveredPolicySegment(recovery);
+      if (segment?.type === "knowledge_guidance" && !validateRecoveredPolicySegment(segment, context, -1).length) {
+        recoveredSegments.push(segment);
+        recoveredTools.add("search_policy");
+        recoveryResult = "recovered";
+        changed = true;
+      }
+    }
+    completenessDiagnostics.recovery.push({ type: cue, result: recoveryResult });
+  }
+
+  for (const facet of plan?.facets ?? []) {
+    if (facet.kind === "process") continue;
+    if (facet.status === "ambiguous") {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "ambiguous" });
+      continue;
+    }
+    if (facet.recovery.kind !== "usable") {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "unavailable" });
+      continue;
+    }
+    if (actionablePolicyFacetCovered(facet, [...recoveredSegments, ...approvedSegments], context)) {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "skipped" });
+      continue;
+    }
+    const segment = recoveredPolicySegment(facet.recovery);
+    const segmentIssues = segment && segment.type === "knowledge_guidance"
+      ? validateRecoveredPolicySegment(segment, context, -1)
+      : [];
+    if (segment && !segmentIssues.length) {
+      recoveredSegments.push(segment);
+      recoveredTools.add("search_policy");
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "recovered" });
+      changed = true;
+    } else {
+      completenessDiagnostics.recovery.push({ type: facet.kind, result: "unavailable" });
+    }
+  }
+
+  if (procedureRequested) {
+    const recovery = recoverProcedureAnswer(context);
+    let recoveryResult: CompletenessRecoveryDiagnostic["result"] = recovery.kind === "ambiguous"
+      ? "ambiguous"
+      : recovery.kind === "usable"
+        ? "unavailable"
+        : "unavailable";
+    const hasProcedure = approvedSegments.some((segment) => segment.type === "procedure_guidance");
+    if (recovery.kind === "usable" && !hasProcedure) {
+      const segment = recoveredProcedureSegment(recovery);
+      if (segment && !validateSegment(segment, context, -1).length) {
+        recoveredSegments.push(segment);
+        recoveredTools.add("search_procedures");
+        recoveryResult = "recovered";
+        changed = true;
+      }
+    } else if (hasProcedure) {
+      recoveryResult = "skipped";
+    }
+    completenessDiagnostics.recovery.push({ type: "procedure", result: recoveryResult });
+  }
+
+  if (recoveredTools.size) {
+    for (let index = approvedSegments.length - 1; index >= 0; index -= 1) {
+      const segment = approvedSegments[index];
+      if ([...recoveredTools].some((toolName) => isReplaceableEvidenceFallback(segment, context, toolName))) {
+        approvedSegments.splice(index, 1);
+        changed = true;
+      }
+    }
+  }
+
+  if (plan) {
+    completenessDiagnostics.intent_resolved_by_approved_segment = approvedSegmentsResolveIntent(
+      { approvedSegments: [...recoveredSegments, ...approvedSegments] },
+      context,
+      cues,
+      plan,
+    );
+  }
+
+  if (!changed) return { ...validation, completenessDiagnostics };
+  return {
+    ...validation,
+    allValid: validation.schemaValid && rejectedSegments.length === 0,
+    approvedSegments: [...recoveredSegments, ...approvedSegments],
+    rejectedSegments,
+    issues,
+    completenessDiagnostics,
+  };
+}
+
+function isAnswerBearingContinuation(value: string, cue: AnswerBearingCue) {
+  const text = value.trim();
+  const hasAddressMarker = /\b(?:street|road|avenue|vej|gade|strasse|straße|postcode|postal|city|by)\b|\b\d{4,6}\s+[A-Za-zÀ-ÿ]/i.test(text);
+  const looksLikePolicyText = /\b(?:returns?|retur\w*|refund\w*|shipping|fragt\w*|versand\w*|opened|åbnet|geöffnet|tracking|efterkrav)\b/i.test(text)
+    && (/[.!?]$/.test(text) || /\b(?:are|is|can|must|will|within|after|recommend|you|we|not|should|may|er|kan|skal|vil|inden|efter|anbefal\w*|du|vi|ikke|bør|darf|muss|wird|nach|empfehl\w*)\b/i.test(text));
+  if (!text) return false;
+  if (cue === "destination"
+    && !/^https?:\/\//i.test(text)
+    && !hasAddressMarker
+    && looksLikePolicyText) {
+    return false;
+  }
+  return isAddressContinuation(text) || hasAnswerBearingValueMarker(text, cue);
+}
+
+function answerBearingContinuationLines(lines: string[], startIndex: number, cue: AnswerBearingCue) {
+  const continuation: string[] = [];
+  for (let index = startIndex; index < lines.length; index += 1) {
+    if (!isAnswerBearingContinuation(lines[index], cue)) break;
+    continuation.push(lines[index]);
+  }
+  return continuation;
+}
+
+function answerBearingContinuationPrefix(value: string, cue: AnswerBearingCue) {
+  const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const continuation = answerBearingContinuationLines(lines, 0, cue);
+  return continuation.length > 0 && continuation.some((line) => hasAnswerBearingValueMarker(line, cue))
+    ? continuation
+    : [];
+}
+
+function mergeAnswerBearingParagraphs(paragraphs: string[], focus: CustomerKnowledgeFocus) {
+  const merged: string[] = [];
+  paragraphs.forEach((paragraph) => {
+    const previous = merged[merged.length - 1];
+    const previousLines = previous?.split(/\n+/).map((line) => line.trim()).filter(Boolean) ?? [];
+    const previousLine = previousLines[previousLines.length - 1];
+    const cue = previousLine ? answerBearingCueFor(previousLine, focus) : null;
+    const continuation = cue && previous ? answerBearingContinuationPrefix(paragraph, cue) : [];
+    if (continuation.length > 0 && previous) {
+      merged[merged.length - 1] = `${previous}\n${continuation.join("\n")}`;
+      const remaining = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(continuation.length);
+      if (remaining.length > 0) merged.push(remaining.join("\n"));
+    } else {
+      merged.push(paragraph);
+    }
+  });
+  return merged;
+}
+
+function focusedPolicyClause(value: string, focus: CustomerKnowledgeFocus) {
+  if (focus.questionShape !== "destination" && focus.questionShape !== "cost") return value;
+  if (!isReturnShippingResponsibility(value)) return value;
+  const clauses = value.split(/,\s+(?:and|og|und)\s+/i);
+  if (clauses.length <= 1) return value;
+  return clauses.find(isReturnShippingResponsibility) ?? value;
+}
+
+function policySentencePriority(value: string, focus: CustomerKnowledgeFocus) {
+  if (focus.questionShape === "eligibility") {
+    return isReturnConditionConsequence(value) ? 0 : 1;
+  }
+  if (focus.questionShape === "timing") return isRefundTiming(value) ? 0 : 1;
+  if (focus.questionShape === "destination") return isReturnDestinationInstruction(value) ? 0 : 1;
+  if (focus.questionShape === "process") return isReturnProcessInstruction(value) ? 0 : 1;
+  return 0;
+}
+
+type PolicyCompositionOptions = {
+  includeShippingResponsibility?: boolean;
+  hasDirectDestination?: boolean;
+};
+
+function composePolicyLine(value: string, focus: CustomerKnowledgeFocus, options: PolicyCompositionOptions = {}) {
+  const includeShippingResponsibility = options.includeShippingResponsibility !== false;
+  const sentences = value.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length <= 1) return value;
+
+  let retained = sentences.filter((candidate) => {
+    if (focus.questionShape === "eligibility") return isReturnEligibility(candidate) || isAnswerBearingEligibility(candidate) || isReturnConditionConsequence(candidate);
+    if (focus.questionShape === "timing") return isRefundTiming(candidate);
+    if (focus.questionShape === "cost") return isReturnShippingResponsibility(candidate);
+    if (focus.questionShape === "destination") return isReturnDestinationInstruction(candidate)
+      || isReturnApprovalPrerequisite(candidate)
+      || (options.hasDirectDestination !== true && isReturnProcessInstruction(candidate))
+      || (includeShippingResponsibility && isReturnShippingResponsibility(candidate));
+    if (focus.questionShape === "process") return isReturnProcessInstruction(candidate) || isReturnEligibility(candidate) || isReturnApprovalPrerequisite(candidate);
+    if (isReturnConditionConsequence(candidate)) return focus.mentionsCondition;
+    if (isReturnShippingResponsibility(candidate)) return focus.asksShippingResponsibility;
+    if (isRefundTiming(candidate)) return focus.asksRefundTiming;
+    return true;
+  }).map((candidate) => focusedPolicyClause(candidate, focus));
+  if (!retained.length) return value;
+
+  if (focus.questionShape === "eligibility") {
+    const condition = retained.filter(isReturnConditionConsequence);
+    const eligibility = retained.filter((candidate) => isReturnEligibility(candidate) || isAnswerBearingEligibility(candidate));
+    if (condition.length || eligibility.length) retained = [...eligibility, ...condition];
+  } else if (focus.questionShape === "timing") {
+    const timing = retained.filter(isRefundTiming);
+    if (timing.length) retained = timing;
+  } else if (focus.questionShape === "destination") {
+    const destination = retained.filter((candidate) => isReturnDestinationInstruction(candidate)
+      || isReturnApprovalPrerequisite(candidate)
+      || (options.hasDirectDestination !== true && isReturnProcessInstruction(candidate))
+      || (includeShippingResponsibility && isReturnShippingResponsibility(candidate)));
+    if (destination.length) retained = destination;
+  } else if (focus.questionShape === "cost") {
+    const shipping = retained.filter(isReturnShippingResponsibility);
+    if (shipping.length) retained = shipping;
+  }
+
+  if (focus.questionShape === "process") {
+    retained = retained
+      .map((candidate, index) => ({ candidate, index }))
+      .sort((left, right) => policySentencePriority(left.candidate, focus) - policySentencePriority(right.candidate, focus) || left.index - right.index)
+      .map(({ candidate }) => candidate);
+  }
+  return retained.join(" ");
+}
+
+function isAddressContinuation(value: string) {
+  const line = value.trim();
+  if (!line || /[.!?]$/.test(line)) return false;
+  return /\d|\b(?:street|road|avenue|vej|gade|strasse|straße|city|by|postcode|postal|danmark|denmark|germany|deutschland|phone|telefon|tel|email|e-mail|att\.?|c\/o)\b/i.test(line)
+    || !/\b(?:return|retur|rücksend|refund|refunder|shipping|fragt|versand|opened|åbnet|geöffnet|portal|contact|kontakt|formular)\b/i.test(line);
+}
+
+function composePolicyParagraph(paragraph: string, focus: CustomerKnowledgeFocus, options: PolicyCompositionOptions = {}) {
+  const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (focus.questionShape === "unknown") return paragraph;
+
+  const destinationIndex = lines.findIndex(isReturnDestinationInstruction);
+  const selected: string[] = [];
+  const pushLine = (line: string) => {
+    if (line && !selected.includes(line)) selected.push(line);
+  };
+
+  if (focus.questionShape === "destination" && destinationIndex >= 0) {
+    const destinationLine = composePolicyLine(lines[destinationIndex], focus, options);
+    const destinationCue = answerBearingCueFor(destinationLine, focus);
+    const continuation = destinationCue
+      ? answerBearingContinuationLines(lines, destinationIndex + 1, destinationCue)
+      : [];
+    const hasDestinationValue = !destinationCue
+      || continuation.some((line) => hasAnswerBearingValueMarker(line, destinationCue));
+    if (hasDestinationValue) {
+      pushLine(destinationLine);
+      continuation.forEach(pushLine);
+    }
+    lines.forEach((line, index) => {
+      if (index !== destinationIndex && (isReturnApprovalPrerequisite(line) || (options.includeShippingResponsibility !== false && isReturnShippingResponsibility(line)))) {
+        pushLine(composePolicyLine(line, focus, options));
+      }
+    });
+    return selected.join("\n");
+  }
+
+  const answerCueIndex = lines.findIndex((line) => answerBearingCueFor(line, focus) !== null);
+  if (answerCueIndex >= 0) {
+    const answerCue = answerBearingCueFor(lines[answerCueIndex], focus);
+    if (answerCue) {
+      const continuation = answerBearingContinuationLines(lines, answerCueIndex + 1, answerCue);
+      if (continuation.some((line) => hasAnswerBearingValueMarker(line, answerCue))) {
+        pushLine(lines[answerCueIndex]);
+        continuation.forEach(pushLine);
+        return selected.join("\n");
+      }
+    }
+  }
+
+  if (focus.questionShape === "destination") {
+    lines.forEach((line) => {
+      if (isReturnApprovalPrerequisite(line)
+        || (options.includeShippingResponsibility !== false && isReturnShippingResponsibility(line))
+        || (options.hasDirectDestination !== true && isReturnProcessInstruction(line))) {
+        pushLine(composePolicyLine(line, focus, options));
+      }
+    });
+    return selected.join("\n");
+  }
+
+  lines.forEach((line) => {
+    const composed = composePolicyLine(line, focus);
+    if (composed && (focus.questionShape === "eligibility"
+          ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnEligibility(sentenceValue) || isAnswerBearingEligibility(sentenceValue) || isReturnConditionConsequence(sentenceValue))
+          : focus.questionShape === "timing"
+            ? composed.split(/(?<=[.!?])\s+/).some(isRefundTiming)
+            : focus.questionShape === "cost"
+              ? composed.split(/(?<=[.!?])\s+/).some(isReturnShippingResponsibility)
+              : focus.questionShape === "process"
+            ? composed.split(/(?<=[.!?])\s+/).some((sentenceValue) => isReturnProcessInstruction(sentenceValue) || isReturnEligibility(sentenceValue) || isReturnApprovalPrerequisite(sentenceValue) || physicalAddressMarker(sentenceValue))
+            : true)) {
+      pushLine(composed);
+    }
+  });
+
+  return selected.length ? selected.join("\n") : paragraph;
+}
+
+function composeMinimumSufficientPolicyText(value: string, context: ResponseValidationContext) {
+  const focus = customerKnowledgeFocus(context.customerMessage);
+  const paragraphs = mergeAnswerBearingParagraphs(String(value ?? "").split(/\n\s*\n/), focus);
+  if (focus.questionShape === "unknown") return paragraphs.join("\n\n");
+  const hasDirectDestination = focus.questionShape === "destination"
+    && paragraphs.some((paragraph) => paragraph.split(/\n+/).some(isReturnDestinationInstruction));
+  const hasApprovalPrerequisite = focus.questionShape === "destination"
+    && paragraphs.some((paragraph) => paragraph.split(/\n+/).some(isReturnApprovalPrerequisite));
+  const options = {
+    includeShippingResponsibility: !hasApprovalPrerequisite,
+    hasDirectDestination,
+  };
+  return paragraphs.map((paragraph) => composePolicyParagraph(paragraph, focus, options)).filter(Boolean).join("\n\n");
+}
+
+function isPolicyKnowledgeBasis(basis: KnowledgeBasis, context: ResponseValidationContext) {
+  return context.getResult(basis.result_id)?.toolName === "search_policy";
+}
+
 /**
  * Applies only current-conversation semantics to model-written knowledge
  * guidance. The stored source and cited evidence remain unchanged.
  */
-export function adaptCustomerFacingKnowledgeText(value: string, context: ResponseValidationContext) {
-  const paragraphs = String(value ?? "").split(/\n\s*\n/);
+export function adaptCustomerFacingKnowledgeText(
+  value: string,
+  context: ResponseValidationContext,
+  options: { policy?: boolean; basis?: KnowledgeBasis } = {},
+) {
+  const policyText = options.policy && options.basis
+    ? policyTextForRendering(value, options.basis, context)
+    : value;
+  const paragraphs = String(policyText ?? "").split(/\n\s*\n/);
   const adapted = paragraphs.flatMap((paragraph) => {
     const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
     const nextLines = lines.map((line) => {
@@ -2058,7 +4331,10 @@ export function adaptCustomerFacingKnowledgeText(value: string, context: Respons
       return sentences.map((sentence) => {
         const hadSupportContactInstruction = isActiveSupportChannel(context.interactionChannel)
           && /\b(?:contact|email|write\s+to|reach\s+out\s+to|send\s+(?:an\s+)?email\s+to)\b/i.test(sentence);
-        let current = isActiveSupportChannel(context.interactionChannel)
+        const satisfiedSupportContactPrerequisite = isSatisfiedSupportContactPrerequisite(sentence, context);
+        let current = satisfiedSupportContactPrerequisite
+          ? ""
+          : isActiveSupportChannel(context.interactionChannel)
           ? adaptSupportContactInstruction(sentence)
           : sentence;
         const adaptedRequirementList = adaptKnownRequirementList(current, context, hadSupportContactInstruction);
@@ -2076,7 +4352,10 @@ export function adaptCustomerFacingKnowledgeText(value: string, context: Respons
     }).filter(Boolean);
     return nextLines.length ? [nextLines.join("\n")] : [];
   });
-  return formatReadableKnowledgeText(adapted.join("\n\n"));
+  const composed = options.policy
+    ? composeMinimumSufficientPolicyText(adapted.join("\n\n"), context)
+    : adapted.join("\n\n");
+  return formatReadableKnowledgeText(composed);
 }
 
 type ProcedureStepPresentation = {
@@ -2423,10 +4702,33 @@ function limitedResultQuestionIsRedundant(
   });
 }
 
+function isExplicitOrderReference(value?: string) {
+  return /(?:#\s*\d+|\border\s*(?:number|no\.?|id|identifier)?\s*[:#]?\s*\d+)/i.test(String(value ?? ""));
+}
+
+function isRedundantPolicyQuestion(
+  segment: Extract<ResponseSegment, { type: "question" }>,
+  focus: CustomerKnowledgeFocus,
+  hasPolicyGuidance: boolean,
+  context: ResponseValidationContext,
+) {
+  return hasPolicyGuidance
+    && ["timing", "destination", "cost", "eligibility"].includes(focus.questionShape)
+    && !isExplicitOrderReference(context.customerMessage)
+    && segment.purpose === "enable_capability"
+    && segment.capability === "get_order"
+    && segment.missing_arguments.includes("order_id");
+}
+
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
+  const actionableComposition = composeActionableResponse(segments, context);
+  if (actionableComposition) return actionableComposition;
+
   const rendered: string[] = [];
   const consumed = new Set<number>();
+  const policyFocus = customerKnowledgeFocus(context.customerMessage);
+  const hasPolicyGuidance = segments.some((segment) => segment.type === "knowledge_guidance" && isPolicyKnowledgeBasis(segment.basis, context));
   const hasOrderRecoveryQuestion = context.activeOrder?.state === "unresolved"
     && segments.some((segment) => segment.type === "question"
       && segment.purpose === "enable_capability"
@@ -2487,9 +4789,16 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
-    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(segment.text, context));
+    else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(
+      segment.text,
+      context,
+      { policy: isPolicyKnowledgeBasis(segment.basis, context), basis: segment.basis },
+    ));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
+    else if (segment.type === "question" && isRedundantPolicyQuestion(segment, policyFocus, hasPolicyGuidance, context)) {
+      consumed.add(index);
+    }
     else if (segment.type === "question" && limitedResultQuestionIsRedundant(segment, limitations)) {
       consumed.add(index);
     }

@@ -1,0 +1,13 @@
+---
+description: Sona backend — Edge Functions, schema, ingest og miljøer
+globs: supabase/**
+alwaysApply: false
+---
+
+# supabase
+
+Læs **`.agents/environments.md` først** (dev-default). Derefter `.agents/architecture.md` og ved V2-arbejde `.agents/legacy/v2-pipeline.md`.
+
+Supabase MCP / migrations / `functions deploy`: kun project-ref **`zxaoycxzdjrbnzvbullk`** (dev), medmindre brugeren eksplicit siger prod (`ikuupzjaxzvatdnmyzoy`).
+
+`postmark-inbound` deployes altid med `--no-verify-jwt`.

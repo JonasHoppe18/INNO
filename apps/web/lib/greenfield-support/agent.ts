@@ -15,12 +15,15 @@ import type {
   TraceEvent,
 } from "./types";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
-import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
+import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS } from "./tool-contracts";
 import {
   composeSafeKnowledgeGapResponse,
+  ensureAnswerCompleteness,
   inferResponseLocale,
+  recoverAuthoritativePolicyAnswer,
   renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
+  shouldPreferAuthoritativeEvidenceFallback,
   summarizeResponseValidation,
   validateStructuredResponse,
 } from "./response-contract";
@@ -112,6 +115,7 @@ export function fallbackResponse(context?: {
   locale?: "da" | "en";
   customerMessage?: string;
   customerProvidedContext?: ResponseValidationContext["customerProvidedContext"];
+  interactionChannel?: GreenfieldInteractionChannel;
   getResults?: () => ResponseEvidenceRecord[];
 }) {
   const requestedOrderId = context?.activeOrder?.requestedOrderId;
@@ -128,6 +132,12 @@ export function fallbackResponse(context?: {
     getResults: context?.getResults,
   });
   if (knowledgeGap) return knowledgeGap;
+  const recoveredPolicyAnswer = recoverAuthoritativePolicyAnswer({
+    customerMessage: context?.customerMessage,
+    interactionChannel: context?.interactionChannel,
+    getResults: context?.getResults,
+  });
+  if (recoveredPolicyAnswer) return recoveredPolicyAnswer;
   const orderClarification = renderOrderCandidateClarificationFromResults(context?.getResults, context?.locale);
   if (orderClarification) return orderClarification;
   return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
@@ -146,7 +156,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     finishedAt: null,
     events: [],
     developerInstructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
-    tools: GREENFIELD_TOOL_DEFINITIONS,
+    tools: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
     usage: [],
   };
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
@@ -155,6 +165,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+    toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
   });
   let continuityInput = modelConversationContext(
     conversationContext,
@@ -165,8 +176,12 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     registry.getOrderCandidates(),
   );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const providerCustomer = !options.tenant.customerName && !options.customerDisplayName
+    ? await options.capabilities.commerce.getCustomer().catch(() => null)
+    : null;
+  const verifiedProfileName = options.tenant.customerName ?? providerCustomer?.name ?? null;
   const customerDisplayName = resolveCustomerDisplayName({
-    verifiedProfileName: options.tenant.customerName,
+    verifiedProfileName,
     structuredSenderName: options.customerDisplayName,
     history: options.history,
     message: options.message,
@@ -234,15 +249,20 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           activeOrder: registry.getActiveOrderFocus(),
           customerMessage: options.message,
           interactionChannel: options.interactionChannel,
+          customerName: verifiedProfileName,
           customerDisplayName,
           trustedCustomerIdentity: {
             verified: Boolean(options.tenant.customerEmail?.trim()),
             hasEmail: Boolean(options.tenant.customerEmail?.trim()),
-            hasName: Boolean(options.tenant.customerName?.trim()),
+            hasName: Boolean(verifiedProfileName?.trim()),
           },
           customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
         };
-        const validation = validateStructuredResponse(rawText, responseContext);
+        const validation = ensureAnswerCompleteness(
+          validateStructuredResponse(rawText, responseContext),
+          responseContext,
+        );
+        const useAuthoritativeFallback = shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
         const actionExecutions = await executeActionProposals({
           executor: options.actionExecutor,
           proposals: proposedActions,
@@ -255,7 +275,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
           },
         });
         for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
-        const finalResponse = validation.approvedSegments.length
+        const finalResponse = validation.approvedSegments.length && !useAuthoritativeFallback
           ? renderResponseSegments(validation.approvedSegments, {
               ...responseContext,
               locale: inferResponseLocale(options.message),
@@ -268,6 +288,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
               locale: inferResponseLocale(options.message),
               customerMessage: options.message,
               customerProvidedContext: responseContext.customerProvidedContext,
+              interactionChannel: responseContext.interactionChannel,
               getResults: registry.getResults,
             });
         pushEvent(trace, "final_response", {
@@ -310,6 +331,7 @@ export async function runGreenfieldAgent(options: GreenfieldAgentOptions): Promi
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    interactionChannel: options.interactionChannel,
     getResults: registry.getResults,
   });
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());

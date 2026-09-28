@@ -94,11 +94,10 @@ describe("greenfield model/tool loop", () => {
       ...dependencies,
       message: "Where is order #10231?",
       model: scriptedModel([
-        toolCall("get_order", { order_id: "10231" }, "call-order"),
         toolCall("get_tracking", { tracking_number: "PC10231" }, "call-tracking"),
         structured(
-          { type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: "tool_result_1", field_paths: ["fulfillmentStatus"] }] },
-          { type: "fact", fact_kind: "shipment_status", evidence: [{ result_id: "tool_result_2", field_paths: ["live_tracking.status"] }] },
+          { type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: "tool_result_1", field_paths: ["data.fulfillmentStatus"] }] },
+          { type: "fact", fact_kind: "shipment_status", evidence: [{ result_id: "tool_result_2", field_paths: ["data.live_tracking.status"] }] },
         ),
       ]),
       capabilities: dependencies,
@@ -179,7 +178,7 @@ describe("greenfield model/tool loop", () => {
 
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
-    expect(result.response).toContain("will not be completed");
+    expect(result.response).toContain("Nothing will be changed until you confirm");
     expect(result.response).not.toMatch(/order #10232 (?:was|has been) cancelled/i);
     expect(JSON.stringify(result.trace.events)).toContain('"status":"proposed"');
   });

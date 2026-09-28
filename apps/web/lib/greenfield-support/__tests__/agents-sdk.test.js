@@ -10,6 +10,256 @@ function structured(...segments) {
 }
 
 describe("greenfield OpenAI Agents SDK runtime", () => {
+  it("records a minimal direct-answer model-to-contract diagnostic", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "Refunds are normally processed within 5 business days after approval.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.diagnostics).toMatchObject({
+      model_response_mode: "answered",
+      completeness_check_entered: true,
+      recovery_result: "skipped",
+      final_composition_source: "model",
+      model_output: {
+        structured_parse_failed: false,
+        knowledge_guidance_exists: true,
+        knowledge_guidance_has_answer_text: true,
+        knowledge_guidance_basis_refs: 1,
+      },
+    });
+  });
+
+  it("records when usable policy evidence recovers a model fallback", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "I’m sorry, but I couldn’t safely complete that lookup right now.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.diagnostics).toMatchObject({
+      model_response_mode: "fallback",
+      completeness_check_entered: true,
+      recovery_attempted: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+      model_output: {
+        fallback_like_content: true,
+      },
+    });
+    expect(result.response).toContain("5 business days");
+  });
+
+  it("lets Greenfield validate contract-invalid JSON after SDK parsing", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(JSON.stringify({ segments: [{ kind: "FACT" }] }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.events.some((event) => event.type === "error" && event.data.code === "agent_failed")).toBe(false);
+    expect(result.trace.events.some((event) => event.type === "model_response")).toBe(true);
+    expect(result.trace.diagnostics).toMatchObject({
+      validation: {
+        schema_valid: false,
+        all_valid: false,
+        approved_count: 1,
+      },
+      completeness_check_entered: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+    });
+    expect(result.response).toContain("5 business days");
+    expect(model.firstCall.request.outputType).toMatchObject({
+      type: "json_schema",
+      name: "greenfield_model_output",
+      strict: false,
+      schema: {
+        type: "object",
+        required: ["segments"],
+        additionalProperties: false,
+      },
+    });
+    const segmentSchemas = model.firstCall.request.outputType.schema.properties.segments.items.oneOf;
+    expect(segmentSchemas.map((schema) => schema.properties.type.const)).toEqual([
+      "fact",
+      "question",
+      "limitation",
+      "action_offer",
+      "knowledge_guidance",
+      "procedure_guidance",
+      "acknowledgement",
+    ]);
+    expect(model.firstCall.request.tools.filter((item) => item.type === "function").every((item) => item.strict === true)).toBe(true);
+  });
+
+  it("keeps invalid evidence references rejected inside the Greenfield contract", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "Returns are accepted within 30 days of delivery.",
+        basis: { result_id: "missing-result", field_paths: ["results"] },
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "What is your return window?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.events.some((event) => event.type === "error" && event.data.code === "agent_failed")).toBe(false);
+    expect(result.trace.diagnostics.validation.rejected_segments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        issues: expect.arrayContaining([expect.objectContaining({ code: "unknown_result_id" })]),
+      }),
+    ]));
+    expect(result.trace.diagnostics.completeness_check_entered).toBe(true);
+  });
+
+  it("keeps malformed or unrecoverable output on the safe fallback path", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage("not valid JSON")]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Can you help me?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.response).toBe("I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?");
+    expect(result.trace.events).toContainEqual(expect.objectContaining({
+      type: "error",
+      data: expect.objectContaining({ code: "agent_failed" }),
+    }));
+    expect(result.trace.diagnostics).toMatchObject({
+      validation: null,
+      completeness_check_entered: false,
+      fallback_reason: "agent_error",
+    });
+  });
+
+  it("does not let an approved order clarification hide a resolvable general timing answer", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "When will I get my refund?",
+      model,
+      enableDevDiagnostics: true,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.response).toMatch(/refund/i);
+    expect(result.response).not.toContain("order number");
+    expect(result.trace.diagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+      recovery_attempted: true,
+      recovery_result: "recovered",
+      final_composition_source: "recovered_evidence",
+    });
+  });
+
+  it("does not emit the new diagnostics without explicit DEV Playground opt-in", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace).not.toHaveProperty("diagnostics");
+    expect(result.trace.events.find((event) => event.type === "model_response")?.data).not.toHaveProperty("model_output");
+    expect(result.trace.events.find((event) => event.type === "final_response")?.data.validation).not.toHaveProperty("completeness");
+  });
+
+  it("greets from the verified commerce profile when the message has no sign-off", async () => {
+    const dependencies = await createDemoDependencies();
+    const commerce = new InMemoryCommerceProvider({
+      customer: { email: dependencies.tenant.customerEmail, name: "Jonas Hoppe" },
+      orders: [],
+    });
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "pure_clarification",
+        text: "How can I help?",
+        capability: null,
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      tenant: { ...dependencies.tenant, customerName: null },
+      customerDisplayName: null,
+      message: "I need help with my order.",
+      model,
+      capabilities: { ...dependencies, commerce },
+    });
+
+    model.assertComplete();
+    expect(result.response).toMatch(/^Hi Jonas,\n\n/);
+  });
+
   it("preloads trusted customer history before the model continuation", async () => {
     const dependencies = await createDemoDependencies();
     const commerce = new InMemoryCommerceProvider({
@@ -50,6 +300,76 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.firstCall.request.input.at(-1).content).toContain('"order_resolution":"candidate"');
   });
 
+  it.each([
+    "I want to return order 10231",
+    "How do I return order 10231?",
+  ])("pre-resolves an explicit order before model wording or tool selection: %s", async (message) => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "fact",
+        fact_kind: "order_reference",
+        evidence: [{ result_id: "tool_result_1", field_paths: ["data.orderNumber"] }],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message,
+      model,
+      capabilities: dependencies,
+      enableDevDiagnostics: true,
+    });
+
+    model.assertComplete();
+    expect(model.calls).toHaveLength(1);
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toContain("get_order");
+    expect(result.trace.events.find((event) => event.type === "tool_call" && event.data.name === "get_order").data.preloaded).toBe(true);
+    expect(result.conversationContext.activeOrder).toMatchObject({ requestedOrderId: "10231", state: "verified" });
+    expect(result.trace.diagnostics.validation.schema_valid).toBe(true);
+  });
+
+  it("does not expose or preload procedures for a multi-turn troubleshooting request", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "question",
+        purpose: "pure_clarification",
+        text: "What exactly is happening with the headset?",
+        capability: null,
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "I use the USB-C dongle on a PC.",
+      history: [
+        { role: "user", content: "My headset will not connect." },
+        { role: "assistant", content: "What headset model are you using?" },
+        { role: "user", content: "It is the Orion Wireless." },
+        { role: "assistant", content: "Have you already reset it?" },
+        { role: "user", content: "I already reset it." },
+      ],
+      conversationContext: {
+        turn: 3,
+        customerProvided: {
+          product: "Orion Wireless",
+          issue: "My headset will not connect",
+          attemptedSteps: ["I already reset it"],
+        },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    model.assertComplete();
+    expect(result.trace.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.input.at(-1).content).not.toContain('"tool":"search_procedures"');
+  });
+
   it("uses one model response for a pure acknowledgement", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
@@ -67,6 +387,122 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.calls).toHaveLength(1);
     expect(result.response).toBe("You’re welcome.");
     expect(result.trace.events.filter((event) => event.type === "tool_call")).toHaveLength(0);
+  });
+
+  it("appends the server-resolved support-user signature once", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: "Mvh\nJonas",
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nMvh\nJonas");
+    expect(result.response.match(/Mvh/g)).toHaveLength(1);
+    expect(result.trace.events.at(-1).data.response).toBe(result.response);
+  });
+
+  it("selects the English employee signature for an English reply", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: {
+        defaultClosingText: "Mvh\nJonas",
+        languageSignatures: { en: "Best regards\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nBest regards\nJonas");
+  });
+
+  it("selects the Danish employee signature for a Danish reply", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Tak, det løste problemet.",
+      signature: {
+        defaultClosingText: "Best regards\nJonas",
+        languageSignatures: { da: "Mvh\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("Det var så lidt.\n\nMvh\nJonas");
+  });
+
+  it("selects a German employee signature without translating it", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Ich danke Ihnen, bitte helfen Sie mir.",
+      signature: {
+        defaultClosingText: "Best regards\nJonas",
+        languageSignatures: { de: "Viele Grüße\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nViele Grüße\nJonas");
+  });
+
+  it("uses the default employee signature when a language override is absent", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: {
+        defaultClosingText: "Mvh\nJonas",
+        languageSignatures: { da: "Mvh\nJonas" },
+      },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.\n\nMvh\nJonas");
+  });
+
+  it("does not append a signature when the employee has none", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({ type: "acknowledgement", kind: "thanks" }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "Thanks, that solved it.",
+      signature: { defaultClosingText: "", languageSignatures: {} },
+      model,
+      capabilities: dependencies,
+    });
+
+    expect(result.response).toBe("You’re welcome.");
   });
 
   it("applies the shared Luna medium default to the SDK agent", async () => {
@@ -112,7 +548,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(result.trace.events.at(-1).type).toBe("final_response");
   });
 
-  it("preloads policy evidence so a mixed request can preserve both supported parts", async () => {
+  it("preloads policy evidence without preloading procedures", async () => {
     const dependencies = await createDemoDependencies();
     const model = new ScriptedModel([
       modelResponse([assistantMessage(structured(
@@ -120,12 +556,6 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
           type: "knowledge_guidance",
           text: "A return can be requested within 30 days of delivery when the item is unused and in its original packaging.",
           basis: { result_id: "tool_result_1", field_paths: ["results"] },
-        },
-        {
-          type: "procedure_guidance",
-          text: "For a damaged item, collect the details needed for review.",
-          basis: { result_id: "tool_result_2", field_paths: ["data.results[0].structured_data.procedure_steps"] },
-          block_ids: ["block_1"],
         },
       ))]),
     ]);
@@ -141,25 +571,53 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(model.calls).toHaveLength(1);
     expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual([
       "search_policy",
-      "search_procedures",
     ]);
     expect(result.response).toContain("30 days");
-    expect(result.response).toContain("clear photos");
+    expect(result.trace.tools.map((tool) => tool.name)).not.toContain("search_procedures");
+    expect(model.firstCall.request.input.at(-1).content).not.toContain('"tool":"search_procedures"');
   });
 
-  it("turns an unusable procedure result into a normal knowledge-gap response", async () => {
+  it("composes recovered actionable policy guidance before using the narrow fallback", async () => {
     const dependencies = await createDemoDependencies();
-    const knowledge = {
-      ingest: (...args) => dependencies.knowledge.ingest(...args),
-      search: async () => [],
-    };
     const model = new ScriptedModel([
-      modelResponse([functionCall("search_procedures", { query: "headset troubleshooting" }, { callId: "missing-procedure" })]),
+      modelResponse([functionCall("create_return", {
+        order_id: "10231",
+        item_ids: ["line-10231"],
+        reason: "Customer requested a return",
+      }, { callId: "return" })]),
       modelResponse([assistantMessage(structured({
-        type: "procedure_guidance",
-        text: "Follow the returned support procedure.",
-        basis: { result_id: "tool_result_1", field_paths: ["results[0]"] },
-        block_ids: ["missing-block"],
+        type: "action_offer",
+        capability: "create_return",
+        mode: "proposal",
+        missing_arguments: [],
+      }))]),
+    ]);
+
+    const result = await runGreenfieldAgentWithAgentsSdk({
+      ...dependencies,
+      message: "I want to return order 10231",
+      model,
+      capabilities: dependencies,
+      actionExecutor: new PlaygroundDryRunExecutor(),
+      enableDevDiagnostics: true,
+    });
+
+    model.assertComplete();
+    expect(result.response).toContain("Nothing will be changed until you confirm");
+    expect(result.response).toContain("30 days");
+    expect(result.response).not.toContain("couldn’t safely complete that lookup");
+    expect(result.trace.diagnostics.final_composition_source).not.toBe("fallback");
+    expect(result.actionExecutions).toHaveLength(1);
+    expect(result.actionExecutions[0].executed).toBe(false);
+  });
+
+  it("does not recover procedural evidence when the runtime has no procedure result", async () => {
+    const dependencies = await createDemoDependencies();
+    const model = new ScriptedModel([
+      modelResponse([assistantMessage(structured({
+        type: "knowledge_guidance",
+        text: "I’m sorry, but I couldn’t safely complete that lookup right now.",
+        basis: { result_id: "tool_result_1", field_paths: ["results"] },
       }))]),
     ]);
 
@@ -167,12 +625,12 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
       ...dependencies,
       message: "My headset will not connect and I need help.",
       model,
-      capabilities: { ...dependencies, knowledge },
+      capabilities: dependencies,
     });
 
     model.assertComplete();
-    expect(result.response).toContain("couldn’t verify a support procedure");
-    expect(result.response).not.toContain("couldn’t safely complete that lookup");
+    expect(result.response).toContain("couldn’t safely complete that lookup");
+    expect(result.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).not.toContain("search_procedures");
     expect(result.trace.events.at(-1).data.validation.all_valid).toBe(false);
   });
 
@@ -199,8 +657,8 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     model.assertComplete();
     expect(result.proposedActions).toHaveLength(1);
     expect(result.proposedActions[0].action).toBe("cancel_order");
-    expect(result.response).toContain("will not be completed");
-    expect(result.trace.events.filter((event) => event.type === "tool_result")).toHaveLength(2);
+    expect(result.response).toContain("Nothing will be changed until you confirm");
+    expect(result.trace.events.filter((event) => event.type === "tool_result")).toHaveLength(3);
   });
 
   it("runs one verified proposal through the Playground dry-run boundary", async () => {
@@ -233,7 +691,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
       executed: false,
     });
     expect(result.trace.events.some((event) => event.type === "action_execution")).toBe(true);
-    expect(result.response).toContain("will not be completed");
+    expect(result.response).toContain("Nothing will be changed until you confirm");
   });
 
   it("does not persist a simulated cancellation when the customer changes their mind", async () => {

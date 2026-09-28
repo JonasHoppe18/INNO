@@ -53,6 +53,53 @@ const DEFAULT_SIGNATURE_BUILDER = {
   columnGap: "14",
 };
 
+const LANGUAGE_NAME_TO_CODE = {
+  dansk: "da",
+  danish: "da",
+  engelsk: "en",
+  english: "en",
+  deutsch: "de",
+  german: "de",
+  tysk: "de",
+  fransk: "fr",
+  french: "fr",
+  norsk: "no",
+  norwegian: "no",
+  svensk: "sv",
+  swedish: "sv",
+  spansk: "es",
+  spanish: "es",
+};
+const LANGUAGE_CODE_TO_NAME = {
+  da: "Danish",
+  en: "English",
+  de: "German",
+  fr: "French",
+  no: "Norwegian",
+  sv: "Swedish",
+  es: "Spanish",
+};
+
+function normalizeLanguageName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return "";
+  if (LANGUAGE_NAME_TO_CODE[normalized]) return LANGUAGE_NAME_TO_CODE[normalized];
+  if (/^[a-z]{2}(?:[-_][a-z]{2})?$/.test(normalized)) return normalized.split(/[-_]/)[0];
+  return normalized
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+function languageLabel(languageKey) {
+  const normalized = String(languageKey || "").trim().toLowerCase();
+  return LANGUAGE_CODE_TO_NAME[normalized] || normalized.replace(/[-_]+/g, " ").replace(/^\w/, (value) => value.toUpperCase());
+}
+
 const LAYOUT_OPTIONS = [
   {
     value: "logo_left",
@@ -338,6 +385,8 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   const builderScrollRef = useRef(null);
   const logoFileInputRef = useRef(null);
   const [signature, setSignature] = useState("");
+  const [languageSignatures, setLanguageSignatures] = useState({});
+  const [languageInput, setLanguageInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateIsActive, setTemplateIsActive] = useState(true);
@@ -350,6 +399,8 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   useEffect(() => {
     if (!open) return;
     setSignature(String(member?.signature || ""));
+    setLanguageSignatures({});
+    setLanguageInput("");
   }, [member?.signature, open]);
 
   useEffect(() => {
@@ -366,8 +417,17 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         if (!active) return;
         if (!response.ok) throw new Error(payload?.error || "Could not load signature template.");
         const next = payload?.signature || {};
+        const normalizedLanguageSignatures =
+          next?.language_signatures && typeof next.language_signatures === "object" && !Array.isArray(next.language_signatures)
+            ? Object.fromEntries(
+                Object.entries(next.language_signatures)
+                  .map(([code, value]) => [normalizeLanguageName(code), String(value || "")])
+                  .filter(([code, value]) => code && value.trim())
+              )
+            : {};
         setTemplateIsActive(next?.is_active !== false);
         setTemplateHtml(String(next?.template_html || ""));
+        setLanguageSignatures(normalizedLanguageSignatures);
       })
       .catch((error) => {
         if (!active) return;
@@ -483,6 +543,17 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     }
   }, [member?.user_id]);
 
+  const addLanguageSignature = useCallback(() => {
+    const code = normalizeLanguageName(languageInput);
+    if (!code) return;
+    if (Object.prototype.hasOwnProperty.call(languageSignatures, code)) {
+      toast.error("That language has already been added.");
+      return;
+    }
+    setLanguageSignatures((previous) => ({ ...previous, [code]: "" }));
+    setLanguageInput("");
+  }, [languageInput, languageSignatures]);
+
   const handleSave = async () => {
     if (!supabase || !member?.user_id || saving) return;
     setSaving(true);
@@ -501,6 +572,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         body: JSON.stringify({
           user_id: member.user_id,
           is_active: Boolean(templateIsActive),
+          language_signatures: languageSignatures,
           template_html: String(templateHtml || ""),
         }),
       });
@@ -552,6 +624,84 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 placeholder={"Best regards,\nYour Name"}
                 className="min-h-[100px] resize-y border-slate-200 text-sm"
               />
+            </div>
+
+            {/* Language-specific plain text signatures */}
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Language-specific signatures</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Use a matching sign-off when Sona replies in another language. The default remains the fallback.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label="Language name"
+                    value={languageInput}
+                    onChange={(event) => setLanguageInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addLanguageSignature();
+                      }
+                    }}
+                    placeholder="Language name, e.g. Danish"
+                    className="h-9 border-slate-200 bg-white text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addLanguageSignature}
+                    disabled={!languageInput.trim()}
+                    className="h-9 shrink-0 border-slate-200 bg-white text-xs"
+                  >
+                    Add language
+                  </Button>
+                </div>
+              </div>
+
+              {Object.entries(languageSignatures).map(([code, value]) => {
+                const label = languageLabel(code);
+                return (
+                  <div key={code} className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor={`member-signature-${code}`} className="text-sm font-medium text-slate-700">
+                        {label}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                        onClick={() => setLanguageSignatures((previous) => {
+                          const next = { ...previous };
+                          delete next[code];
+                          return next;
+                        })}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <Textarea
+                      id={`member-signature-${code}`}
+                      value={value}
+                      onChange={(event) => setLanguageSignatures((previous) => ({ ...previous, [code]: event.target.value }))}
+                      placeholder={
+                        code === "da"
+                          ? "Mvh\nDit navn"
+                          : code === "de"
+                            ? "Viele Grüße\nIhr Name"
+                            : code === "en"
+                              ? "Best regards\nYour Name"
+                              : "Your sign-off\nYour Name"
+                      }
+                      className="min-h-[82px] resize-y border-slate-200 text-sm"
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             {/* Visual template toggle row */}
