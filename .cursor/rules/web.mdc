@@ -1,0 +1,11 @@
+---
+description: Sona web UI — læs agent architecture og design-system
+globs: apps/web/**
+alwaysApply: false
+---
+
+# apps/web
+
+Læs `.agents/environments.md` (dev-default), derefter `.agents/architecture.md` og `.agents/design-system.md`. Nye agent-features: `.agents/greenfield/`. V2/hotfix: `.agents/legacy/v2-pipeline.md`.
+
+Kommandoer: `npm run dev` / `npm run build` fra `apps/web`. `.env.local` skal pege på **dev** Supabase.
