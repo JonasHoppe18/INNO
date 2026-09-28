@@ -4,6 +4,7 @@ create table if not exists public.workspace_email_signatures (
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   closing_text text,
+  language_signatures jsonb not null default '{}'::jsonb,
   template_html text not null default '',
   template_text_fallback text not null default '',
   is_active boolean not null default true,

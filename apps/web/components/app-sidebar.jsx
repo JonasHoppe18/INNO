@@ -18,7 +18,6 @@ import {
   LayoutDashboardIcon,
   MailIcon,
   PanelLeftOpen,
-  SettingsIcon,
   SquarePenIcon,
   Trash2,
 } from "lucide-react"
@@ -158,34 +157,6 @@ function SidebarWorkspaceRail({
 
       <div className="mt-auto p-2">
         <SidebarMenu className="gap-1.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith("/guides")}
-              tooltip="Sona Academy"
-              tooltipAlways
-              className="size-8 justify-center px-0"
-            >
-              <Link href="/guides" aria-label="Sona Academy">
-                <CirclePlayIcon className="h-4 w-4" />
-                <span className="sr-only">Sona Academy</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith("/settings")}
-              tooltip="Settings"
-              tooltipAlways
-              className="size-8 justify-center px-0"
-            >
-              <Link href="/settings" aria-label="Settings">
-                <SettingsIcon className="h-4 w-4" />
-                <span className="sr-only">Settings</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
         </SidebarMenu>
         <NavUser user={user} compact />
       </div>
@@ -230,7 +201,7 @@ function SidebarExpandedNavigation({
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             <SonaLogo size={22} className="shrink-0" />
           </span>
-          <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
+          <span className="truncate text-base font-semibold tracking-tight">Sona AI</span>
         </Link>
         <SidebarTrigger className="size-8 shrink-0" />
       </div>
@@ -252,24 +223,6 @@ function SidebarExpandedNavigation({
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              tooltip="Sona Academy"
-              className={cn(
-                "justify-start text-foreground",
-                pathname.startsWith("/guides") &&
-                  "bg-accent text-foreground hover:bg-accent hover:text-foreground"
-              )}
-            >
-              <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
-                <CirclePlayIcon className="h-4 w-4" />
-                <span>Sona Academy</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
         <NavUser user={user} />
       </SidebarFooter>
     </div>
@@ -626,6 +579,7 @@ export function AppSidebar({
           ...baseData.navMain,
           { title: "Knowledge (new)", url: "/knowledge/new", icon: BookOpenIcon },
           { title: "Agent Playground", url: "/playground", icon: BotIcon },
+          { title: "Sona Academy", url: "/guides", icon: CirclePlayIcon },
         ]
       : baseData.navMain,
     user: user ?? baseData.user,
@@ -741,7 +695,7 @@ export function AppSidebar({
               <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
                 <SonaLogo size={22} className="shrink-0" />
               </span>
-              <span className="truncate text-base font-semibold tracking-tight">sona ai</span>
+              <span className="truncate text-base font-semibold tracking-tight">Sona AI</span>
             </Link>
             <SidebarTrigger className="size-8 shrink-0" />
           </SidebarHeader>
@@ -757,24 +711,6 @@ export function AppSidebar({
             />
           </SidebarContent>
           <SidebarFooter>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Sona Academy"
-                  className={cn(
-                    "justify-start text-foreground",
-                    pathname.startsWith("/guides") &&
-                      "bg-accent text-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <Link href="/guides" prefetch className="flex w-full items-center gap-2 no-underline">
-                    <CirclePlayIcon className="h-4 w-4" />
-                    <span>Sona Academy</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
             <NavUser user={data.user} />
           </SidebarFooter>
         </>

@@ -219,6 +219,31 @@ function stripTrailingSection(text = "", section = "") {
     .trimEnd();
 }
 
+const COMMON_SIGNOFF_PATTERN = /^(best regards|kind regards|warm regards|regards|sincerely|best|thanks|many thanks|cheers|mvh|hilsen|venlig hilsen|med venlig hilsen|viele grüße|mit freundlichen grüßen)[,!\s.]*$/i;
+
+function stripTrailingNamedSignoff(text = "", configuredSignature = "") {
+  const normalizedText = normalizePlainText(text);
+  const signatureLines = normalizePlainText(configuredSignature)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!normalizedText || signatureLines.length < 2) return normalizedText;
+
+  const configuredName = signatureLines.at(-1);
+  const lines = normalizedText.split("\n");
+  const lastLine = String(lines.at(-1) || "").trim();
+  const precedingLine = String(lines.at(-2) || "").trim();
+  if (
+    !configuredName ||
+    lastLine.toLocaleLowerCase() !== configuredName.toLocaleLowerCase() ||
+    !COMMON_SIGNOFF_PATTERN.test(precedingLine)
+  ) {
+    return normalizedText;
+  }
+
+  return lines.slice(0, -2).join("\n").replace(/\s+$/g, "").trimEnd();
+}
+
 export function stripTrailingComposedFooter(text = "", config = {}) {
   let next = normalizePlainText(text);
   next = stripTrailingSection(next, config?.templateTextFallback);
@@ -232,8 +257,11 @@ export function plainTextToHtml(text = "") {
 
 export function composeEmailBodyWithSignature({ bodyText = "", bodyHtml = "", config = {} }) {
   const inputText = normalizePlainText(bodyText || stripHtmlToText(bodyHtml));
-  const coreBodyText = stripTrailingComposedFooter(inputText, config);
   const closingText = normalizePlainText(config?.closingText || "");
+  const coreBodyText = stripTrailingComposedFooter(
+    stripTrailingNamedSignoff(inputText, closingText),
+    config,
+  );
   const templateHtml = sanitizeEmailTemplateHtml(config?.templateHtml || "");
   const templateTextFallback = normalizePlainText(
     config?.templateTextFallback || htmlToPlainText(templateHtml)
@@ -267,12 +295,109 @@ export function composeEmailBodyWithSignature({ bodyText = "", bodyHtml = "", co
   };
 }
 
+export async function loadUserEmailSignature(serviceClient, supabaseUserId) {
+  if (!serviceClient || !supabaseUserId) return "";
+  try {
+    const { data, error } = await serviceClient
+      .from("profiles")
+      .select("signature")
+      .eq("user_id", supabaseUserId)
+      .maybeSingle();
+    if (error) throw error;
+    return normalizePlainText(data?.signature || "");
+  } catch (error) {
+    console.warn("[email-signature] user signature lookup failed", error?.message || error);
+    return "";
+  }
+}
+
+export function normalizeLanguageCode(value) {
+  const normalized = asString(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return "";
+  if (/^[a-z]{2}(?:[-_][a-z]{2})?$/.test(normalized)) {
+    return normalized.split(/[-_]/)[0];
+  }
+  const languageKey = normalized
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return /^[a-z]{2,32}(?:-[a-z0-9]{2,32})?$/.test(languageKey) ? languageKey : "";
+}
+
+export function normalizeLanguageSignatures(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const normalized = {};
+  for (const [rawLanguage, rawSignature] of Object.entries(value).slice(0, 64)) {
+    const language = normalizeLanguageCode(rawLanguage);
+    const signature = normalizePlainText(rawSignature);
+    if (language && signature) normalized[language] = signature;
+  }
+  return normalized;
+}
+
+export function selectSignatureText({ defaultSignature = "", languageSignatures = {}, language = "" } = {}) {
+  const normalizedLanguage = normalizeLanguageCode(language);
+  const normalizedSignatures = normalizeLanguageSignatures(languageSignatures);
+  return normalizePlainText(
+    (normalizedLanguage && normalizedSignatures[normalizedLanguage]) || defaultSignature,
+  );
+}
+
+const GERMAN_LANGUAGE_MARKERS = [
+  "ich",
+  "mein",
+  "meine",
+  "meinen",
+  "meiner",
+  "meinem",
+  "meinen",
+  "bitte",
+  "hallo",
+  "danke",
+  "bestellung",
+  "rückgabe",
+  "zurückgeben",
+  "garantie",
+  "versand",
+  "können",
+  "kann",
+  "nicht",
+  "wo",
+];
+
+export function inferGermanLanguage(input = "") {
+  const source = asString(input).toLowerCase();
+  if (/[äöüß]/.test(source)) return true;
+  const markerCount = GERMAN_LANGUAGE_MARKERS.filter((marker) =>
+    new RegExp(`\\b${marker}\\b`, "i").test(source),
+  ).length;
+  return markerCount >= 2;
+}
+
+export async function loadUserEmailSignatureConfig(
+  serviceClient,
+  supabaseUserId,
+  { workspaceId = null } = {},
+) {
+  const legacySignature = await loadUserEmailSignature(serviceClient, supabaseUserId);
+  return loadEmailSignatureConfig(serviceClient, {
+    workspaceId,
+    userId: supabaseUserId,
+    legacySignature,
+  });
+}
+
 export async function loadEmailSignatureConfig(
   serviceClient,
-  { workspaceId = null, userId = null, legacySignature = "" } = {}
+  { workspaceId = null, userId = null, legacySignature = "", language = "" } = {}
 ) {
   const fallback = {
-    closingText: normalizePlainText(legacySignature),
+    closingText: selectSignatureText({ defaultSignature: legacySignature, language }),
+    defaultClosingText: normalizePlainText(legacySignature),
+    languageSignatures: {},
     templateHtml: "",
     templateTextFallback: "",
     isActive: false,
@@ -280,14 +405,26 @@ export async function loadEmailSignatureConfig(
 
   if (!workspaceId || !userId) return fallback;
   try {
-    const { data, error } = await serviceClient
+    let { data, error } = await serviceClient
       .from("workspace_email_signatures")
-      .select("closing_text, template_html, template_text_fallback, is_active")
+      .select("closing_text, language_signatures, template_html, template_text_fallback, is_active")
       .eq("workspace_id", workspaceId)
       .eq("user_id", userId)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error && /language_signatures|column .* does not exist/i.test(String(error.message || ""))) {
+      const legacyResult = await serviceClient
+        .from("workspace_email_signatures")
+        .select("closing_text, template_html, template_text_fallback, is_active")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      data = legacyResult.data;
+      error = legacyResult.error;
+    }
     if (error) {
       if (/workspace_email_signatures/i.test(String(error.message || ""))) {
         return fallback;
@@ -296,12 +433,16 @@ export async function loadEmailSignatureConfig(
     }
     const isActive = data?.is_active !== false;
     if (!isActive) return fallback;
+    const defaultClosingText = normalizePlainText(legacySignature || data?.closing_text || "");
+    const languageSignatures = normalizeLanguageSignatures(data?.language_signatures);
     const templateHtml = sanitizeEmailTemplateHtml(data?.template_html || "");
     const templateTextFallback = normalizePlainText(
       data?.template_text_fallback || htmlToPlainText(templateHtml)
     );
     return {
-      closingText: normalizePlainText(legacySignature),
+      closingText: selectSignatureText({ defaultSignature: defaultClosingText, languageSignatures, language }),
+      defaultClosingText,
+      languageSignatures,
       templateHtml,
       templateTextFallback,
       isActive: true,

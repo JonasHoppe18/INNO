@@ -1,11 +1,14 @@
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
-import type { AgentInputItem, Model } from "@openai/agents";
+import type { AgentInputItem, JsonSchemaDefinition, Model } from "@openai/agents";
+import { z } from "zod";
+import { composeEmailBodyWithSignature, inferGermanLanguage, selectSignatureText } from "@/lib/server/email-signature";
 import { fallbackResponse } from "./agent";
 import { executeActionProposals } from "./action-executor";
 import { GREENFIELD_DEVELOPER_INSTRUCTIONS, instructionsForCapabilities } from "./instructions";
 import { createCapabilityRegistry, extractOrderReferences } from "./capabilities";
-import { GREENFIELD_TOOL_DEFINITIONS } from "./tool-contracts";
-import { inferResponseLocale, renderResponseSegments, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS } from "./tool-contracts";
+import { ensureAnswerCompleteness, inferResponseLocale, renderResponseSegments, shouldPreferAuthoritativeEvidenceFallback, StructuredResponseSchema, summarizeResponseValidation, validateStructuredResponse } from "./response-contract";
+import type { ResponseCompletenessDiagnostics, ResponseValidationResult } from "./response-contract";
 import { extractCustomerProvidedContext, modelConversationContext, nextConversationContext, resolveCustomerDisplayName } from "./conversation-context";
 import { resolveGreenfieldRuntimeConfig } from "./runtime-config";
 import type {
@@ -14,6 +17,7 @@ import type {
   AgentTrace,
   ConversationContext,
   GreenfieldInteractionChannel,
+  JsonObject,
   JsonValue,
   ProposedAction,
   TenantContext,
@@ -22,6 +26,20 @@ import type {
 } from "./types";
 
 type CapabilityRegistry = ReturnType<typeof createCapabilityRegistry>;
+
+// Derive model-facing structural guidance from the same contract that
+// Greenfield validates below. A raw JSON Schema output type is parsed by the
+// SDK without applying local schema validation, so the application contract
+// remains the only semantic validation layer.
+const GREENFIELD_SDK_OUTPUT_TYPE: JsonSchemaDefinition = {
+  type: "json_schema",
+  name: "greenfield_model_output",
+  strict: false,
+  schema: z.toJSONSchema(StructuredResponseSchema, {
+    target: "openai",
+    unrepresentable: "any",
+  }) as JsonSchemaDefinition["schema"],
+};
 
 interface SonaAgentContext {
   registry: CapabilityRegistry;
@@ -42,8 +60,38 @@ export interface GreenfieldAgentsSdkOptions {
   now?: () => string;
   model?: string | Model;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  /** Enables sanitized diagnostics only for the internal DEV Playground. */
+  enableDevDiagnostics?: boolean;
+  /** Server-resolved support-user signature configuration; never supplied to the model. */
+  signature?: string | {
+    defaultClosingText?: string | null;
+    closingText?: string | null;
+    languageSignatures?: Record<string, string | null | undefined>;
+  } | null;
   actionExecutor?: ActionExecutor;
   interactionChannel?: GreenfieldInteractionChannel;
+}
+
+function signatureLanguage(message: string): "da" | "de" | "en" {
+  const responseLocale = inferResponseLocale(message);
+  if (responseLocale === "da") return "da";
+  return inferGermanLanguage(message) ? "de" : "en";
+}
+
+function composeGreenfieldResponse(response: string, signature: GreenfieldAgentsSdkOptions["signature"], message: string): string {
+  const normalizedResponse = String(response || "").trim();
+  const normalizedSignature = typeof signature === "string"
+    ? String(signature || "").trim()
+    : selectSignatureText({
+        defaultSignature: signature?.defaultClosingText ?? signature?.closingText ?? "",
+        languageSignatures: signature?.languageSignatures,
+        language: signatureLanguage(message),
+      });
+  if (!normalizedSignature) return normalizedResponse;
+  return composeEmailBodyWithSignature({
+    bodyText: normalizedResponse,
+    config: { closingText: normalizedSignature },
+  }).finalBodyText;
 }
 
 function traceValue(value: unknown): JsonValue {
@@ -81,8 +129,123 @@ function toolArguments(args: unknown): JsonValue {
   return traceValue(args ?? {});
 }
 
-function createSdkTools(context: SonaAgentContext) {
-  return GREENFIELD_TOOL_DEFINITIONS.map((definition) =>
+function diagnosticQuestionShape(message: string) {
+  const value = String(message ?? "").toLowerCase();
+  if (/\b(?:when|hvornår|wann)\b[\s\S]{0,80}\b(?:refund|refusion|refundering|money|pengene|geld|zurück|back)\b/.test(value)) return "timing";
+  if (/\b(?:who|hvem|wer)\b[\s\S]{0,80}\b(?:pay|betaler|zahlt|postage|shipping|fragt|returfragt|versand)\b/.test(value)) return "payer";
+  if (/\b(?:where|hvor|wo)\b[\s\S]{0,80}\b(?:send|return|retur|rück|adresse|address|sende)\b/.test(value)) return "destination";
+  if (/\b(?:can|kan|kann)\b[\s\S]{0,80}\b(?:return|returnere|zurück|opened|åbnet|geöffnet)\b/.test(value)) return "eligibility";
+  if (/\b(?:how|hvordan|wie)\b/.test(value)) return "process";
+  if (/\b(?:pair|parr|koppel|connect|forbind|verbinden|troubleshoot|fejl|problem|issue)\b/.test(value)) return "procedure";
+  if (/\b(?:policy|politik|policy|refund|return|retur|warranty|garanti|shipping|levering)\b/.test(value)) return "policy";
+  return "general";
+}
+
+function looksLikeFallbackText(value: unknown) {
+  return /\b(?:couldn['’]?t|cannot|can't|unable|try again|safely complete|could not|beklager|kan ikke|prøv igen|nicht sicher|erneut versuchen)\b/i.test(String(value ?? ""));
+}
+
+function modelOutputDiagnostics(output: unknown) {
+  const parsed = StructuredResponseSchema.safeParse(output);
+  const segments = parsed.success ? parsed.data.segments : [];
+  const knowledgeSegments = segments.filter((segment) => segment.type === "knowledge_guidance");
+  const answerSegments = segments.filter((segment) => ["fact", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
+  const clarificationRequested = segments.some((segment) => segment.type === "question");
+  const fallbackLikeContent = segments.some((segment) => "text" in segment && looksLikeFallbackText(segment.text));
+  const hasAnswer = answerSegments.length > 0 && !fallbackLikeContent;
+  return {
+    structured_parse_failed: !parsed.success,
+    knowledge_guidance_exists: knowledgeSegments.length > 0,
+    knowledge_guidance_has_answer_text: knowledgeSegments.some((segment) => Boolean(segment.text?.trim())),
+    knowledge_guidance_basis_refs: knowledgeSegments.filter((segment) => Boolean(segment.basis?.result_id)).length,
+    clarification_requested: clarificationRequested,
+    fallback_like_content: fallbackLikeContent,
+    segment_count: segments.length,
+    response_mode: hasAnswer ? "answered" : clarificationRequested ? "clarification" : "fallback",
+  };
+}
+
+function evidenceDiagnostics(registry: CapabilityRegistry) {
+  const sourceIds = new Set<string>();
+  const evidenceSectionIds = new Set<string>();
+  const providerStatuses: Record<string, string> = {};
+  let resolvableIntent = false;
+  for (const evidence of registry.getResults()) {
+    providerStatuses[evidence.toolName] = evidence.result.status;
+    const data = evidence.result.data && typeof evidence.result.data === "object" && !Array.isArray(evidence.result.data)
+      ? evidence.result.data as Record<string, unknown>
+      : null;
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (evidence.result.status === "ok" && (results.length > 0 || evidence.toolName !== "search_policy")) {
+      resolvableIntent = true;
+    }
+    for (const item of results) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      const provenance = record.provenance && typeof record.provenance === "object" && !Array.isArray(record.provenance)
+        ? record.provenance as Record<string, unknown>
+        : null;
+      const sourceId = String(record.source_id ?? provenance?.source_id ?? "").trim();
+      if (sourceId) sourceIds.add(sourceId);
+      const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
+      for (const section of sections) {
+        if (!section || typeof section !== "object" || Array.isArray(section)) continue;
+        const chunkIds = Array.isArray((section as Record<string, unknown>).chunk_ids)
+          ? (section as Record<string, unknown>).chunk_ids as unknown[]
+          : [];
+        for (const chunkId of chunkIds) {
+          const normalized = String(chunkId ?? "").trim();
+          if (normalized) evidenceSectionIds.add(normalized);
+        }
+      }
+    }
+  }
+  return {
+    selected_source_ids: [...sourceIds].slice(0, 20),
+    selected_evidence_section_ids: [...evidenceSectionIds].slice(0, 40),
+    provider_status: providerStatuses,
+    resolvable_intent: resolvableIntent,
+  };
+}
+
+function completenessDiagnostics(validation: ResponseValidationResult): ResponseCompletenessDiagnostics {
+  return validation.completenessDiagnostics ?? { entered: false, cues: [], recovery: [] };
+}
+
+function recoverySummary(validation: ResponseValidationResult) {
+  const diagnostics = completenessDiagnostics(validation);
+  const recovered = diagnostics.recovery.filter((item) => item.result === "recovered");
+  const attempted = diagnostics.recovery.some((item) => ["recovered", "ambiguous", "unavailable"].includes(item.result));
+  return {
+    recovery_attempted: attempted,
+    recovery_type: [...new Set(diagnostics.recovery.map((item) => item.type))],
+    recovery_result: recovered.length > 0
+      ? "recovered"
+      : diagnostics.recovery.some((item) => item.result === "ambiguous")
+        ? "ambiguous"
+        : diagnostics.recovery.some((item) => item.result === "unavailable")
+          ? "unavailable"
+          : diagnostics.recovery.some((item) => item.result === "skipped")
+            ? "skipped"
+            : "unavailable",
+    recovery_details: diagnostics.recovery,
+  };
+}
+
+function responseCompositionSource(
+  modelDiagnostics: ReturnType<typeof modelOutputDiagnostics>,
+  validation: ResponseValidationResult,
+  usedAuthoritativeFallback = false,
+) {
+  const recovery = recoverySummary(validation);
+  if (usedAuthoritativeFallback) return recovery.recovery_result === "recovered" ? "recovered_evidence" : "fallback";
+  if (!validation.approvedSegments.length) return "fallback";
+  if (recovery.recovery_result === "recovered") return modelDiagnostics.response_mode === "answered" ? "mixed" : "recovered_evidence";
+  return "model";
+}
+
+function createSdkTools(context: SonaAgentContext, definitions: typeof GREENFIELD_RUNTIME_TOOL_DEFINITIONS) {
+  return definitions.map((definition) =>
     tool({
       name: definition.name,
       description: definition.description,
@@ -149,10 +312,6 @@ function shouldPreloadPolicyEvidence(message: string): boolean {
   return /\b(?:return|refund|warranty|shipping|delivery|destination)\b/i.test(String(message ?? ""));
 }
 
-function shouldPreloadProcedureEvidence(message: string): boolean {
-  return /\b(?:not working|broken|damaged|defective|troubleshoot(?:ing)?|connect(?:ion|ing)?|pair(?:ing)?|reset|firmware|microphone|interference|issue|problem)\b/i.test(String(message ?? ""));
-}
-
 function policyEvidenceQuery(message: string): string {
   const categories = ["return", "refund", "warranty", "shipping", "delivery", "destination"]
     .filter((term) => new RegExp(`\\b${term}\\b`, "i").test(String(message ?? "")));
@@ -187,15 +346,21 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     finishedAt: null,
     events: [],
     developerInstructions: GREENFIELD_DEVELOPER_INSTRUCTIONS,
-    tools: GREENFIELD_TOOL_DEFINITIONS,
+    tools: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
     usage: [],
   };
   const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
+  const customerProvidedContext = extractCustomerProvidedContext(
+    options.history ?? [],
+    options.message,
+    conversationContext?.customerProvided,
+  );
   const registry = createCapabilityRegistry({
     ...options.capabilities,
     customerMessage: options.message,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+    toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
   });
   let continuityInput = modelConversationContext(
     conversationContext,
@@ -206,8 +371,12 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     registry.getOrderCandidates(),
   );
   const instructions = instructionsForCapabilities(registry.manifest);
+  const providerCustomer = !options.tenant.customerName && !options.customerDisplayName
+    ? await options.capabilities.commerce.getCustomer().catch(() => null)
+    : null;
+  const verifiedProfileName = options.tenant.customerName ?? providerCustomer?.name ?? null;
   const customerDisplayName = resolveCustomerDisplayName({
-    verifiedProfileName: options.tenant.customerName,
+    verifiedProfileName,
     structuredSenderName: options.customerDisplayName,
     history: options.history,
     message: options.message,
@@ -221,16 +390,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     reasoningEffort: options.reasoningEffort,
   });
   const model = options.model ?? runtimeConfig.model;
-  const agent = new Agent<SonaAgentContext, typeof StructuredResponseSchema>({
+  const agent = new Agent<SonaAgentContext, JsonSchemaDefinition>({
     name: "Sona Support Agent",
     instructions,
     model,
-    outputType: StructuredResponseSchema,
+    outputType: GREENFIELD_SDK_OUTPUT_TYPE,
     modelSettings: {
       parallelToolCalls: false,
       ...(runtimeConfig.reasoningEffort ? { reasoning: { effort: runtimeConfig.reasoningEffort } } : {}),
     },
-    tools: createSdkTools(context),
+    tools: createSdkTools(context, registry.definitions),
   });
   const runner = new Runner({
     workflowName: "Sona support agent",
@@ -245,7 +414,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       history: options.history ?? [],
       conversation_context: continuityInput,
       runtime: "@openai/agents",
-      capabilities: GREENFIELD_TOOL_DEFINITIONS.map((definition) => ({
+      capabilities: registry.definitions.map((definition) => ({
         name: definition.name,
         sensitivity: definition.sensitivity,
       })),
@@ -254,10 +423,9 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     now(),
   );
 
-  // These are read-only evidence lookups. Preload the explicitly signalled
-  // policy/procedure segments so one agent can preserve each supported part
-  // while also handling another request in the same turn. This adds no model
-  // call, router, or second agent.
+  // This is a read-only evidence lookup. Preload explicitly signalled policy
+  // evidence so one agent can preserve a supported policy answer while also
+  // handling another request in the same turn.
   const preloadedResults: Array<{ tool: string; result: ToolExecutionResult }> = [];
   const orderContextResults = await registry.resolveCustomerOrderContext();
   for (const { tool, result, arguments: toolArguments } of orderContextResults) {
@@ -284,7 +452,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     options.interactionChannel,
     registry.getOrderCandidates(),
   );
-  const preload = async (toolName: "search_policy" | "search_procedures", query: string) => {
+  const preload = async (toolName: "search_policy", query: string) => {
     const startedPreload = Date.now();
     pushEvent(trace, "tool_call", {
       call_id: `preloaded_${toolName}`,
@@ -304,7 +472,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   const hasPolicyRequest = shouldPreloadPolicyEvidence(options.message);
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
-  if (hasPolicyRequest && shouldPreloadProcedureEvidence(options.message)) await preload("search_procedures", options.message);
   const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
 
   try {
@@ -316,6 +483,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {
       trace.usage.push(traceValue(result.runContext.usage) as Record<string, JsonValue>);
     }
+    const modelDiagnostics = options.enableDevDiagnostics ? modelOutputDiagnostics(result?.finalOutput) : null;
     pushEvent(
       trace,
       "model_response",
@@ -324,13 +492,34 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         raw_response_count: Array.isArray(result?.rawResponses) ? result.rawResponses.length : 0,
         item_types: Array.isArray(result?.newItems) ? result.newItems.map((item: any) => item?.type).filter(Boolean) : [],
         interruptions: Array.isArray(result?.interruptions) ? result.interruptions.map((item: any) => ({ name: item?.name, call_id: item?.rawItem?.callId })) : [],
+        ...(modelDiagnostics ? { model_output: modelDiagnostics } : {}),
       },
       now(),
     );
 
     if (Array.isArray(result?.interruptions) && result.interruptions.length) {
       pushEvent(trace, "error", { code: "approval_required", message: "The SDK paused for tool approval; no action was executed." }, now());
-      const response = "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.";
+      if (options.enableDevDiagnostics && modelDiagnostics) {
+        const evidence = evidenceDiagnostics(registry);
+        trace.diagnostics = traceValue({
+          question_shape: diagnosticQuestionShape(options.message),
+          ...evidence,
+          validation: null,
+          model_output: modelDiagnostics,
+          model_response_mode: modelDiagnostics.response_mode,
+          completeness_check_entered: false,
+          recovery_attempted: false,
+          recovery_type: [],
+          recovery_result: "skipped",
+          fallback_reason: "approval_required",
+          final_composition_source: "fallback",
+        }) as JsonObject;
+      }
+      const response = composeGreenfieldResponse(
+        "I’ve prepared an action for review, but it still needs confirmation before anything can be changed.",
+        options.signature,
+        options.message,
+      );
       pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [] }, now());
       trace.finishedAt = now();
       return {
@@ -348,15 +537,45 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
       interactionChannel: options.interactionChannel,
+      customerName: verifiedProfileName,
       customerDisplayName,
       trustedCustomerIdentity: {
         verified: Boolean(options.tenant.customerEmail?.trim()),
         hasEmail: Boolean(options.tenant.customerEmail?.trim()),
-        hasName: Boolean(options.tenant.customerName?.trim()),
+        hasName: Boolean(verifiedProfileName?.trim()),
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
-    const validation = validateStructuredResponse(result?.finalOutput, responseContext);
+    const validation = ensureAnswerCompleteness(
+      validateStructuredResponse(result?.finalOutput, responseContext),
+      responseContext,
+    );
+    const useAuthoritativeFallback = shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
+    if (options.enableDevDiagnostics && modelDiagnostics) {
+      const evidence = evidenceDiagnostics(registry);
+      const recovery = recoverySummary(validation);
+      const fallbackReason = useAuthoritativeFallback
+        ? "approved_segments_do_not_resolve_intent"
+        : validation.approvedSegments.length
+        ? null
+        : modelDiagnostics.structured_parse_failed
+          ? "structured_parse_failed"
+          : validation.rejectedSegments.length
+            ? "contract_rejected_segments"
+            : "no_approved_segments";
+      trace.diagnostics = traceValue({
+        question_shape: diagnosticQuestionShape(options.message),
+        ...evidence,
+        validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
+        model_output: modelDiagnostics,
+        model_response_mode: modelDiagnostics.response_mode,
+        intent_resolved_by_approved_segment: validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? null,
+        completeness_check_entered: validation.completenessDiagnostics?.entered === true,
+        ...recovery,
+        fallback_reason: fallbackReason,
+        final_composition_source: responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
+      }) as JsonObject;
+    }
     const actionExecutions = await executeActionProposals({
       executor: options.actionExecutor,
       proposals: proposedActions,
@@ -369,7 +588,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
     });
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
-    const response = validation.approvedSegments.length
+    const responseWithoutSignature = validation.approvedSegments.length && !useAuthoritativeFallback
       ? renderResponseSegments(validation.approvedSegments, {
           ...responseContext,
           locale: inferResponseLocale(options.message),
@@ -382,14 +601,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           locale: inferResponseLocale(options.message),
           customerMessage: options.message,
           customerProvidedContext: responseContext.customerProvidedContext,
+          interactionChannel: responseContext.interactionChannel,
           getResults: registry.getResults,
         });
+    const response = composeGreenfieldResponse(responseWithoutSignature, options.signature, options.message);
     pushEvent(trace, "final_response", {
       response,
       proposed_actions: proposedActions,
       action_executions: actionExecutions,
       structured_response: validation.parsed,
-      validation: summarizeResponseValidation(validation),
+      validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
     }, now());
     trace.finishedAt = now();
     return {
@@ -401,15 +622,32 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
+    if (options.enableDevDiagnostics) {
+      trace.diagnostics = traceValue({
+        question_shape: diagnosticQuestionShape(options.message),
+        ...evidenceDiagnostics(registry),
+        validation: null,
+        model_output: null,
+        model_response_mode: "fallback",
+        completeness_check_entered: false,
+        recovery_attempted: false,
+        recovery_type: [],
+        recovery_result: "skipped",
+        fallback_reason: "agent_error",
+        final_composition_source: "fallback",
+      }) as JsonObject;
+    }
   }
 
-  const response = fallbackResponse({
+  const fallback = fallbackResponse({
     activeOrder: registry.getActiveOrderFocus(),
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
     customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    interactionChannel: options.interactionChannel,
     getResults: registry.getResults,
   });
+  const response = composeGreenfieldResponse(fallback, options.signature, options.message);
   pushEvent(trace, "final_response", { response, proposed_actions: proposedActions, action_executions: [], fallback: true }, now());
   trace.finishedAt = now();
   return {

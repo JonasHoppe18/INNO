@@ -721,6 +721,21 @@ function canonicalPolicyEvidenceChunks(content: string, prefix: string): Knowled
   })));
 }
 
+function canonicalPolicySelectedIndex(chunks: KnowledgeEvidenceChunk[], selectedContent: string): number {
+  const normalizedSelected = cleanText(selectedContent).toLowerCase();
+  if (!normalizedSelected) return 0;
+  const selectedTokens = new Set(tokens(normalizedSelected));
+  const ranked = chunks.map((chunk, index) => {
+    const normalizedChunk = cleanText(chunk.content).toLowerCase();
+    const exactContentMatch = normalizedSelected.length >= 32 && normalizedChunk.includes(normalizedSelected) ? 100 : 0;
+    return {
+      index,
+      score: exactContentMatch + queryOverlap(selectedTokens, `${chunk.sectionHeading}\n${chunk.content}`),
+    };
+  });
+  return ranked.sort((left, right) => right.score - left.score || left.index - right.index)[0]?.index ?? 0;
+}
+
 function compatibleToken(left: string, right: string): boolean {
   return left === right || (left.length >= 4 && right.length >= 4 && (left.startsWith(right) || right.startsWith(left)));
 }
@@ -732,6 +747,42 @@ function queryOverlap(queryTokens: Set<string>, value: string): number {
 
 function sectionDistance(section: EvidenceSectionCandidate, selectedIndex: number): number {
   return Math.min(...section.blocks.map((block) => Math.abs(block.chunkIndex - selectedIndex)));
+}
+
+type AnswerBearingIntent = "timing" | "payer" | "destination" | "eligibility" | null;
+
+function answerBearingIntent(value: string): AnswerBearingIntent {
+  const text = cleanText(value).toLowerCase();
+  if (/(?:when|how\s+long|timing|within|after|hvornår|hvor\s+lang\s+tid|wann|wie\s+lange|zeit)/i.test(text)
+    && /(?:refund|refundering|tilbagebetaling|pengene\s+tilbage|rückerstatt|return)/i.test(text)) return "timing";
+  if (/(?:who\s+(?:pays|covers)|payer|hvem\s+betaler|wer\s+zahlt)/i.test(text)
+    && /(?:shipping|postage|return|retur|fragt|versand|rückversand)/i.test(text)) return "payer";
+  if (/(?:where|hvor|wo)/i.test(text)
+    && /(?:send|return|retur|rück|address|adresse|anschrift)/i.test(text)) return "destination";
+  if (/(?:can\s+i|may\s+i|allowed|eligible|kan\s+jeg|må\s+jeg|darf\s+ich|kann\s+ich)/i.test(text)
+    && /(?:return|retur|rück|open|åbnet|geöffnet)/i.test(text)) return "eligibility";
+  return null;
+}
+
+function answerBearingSectionRelevance(intent: AnswerBearingIntent, section: EvidenceSectionCandidate): number {
+  if (!intent) return 0;
+  const content = `${section.heading}\n${section.blocks.map((block) => block.content).join("\n")}`;
+  if (intent === "timing") {
+    return /(?:refund|refundering|tilbagebetaling|pengene\s+tilbage|rückerstatt)/i.test(content)
+      && /(?:received|processed|initiated|issued|within|after|day|business|time|modtag|behandl|påbegynd|dage|efter|erhalten|bearbeitet|innerhalb|tagen|nach)/i.test(content)
+      ? 1
+      : 0;
+  }
+  if (intent === "payer") {
+    return /(?:pay|paid|cost|costs|responsib|payer|betaler|omkost|udgift|zahlt|kosten|verantwort)/i.test(content)
+      && /(?:shipping|postage|return|retur|fragt|versand|rückversand)/i.test(content)
+      ? 1
+      : 0;
+  }
+  if (intent === "destination") {
+    return /(?:send|return|retur|rück|address|adresse|anschrift|portal|street|vej|gade|strasse|straße)/i.test(content) ? 1 : 0;
+  }
+  return /(?:return|retur|rück|accept|allowed|eligible|opened|open|åbnet|geöffnet|seal|forseg|versiegel)/i.test(content) ? 1 : 0;
 }
 
 function renderEvidenceSection(
@@ -777,25 +828,33 @@ export function selectEvidenceSections(
   selectedIndex: number,
   query: string,
   maxChars = MAX_EVIDENCE_CHARS,
+  answerQuery = query,
 ): KnowledgeEvidenceSection[] {
   const sections = buildEvidenceSections(chunks);
   if (!sections.length || maxChars <= 0) return [];
   const queryTokens = new Set(tokens(query));
+  const answerIntent = answerBearingIntent(answerQuery);
   const scored = sections.map((section) => {
     const overlap = queryOverlap(queryTokens, `${section.heading}\n${section.blocks.map((block) => block.content).join("\n")}`);
     const distance = sectionDistance(section, selectedIndex);
     const containsSelected = section.blocks.some((block) => block.chunkIndex === selectedIndex);
+    const answerRelevance = answerBearingSectionRelevance(answerIntent, section);
     return {
       section,
       overlap,
       distance,
       containsSelected,
-      score: overlap + (containsSelected ? 0.05 : 0) + (overlap ? 0.02 / (distance + 1) : 0),
+      answerRelevance,
+      score: overlap + (answerRelevance ? 2 : 0) + (containsSelected ? 0.05 : 0) + (overlap ? 0.02 / (distance + 1) : 0),
     };
   });
-  const eligible = scored.filter((item) => item.overlap > 0 || item.containsSelected);
+  const eligible = scored.filter((item) => item.overlap > 0 || item.containsSelected || item.answerRelevance > 0);
   const ranked = (eligible.length ? eligible : scored.filter((item) => item.containsSelected)).sort(
-    (left, right) => right.score - left.score || right.overlap - left.overlap || left.distance - right.distance || left.section.order - right.section.order,
+    (left, right) => right.answerRelevance - left.answerRelevance
+      || right.score - left.score
+      || right.overlap - left.overlap
+      || left.distance - right.distance
+      || left.section.order - right.section.order,
   );
 
   const selected: KnowledgeEvidenceSection[] = [];
@@ -1336,6 +1395,41 @@ function selectPolicyRows(rows: any[], signals: Map<string, TaskRelevanceSignals
     const signal = signals.get(rowRelevanceKey(row));
     return (signal?.titleMatches ?? 0) > 0 || (signal?.bodyMatches ?? 0) > 0;
   });
+
+  // Policy titles and bodies are often authored in the merchant's language,
+  // while customers may ask in another language. Keep lexical/task overlap as
+  // a positive signal, but do not let its absence veto a clearly leading
+  // semantic match. The absolute floor rejects weak vector neighbours; the
+  // relative lead rejects arbitrary winners when the policy family is unclear.
+  const semanticCandidates = rows
+    .filter((row) => row.match_reason === "semantic")
+    .filter((row) => String(row.authority ?? "").toLowerCase() === "authoritative")
+    .map((row) => ({ row, score: Number(row.score ?? 0) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((left, right) => right.score - left.score);
+  const semanticLeader = semanticCandidates[0];
+  const semanticRunnerUp = semanticCandidates[1];
+  const semanticLeadIsClear = Boolean(semanticLeader)
+    && semanticLeader.score >= 0.30
+    && (!semanticRunnerUp
+      || (
+        semanticLeader.score - semanticRunnerUp.score >= Math.max(0.04, semanticLeader.score * 0.15)
+        && semanticLeader.score / Math.max(semanticRunnerUp.score, 0.01) >= 1.15
+      ));
+  const semanticRows = semanticLeadIsClear
+    ? semanticCandidates
+      .filter(({ score }) => score >= Math.max(0.30, semanticLeader.score * 0.8))
+      .map(({ row }) => row)
+    : [];
+
+  if (semanticRows.length) {
+    // The semantic candidate set is already tenant-, lifecycle-, authority-,
+    // and applicability-filtered by the caller. Prefer it when it is clearly
+    // stronger than the competing families; this is what prevents a weak
+    // lexical fragment from making Privacy win a return question.
+    return semanticRows.slice(0, finalLimit);
+  }
+
   if (relevant.length <= 1) return relevant;
 
   // A single customer intent should not cause an incidental body word in a
@@ -1547,6 +1641,8 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
               })),
           0,
           request.query,
+          MAX_EVIDENCE_CHARS,
+          request.taskQuery ?? request.query,
         ),
         rank: index + 1,
         taskSpecificity: selected.taskSpecificity,
@@ -1618,7 +1714,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     return context;
   }
 
-  private async loadEvidenceSections(workspaceId: string, rows: any[], query: string): Promise<Map<string, KnowledgeEvidenceSection[]>> {
+  private async loadEvidenceSections(workspaceId: string, rows: any[], query: string, answerQuery = query): Promise<Map<string, KnowledgeEvidenceSection[]>> {
     const recordIds = Array.from(new Set(rows.map((row) => String(row.id ?? "")).filter(Boolean)));
     if (!recordIds.length) return new Map();
 
@@ -1679,7 +1775,13 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         ? canonicalPolicyEvidenceChunks(canonicalContent, `${recordId}:canonical`)
         : [];
       if (canonicalPolicyChunks.length) {
-        sections.set(recordId, selectEvidenceSections(canonicalPolicyChunks, 0, query));
+        sections.set(recordId, selectEvidenceSections(
+          canonicalPolicyChunks,
+          canonicalPolicySelectedIndex(canonicalPolicyChunks, String(row.chunk_content ?? "")),
+          query,
+          MAX_EVIDENCE_CHARS,
+          answerQuery,
+        ));
         continue;
       }
       if (!nonEmptyChunks.length && canonicalContent) {
@@ -1701,6 +1803,8 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
         boundedChunks.map((chunk) => ({ chunkId: chunk.id, chunkIndex: chunk.index, content: chunk.content })),
         selectedIndex,
         query,
+        MAX_EVIDENCE_CHARS,
+        answerQuery,
       ));
     }
     return sections;
@@ -2043,7 +2147,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       : mergedRows;
     const selected = selectKnowledgeRows(productScopedRows, request.taskQuery ?? request.query, productContext, finalLimit, request.knowledgeTypes, request.completedSteps);
     const rows = selected.rows;
-    const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query);
+    const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query, request.taskQuery ?? request.query);
     return rows
       .map((row: any, index: number) => ({
       record: {

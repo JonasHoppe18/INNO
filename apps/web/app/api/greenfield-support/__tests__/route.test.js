@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthScope: vi.fn(),
   resolveScopedShop: vi.fn(),
   resolveShopifyCredentialsWithDiagnostics: vi.fn(),
+  loadUserEmailSignatureConfig: vi.fn(),
   runGreenfieldAgentWithAgentsSdk: vi.fn(),
   Ship24ReadOnlyProvider: vi.fn(),
   loadGreenfieldThreadState: vi.fn(),
@@ -20,6 +21,9 @@ vi.mock("@/lib/server/workspace-auth", () => ({
 }));
 vi.mock("@/lib/server/shopify-credentials", () => ({
   resolveShopifyCredentialsWithDiagnostics: mocks.resolveShopifyCredentialsWithDiagnostics,
+}));
+vi.mock("@/lib/server/email-signature", () => ({
+  loadUserEmailSignatureConfig: mocks.loadUserEmailSignatureConfig,
 }));
 vi.mock("@/lib/greenfield-support", () => ({
   runGreenfieldAgentWithAgentsSdk: mocks.runGreenfieldAgentWithAgentsSdk,
@@ -41,6 +45,14 @@ const { POST } = await import("../route");
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+});
+
+beforeEach(() => {
+  mocks.loadUserEmailSignatureConfig.mockResolvedValue({
+    closingText: "Mvh\nJonas",
+    defaultClosingText: "Mvh\nJonas",
+    languageSignatures: {},
+  });
 });
 
 describe("greenfield support request wiring", () => {
@@ -113,6 +125,9 @@ describe("greenfield support request wiring", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledTimes(1);
+    expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalledWith(expect.anything(), "user-a", { workspaceId: "workspace-a" });
+    expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({ signature: expect.objectContaining({ closingText: "Mvh\nJonas" }) }));
+    expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].enableDevDiagnostics).not.toBe(true);
   });
 
   it("does not run without an explicit support message", async () => {

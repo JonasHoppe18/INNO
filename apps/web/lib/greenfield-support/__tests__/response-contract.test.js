@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { inferResponseLocale, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
+import { ensureAnswerCompleteness, inferResponseLocale, inspectTimingCandidateDiagnostics, shouldPreferAuthoritativeEvidenceFallback, StructuredResponseSchema, renderResponseSegments, validateStructuredResponse } from "../response-contract";
 
 function validate(registry, ...segments) {
   return validateStructuredResponse({ segments }, registry);
@@ -209,6 +209,278 @@ describe("structured response contract", () => {
     expect(rendered).toContain("If the seal is broken, a deduction may apply. Return shipping is your responsibility.");
     expect(rendered).toContain("The refund starts after the return is processed.");
     expect(rendered.split("\n\n")).toHaveLength(3);
+  });
+
+  it("puts the return process first and omits secondary policy details when they were not asked for", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "I found the package, but I want to return it. How do I do that?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Start the return through the returns portal. Opened products may incur a EUR 50 deduction. Return shipping is your responsibility. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered.indexOf("Start the return through the returns portal.")).toBeLessThan(rendered.indexOf("Returns are accepted within 30 days."));
+    expect(rendered).not.toContain("EUR 50");
+    expect(rendered).not.toContain("Return shipping is your responsibility");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("keeps an opened-package consequence when the customer asks about the condition", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "I opened the package, can I still return it?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. Return shipping is your responsibility. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("EUR 50 deduction");
+    expect(rendered).not.toContain("Return shipping is your responsibility");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("prioritizes the return destination and keeps its line-oriented address", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = { ...registry, customerMessage: "Where do I send my return?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Send the return to:\n\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg\nUse tracked shipping. Opened products may incur a EUR 50 deduction. Refunds are processed after receipt.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("Send the return to:\nAceZone International ApS\nReturn Street 10\n2000 Frederiksberg");
+    expect(rendered).not.toContain("Returns are accepted within 30 days");
+    expect(rendered).not.toContain("Use tracked shipping");
+    expect(rendered).not.toContain("EUR 50");
+    expect(rendered).not.toContain("Refunds are processed");
+  });
+
+  it("keeps each merchant's grounded return destination flow distinct", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return destination" }));
+    const renderPolicy = (customerMessage, text) => {
+      const context = { ...registry, customerMessage };
+      const result = validateStructuredResponse({ segments: [{
+        type: "knowledge_guidance",
+        text,
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      }] }, context);
+      expect(result.allValid).toBe(true);
+      return renderResponseSegments(result.approvedSegments, context);
+    };
+
+    const physical = renderPolicy(
+      "Where do I send my return?",
+      "Returns are accepted within 30 days. Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nYou pay return shipping. Tracking is recommended. COD is not accepted. Refunds are processed after receipt.",
+    );
+    expect(physical).toContain("Merchant Returns\nReturn Street 10\n2000 Frederiksberg");
+    expect(physical).toContain("You pay return shipping.");
+    expect(physical).not.toContain("Tracking is recommended");
+    expect(physical).not.toContain("COD is not accepted");
+    expect(physical).not.toContain("Refunds are processed");
+
+    const danishPhysical = renderPolicy(
+      "Hvor skal jeg sende min retur?",
+      "Når din retur er blevet accepteret, skal den sendes til:\nMerchant Returns\nReturgade 10\n2000 Frederiksberg\nKontakt os først via kontaktformularen med årsagen til returen. Du skal selv betale returportoen. Vi anbefaler tracking. Refunderingen igangsættes efter modtagelsen.",
+    );
+    expect(danishPhysical).toContain("Merchant Returns\nReturgade 10\n2000 Frederiksberg");
+    expect(danishPhysical).toContain("Du skal selv betale returportoen.");
+    expect(danishPhysical).not.toContain("kontaktformularen");
+    expect(danishPhysical).not.toContain("efterkrav");
+    expect(danishPhysical).not.toContain("tracking");
+    expect(danishPhysical).not.toContain("Refunderingen");
+
+    const portal = renderPolicy(
+      "Where do I send my return?",
+      "Start your return through the returns portal. The portal will provide the shipping instructions. Refunds are processed after receipt.",
+    );
+    expect(portal).toContain("Start your return through the returns portal.");
+    expect(portal).toContain("The portal will provide the shipping instructions.");
+    expect(portal).not.toContain("Refunds are processed");
+    expect(portal).not.toContain("Merchant Returns");
+
+    const approvalFirst = renderPolicy(
+      "Where do I send my return?",
+      "Request return approval through support before sending the product. After approval, follow the instructions provided. Refunds are processed after receipt.",
+    );
+    expect(approvalFirst).toContain("Request return approval through support before sending the product.");
+    expect(approvalFirst).toContain("After approval, follow the instructions provided.");
+    expect(approvalFirst).not.toContain("Refunds are processed");
+    expect(approvalFirst).not.toContain("Merchant Returns");
+  });
+
+  it("preserves answer-bearing values across prose paragraphs", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const renderPolicy = (customerMessage, text) => {
+      const context = { ...registry, customerMessage };
+      const result = validateStructuredResponse({ segments: [{
+        type: "knowledge_guidance",
+        text,
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      }] }, context);
+      expect(result.allValid).toBe(true);
+      return renderResponseSegments(result.approvedSegments, context);
+    };
+
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Send the return to:\n\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark",
+    )).toContain("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark");
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Use the returns portal here:\n\nhttps://returns.example.test/start",
+    )).toContain("https://returns.example.test/start");
+    expect(renderPolicy(
+      "Where can I contact support?",
+      "Contact support at:\n\nsupport@example.test",
+    )).toContain("support@example.test");
+    expect(renderPolicy(
+      "What is my tracking link?",
+      "Your tracking link is:\n\nhttps://tracking.example.test/parcel-1",
+    )).toContain("https://tracking.example.test/parcel-1");
+    expect(renderPolicy(
+      "When will I get my refund?",
+      "The refund will be processed within:\n\n5 business days after receipt.",
+    )).toContain("5 business days after receipt.");
+    expect(renderPolicy(
+      "Who pays return shipping?",
+      "The payer is:\n\nYou pay the return shipping.",
+    )).toContain("You pay the return shipping.");
+    expect(renderPolicy(
+      "Where do I send my return?",
+      "Send the return to:\n\nReturns are accepted within 30 days.",
+    )).not.toContain("Send the return to:");
+  });
+
+  it("returns refund timing without dumping unrelated return conditions", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "refund timing" }));
+    const context = { ...registry, customerMessage: "When will I get my refund?" };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. The refund is normally processed within 5 business days. Your bank may take additional time to display the funds.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("refund is normally processed within 5 business days");
+    expect(rendered).toContain("bank may take additional time");
+    expect(rendered).not.toContain("30 days");
+    expect(rendered).not.toContain("EUR 50");
+  });
+
+  it("does not ask for an order number when general refund timing already answers the question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "refund timing" }));
+    const context = { ...registry, customerMessage: "When will I get my refund?" };
+    const result = validateStructuredResponse({ segments: [
+      {
+        type: "knowledge_guidance",
+        text: "The refund is normally processed within 5 business days after receipt.",
+        basis: { result_id: policy.resultId, field_paths: ["results"] },
+      },
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      },
+    ] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("refund is normally processed within 5 business days");
+    expect(rendered).not.toContain("order number");
+  });
+
+  it("keeps a Danish return-process answer focused on the primary question", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Jeg fandt pakken, men jeg vil gerne returnere den, hvordan gør jeg?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Du kan returnere varen inden for 30 dage efter modtagelsen. Udfyld kontaktformularen med årsagen til returneringen, navnet på ordren og ordrenummeret. Hvis forseglingen er brudt, kan der fratrækkes 50 EUR. Du betaler selv returfragten. Refunderingen igangsættes, når returneringen er modtaget og behandlet.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered.indexOf("Udfyld kontaktformularen")).toBeLessThan(rendered.indexOf("Du kan returnere varen"));
+    expect(rendered).not.toContain("50 EUR");
+    expect(rendered).not.toContain("returfragten");
+    expect(rendered).not.toContain("Refunderingen igangsættes");
+  });
+
+  it("keeps a Danish opened-package answer on the condition asked about", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const policy = await registry.execute("search_policy", JSON.stringify({ query: "return policy" }));
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Jeg har åbnet pakken, kan jeg stadig returnere den?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "knowledge_guidance",
+      text: "Du kan stadig returnere varen, selv om forseglingen er brudt. Hvis emballagen ikke er komplet, kan der trækkes 50 EUR. Du betaler selv returfragten. Refunderingen behandles efter modtagelsen.",
+      basis: { result_id: policy.resultId, field_paths: ["results"] },
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("Du kan stadig returnere varen, selv om forseglingen er brudt.");
+    expect(rendered).toContain("50 EUR");
+    expect(rendered).not.toContain("returfragten");
+    expect(rendered).not.toContain("Refunderingen behandles");
+  });
+
+  it("translates proposal-only cancellation questions into customer language", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const context = {
+      ...registry,
+      locale: "da",
+      customerMessage: "Kan du annullere min ordre?",
+    };
+    const result = validateStructuredResponse({ segments: [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "cancel_order",
+      missing_arguments: ["order_id", "reason"],
+    }] }, context);
+
+    expect(result.allValid).toBe(true);
+    const rendered = renderResponseSegments(result.approvedSegments, context);
+    expect(rendered).toContain("hjælpe dig med at anmode om at få ordren annulleret");
+    expect(rendered).not.toContain("forslag");
+    expect(rendered).not.toContain("cancellation of an order");
+    expect(rendered).toContain("Der bliver ikke ændret noget, før du bekræfter");
   });
 
   it("preserves explicit address and step line breaks", async () => {
@@ -1041,8 +1313,9 @@ describe("structured response contract", () => {
     expect(action.allValid).toBe(true);
     const { renderResponseSegments } = await import("../response-contract");
     const rendered = renderResponseSegments(action.approvedSegments, registry);
-    expect(rendered).toContain("prepare a proposal for an address update");
-    expect(rendered).toContain("will not be completed");
+    expect(rendered).toContain("help you request an address change");
+    expect(rendered).toContain("Nothing will be changed until you confirm");
+    expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toContain("hold");
     expect(rendered).not.toContain("carrier");
   });
@@ -1606,8 +1879,9 @@ describe("structured response contract", () => {
     );
 
     const rendered = renderResponseSegments(result.approvedSegments, registry);
-    expect(rendered).toContain("proposal");
-    expect(rendered).toContain("will not be completed without your confirmation");
+    expect(rendered).toContain("help you request a refund");
+    expect(rendered).toContain("Nothing will be changed until you confirm");
+    expect(rendered).not.toContain("prepare a proposal");
     expect(rendered).not.toMatch(/has been refunded|was refunded/i);
     expect(rendered.match(/Could you share/g)).toHaveLength(1);
   });
@@ -1622,5 +1896,1337 @@ describe("structured response contract", () => {
     });
     expect(evidence.allValid).toBe(false);
     expect(evidence.issues[0].code).toBe("unknown_result_id");
+  });
+});
+
+function answerEvidenceRecord(records) {
+  return {
+    resultId: "answer-completeness-1",
+    toolName: "search_policy",
+    result: {
+      status: "ok",
+      data: { results: records },
+    },
+  };
+}
+
+function policyRecord(content, title = "Authoritative support policy", structuredData) {
+  return {
+    title,
+    knowledge_type: "policy",
+    authority: "authoritative",
+    evidence_sections: [{ heading: "Relevant policy section", content }],
+    provenance: { source_kind: "merchant_authored", source_id: title },
+    ...(structuredData ? { structured_data: structuredData } : {}),
+  };
+}
+
+function procedureEvidenceRecord({ taskSpecificity = "sufficient", procedureEvidenceQuality = "usable", records = [{
+  title: "A-Blaze pairing procedure",
+  knowledge_type: "procedural",
+  authority: "authoritative",
+  task_relevance_score: 1,
+  rank: 1,
+  evidence_sections: [{ heading: "Pairing", content: "Pair the headset with the USB-C dongle." }],
+  structured_data: {
+    applies_to: { product_models: ["A-Blaze"] },
+    procedure_steps: [
+      { block_id: "pair_1", kind: "instruction", text: "Plug the USB-C dongle into the PC." },
+      { block_id: "pair_2", kind: "instruction", text: "Turn on the headset and wait for it to pair." },
+    ],
+  },
+  provenance: { source_kind: "merchant_authored", source_id: "a-blaze-pairing" },
+}] } = {}) {
+  return {
+    resultId: "procedure-completeness-1",
+    toolName: "search_procedures",
+    result: {
+      status: taskSpecificity === "sufficient" && procedureEvidenceQuality === "usable" ? "ok" : "not_found",
+      data: {
+        task_specificity: taskSpecificity,
+        procedure_evidence_quality: procedureEvidenceQuality,
+        results: records,
+      },
+    },
+  };
+}
+
+async function recoveryCase(customerMessage, modelSegments, evidenceRecords, customerProvidedContext = {}, interactionChannel) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    customerProvidedContext,
+    interactionChannel,
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function proposalRecoveryCase(customerMessage, modelSegments, evidenceRecords, interactionChannel = "playground") {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry({ ...dependencies, customerMessage, orderReferences: ["10231"] });
+  await registry.execute("get_order", JSON.stringify({ order_id: "10231" }));
+  const proposal = await registry.execute("create_return", JSON.stringify({
+    order_id: "10231",
+    item_ids: ["line-10231"],
+    reason: "Customer requested a return",
+  }));
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    activeOrder: registry.getActiveOrderFocus(),
+    customerMessage,
+    interactionChannel,
+    trustedCustomerIdentity: { verified: true, hasName: true, hasEmail: true },
+    proposedActions: proposal.proposedAction ? [proposal.proposedAction] : [],
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function verifiedReturnRecoveryCase(customerMessage, modelSegments, evidenceRecords, options = {}) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry({ ...dependencies, customerMessage, orderReferences: ["1063"] });
+  const context = {
+    ...registry,
+    customerMessage,
+    interactionChannel: options.interactionChannel ?? "playground",
+    activeOrder: options.activeOrder ?? {
+      requestedOrderId: "1063",
+      state: "verified",
+      order: {
+        id: "shopify-1063",
+        orderNumber: "1063",
+        status: "fulfilled",
+        items: [{ id: "line-1063", title: "Chaos Mousepad 21", quantity: 1 }],
+      },
+    },
+    customerName: "Jonas Hoppe",
+    trustedCustomerIdentity: options.trustedCustomerIdentity ?? { verified: true, hasName: true, hasEmail: true },
+    proposedActions: options.proposedActions ?? [],
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? registry.getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: modelSegments }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function invalidResponseRecoveryCase(customerMessage, evidenceRecords) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => evidenceRecords.find((evidence) => evidence.resultId === resultId) ?? getResult(resultId),
+    getResults: () => [...evidenceRecords, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse("The model returned an unstructured fallback.", context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, initial, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function answerCompletenessCase(customerMessage, modelText, records) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const evidence = answerEvidenceRecord(records);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => resultId === evidence.resultId ? evidence : getResult(resultId),
+    getResults: () => [evidence, ...registry.getResults()],
+  };
+  const initial = validateStructuredResponse({ segments: [{
+    type: "knowledge_guidance",
+    text: modelText,
+    basis: { result_id: evidence.resultId, field_paths: ["results"] },
+  }] }, context);
+  const completed = ensureAnswerCompleteness(initial, context);
+  return { context, completed, rendered: renderResponseSegments(completed.approvedSegments, context) };
+}
+
+async function policyTruthCase(customerMessage, modelText, records, fieldPaths = ["results"]) {
+  const dependencies = await createDemoDependencies();
+  const registry = createCapabilityRegistry(dependencies);
+  const evidence = answerEvidenceRecord(records);
+  const getResult = registry.getResult;
+  const context = {
+    ...registry,
+    customerMessage,
+    getResult: (resultId) => resultId === evidence.resultId ? evidence : getResult(resultId),
+  };
+  const result = validateStructuredResponse({ segments: [{
+    type: "knowledge_guidance",
+    text: modelText,
+    basis: { result_id: evidence.resultId, field_paths: fieldPaths },
+  }] }, context);
+  return { context, result, rendered: renderResponseSegments(result.approvedSegments, context) };
+}
+
+describe("model-to-contract answer completeness", () => {
+  it("restores one omitted physical destination from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:",
+      [policyRecord("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg")],
+    );
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.rendered).toContain("Merchant Returns");
+    expect(result.rendered).toContain("Return Street 10");
+    expect(result.rendered).toContain("2000 Frederiksberg");
+  });
+
+  it("restores one omitted return portal URL from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Use the returns portal:",
+      [policyRecord("Use the returns portal:\nhttps://returns.example.test/start")],
+    );
+
+    expect(result.rendered).toContain("https://returns.example.test/start");
+  });
+
+  it("restores one omitted tracking URL from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where is my tracking link?",
+      "Your tracking link is:",
+      [policyRecord("Your tracking link is:\nhttps://tracking.example.test/parcel-1")],
+    );
+
+    expect(result.rendered).toContain("https://tracking.example.test/parcel-1");
+  });
+
+  it("restores one omitted contact email from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Where can I contact support?",
+      "Contact support at:",
+      [policyRecord("Contact support at:\nsupport@example.test")],
+    );
+
+    expect(result.rendered).toContain("support@example.test");
+  });
+
+  it("restores one omitted refund timing value from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "When will I get my refund?",
+      "Your refund is processed within:",
+      [policyRecord("Your refund is processed within 5 business days after receipt.")],
+    );
+
+    expect(result.rendered).toContain("5 business days after receipt");
+  });
+
+  it("restores one omitted return-shipping payer from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Who pays return shipping?",
+      "Return shipping is paid by:",
+      [policyRecord("The customer is responsible for return shipping costs.")],
+    );
+
+    expect(result.rendered).toContain("responsible for return shipping costs");
+  });
+
+  it("restores one omitted eligibility answer from selected evidence", async () => {
+    const result = await answerCompletenessCase(
+      "Can I return it?",
+      "Returns are accepted:",
+      [policyRecord("Yes, returns are accepted within 30 days after delivery.")],
+    );
+
+    expect(result.rendered).toContain("returns are accepted within 30 days after delivery");
+  });
+
+  it("withholds an incomplete answer when selected evidence has conflicting destinations", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:",
+      [
+        policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North return policy"),
+        policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South return policy"),
+      ],
+    );
+
+    expect(result.completed.allValid).toBe(false);
+    expect(result.completed.approvedSegments).toEqual([]);
+    expect(result.completed.issues.at(-1).code).toBe("answer_value_ambiguous");
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
+  });
+
+  it("does not duplicate an answer-bearing value already present in model output", async () => {
+    const result = await answerCompletenessCase(
+      "Where do I send my return?",
+      "Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg",
+      [policyRecord("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg")],
+    );
+
+    expect(result.completed.approvedSegments[0].text).toBe("Send the return to:\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg");
+    expect(result.rendered.match(/Return Street 10/g)).toHaveLength(1);
+  });
+});
+
+describe("evidence-aware fallback recovery", () => {
+  it.each(["support_email", "support_inbox", "playground", "web_chat"])(
+    "treats a support contact prerequisite as satisfied on %s",
+    async (interactionChannel) => {
+      const evidence = answerEvidenceRecord([policyRecord(
+        "Contact us to request a return. Send the return with tracked shipping.",
+      )]);
+      const result = await recoveryCase("I would like to return my order.", [{
+        type: "limitation",
+        text: "I couldn't verify that policy detail from our current policy information.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }], [evidence], {}, interactionChannel);
+
+      expect(result.completed.allValid).toBe(true);
+      expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+      expect(result.rendered).toContain("Send the return with tracked shipping");
+      expect(result.rendered).not.toMatch(/contact us/i);
+    },
+  );
+
+  it.each([
+    "Email support to request a return.",
+    "Use the support form to request a return.",
+    "Let us know you want to return.",
+    "Submit a return request.",
+  ])("recognizes a satisfied support-request variant: %s", async (policyText) => {
+    const evidence = answerEvidenceRecord([policyRecord(policyText)]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "knowledge_guidance",
+      text: policyText,
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "web_chat");
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.rendered).toBe("");
+  });
+
+  it("keeps a content-bearing contact requirement unresolved", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Email us a photo of the damage.")]);
+    const result = await recoveryCase("My product is damaged. How do I get help?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+    expect(result.rendered).toContain("photo");
+  });
+
+  it("keeps a missing serial-number requirement unresolved", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Provide your serial number.")]);
+    const result = await recoveryCase("My product is damaged. How do I get help?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+    expect(result.rendered).toContain("serial number");
+  });
+
+  it("does not treat a merchant-side contact as a customer process step", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("We will contact you about deductions.")]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "knowledge_guidance",
+      text: "The policy mentions possible deductions.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.completed.issues).not.toContainEqual(expect.objectContaining({ code: "answer_value_ambiguous" }));
+  });
+
+  it("keeps contradictory customer process instructions ambiguous", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("Contact support before returning.", "Contact-first policy"),
+      policyRecord("Do not contact support; send the item directly.", "Direct-send policy"),
+    ]);
+    const result = await recoveryCase("I would like to return my order.", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {}, "playground");
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("does not make the #1063 policy contact or merchant follow-up ambiguous", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "If not, we will contact you concerning a further deduction from the refund. Please contact us via e-mail letting us know that you want to return. You cannot use your right to regret by refusing to accept the goods at delivery, or by omitting to collect it, without at the same time letting us know that you wish to return.",
+      "Refund policy",
+    )]);
+    const result = await recoveryCase(
+      "Hi, I would like to return my order 1063 since I'm not happy with my product. How do I return it?",
+      [{
+        type: "knowledge_guidance",
+        text: "Your return request is being reviewed.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }],
+      [evidence],
+      {},
+      "playground",
+    );
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "unavailable" });
+    expect(result.completed.issues).not.toContainEqual(expect.objectContaining({ code: "answer_value_ambiguous" }));
+  });
+
+  it.each([
+    ["P1 active", "You pay return shipping.", true],
+    ["P2 passive", "Return shipping must be paid by you.", true],
+    ["P3 borne", "Return postage is borne by the customer.", true],
+    ["P4 prepaid", "We provide a prepaid return label.", true],
+    ["P5 unrelated payment", "Your order has already been paid.", false],
+  ])("extracts payer responsibility safely: %s", async (_name, policyText, shouldRecover) => {
+    const evidence = answerEvidenceRecord([policyRecord(policyText)]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "cost",
+      result: shouldRecover ? "recovered" : "unavailable",
+    });
+    if (shouldRecover) expect(result.rendered).not.toContain("couldn't verify");
+    else expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("fails closed for conflicting payer responsibility", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("You pay return shipping.", "Customer-pays policy"),
+      policyRecord("We pay return shipping.", "Merchant-pays policy"),
+    ]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "cost",
+      result: "ambiguous",
+    });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("exposes candidate-level diagnostics for timing propositions", () => {
+    const [certified] = inspectTimingCandidateDiagnostics([
+      "As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+    ]);
+
+    expect(certified).toMatchObject({
+      timing_pattern_detected: true,
+      event_trigger_detected: true,
+      duration_detected: false,
+      explicit_date_detected: false,
+      subject_outcome_detected: true,
+      rejected: false,
+      rejection_reason: [],
+      certified_candidate: true,
+      conflict_group: null,
+    });
+  });
+
+  it.each([
+    ["T1 event-triggered receipt and processing", "As soon as the return is received and processed, the refund is initiated.", true, true],
+    ["T2 event-triggered receipt and inspection", "The refund is initiated once the return has been received and inspected.", true, true],
+    ["T3 incomplete event and outcome", "After the return, the outcome follows.", false, true],
+  ])("classifies timing candidates safely: %s", (_name, text, shouldCertify, shouldDetectEvent) => {
+    const [candidate] = inspectTimingCandidateDiagnostics([text]);
+    expect(candidate.certified_candidate).toBe(shouldCertify);
+    expect(candidate.event_trigger_detected).toBe(shouldDetectEvent);
+  });
+
+  it("keeps compatible timing stages together", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed. Your payment provider may take additional time to display the funds.",
+    )])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "timing",
+      result: "recovered",
+    });
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).toContain("payment provider may take additional time");
+  });
+
+  it("fails closed for contradictory timing stages", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The refund is initiated within 5 business days.", "Five-day refund policy"),
+      policyRecord("The refund is initiated within 30 business days.", "Thirty-day refund policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({
+      type: "timing",
+      result: "ambiguous",
+    });
+    expect(result.rendered).toContain("couldn't verify");
+  });
+
+  it("certifies the exact selected Refund-policy timing evidence", () => {
+    const [candidate] = inspectTimingCandidateDiagnostics([
+      "As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+    ]);
+
+    expect(candidate.certified_candidate).toBe(true);
+    expect(candidate.rejection_reason).toEqual([]);
+  });
+
+  it("distinguishes a certified timing candidate from policy-truth rejection", async () => {
+    const result = await answerCompletenessCase(
+      "Hvornår får jeg pengene tilbage?",
+      "As soon as we have received and processed your return we will initiate the refund",
+      [
+        policyRecord(
+          "Returns are accepted within 30 days. If the seal is broken, the refund may be reduced by EUR 50. As soon as we have received and processed your return we will initiate the refund and you will be notified.",
+          "Current refund policy",
+        ),
+        policyRecord("Returns are not accepted.", "Conflicting return policy"),
+      ],
+    );
+
+    expect(result.completed.completenessDiagnostics.timing_candidates.some((candidate) => candidate.certified_candidate)).toBe(true);
+    expect(result.completed.issues.some((issue) => issue.code === "policy_truth_ambiguous")).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery.some((entry) => entry.type === "timing")).toBe(true);
+  });
+
+  it("recovers a usable policy answer when the model emits a generic fallback", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Your refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("couldn't verify");
+  });
+
+  it("recovers the payer without re-inserting the rest of the policy", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("You arrange and pay for the return shipment.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("pay for the return shipment");
+    expect(result.rendered).not.toContain("30 days");
+  });
+
+  it("recovers a general timing answer when the model asks for an unnecessary order number", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed. Your bank or payment provider may take additional time to display the funds.",
+    )]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments.filter((segment) => segment.type === "knowledge_guidance")).toHaveLength(1);
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).toContain("payment provider may take additional time");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("does not let an approved clarification block timing recovery when the answer segment is rejected", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "The refund is initiated after the return is received and processed.",
+    )]);
+    const result = await recoveryCase("When will I get my refund?", [
+      {
+        type: "question",
+        purpose: "enable_capability",
+        text: null,
+        capability: "get_order",
+        missing_arguments: ["order_id"],
+      },
+      {
+        type: "knowledge_guidance",
+        text: "The refund is initiated after the return is received and processed.",
+        basis: { result_id: evidence.resultId, field_paths: ["results[0].missing"] },
+      },
+    ], [evidence]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.initial.approvedSegments[0].type).toBe("question");
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("treats an approved payer clarification as non-answering when payer evidence is usable", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("keeps a customer-specific clarification when general policy cannot resolve the requested status", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When was my refund processed for order #123?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: false,
+    });
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "skipped" });
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("question");
+  });
+
+  it("does not prefer fallback when an approved answer already resolves the intent", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "knowledge_guidance",
+      text: "The refund is initiated after the return is received and processed.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }, {
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics).toMatchObject({
+      intent_resolved_by_approved_segment: true,
+    });
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(false);
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("attempts recovery when every approved segment is a non-answer question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Could you share more details?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+  });
+
+  it("allows clarification when policy evidence is ambiguous", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("The customer pays the return shipping.", "Customer payer policy"),
+      policyRecord("The merchant pays the return shipping.", "Merchant payer policy"),
+    ]);
+    const result = await recoveryCase("Who pays return shipping?", [{
+      type: "question",
+      purpose: "pure_clarification",
+      text: "Could you share more details?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "ambiguous" });
+    expect(result.rendered).toContain("Could you share more details?");
+    expect(result.rendered).not.toContain("customer pays");
+    expect(result.rendered).not.toContain("merchant pays");
+  });
+
+  it("recovers event-trigger timing for a general Danish question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "As soon as your return is received and inspected, we will release the refund.",
+    )]);
+    const result = await recoveryCase("Hvornår får jeg pengene tilbage?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("release the refund");
+    expect(result.rendered).not.toContain("order number");
+  });
+
+  it("recognizes an explicitly grounded refund date as timing evidence", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord("The refund will be issued on 16/09/2026.")])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("issued on 16/09/2026");
+  });
+
+  it("recovers a payer answer when an SDK fallback has no structured output", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer is responsible for return shipping costs.")]);
+    const result = await invalidResponseRecoveryCase("Who pays return shipping?", [evidence]);
+
+    expect(result.initial.schemaValid).toBe(false);
+    expect(result.completed.schemaValid).toBe(false);
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.rendered).toContain("responsible for return shipping costs");
+  });
+
+  it("recovers a Danish payer answer when every model segment is rejected", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "not_a_real_capability",
+      missing_arguments: ["unsupported"],
+    }], [evidence]);
+
+    expect(result.initial.approvedSegments).toEqual([]);
+    expect(result.initial.rejectedSegments).toHaveLength(1);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+  });
+
+  it("wires a resolvable payer question directly to payer recovery even without model cues", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The customer pays the return shipping.")]);
+    const result = await recoveryCase("Hvem betaler returfragten?", [], [evidence]);
+
+    expect(result.completed.completenessDiagnostics.cues).toContain("cost");
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "recovered" });
+    expect(result.rendered).toContain("customer pays the return shipping");
+  });
+
+  it("does not recover general policy timing for a customer-specific order status question", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("The refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When was my refund processed for order #123?", [{
+      type: "question",
+      purpose: "enable_capability",
+      text: null,
+      capability: "get_order",
+      missing_arguments: ["order_id"],
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("question");
+    expect(result.rendered).not.toContain("refund is initiated");
+  });
+
+  it("fails closed when prose mentions refund timing without stating an answer", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Refund timing depends on a case review and may vary.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("depends on a case review");
+  });
+
+  it("recovers a compound eligibility and consequence proposition", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days of delivery. If the seal is broken, the refund may be reduced by EUR 50.",
+    )]);
+    const result = await recoveryCase("Can I return an opened item?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("Returns are accepted within 30 days of delivery");
+    expect(result.rendered).toContain("refund may be reduced by EUR 50");
+  });
+
+  it("preserves an applicable procedure when the model says it was not found", async () => {
+    const evidence = procedureEvidenceRecord();
+    const result = await recoveryCase("My A-Blaze headset will not pair.", [{
+      type: "limitation",
+      text: "I couldn't verify a support procedure for this issue from our current guidance.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], { product: "A-Blaze", issue: "My A-Blaze headset will not pair" });
+
+    expect(result.rendered).toContain("Plug the USB-C dongle into the PC.");
+    expect(result.rendered).toContain("wait for it to pair");
+    expect(result.rendered).not.toContain("couldn't verify a support procedure");
+  });
+
+  it("leaves an ambiguous procedure request as a clarification", async () => {
+    const evidence = procedureEvidenceRecord({ taskSpecificity: "insufficient", procedureEvidenceQuality: "insufficient" });
+    const result = await recoveryCase("My headset is not working.", [{
+      type: "question",
+      purpose: "clarify_task",
+      text: "What exactly is happening with the headset?",
+      capability: null,
+      missing_arguments: [],
+    }], [evidence], { product: "A-Blaze", issue: "My headset is not working" });
+
+    expect(result.rendered).toContain("What exactly is happening");
+    expect(result.rendered).not.toContain("Plug the USB-C dongle");
+  });
+
+  it("reselects the final supported procedure intent using multi-turn context", async () => {
+    const evidence = procedureEvidenceRecord();
+    const result = await recoveryCase("I use the USB-C dongle on a PC.", [{
+      type: "limitation",
+      text: "I couldn't verify a support procedure for this issue from our current guidance.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      product: "A-Blaze",
+      platform: "USB-C dongle + PC",
+      issue: "My headset will not connect",
+      attemptedSteps: ["I already reset it"],
+    });
+
+    expect(result.rendered).toContain("Plug the USB-C dongle into the PC.");
+    expect(result.rendered).not.toContain("reset");
+  });
+
+  it("keeps the safe fallback when authoritative evidence is insufficient", async () => {
+    const dependencies = await createDemoDependencies();
+    const registry = createCapabilityRegistry(dependencies);
+    const evidence = {
+      resultId: "insufficient-policy-1",
+      toolName: "search_policy",
+      result: { status: "not_found", data: { results: [] } },
+    };
+    const context = {
+      ...registry,
+      customerMessage: "When will I get my refund?",
+      getResult: (resultId) => resultId === evidence.resultId ? evidence : registry.getResult(resultId),
+      getResults: () => [evidence],
+    };
+    const initial = validateStructuredResponse({ segments: [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }] }, context);
+    const completed = ensureAnswerCompleteness(initial, context);
+
+    expect(completed.approvedSegments).toHaveLength(1);
+    expect(renderResponseSegments(completed.approvedSegments, context)).toContain("couldn’t verify");
+  });
+
+  it("fails closed when authoritative answer values conflict", async () => {
+    const evidence = answerEvidenceRecord([
+      policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North policy"),
+      policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South policy"),
+    ]);
+    const result = await recoveryCase("Where do I send my return?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
+  });
+
+  it("fails closed when authoritative payer evidence conflicts", async () => {
+    const result = await recoveryCase("Hvem betaler returfragten?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The customer pays the return shipping.", "Customer payer policy"),
+      policyRecord("The merchant pays the return shipping.", "Merchant payer policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "cost", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("customer pays");
+    expect(result.rendered).not.toContain("merchant pays");
+  });
+
+  it("fails closed when authoritative timing values conflict", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([
+      policyRecord("The refund is issued within 5 business days.", "Five-day refund policy"),
+      policyRecord("The refund is issued within 30 business days.", "Thirty-day refund policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "ambiguous" });
+    expect(result.rendered).toContain("couldn't verify");
+    expect(result.rendered).not.toContain("5 business days");
+    expect(result.rendered).not.toContain("30 business days");
+  });
+
+  it("keeps compatible timing stages together as one recovered proposition", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "The refund is released after the return is received. The payment provider then displays the funds within 5 business days.",
+    )])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "timing", result: "recovered" });
+    expect(result.rendered).toContain("return is received");
+    expect(result.rendered).toContain("within 5 business days");
+  });
+
+  it("recovers only the current timing proposition from an otherwise broad policy", async () => {
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: "answer-completeness-1", field_paths: ["results"] },
+    }], [answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days. Opened products may incur a EUR 50 deduction. The customer pays return shipping. The refund is initiated after the return is received and processed.",
+    )])]);
+
+    expect(result.rendered).toContain("refund is initiated after the return is received and processed");
+    expect(result.rendered).not.toContain("30 days");
+    expect(result.rendered).not.toContain("EUR 50");
+    expect(result.rendered).not.toContain("return shipping");
+  });
+
+  it("does not duplicate a complete model answer", async () => {
+    const evidence = answerEvidenceRecord([policyRecord("Your refund is initiated after the return is received and processed.")]);
+    const result = await recoveryCase("When will I get my refund?", [{
+      type: "knowledge_guidance",
+      text: "Your refund is initiated after the return is received and processed.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered.match(/refund is initiated/gi)).toHaveLength(1);
+  });
+});
+
+describe("actionable policy answer plan", () => {
+  it("recovers the destination from the imported return policy shape", async () => {
+    const result = await proposalRecoveryCase("Hi, I would like to return my order 1063 since I'm not happy with my product. How do I return it?", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([policyRecord(
+      "Warranty and Returns policy REGRET PURCHASE This means that you can return your package up to 30 days after receiving it. HOW TO MAKE USE OF YOUR RIGHT TO REGRET YOUR PURCHASE Please contact us via e-mail letting us know that you want to return. You cannot use your right to regret by refusing to accept the goods at delivery, or by omitting to collect it, without at the same time letting us know that you wish to return. Return of the goods and return costs To return a product delivered to you within the last 30 days: 1. Get in touch with us through our contact form, including the reason you want to return the headset, the name used at purchase, and the order number (#xxxx). 2. Once we have accepted the return, package the originally sealed AceZone product. 3. Book and print a return label and tape it securely to the face of the shipping package. Please address it to: AceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\nAtt: AceZone\nPhone: +45 31501800\nEmail: support@example.com 4. Hand in the package for return at your local return access point/shop 5. As soon as we have received and processed your return we will initiate the refund and you will be notified. Postage as well as any other expenses in relation to returning such as secure packaging must be paid by you. We recommend using track and trace so that you may follow the shipment. REFUNDS If you\'re looking to return your newly purchased product, AceZone offers a 30-day return policy.", "Refund policy",
+    )])]);
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "destination", result: "recovered" });
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.completed.allValid).toBe(true);
+  });
+
+  const returnPolicy = policyRecord(
+    "Returns are accepted within 30 days of delivery when the item is unused and in its original packaging. Send the return to:\n\nAceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping. The refund is initiated after the return is received and processed. Unrelated legal wording does not change the return steps.",
+  );
+
+  const compositeReturnPolicy = policyRecord(
+    "Returns are accepted within 30 days. Get in touch with us through our contact form, including the reason you want to return the headset, the name used at purchase, and the order number. Send the return to:\n\nAceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping. The refund is initiated after the return is received and processed.",
+  );
+
+  it.each(["support_email", "support_inbox", "playground", "web_chat"])(
+    "decomposes composite return requirements on %s",
+    async (interactionChannel) => {
+      const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+      const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+        type: "limitation",
+        text: "I couldn't verify that policy detail from our current policy information.",
+        basis: { result_id: evidence.resultId, field_paths: ["results"] },
+      }], [evidence], { interactionChannel });
+
+      expect(result.completed.allValid).toBe(true);
+      expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "process", result: "recovered" });
+      expect(result.rendered).toContain("Nordre Fasanvej 113");
+      expect(result.rendered).toContain("Please send it with tracked shipping to:");
+      expect(result.rendered).toContain("tracked shipping");
+      expect(result.rendered).toContain("Return shipping is at your own cost.");
+      expect(result.rendered).toContain("Once the return is received and processed, your refund will be issued.");
+      expect(result.rendered).toContain("reason for returning the Chaos Mousepad 21");
+      expect(result.rendered).not.toMatch(/contact form|name used at purchase|order number|headset/i);
+      expect(result.rendered).not.toMatch(/Sona['’]s policy/i);
+      expect(result.rendered.indexOf("You can request a return")).toBeLessThan(result.rendered.indexOf("Please send it with tracked shipping"));
+      expect(result.rendered.indexOf("Please send it with tracked shipping")).toBeLessThan(result.rendered.indexOf("Return shipping is at your own cost."));
+      expect(result.rendered.indexOf("Return shipping is at your own cost.")).toBeLessThan(result.rendered.indexOf("What’s the reason"));
+    },
+  );
+
+  it("recognizes a customer-supplied return reason without repeating composite prerequisites", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063 because the item does not fit", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.completed.allValid).toBe(true);
+    expect(result.rendered).not.toContain("reason for returning");
+    expect(result.rendered).not.toMatch(/contact form|name used at purchase|order number|headset/i);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+  });
+
+  it("does not let an unverified display name satisfy the purchase-name requirement", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063 because the item does not fit", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      trustedCustomerIdentity: { verified: false, hasName: false, hasEmail: true },
+    });
+
+    expect(result.rendered).toContain("name used at purchase");
+  });
+
+  it("uses a neutral subject when verified order items are ambiguous", async () => {
+    const evidence = answerEvidenceRecord([compositeReturnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence], {
+      activeOrder: {
+        requestedOrderId: "1063",
+        state: "verified",
+        order: {
+          id: "shopify-1063",
+          orderNumber: "1063",
+          status: "fulfilled",
+          items: [
+            { id: "line-1063-a", title: "Chaos Mousepad 21", quantity: 1 },
+            { id: "line-1063-b", title: "Chaos Headset", quantity: 1 },
+          ],
+        },
+      },
+    });
+
+    expect(result.rendered).toContain("reason for returning the item");
+    expect(result.rendered).not.toContain("headset");
+  });
+
+  it.each([
+    "I would like to return my order.",
+    "How do I return my order?",
+  ])("recovers minimum actionable guidance for a return process request: %s", async (customerMessage) => {
+    const result = await proposalRecoveryCase(customerMessage, [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments.filter((segment) => segment.type === "knowledge_guidance").length).toBeGreaterThan(1);
+    expect(result.completed.completenessDiagnostics.intent_resolved_by_approved_segment).toBe(true);
+    expect(result.completed.completenessDiagnostics.recovery).toEqual(expect.arrayContaining([
+      { type: "eligibility", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "destination", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "shipping_method", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "cost", result: "recovered" },
+      { type: "timing", result: "recovered" },
+    ]));
+    expect(result.rendered).toContain("30 days");
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("tracked shipping");
+    expect(result.rendered).toContain("Return shipping is at your own cost.");
+    expect(result.rendered).toContain("Once the return is received and processed, your refund will be issued.");
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+    expect(result.rendered).not.toContain("Unrelated legal wording");
+  });
+
+  it("does not let an action offer replace material policy guidance", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])]);
+
+    expect(result.initial.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments.some((segment) => segment.type === "knowledge_guidance")).toBe(true);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+  });
+
+  it("routes a complete recovered actionable plan through the composer", async () => {
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([returnPolicy])], {
+      proposedActions: [{
+        action: "create_return",
+        arguments: { order_id: "1063", item_ids: ["line-1063"], reason: "Customer requested a return" },
+        reason: "Customer requested a return",
+        requiresConfirmation: true,
+        status: "proposed",
+      }],
+    });
+
+    expect(result.completed.completenessDiagnostics.recovery).toEqual(expect.arrayContaining([
+      { type: "destination", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "shipping_method", result: expect.stringMatching(/recovered|skipped/) },
+      { type: "cost", result: "recovered" },
+      { type: "timing", result: "recovered" },
+    ]));
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(false);
+    expect(result.rendered).toContain("Nordre Fasanvej 113");
+    expect(result.rendered).toContain("You can request a return");
+  });
+
+  it("neutralizes agent-owned policy wording while composing merchant guidance", async () => {
+    const evidence = answerEvidenceRecord([returnPolicy]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "knowledge_guidance",
+      text: "Sona’s policy allows returns within 30 days of delivery.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).not.toMatch(/Sona['’]s policy/i);
+    expect(result.rendered).toContain("Returns are accepted within 30 days");
+  });
+
+  it("omits an unavailable useful outcome instead of inventing refund timing", async () => {
+    const evidence = answerEvidenceRecord([policyRecord(
+      "Returns are accepted within 30 days. Send the return to:\n\nMerchant Returns\nReturn Street 10\n2000 Frederiksberg\nDenmark\n\nUse tracked shipping. The customer pays return shipping.",
+    )]);
+    const result = await verifiedReturnRecoveryCase("I want to return order 1063", [{
+      type: "limitation",
+      text: "I couldn't verify that policy detail from our current policy information.",
+      basis: { result_id: evidence.resultId, field_paths: ["results"] },
+    }], [evidence]);
+
+    expect(result.rendered).toContain("You can request a return");
+    expect(result.rendered).toContain("Return Street 10");
+    expect(result.rendered).not.toContain("refund will be issued");
+    expect(result.rendered).not.toContain("refund is initiated");
+  });
+
+  it("keeps an action-only response when policy has no remaining customer requirement", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([policyRecord("Contact us to request a return.")])]);
+
+    expect(result.completed.approvedSegments).toHaveLength(1);
+    expect(result.completed.approvedSegments[0].type).toBe("action_offer");
+    expect(result.completed.completenessDiagnostics.intent_resolved_by_approved_segment).toBe(true);
+    expect(result.rendered).toContain("Nothing will be changed until you confirm");
+  });
+
+  it("fails closed when a required destination is ambiguous even with an action offer", async () => {
+    const result = await proposalRecoveryCase("I want to return this.", [{
+      type: "action_offer",
+      capability: "create_return",
+      mode: "proposal",
+      missing_arguments: [],
+    }], [answerEvidenceRecord([
+      policyRecord("Send the return to:\nReturns North\nNorth Street 1\n1000 Copenhagen", "North policy"),
+      policyRecord("Send the return to:\nReturns South\nSouth Street 2\n2000 Aarhus", "South policy"),
+    ])]);
+
+    expect(result.completed.completenessDiagnostics.recovery).toContainEqual({ type: "destination", result: "ambiguous" });
+    expect(shouldPreferAuthoritativeEvidenceFallback(result.completed, result.context)).toBe(true);
+    expect(result.rendered).not.toContain("North Street 1");
+    expect(result.rendered).not.toContain("South Street 2");
+  });
+});
+
+describe("policy truth safeguards", () => {
+  it("does not let a prohibition override an authoritative allowed outcome", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Returns are not accepted.",
+      [policyRecord("Returns are accepted.", "Allowed return policy", {
+        policy_truth: { eligibility: "allowed", source_text: "Returns are accepted." },
+      })],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("Returns are accepted.");
+    expect(result.rendered).not.toMatch(/not accepted/i);
+  });
+
+  it("fails closed instead of rewriting from incomplete prose policy evidence", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Returns are not accepted.",
+      [policyRecord("Returns may be accepted depending on the item.")],
+    );
+
+    expect(result.result.allValid).toBe(false);
+    expect(result.result.approvedSegments).toEqual([]);
+    expect(result.result.issues.at(-1).code).toBe("policy_truth_ambiguous");
+    expect(result.rendered).toBe("");
+  });
+
+  it("preserves a conditional return allowance and its deduction when the model says the return is rejected", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "The return is rejected.",
+      [policyRecord("Returns may still be accepted, but a EUR 50 deduction applies when the item is returned in acceptable condition.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("may still be accepted");
+    expect(result.rendered).toContain("EUR 50");
+    expect(result.rendered).not.toMatch(/rejected/i);
+  });
+
+  it("does not turn an opened-item deduction into an absolute return prohibition", async () => {
+    const result = await policyTruthCase(
+      "Can I return an opened item?",
+      "Opened items cannot be returned.",
+      [policyRecord("If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("may still be accepted");
+    expect(result.rendered).toContain("EUR 50");
+    expect(result.rendered).not.toMatch(/cannot be returned/i);
+  });
+
+  it("preserves an actual prohibition when the model says the item is returnable", async () => {
+    const result = await policyTruthCase(
+      "Can I return a final-sale item?",
+      "Yes, you can return the final-sale item.",
+      [policyRecord("Final-sale items are not eligible for return.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("not eligible for return");
+    expect(result.rendered).not.toMatch(/Yes, you can return/i);
+  });
+
+  it("keeps a proof-of-purchase condition instead of overstating warranty coverage", async () => {
+    const result = await policyTruthCase(
+      "Is my warranty claim covered?",
+      "Your warranty covers this issue.",
+      [policyRecord("Warranty coverage is available only with proof of purchase.", "Warranty policy", {
+        policy_truth: {
+          eligibility: "allowed",
+          condition: "proof of purchase",
+          consequence: "coverage requires proof of purchase",
+          source_text: "Warranty coverage is available only with proof of purchase.",
+        },
+      })],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("only with proof of purchase");
+    expect(result.rendered).not.toBe("Your warranty covers this issue.");
+  });
+
+  it("keeps a shipping restriction instead of accepting an overgeneralized worldwide claim", async () => {
+    const result = await policyTruthCase(
+      "Do you ship to my country?",
+      "We ship worldwide.",
+      [policyRecord("We ship to supported destinations except restricted regions.")],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("except restricted regions");
+    expect(result.rendered).not.toBe("We ship worldwide.");
+  });
+
+  it("withholds a response when authoritative policy conditions conflict", async () => {
+    const result = await policyTruthCase(
+      "Can I return this item?",
+      "Yes, you can return it.",
+      [
+        policyRecord("Returns are allowed for eligible items.", "Current eligible-item policy", {
+          policy_truth: { eligibility: "allowed", source_text: "Returns are allowed for eligible items." },
+        }),
+        policyRecord("Returns are not allowed for final-sale items.", "Current final-sale policy", {
+          policy_truth: { eligibility: "disallowed", source_text: "Returns are not allowed for final-sale items." },
+        }),
+      ],
+    );
+
+    expect(result.result.allValid).toBe(false);
+    expect(result.result.approvedSegments).toEqual([]);
+    expect(result.result.issues.at(-1).code).toBe("policy_truth_ambiguous");
+    expect(result.rendered).toBe("");
+  });
+
+  it("uses current authoritative policy over a conflicting historical example", async () => {
+    const historical = policyRecord("A previous customer was told the item could be returned.", "Historical support example");
+    historical.authority = "reference";
+    historical.provenance = { source_kind: "historical_support", source_id: historical.title };
+    const result = await policyTruthCase(
+      "Can I return this final-sale item?",
+      "Yes, the item can be returned.",
+      [
+        policyRecord("Current policy: final-sale items are not eligible for return.", "Current return policy"),
+        historical,
+      ],
+      ["results[0]"],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toContain("not eligible for return");
+    expect(result.rendered).not.toMatch(/can be returned/i);
+  });
+
+  it.each([
+    ["English", "Can I return an opened item?", "Opened items cannot be returned.", "If the product has been opened, the return may still be accepted but a EUR 50 deduction applies when it is returned in mint condition.", /may still be accepted/i],
+    ["Danish", "Kan jeg returnere en åbnet vare?", "Hvis emballagen er åbnet, kan returneringen afvises.", "Hvis produktet er åbnet, kan returneringen stadig accepteres, men ved mint stand fratrækkes 50 EUR.", /stadig accepteres/i],
+    ["German", "Kann ich einen geöffneten Artikel zurückgeben?", "Wenn die Verpackung geöffnet ist, kann die Rückgabe abgelehnt werden.", "Wenn das Produkt geöffnet wurde, kann die Rückgabe weiterhin akzeptiert werden, aber bei einwandfreiem Zustand fällt ein Abzug von 50 EUR an.", /weiterhin akzeptiert/i],
+  ])("corrects the conditional opened-return interpretation in %s", async (_language, customerMessage, modelText, sourceText, expectedAllowance) => {
+    const result = await policyTruthCase(
+      customerMessage,
+      modelText,
+      [policyRecord(sourceText)],
+    );
+
+    expect(result.result.allValid).toBe(true);
+    expect(result.rendered).toMatch(expectedAllowance);
+    expect(result.rendered).toMatch(/50\s*EUR|EUR\s*50/i);
+    expect(result.rendered).not.toMatch(/cannot be returned|afvises|abgelehnt/i);
   });
 });
