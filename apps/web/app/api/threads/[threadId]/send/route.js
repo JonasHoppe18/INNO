@@ -33,6 +33,18 @@ import {
   normalizeForwardSubject,
 } from "@/lib/server/forward-email";
 import { buildRawEmail } from "@/lib/server/email-transport";
+import {
+  buildOutboundAttemptLog,
+  buildSendAttemptMarker,
+  classifyOutboundError,
+  createProviderHttpError,
+  describeExistingSendAttempt,
+  fetchWithOutboundTimeout,
+  normalizeSendAttemptId,
+  readResponseJsonWithOutboundTimeout,
+  readResponseTextWithOutboundTimeout,
+  SEND_ATTEMPT_MARKER_PREFIX,
+} from "@/lib/server/outbound-send-reliability";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -543,12 +555,19 @@ async function refreshGmailToken(serviceClient, account) {
   params.set("refresh_token", refreshToken);
   params.set("grant_type", "refresh_token");
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+  const res = await fetchWithOutboundTimeout(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    },
+    { provider: "gmail", stage: "token_refresh" },
+  );
+  const payload = await readResponseJsonWithOutboundTimeout(res, {
+    provider: "gmail",
+    stage: "token_refresh",
   });
-  const payload = await res.json().catch(() => null);
   if (!res.ok) {
     const message =
       payload?.error_description || payload?.error || `HTTP ${res.status}`;
@@ -586,12 +605,19 @@ async function refreshOutlookToken(serviceClient, account) {
   params.set("scope", "offline_access Mail.ReadWrite Mail.Send User.Read");
 
   const tokenUrl = `https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}/oauth2/v2.0/token`;
-  const res = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+  const res = await fetchWithOutboundTimeout(
+    tokenUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    },
+    { provider: "outlook", stage: "token_refresh" },
+  );
+  const payload = await readResponseJsonWithOutboundTimeout(res, {
+    provider: "outlook",
+    stage: "token_refresh",
   });
-  const payload = await res.json().catch(() => null);
   if (!res.ok) {
     const message =
       payload?.error_description || payload?.error || `HTTP ${res.status}`;
@@ -819,7 +845,7 @@ async function sendViaPostmark({
 }
 
 async function sendGmail({ token, raw, threadId }) {
-  const res = await fetch(
+  const res = await fetchWithOutboundTimeout(
     "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
     {
       method: "POST",
@@ -829,79 +855,140 @@ async function sendGmail({ token, raw, threadId }) {
       },
       body: JSON.stringify(threadId ? { raw, threadId } : { raw }),
     },
+    { provider: "gmail", stage: "provider_send" },
   );
-  const payload = await res.json().catch(() => null);
+  const payload = await readResponseJsonWithOutboundTimeout(res, {
+    provider: "gmail",
+    stage: "provider_send",
+  });
   if (!res.ok) {
     const message = payload?.error?.message || `Gmail API ${res.status}`;
-    throw new Error(message);
+    throw createProviderHttpError(message, {
+      provider: "gmail",
+      stage: "provider_send",
+      statusCode: res.status,
+    });
   }
   return payload;
 }
 
 async function sendOutlook({ token, message, useReply, replyMessageId }) {
   if (useReply && replyMessageId) {
-    const res = await fetch(
+    const res = await fetchWithOutboundTimeout(
       `https://graph.microsoft.com/v1.0/me/messages/${replyMessageId}/createReply`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       },
+      { provider: "outlook", stage: "provider_send" },
     );
-    const draft = await res.json().catch(() => null);
+    const draft = await readResponseJsonWithOutboundTimeout(res, {
+      provider: "outlook",
+      stage: "provider_send",
+    });
     if (!res.ok) {
       const message =
         draft?.error?.message || `Graph createReply ${res.status}`;
-      throw new Error(message);
+      throw createProviderHttpError(message, {
+        provider: "outlook",
+        stage: "provider_send",
+        statusCode: res.status,
+      });
     }
     const draftId = draft?.id;
     if (!draftId) throw new Error("Missing Outlook draft id");
-    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${draftId}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    const updateResponse = await fetchWithOutboundTimeout(
+      `https://graph.microsoft.com/v1.0/me/messages/${draftId}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(message),
       },
-      body: JSON.stringify(message),
-    });
-    const sendRes = await fetch(
+      { provider: "outlook", stage: "provider_send" },
+    );
+    if (!updateResponse.ok) {
+      const text = await readResponseTextWithOutboundTimeout(updateResponse, {
+        provider: "outlook",
+        stage: "provider_send",
+      });
+      throw createProviderHttpError(
+        text || `Graph draft update ${updateResponse.status}`,
+        {
+          provider: "outlook",
+          stage: "provider_send",
+          statusCode: updateResponse.status,
+        },
+      );
+    }
+    const sendRes = await fetchWithOutboundTimeout(
       `https://graph.microsoft.com/v1.0/me/messages/${draftId}/send`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       },
+      { provider: "outlook", stage: "provider_send" },
     );
     if (!sendRes.ok) {
-      const text = await sendRes.text();
-      throw new Error(text || `Graph send ${sendRes.status}`);
+      const text = await readResponseTextWithOutboundTimeout(sendRes, {
+        provider: "outlook",
+        stage: "provider_send",
+      });
+      throw createProviderHttpError(text || `Graph send ${sendRes.status}`, {
+        provider: "outlook",
+        stage: "provider_send",
+        statusCode: sendRes.status,
+      });
     }
     return { id: draftId };
   }
 
-  const res = await fetch("https://graph.microsoft.com/v1.0/me/messages", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithOutboundTimeout(
+    "https://graph.microsoft.com/v1.0/me/messages",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
     },
-    body: JSON.stringify(message),
+    { provider: "outlook", stage: "provider_send" },
+  );
+  const draft = await readResponseJsonWithOutboundTimeout(res, {
+    provider: "outlook",
+    stage: "provider_send",
   });
-  const draft = await res.json().catch(() => null);
   if (!res.ok) {
     const message = draft?.error?.message || `Graph create ${res.status}`;
-    throw new Error(message);
+    throw createProviderHttpError(message, {
+      provider: "outlook",
+      stage: "provider_send",
+      statusCode: res.status,
+    });
   }
   const draftId = draft?.id;
   if (!draftId) throw new Error("Missing Outlook draft id");
-  const sendRes = await fetch(
+  const sendRes = await fetchWithOutboundTimeout(
     `https://graph.microsoft.com/v1.0/me/messages/${draftId}/send`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     },
+    { provider: "outlook", stage: "provider_send" },
   );
   if (!sendRes.ok) {
-    const text = await sendRes.text();
-    throw new Error(text || `Graph send ${sendRes.status}`);
+    const text = await readResponseTextWithOutboundTimeout(sendRes, {
+      provider: "outlook",
+      stage: "provider_send",
+    });
+    throw createProviderHttpError(text || `Graph send ${sendRes.status}`, {
+      provider: "outlook",
+      stage: "provider_send",
+      statusCode: sendRes.status,
+    });
   }
   return { id: draftId };
 }
@@ -923,6 +1010,94 @@ async function logAgentStatus(serviceClient, stepName, status, detail) {
     step_detail: JSON.stringify(detail),
     status,
     created_at: new Date().toISOString(),
+  });
+}
+
+async function logOutboundAttempt({
+  serviceClient,
+  scope,
+  sendAttemptId,
+  provider,
+  operationType,
+  stage,
+  outcome,
+  startedAt,
+  errorClass = null,
+  statusCode = null,
+}) {
+  const detail = buildOutboundAttemptLog({
+    sendAttemptId,
+    provider,
+    operationType,
+    stage,
+    outcome,
+    durationMs: Date.now() - startedAt,
+    errorClass,
+    statusCode,
+  });
+  await serviceClient.from("agent_logs").insert({
+    draft_id: null,
+    workspace_id: scope?.workspaceId || null,
+    step_name: "outbound_send_attempt",
+    step_detail: JSON.stringify(detail),
+    status: outcome === "success" ? "success" : outcome === "unknown" ? "unknown" : "error",
+    created_at: new Date().toISOString(),
+  });
+}
+
+async function releaseSendReservation({
+  serviceClient,
+  scope,
+  reservationId,
+  attemptMarker,
+  reservationCreated,
+  originalProviderMessageId,
+}) {
+  if (reservationCreated) {
+    let deleteQuery = serviceClient
+      .from("mail_messages")
+      .delete()
+      .eq("id", reservationId)
+      .eq("provider_message_id", attemptMarker)
+      .eq("is_draft", true);
+    deleteQuery = applyScope(deleteQuery, scope);
+    await deleteQuery;
+    return;
+  }
+
+  if (originalProviderMessageId !== null) {
+    let restoreQuery = serviceClient
+      .from("mail_messages")
+      .update({
+        provider_message_id: originalProviderMessageId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", reservationId)
+      .eq("provider_message_id", attemptMarker)
+      .eq("is_draft", true);
+    restoreQuery = applyScope(restoreQuery, scope);
+    await restoreQuery;
+  }
+}
+
+function buildUnknownSendResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "The send status is unknown. The email provider may have accepted the message. Verify the thread before trying again.",
+      send_status: "unknown",
+    },
+    { status: 504 },
+  );
+}
+
+function buildAlreadySentResponse(row) {
+  return NextResponse.json({
+    ok: true,
+    already_sent: true,
+    message_id: row?.id || null,
+    provider_message_id: row?.provider_message_id || null,
+    provider: row?.provider || null,
   });
 }
 
@@ -991,6 +1166,19 @@ export async function POST(request, { params }) {
     typeof body?.draft_message_id === "string"
       ? body.draft_message_id.trim()
       : null;
+  if (draftMessageId && !normalizeSendAttemptId(draftMessageId)) {
+    return NextResponse.json(
+      { error: "Invalid draft message ID." },
+      { status: 400 },
+    );
+  }
+  const clientSendAttemptId = normalizeSendAttemptId(body?.send_attempt_id);
+  if (!clientSendAttemptId) {
+    return NextResponse.json(
+      { error: "A valid send-attempt ID is required." },
+      { status: 400 },
+    );
+  }
   if (!requestedBodyText && !requestedBodyHtml && !isForward) {
     return NextResponse.json(
       { error: "body_text is required." },
@@ -1354,12 +1542,122 @@ export async function POST(request, { params }) {
     stripHtml(bodyHtml);
   const persistedBodyHtml = composed.bodyHtmlWithClosing || bodyHtml || "";
 
+  const operationType = isForward ? "forward" : "reply";
+  const sendAttemptId = normalizeSendAttemptId(draftMessageId) || clientSendAttemptId;
+  const attemptMarker = buildSendAttemptMarker(sendAttemptId);
+  const attemptStartedAt = Date.now();
+  let reservationCreated = false;
+  let originalProviderMessageId = null;
+  let providerInvocationStarted = false;
+
+  let existingAttemptQuery = serviceClient
+    .from("mail_messages")
+    .select("id, provider, provider_message_id, is_draft, thread_id")
+    .eq("id", sendAttemptId)
+    .eq("thread_id", threadId);
+  existingAttemptQuery = applyScope(existingAttemptQuery, scope);
+  const { data: existingAttempt, error: existingAttemptError } =
+    await existingAttemptQuery.maybeSingle();
+  if (existingAttemptError) {
+    return NextResponse.json(
+      { error: "Could not prepare the send attempt safely." },
+      { status: 500 },
+    );
+  }
+
+  const existingAttemptStatus = describeExistingSendAttempt(
+    existingAttempt,
+    sendAttemptId,
+  );
+  if (existingAttemptStatus.state === "sent") {
+    return buildAlreadySentResponse(existingAttempt);
+  }
+  if (existingAttemptStatus.state === "unknown") {
+    return buildUnknownSendResponse();
+  }
+  if (existingAttemptStatus.state === "draft" && !draftMessageId) {
+    return NextResponse.json(
+      {
+        error:
+          "A send attempt with this ID is already associated with a draft.",
+        send_status: "in_progress",
+      },
+      { status: 409 },
+    );
+  }
+
+  if (existingAttempt && draftMessageId) {
+    originalProviderMessageId = existingAttempt.provider_message_id || null;
+    let markDraftQuery = serviceClient
+      .from("mail_messages")
+      .update({
+        provider_message_id: attemptMarker,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", sendAttemptId)
+      .eq("thread_id", threadId)
+      .eq("is_draft", true);
+    markDraftQuery = applyScope(markDraftQuery, scope);
+    const { error: markDraftError } = await markDraftQuery;
+    if (markDraftError) {
+      return NextResponse.json(
+        { error: "Could not reserve the draft for sending safely." },
+        { status: 500 },
+      );
+    }
+  } else {
+    const reservation = await serviceClient
+      .from("mail_messages")
+      .insert({
+        id: sendAttemptId,
+        user_id: supabaseUserId,
+        workspace_id: scope?.workspaceId ?? null,
+        mailbox_id: mailbox.id,
+        thread_id: threadId,
+        provider: mailbox.provider,
+        provider_message_id: attemptMarker,
+        subject,
+        snippet: buildSnippet(persistedBodyText),
+        body_text: persistedBodyText,
+        body_html: persistedBodyHtml || null,
+        clean_body_text: persistedBodyText,
+        clean_body_html: persistedBodyHtml || null,
+        from_name: senderName || null,
+        from_email: mailbox.provider_email || null,
+        from_me: true,
+        to_emails: deliveryTo,
+        cc_emails: deliveryCc,
+        bcc_emails: deliveryBcc,
+        is_read: true,
+        is_draft: true,
+        sent_at: null,
+        received_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    if (reservation.error) {
+      return NextResponse.json(
+        {
+          error:
+            reservation.error.code === "23505"
+              ? "A send attempt is already in progress. Verify the thread before trying again."
+              : "Could not reserve the send attempt safely.",
+          send_status: reservation.error.code === "23505" ? "in_progress" : "failed",
+        },
+        { status: reservation.error.code === "23505" ? 409 : 500 },
+      );
+    }
+    reservationCreated = true;
+  }
+
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;
   let sentFromName = senderName || null;
   const nowIso = new Date().toISOString();
+  let currentSendStage = "preflight";
   try {
     if (shouldSimulateEmailOnly) {
+      currentSendStage = "test_mode";
       providerMessageId = `email-simulated-test-mode-${threadId}-${Date.now()}`;
       await logAgentStatus(serviceClient, "email_simulated_test_mode", "info", {
         provider: mailbox.provider,
@@ -1381,6 +1679,8 @@ export async function POST(request, { params }) {
       const inReplyTo = isForward
         ? null
         : normalizeMessageId(inboundMessage?.provider_message_id);
+      currentSendStage = "provider_send";
+      providerInvocationStarted = true;
       const postmarkResponse = await sendViaPostmark({
         to: deliveryTo,
         cc: deliveryCc,
@@ -1410,8 +1710,11 @@ export async function POST(request, { params }) {
           : {}),
       });
     } else {
+      currentSendStage = "token_refresh";
       const token = await getAccessToken(serviceClient, mailbox);
       if (mailbox.provider === "gmail") {
+        currentSendStage = "provider_send";
+        providerInvocationStarted = true;
         const raw = buildRawEmail({
           from: buildNamedFromAddress({
             name: senderDisplayName,
@@ -1433,6 +1736,8 @@ export async function POST(request, { params }) {
         });
         providerMessageId = payload?.id || null;
       } else if (mailbox.provider === "outlook") {
+        currentSendStage = "provider_send";
+        providerInvocationStarted = true;
         const message = {
           subject,
           from: buildOutlookFrom({
@@ -1479,25 +1784,77 @@ export async function POST(request, { params }) {
       }
     }
   } catch (error) {
+    const failure = classifyOutboundError(error, {
+      provider: mailbox.provider,
+      stage: currentSendStage,
+      providerInvoked: providerInvocationStarted,
+    });
+    void logOutboundAttempt({
+      serviceClient,
+      scope,
+      sendAttemptId,
+      provider: mailbox.provider,
+      operationType,
+      stage: failure.stage,
+      outcome: failure.outcome,
+      startedAt: attemptStartedAt,
+      errorClass: failure.errorClass,
+      statusCode: failure.statusCode,
+    }).catch(() => null);
     console.error("[threads/send] send failed", {
       provider: mailbox.provider,
-      threadId,
-      message: String(error?.message || error),
+      sendAttemptId,
+      operation: operationType,
+      stage: failure.stage,
+      outcome: failure.outcome,
+      errorClass: failure.errorClass,
+      statusCode: failure.statusCode,
     });
-    if (mailbox.provider === "smtp") {
-      await logAgentStatus(serviceClient, "send_smtp_fail", "error", {
-        provider: mailbox.provider,
-        threadId,
-        error: String(error?.message || "SMTP send failed").slice(0, 280),
+    if (failure.outcome !== "unknown") {
+      await releaseSendReservation({
+        serviceClient,
+        scope,
+        reservationId: sendAttemptId,
+        attemptMarker,
+        reservationCreated,
+        originalProviderMessageId,
       });
     }
-    await logAgent(serviceClient, {
+    if (mailbox.provider === "smtp") {
+      void logAgentStatus(serviceClient, "send_smtp_fail", "error", {
+        provider: mailbox.provider,
+        send_attempt_id: sendAttemptId,
+        operation: operationType,
+        stage: failure.stage,
+        outcome: failure.outcome,
+        error_class: failure.errorClass,
+        provider_status: failure.statusCode,
+      }).catch(() => null);
+    }
+    void logAgent(serviceClient, {
       provider: mailbox.provider,
-      threadId,
-      error: error.message || String(error),
-    });
+      send_attempt_id: sendAttemptId,
+      operation: operationType,
+      stage: failure.stage,
+      outcome: failure.outcome,
+      error_class: failure.errorClass,
+      provider_status: failure.statusCode,
+    }).catch(() => null);
     const message = error?.message || `Send failed (${mailbox.provider}).`;
     const lowerMessage = String(message).toLowerCase();
+    if (failure.recipientSuppressed) {
+      return NextResponse.json(
+        {
+          error:
+            "This recipient cannot currently receive email because the address has been marked inactive by the email provider.",
+          send_status: "failed",
+        },
+        { status: 422 },
+      );
+    }
+    if (failure.outcome === "unknown") {
+      return buildUnknownSendResponse();
+    }
     if (
       lowerMessage.includes("pending approval") &&
       lowerMessage.includes("domain")
@@ -1530,123 +1887,68 @@ export async function POST(request, { params }) {
     providerMessageId || `sent-${mailbox.provider}-${threadId}-${Date.now()}`;
   let insertedMessage = null;
   let insertError = null;
-  if (draftMessageId) {
-    let updateDraftQuery = serviceClient
-      .from("mail_messages")
-      .update({
-        provider: mailbox.provider,
-        provider_message_id: persistedProviderMessageId,
-        subject,
-        snippet,
-        body_text: persistedBodyText,
-        body_html: finalBodyHtml || persistedBodyHtml || null,
-        clean_body_text: persistedBodyText,
-        clean_body_html: persistedBodyHtml || null,
-        quoted_body_text: null,
-        quoted_body_html: null,
-        from_name: sentFromName,
-        from_email: sentFromEmail,
-        from_me: true,
-        to_emails: deliveryTo,
-        cc_emails: deliveryCc,
-        bcc_emails: deliveryBcc,
-        is_read: true,
-        sent_at: nowIso,
-        received_at: null,
-        is_draft: false,
-        ai_draft_text: null,
-        updated_at: nowIso,
-      })
-      .eq("id", draftMessageId)
-      .eq("thread_id", threadId);
-    updateDraftQuery = applyScope(updateDraftQuery, scope);
-    const result = await updateDraftQuery.select("id").maybeSingle();
-    insertedMessage = result.data;
-    insertError = result.error;
-  } else {
-    const result = await serviceClient
-      .from("mail_messages")
-      .insert({
-        user_id: supabaseUserId,
-        workspace_id: scope?.workspaceId ?? null,
-        mailbox_id: mailbox.id,
-        thread_id: threadId,
-        provider: mailbox.provider,
-        provider_message_id: persistedProviderMessageId,
-        subject,
-        snippet,
-        body_text: persistedBodyText,
-        body_html: finalBodyHtml || persistedBodyHtml || null,
-        clean_body_text: persistedBodyText,
-        clean_body_html: persistedBodyHtml || null,
-        quoted_body_text: null,
-        quoted_body_html: null,
-        from_name: sentFromName,
-        from_email: sentFromEmail,
-        from_me: true,
-        to_emails: deliveryTo,
-        cc_emails: deliveryCc,
-        bcc_emails: deliveryBcc,
-        is_read: true,
-        sent_at: nowIso,
-        received_at: null,
-        created_at: nowIso,
-        updated_at: nowIso,
-      })
-      .select("id")
-      .maybeSingle();
-    insertedMessage = result.data;
-    insertError = result.error;
-  }
-
-  if (!insertError && !insertedMessage) {
-    const fallback = await serviceClient
-      .from("mail_messages")
-      .insert({
-        user_id: supabaseUserId,
-        workspace_id: scope?.workspaceId ?? null,
-        mailbox_id: mailbox.id,
-        thread_id: threadId,
-        provider: mailbox.provider,
-        provider_message_id: persistedProviderMessageId,
-        subject,
-        snippet,
-        body_text: persistedBodyText,
-        body_html: finalBodyHtml || persistedBodyHtml || null,
-        clean_body_text: persistedBodyText,
-        clean_body_html: persistedBodyHtml || null,
-        quoted_body_text: null,
-        quoted_body_html: null,
-        from_name: sentFromName,
-        from_email: sentFromEmail,
-        from_me: true,
-        to_emails: deliveryTo,
-        cc_emails: deliveryCc,
-        bcc_emails: deliveryBcc,
-        is_read: true,
-        sent_at: nowIso,
-        received_at: null,
-        created_at: nowIso,
-        updated_at: nowIso,
-      })
-      .select("id")
-      .maybeSingle();
-    insertedMessage = fallback.data;
-    insertError = fallback.error;
-  }
-
-  if (insertError) {
-    await logAgent(serviceClient, {
+  let finalizeReservationQuery = serviceClient
+    .from("mail_messages")
+    .update({
       provider: mailbox.provider,
-      threadId,
-      error: insertError.message,
-    });
+      provider_message_id: persistedProviderMessageId,
+      subject,
+      snippet,
+      body_text: persistedBodyText,
+      body_html: finalBodyHtml || persistedBodyHtml || null,
+      clean_body_text: persistedBodyText,
+      clean_body_html: persistedBodyHtml || null,
+      quoted_body_text: null,
+      quoted_body_html: null,
+      from_name: sentFromName,
+      from_email: sentFromEmail,
+      from_me: true,
+      to_emails: deliveryTo,
+      cc_emails: deliveryCc,
+      bcc_emails: deliveryBcc,
+      is_read: true,
+      sent_at: nowIso,
+      received_at: null,
+      is_draft: false,
+      ai_draft_text: null,
+      updated_at: nowIso,
+    })
+    .eq("id", sendAttemptId)
+    .eq("thread_id", threadId)
+    .eq("provider_message_id", attemptMarker)
+    .eq("is_draft", true);
+  finalizeReservationQuery = applyScope(finalizeReservationQuery, scope);
+  const result = await finalizeReservationQuery.select("id").maybeSingle();
+  insertedMessage = result.data;
+  insertError = result.error;
+
+  if (insertError || !insertedMessage) {
+    void logOutboundAttempt({
+      serviceClient,
+      scope,
+      sendAttemptId,
+      provider: mailbox.provider,
+      operationType,
+      stage: "persist",
+      outcome: "unknown",
+      startedAt: attemptStartedAt,
+      errorClass: "persistence_after_provider",
+    }).catch(() => null);
+    void logAgent(serviceClient, {
+      provider: mailbox.provider,
+      send_attempt_id: sendAttemptId,
+      operation: operationType,
+      stage: "persist",
+      outcome: "unknown",
+      error_class: "persistence_after_provider",
+    }).catch(() => null);
     return NextResponse.json(
       {
         error:
-          "Email was sent, but we could not persist it in the thread. Please refresh and try again.",
+          "The email provider may have accepted the message, but Sona could not finalize the thread. Verify the thread before trying again.",
+        send_status: "unknown",
       },
-      { status: 500 },
+      { status: 504 },
     );
   }
 
@@ -1686,15 +1988,19 @@ export async function POST(request, { params }) {
         .from("mail_attachments")
         .insert(attachmentRows);
       if (attachmentInsertError) {
-        await logAgent(serviceClient, {
+        void logAgent(serviceClient, {
           provider: mailbox.provider,
-          threadId,
-          error: attachmentInsertError.message,
-        });
+          send_attempt_id: sendAttemptId,
+          operation: operationType,
+          stage: "persist",
+          outcome: "success",
+          error_class: "attachment_persistence",
+        }).catch(() => null);
         return NextResponse.json(
           {
             error:
-              "Email was sent, but attachments could not be saved. Please try again.",
+              "Email was sent, but Sona could not save its attachment record. Refresh the thread before retrying.",
+            send_status: "sent",
           },
           { status: 500 },
         );
@@ -1702,15 +2008,29 @@ export async function POST(request, { params }) {
     }
   }
 
+  void logOutboundAttempt({
+    serviceClient,
+    scope,
+    sendAttemptId,
+    provider: mailbox.provider,
+    operationType,
+    stage: "persist",
+    outcome: "success",
+    startedAt: attemptStartedAt,
+  }).catch(() => null);
+
   // Ensure stale unsent drafts are removed after successful send.
   if (insertedMessage?.id) {
     let staleDraftDeleteQuery = serviceClient
       .from("mail_messages")
-      .delete()
-      .eq("thread_id", threadId)
-      .eq("from_me", true)
-      .eq("is_draft", true)
-      .neq("id", insertedMessage.id);
+    .delete()
+    .eq("thread_id", threadId)
+    .eq("from_me", true)
+    .eq("is_draft", true)
+    .or(
+      `provider_message_id.is.null,provider_message_id.not.like.${SEND_ATTEMPT_MARKER_PREFIX}%`,
+    )
+    .neq("id", insertedMessage.id);
     staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
     await staleDraftDeleteQuery;
   } else {
@@ -1719,7 +2039,10 @@ export async function POST(request, { params }) {
       .delete()
       .eq("thread_id", threadId)
       .eq("from_me", true)
-      .eq("is_draft", true);
+      .eq("is_draft", true)
+      .or(
+        `provider_message_id.is.null,provider_message_id.not.like.${SEND_ATTEMPT_MARKER_PREFIX}%`,
+      );
     staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
     await staleDraftDeleteQuery;
   }

@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { reportClientEvent } from "@/lib/client-events";
+import {
+  createClientSendAttemptId,
+  fetchWithClientSendTimeout,
+  readResponseJsonWithClientSendTimeout,
+} from "@/lib/send-reliability";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -111,6 +116,7 @@ export function useComposerState({
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
 
   const sendingStartedAtRef = useRef(0);
+  const sendAttemptIdsRef = useRef({});
   const savingDraftThreadIdsRef = useRef(new Set());
   // An empty editor is not automatically a discard request: ticket switches,
   // async hydration, and contentEditable teardown can all produce an empty
@@ -1262,6 +1268,17 @@ export function useComposerState({
     }
     const sendStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     sendingStartedAtRef.current = Date.now();
+    const draftMessageIdForSend = [draftMessage?.id, activeDraftId].find(isUuid) || null;
+    const attemptKey = String(selectedThreadId);
+    const sendAttemptId =
+      composeMode === "note"
+        ? null
+        : draftMessageIdForSend ||
+          sendAttemptIdsRef.current[attemptKey] ||
+          createClientSendAttemptId();
+    if (sendAttemptId) {
+      sendAttemptIdsRef.current[attemptKey] = sendAttemptId;
+    }
     setIsSending(true);
     const toastId = toast.loading(
       composeMode === "note"
@@ -1273,18 +1290,31 @@ export function useComposerState({
     let threadIdForSend = selectedThreadId;
     try {
       if (isNewTicket) {
-        const createResponse = await fetch("/api/threads/new", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mailbox_id: newTicketMailboxId,
-            subject: newTicketSubject,
-            to_emails: payload.toRecipients,
-            cc_emails: payload.ccRecipients,
-            bcc_emails: payload.bccRecipients,
-          }),
-        });
-        const createData = await createResponse.json().catch(() => ({}));
+        const createResponse = await fetchWithClientSendTimeout(
+          "/api/threads/new",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mailbox_id: newTicketMailboxId,
+              subject: newTicketSubject,
+              to_emails: payload.toRecipients,
+              cc_emails: payload.ccRecipients,
+              bcc_emails: payload.bccRecipients,
+            }),
+          },
+          {
+            timeoutMessage:
+              "New ticket creation timed out. No email was sent. Verify the ticket before trying again.",
+          },
+        );
+        const createData = await readResponseJsonWithClientSendTimeout(
+          createResponse,
+          {
+            timeoutMessage:
+              "New ticket creation timed out. No email was sent. Verify the ticket before trying again.",
+          },
+        );
         if (!createResponse.ok) {
           throw new Error(createData?.error || "Could not create new ticket.");
         }
@@ -1293,6 +1323,7 @@ export function useComposerState({
         if (!threadIdForSend) {
           throw new Error("Could not create new ticket.");
         }
+        sendAttemptIdsRef.current[threadIdForSend] = sendAttemptId;
         setDraftValueByThread((prev) => ({
           ...prev,
           [threadIdForSend]: composeBody,
@@ -1407,26 +1438,37 @@ export function useComposerState({
       );
       const attachmentsPayload = serializedAttachments.filter(Boolean);
 
-      const res = await fetch(`/api/threads/${threadIdForSend}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body_text: composeBody,
-          to_emails: payload.toRecipients,
-          cc_emails: payload.ccRecipients,
-          bcc_emails: payload.bccRecipients,
-          attachments: attachmentsPayload,
-          sender_name: currentUserName,
-          subject: isNewTicket ? newTicketSubject : undefined,
-          new_ticket: isNewTicket,
-          draft_message_id: draftMessage?.id || activeDraftId || null,
-          draft_preview_id: null,
-          mode: composeMode,
-          source_message_id:
-            composeMode === "forward" ? payload?.sourceMessageId || null : null,
-        }),
+      const res = await fetchWithClientSendTimeout(
+        `/api/threads/${threadIdForSend}/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body_text: composeBody,
+            to_emails: payload.toRecipients,
+            cc_emails: payload.ccRecipients,
+            bcc_emails: payload.bccRecipients,
+            attachments: attachmentsPayload,
+            sender_name: currentUserName,
+            subject: isNewTicket ? newTicketSubject : undefined,
+            new_ticket: isNewTicket,
+            draft_message_id: draftMessageIdForSend,
+            send_attempt_id: sendAttemptId,
+            draft_preview_id: null,
+            mode: composeMode,
+            source_message_id:
+              composeMode === "forward" ? payload?.sourceMessageId || null : null,
+          }),
+        },
+        {
+          timeoutMessage:
+            "The send status is unknown. The provider may have accepted the email. Verify the thread before trying again.",
+        },
+      );
+      const data = await readResponseJsonWithClientSendTimeout(res, {
+        timeoutMessage:
+          "The send status is unknown. The provider may have accepted the email. Verify the thread before trying again.",
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || "Could not send reply.");
       }
@@ -1560,6 +1602,8 @@ export function useComposerState({
       if (selectedThreadIdRef.current === threadIdForSend) {
         setDraftValue("");
       }
+      delete sendAttemptIdsRef.current[attemptKey];
+      delete sendAttemptIdsRef.current[threadIdForSend];
       setDraftValueByThread((prev) => ({
         ...prev,
         [threadIdForSend]: "",

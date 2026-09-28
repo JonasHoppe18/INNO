@@ -1,13 +1,21 @@
+import {
+  fetchWithOutboundTimeout,
+  readResponseJsonWithOutboundTimeout,
+} from "@/lib/server/outbound-send-reliability";
+
 const POSTMARK_SERVER_TOKEN = process.env.POSTMARK_SERVER_TOKEN || "";
 const POSTMARK_ACCOUNT_TOKEN = process.env.POSTMARK_ACCOUNT_TOKEN || "";
 const POSTMARK_MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
 
 class PostmarkApiError extends Error {
-  constructor(message, statusCode, errorCode) {
+  constructor(message, statusCode, errorCode, stage = "provider_send") {
     super(message);
     this.name = "PostmarkApiError";
     this.statusCode = statusCode;
     this.errorCode = errorCode;
+    this.provider = "smtp";
+    this.stage = stage;
+    this.outcome = statusCode < 500 ? "failed" : "unknown";
   }
 }
 
@@ -39,15 +47,31 @@ async function postmarkRequest(path, { method = "GET", body, accountLevel = fals
       : POSTMARK_SERVER_TOKEN,
   };
 
-  const response = await fetch(`https://api.postmarkapp.com${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+  const isSendRequest = path === "/email";
+  const response = await fetchWithOutboundTimeout(
+    `https://api.postmarkapp.com${path}`,
+    {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    },
+    {
+      provider: "smtp",
+      stage: isSendRequest ? "provider_send" : "provider_setup",
+    },
+  );
+  const payload = await readResponseJsonWithOutboundTimeout(response, {
+    provider: "smtp",
+    stage: isSendRequest ? "provider_send" : "provider_setup",
   });
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const message = payload?.Message || `Postmark request failed (${response.status})`;
-    throw new PostmarkApiError(String(message), response.status, payload?.ErrorCode ?? null);
+    throw new PostmarkApiError(
+      String(message),
+      response.status,
+      payload?.ErrorCode ?? null,
+      isSendRequest ? "provider_send" : "provider_setup",
+    );
   }
   return payload;
 }
