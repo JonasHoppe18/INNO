@@ -1,5 +1,4 @@
 export const OUTBOUND_PROVIDER_TIMEOUT_MS = 30_000;
-export const SEND_ATTEMPT_MARKER_PREFIX = "send-attempt:";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,34 +17,6 @@ export class OutboundTimeoutError extends Error {
 export function normalizeSendAttemptId(value) {
   const candidate = String(value || "").trim();
   return UUID_REGEX.test(candidate) ? candidate.toLowerCase() : null;
-}
-
-export function buildSendAttemptMarker(attemptId) {
-  const normalized = normalizeSendAttemptId(attemptId);
-  return normalized ? `${SEND_ATTEMPT_MARKER_PREFIX}${normalized}` : null;
-}
-
-export function isSendAttemptMarker(value, attemptId = null) {
-  const marker = String(value || "");
-  if (!marker.startsWith(SEND_ATTEMPT_MARKER_PREFIX)) return false;
-  if (!attemptId) return true;
-  return marker === buildSendAttemptMarker(attemptId);
-}
-
-export function describeExistingSendAttempt(row, attemptId) {
-  if (!row) return { state: "new" };
-  if (!row.is_draft) {
-    return {
-      state: "sent",
-      messageId: row.id,
-      providerMessageId: row.provider_message_id || null,
-      provider: row.provider || null,
-    };
-  }
-  if (isSendAttemptMarker(row.provider_message_id, attemptId)) {
-    return { state: "unknown" };
-  }
-  return { state: "draft" };
 }
 
 export async function fetchWithOutboundTimeout(

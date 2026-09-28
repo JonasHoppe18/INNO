@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { toast } from "sonner";
 import { reportClientEvent } from "@/lib/client-events";
 import {
+  buildClientSendFingerprint,
   createClientSendAttemptId,
   fetchWithClientSendTimeout,
   readResponseJsonWithClientSendTimeout,
@@ -12,6 +13,49 @@ import {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
+
+const SEND_ATTEMPT_STORAGE_PREFIX = "sona:outbound-send-attempt:v1:";
+
+function sendAttemptStorageKey(threadId, operationType) {
+  return `${SEND_ATTEMPT_STORAGE_PREFIX}${String(threadId || "")}:${operationType}`;
+}
+
+function readStoredSendAttempt(threadId, operationType) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(
+      sendAttemptStorageKey(threadId, operationType),
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!isUuid(parsed?.id) || typeof parsed?.fingerprint !== "string") return null;
+    return { id: parsed.id, fingerprint: parsed.fingerprint };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSendAttempt(threadId, operationType, value) {
+  if (typeof window === "undefined" || !value?.id || !value?.fingerprint) return;
+  try {
+    window.localStorage.setItem(
+      sendAttemptStorageKey(threadId, operationType),
+      JSON.stringify({ id: value.id, fingerprint: value.fingerprint }),
+    );
+  } catch {
+    // Storage availability is not part of the send safety boundary; the server
+    // also deduplicates unresolved attempts by its authoritative fingerprint.
+  }
+}
+
+function clearStoredSendAttempt(threadId, operationType) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(sendAttemptStorageKey(threadId, operationType));
+  } catch {
+    // Ignore unavailable browser storage.
+  }
+}
 
 const DRAFT_FETCH_DELAY_MS = 150;
 
@@ -117,6 +161,7 @@ export function useComposerState({
 
   const sendingStartedAtRef = useRef(0);
   const sendAttemptIdsRef = useRef({});
+  const sendAttemptFingerprintsRef = useRef({});
   const savingDraftThreadIdsRef = useRef(new Set());
   // An empty editor is not automatically a discard request: ticket switches,
   // async hydration, and contentEditable teardown can all produce an empty
@@ -1269,16 +1314,10 @@ export function useComposerState({
     const sendStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     sendingStartedAtRef.current = Date.now();
     const draftMessageIdForSend = [draftMessage?.id, activeDraftId].find(isUuid) || null;
-    const attemptKey = String(selectedThreadId);
-    const sendAttemptId =
-      composeMode === "note"
-        ? null
-        : draftMessageIdForSend ||
-          sendAttemptIdsRef.current[attemptKey] ||
-          createClientSendAttemptId();
-    if (sendAttemptId) {
-      sendAttemptIdsRef.current[attemptKey] = sendAttemptId;
-    }
+    const attemptKey = `${selectedThreadId}:${composeMode}`;
+    let sendAttemptId = null;
+    let sendAttemptFingerprint = null;
+    let lastSendStatus = null;
     setIsSending(true);
     const toastId = toast.loading(
       composeMode === "note"
@@ -1323,7 +1362,6 @@ export function useComposerState({
         if (!threadIdForSend) {
           throw new Error("Could not create new ticket.");
         }
-        sendAttemptIdsRef.current[threadIdForSend] = sendAttemptId;
         setDraftValueByThread((prev) => ({
           ...prev,
           [threadIdForSend]: composeBody,
@@ -1438,6 +1476,37 @@ export function useComposerState({
       );
       const attachmentsPayload = serializedAttachments.filter(Boolean);
 
+      sendAttemptFingerprint = await buildClientSendFingerprint({
+        threadId: threadIdForSend,
+        mailboxId: newTicketMailboxId || selectedThread?.mailbox_id || "",
+        operationType: composeMode,
+        sourceMessageId:
+          composeMode === "forward" ? payload?.sourceMessageId || null : null,
+        subject: isNewTicket ? newTicketSubject : payload?.subject || "",
+        bodyText: composeBody,
+        bodyHtml: payload?.bodyHtml || "",
+        to: payload.toRecipients,
+        cc: payload.ccRecipients,
+        bcc: payload.bccRecipients,
+        attachments: attachmentsPayload,
+      });
+      const storedAttempt = readStoredSendAttempt(threadIdForSend, composeMode);
+      const refAttemptId = sendAttemptIdsRef.current[attemptKey] || null;
+      const knownFingerprint =
+        sendAttemptFingerprintsRef.current[attemptKey] || storedAttempt?.fingerprint || null;
+      sendAttemptId =
+        knownFingerprint && knownFingerprint !== sendAttemptFingerprint
+          ? createClientSendAttemptId()
+          : refAttemptId || storedAttempt?.id || createClientSendAttemptId();
+      sendAttemptIdsRef.current[attemptKey] = sendAttemptId;
+      sendAttemptIdsRef.current[`${threadIdForSend}:${composeMode}`] = sendAttemptId;
+      sendAttemptFingerprintsRef.current[attemptKey] = sendAttemptFingerprint;
+      sendAttemptFingerprintsRef.current[`${threadIdForSend}:${composeMode}`] = sendAttemptFingerprint;
+      writeStoredSendAttempt(threadIdForSend, composeMode, {
+        id: sendAttemptId,
+        fingerprint: sendAttemptFingerprint,
+      });
+
       const res = await fetchWithClientSendTimeout(
         `/api/threads/${threadIdForSend}/send`,
         {
@@ -1469,6 +1538,7 @@ export function useComposerState({
         timeoutMessage:
           "The send status is unknown. The provider may have accepted the email. Verify the thread before trying again.",
       });
+      lastSendStatus = data?.send_status || (res.ok ? "sent" : "failed");
       if (!res.ok) {
         throw new Error(data?.error || "Could not send reply.");
       }
@@ -1603,7 +1673,11 @@ export function useComposerState({
         setDraftValue("");
       }
       delete sendAttemptIdsRef.current[attemptKey];
-      delete sendAttemptIdsRef.current[threadIdForSend];
+      delete sendAttemptIdsRef.current[`${threadIdForSend}:${composeMode}`];
+      delete sendAttemptFingerprintsRef.current[attemptKey];
+      delete sendAttemptFingerprintsRef.current[`${threadIdForSend}:${composeMode}`];
+      clearStoredSendAttempt(selectedThreadId, composeMode);
+      clearStoredSendAttempt(threadIdForSend, composeMode);
       setDraftValueByThread((prev) => ({
         ...prev,
         [threadIdForSend]: "",
@@ -1630,6 +1704,15 @@ export function useComposerState({
       // header comment.
       if (typeof onSent === "function") onSent();
     } catch (err) {
+      if (
+        lastSendStatus === "failed" ||
+        lastSendStatus === "new_attempt_required" ||
+        (isNewTicket && !sendAttemptId)
+      ) {
+        delete sendAttemptIdsRef.current[attemptKey];
+        delete sendAttemptFingerprintsRef.current[attemptKey];
+        clearStoredSendAttempt(selectedThreadId, composeMode);
+      }
       reportClientEvent({
         event: "send_completed",
         threadId: threadIdForSend,

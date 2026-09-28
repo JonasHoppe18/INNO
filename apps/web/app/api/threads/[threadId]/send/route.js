@@ -34,16 +34,18 @@ import {
 } from "@/lib/server/forward-email";
 import { buildRawEmail } from "@/lib/server/email-transport";
 import {
+  claimOutboundSendAttempt,
+  buildOutboundRequestFingerprint,
+  OUTBOUND_ATTEMPT_SELECT,
+} from "@/lib/server/outbound-send-attempts";
+import {
   buildOutboundAttemptLog,
-  buildSendAttemptMarker,
   classifyOutboundError,
   createProviderHttpError,
-  describeExistingSendAttempt,
   fetchWithOutboundTimeout,
   normalizeSendAttemptId,
   readResponseJsonWithOutboundTimeout,
   readResponseTextWithOutboundTimeout,
-  SEND_ATTEMPT_MARKER_PREFIX,
 } from "@/lib/server/outbound-send-reliability";
 
 const SUPABASE_URL = (
@@ -1045,47 +1047,207 @@ async function logOutboundAttempt({
   });
 }
 
+async function updateOutboundAttempt({
+  serviceClient,
+  scope,
+  attemptId,
+  expectedState,
+  patch,
+}) {
+  let query = serviceClient
+    .from("outbound_send_attempts")
+    .update(patch)
+    .eq("id", attemptId);
+  if (expectedState) query = query.eq("state", expectedState);
+  query = applyScope(query, scope);
+  const { data, error } = await query
+    .select(OUTBOUND_ATTEMPT_SELECT)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
+async function loadComposerDraft(serviceClient, scope, { draftMessageId, threadId }) {
+  if (!draftMessageId) return null;
+  let query = serviceClient
+    .from("mail_messages")
+    .select("id, thread_id, mailbox_id, provider, is_draft, from_me")
+    .eq("id", draftMessageId)
+    .eq("thread_id", threadId)
+    .eq("from_me", true)
+    .eq("is_draft", true)
+    .limit(1);
+  query = applyScope(query, scope);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
+async function loadOutboundConversationMessage(serviceClient, scope, messageId) {
+  if (!messageId) return null;
+  let query = serviceClient
+    .from("mail_messages")
+    .select("id, thread_id, mailbox_id, provider_message_id, is_draft")
+    .eq("id", messageId)
+    .eq("from_me", true)
+    .eq("is_draft", false)
+    .limit(1);
+  query = applyScope(query, scope);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
+async function persistOutboundConversationMessage({
+  serviceClient,
+  scope,
+  draftMessage,
+  userId,
+  mailbox,
+  threadId,
+  subject,
+  snippet,
+  persistedBodyText,
+  finalBodyHtml,
+  persistedBodyHtml,
+  sentFromName,
+  sentFromEmail,
+  deliveryTo,
+  deliveryCc,
+  deliveryBcc,
+  persistedProviderMessageId,
+  nowIso,
+}) {
+  const fields = {
+    provider: mailbox.provider,
+    provider_message_id: persistedProviderMessageId,
+    subject,
+    snippet,
+    body_text: persistedBodyText,
+    body_html: finalBodyHtml || persistedBodyHtml || null,
+    clean_body_text: persistedBodyText,
+    clean_body_html: persistedBodyHtml || null,
+    quoted_body_text: null,
+    quoted_body_html: null,
+    from_name: sentFromName,
+    from_email: sentFromEmail,
+    from_me: true,
+    to_emails: deliveryTo,
+    cc_emails: deliveryCc,
+    bcc_emails: deliveryBcc,
+    is_read: true,
+    sent_at: nowIso,
+    received_at: null,
+    is_draft: false,
+    ai_draft_text: null,
+    updated_at: nowIso,
+  };
+
+  if (draftMessage?.id) {
+    let updateQuery = serviceClient
+      .from("mail_messages")
+      .update(fields)
+      .eq("id", draftMessage.id)
+      .eq("thread_id", threadId)
+      .eq("from_me", true)
+      .eq("is_draft", true);
+    updateQuery = applyScope(updateQuery, scope);
+    const { data, error } = await updateQuery.select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return data.id;
+  }
+
+  const { data, error } = await serviceClient
+    .from("mail_messages")
+    .insert({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      workspace_id: scope?.workspaceId || null,
+      mailbox_id: mailbox.id,
+      thread_id: threadId,
+      created_at: nowIso,
+      ...fields,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id || null;
+}
+
+async function markAttemptFailed({ serviceClient, scope, attemptId, errorClass }) {
+  return updateOutboundAttempt({
+    serviceClient,
+    scope,
+    attemptId,
+    expectedState: "reserved",
+    patch: { state: "failed", failure_class: errorClass || null },
+  });
+}
+
+async function markAttemptUnknown({ serviceClient, scope, attemptId, errorClass }) {
+  return updateOutboundAttempt({
+    serviceClient,
+    scope,
+    attemptId,
+    expectedState: "reserved",
+    patch: { state: "unknown", failure_class: errorClass || null },
+  });
+}
+
+async function markAttemptProviderStarted({ serviceClient, scope, attemptId }) {
+  return updateOutboundAttempt({
+    serviceClient,
+    scope,
+    attemptId,
+    expectedState: "reserved",
+    patch: { provider_started_at: new Date().toISOString() },
+  });
+}
+
+async function markAttemptSent({
+  serviceClient,
+  scope,
+  attemptId,
+  persistedProviderMessageId,
+}) {
+  return updateOutboundAttempt({
+    serviceClient,
+    scope,
+    attemptId,
+    expectedState: "reserved",
+    patch: {
+      state: "sent",
+      provider_message_id: persistedProviderMessageId || null,
+    },
+  });
+}
+
+function buildNewAttemptRequiredResponse() {
+  return NextResponse.json(
+    {
+      error: "This message changed after an earlier send attempt. A new send attempt is required.",
+      send_status: "new_attempt_required",
+    },
+    { status: 409 },
+  );
+}
+
 async function releaseSendReservation({
   serviceClient,
   scope,
-  reservationId,
-  attemptMarker,
-  reservationCreated,
-  originalProviderMessageId,
+  attemptId,
+  errorClass,
 }) {
-  if (reservationCreated) {
-    let deleteQuery = serviceClient
-      .from("mail_messages")
-      .delete()
-      .eq("id", reservationId)
-      .eq("provider_message_id", attemptMarker)
-      .eq("is_draft", true);
-    deleteQuery = applyScope(deleteQuery, scope);
-    await deleteQuery;
-    return;
-  }
-
-  if (originalProviderMessageId !== null) {
-    let restoreQuery = serviceClient
-      .from("mail_messages")
-      .update({
-        provider_message_id: originalProviderMessageId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", reservationId)
-      .eq("provider_message_id", attemptMarker)
-      .eq("is_draft", true);
-    restoreQuery = applyScope(restoreQuery, scope);
-    await restoreQuery;
-  }
+  await markAttemptFailed({ serviceClient, scope, attemptId, errorClass });
 }
 
-function buildUnknownSendResponse() {
+function buildUnknownSendResponse(attemptId = null) {
   return NextResponse.json(
     {
       error:
         "The send status is unknown. The email provider may have accepted the message. Verify the thread before trying again.",
       send_status: "unknown",
+      send_attempt_id: attemptId || null,
     },
     { status: 504 },
   );
@@ -1095,7 +1257,7 @@ function buildAlreadySentResponse(row) {
   return NextResponse.json({
     ok: true,
     already_sent: true,
-    message_id: row?.id || null,
+    message_id: row?.message_id || row?.id || null,
     provider_message_id: row?.provider_message_id || null,
     provider: row?.provider || null,
   });
@@ -1543,120 +1705,123 @@ export async function POST(request, { params }) {
   const persistedBodyHtml = composed.bodyHtmlWithClosing || bodyHtml || "";
 
   const operationType = isForward ? "forward" : "reply";
-  const sendAttemptId = normalizeSendAttemptId(draftMessageId) || clientSendAttemptId;
-  const attemptMarker = buildSendAttemptMarker(sendAttemptId);
-  const attemptStartedAt = Date.now();
-  let reservationCreated = false;
-  let originalProviderMessageId = null;
-  let providerInvocationStarted = false;
-
-  let existingAttemptQuery = serviceClient
-    .from("mail_messages")
-    .select("id, provider, provider_message_id, is_draft, thread_id")
-    .eq("id", sendAttemptId)
-    .eq("thread_id", threadId);
-  existingAttemptQuery = applyScope(existingAttemptQuery, scope);
-  const { data: existingAttempt, error: existingAttemptError } =
-    await existingAttemptQuery.maybeSingle();
-  if (existingAttemptError) {
+  let sendAttemptId = clientSendAttemptId;
+  const requestFingerprint = buildOutboundRequestFingerprint({
+    threadId,
+    mailboxId: mailbox.id,
+    provider: mailbox.provider,
+    operationType,
+    sourceMessageId: requestedForwardSourceId,
+    subject,
+    bodyText: finalBodyText,
+    bodyHtml: finalBodyHtml,
+    to: deliveryTo,
+    cc: deliveryCc,
+    bcc: deliveryBcc,
+    attachments: deliveryAttachments,
+  });
+  let composerDraft = null;
+  try {
+    composerDraft = await loadComposerDraft(serviceClient, scope, {
+      draftMessageId,
+      threadId,
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Could not prepare the send attempt safely." },
+      { error: "Could not load the composer draft safely." },
       { status: 500 },
     );
   }
 
-  const existingAttemptStatus = describeExistingSendAttempt(
-    existingAttempt,
-    sendAttemptId,
-  );
-  if (existingAttemptStatus.state === "sent") {
-    return buildAlreadySentResponse(existingAttempt);
+  let attemptResolution;
+  try {
+    attemptResolution = await claimOutboundSendAttempt({
+      serviceClient,
+      scope,
+      userId: supabaseUserId,
+      workspaceId: scope?.workspaceId || null,
+      mailboxId: mailbox.id,
+      threadId,
+      operationType,
+      provider: mailbox.provider,
+      attemptId: sendAttemptId,
+      requestFingerprint,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error?.message || "Could not reserve the send attempt safely." },
+      { status: 500 },
+    );
   }
-  if (existingAttemptStatus.state === "unknown") {
-    return buildUnknownSendResponse();
+
+  if (attemptResolution.kind === "unknown") {
+    return buildUnknownSendResponse(attemptResolution.attempt?.id || sendAttemptId);
   }
-  if (existingAttemptStatus.state === "draft" && !draftMessageId) {
+  if (attemptResolution.kind === "in_progress") {
     return NextResponse.json(
       {
-        error:
-          "A send attempt with this ID is already associated with a draft.",
+        error: "This send attempt is already in progress. Verify the thread before trying again.",
         send_status: "in_progress",
+        send_attempt_id: attemptResolution.attempt?.id || sendAttemptId,
       },
       { status: 409 },
     );
   }
-
-  if (existingAttempt && draftMessageId) {
-    originalProviderMessageId = existingAttempt.provider_message_id || null;
-    let markDraftQuery = serviceClient
-      .from("mail_messages")
-      .update({
-        provider_message_id: attemptMarker,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", sendAttemptId)
-      .eq("thread_id", threadId)
-      .eq("is_draft", true);
-    markDraftQuery = applyScope(markDraftQuery, scope);
-    const { error: markDraftError } = await markDraftQuery;
-    if (markDraftError) {
-      return NextResponse.json(
-        { error: "Could not reserve the draft for sending safely." },
-        { status: 500 },
-      );
-    }
-  } else {
-    const reservation = await serviceClient
-      .from("mail_messages")
-      .insert({
-        id: sendAttemptId,
-        user_id: supabaseUserId,
-        workspace_id: scope?.workspaceId ?? null,
-        mailbox_id: mailbox.id,
-        thread_id: threadId,
-        provider: mailbox.provider,
-        provider_message_id: attemptMarker,
-        subject,
-        snippet: buildSnippet(persistedBodyText),
-        body_text: persistedBodyText,
-        body_html: persistedBodyHtml || null,
-        clean_body_text: persistedBodyText,
-        clean_body_html: persistedBodyHtml || null,
-        from_name: senderName || null,
-        from_email: mailbox.provider_email || null,
-        from_me: true,
-        to_emails: deliveryTo,
-        cc_emails: deliveryCc,
-        bcc_emails: deliveryBcc,
-        is_read: true,
-        is_draft: true,
-        sent_at: null,
-        received_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-    if (reservation.error) {
-      return NextResponse.json(
-        {
-          error:
-            reservation.error.code === "23505"
-              ? "A send attempt is already in progress. Verify the thread before trying again."
-              : "Could not reserve the send attempt safely.",
-          send_status: reservation.error.code === "23505" ? "in_progress" : "failed",
-        },
-        { status: reservation.error.code === "23505" ? 409 : 500 },
-      );
-    }
-    reservationCreated = true;
+  if (attemptResolution.kind === "new_attempt_required") {
+    return buildNewAttemptRequiredResponse();
+  }
+  if (
+    attemptResolution.kind === "sent" &&
+    attemptResolution.attempt?.completed_at &&
+    attemptResolution.attempt?.message_id
+  ) {
+    return buildAlreadySentResponse(attemptResolution.attempt);
   }
 
-  let providerMessageId = null;
+  // A provider-successful attempt can be left in `sent` while local message
+  // finalization is still incomplete. Resume that durable attempt instead of
+  // creating a second attempt ID (and, more importantly, never invoke the
+  // provider again).
+  if (attemptResolution.kind === "sent" && attemptResolution.attempt?.id) {
+    sendAttemptId = attemptResolution.attempt.id;
+  }
+
+  const attemptStartedAt = Date.now();
+  const existingSentAttempt =
+    attemptResolution.kind === "sent" ? attemptResolution.attempt : null;
+  const providerAlreadySent = Boolean(existingSentAttempt);
+  let providerInvocationStarted = false;
+
+  let providerMessageId = existingSentAttempt?.provider_message_id || null;
   let sentFromEmail = mailbox.provider_email || null;
   let sentFromName = senderName || null;
   const nowIso = new Date().toISOString();
   let currentSendStage = "preflight";
+  if (!providerAlreadySent) {
+    try {
+      const startedAttempt = await markAttemptProviderStarted({
+        serviceClient,
+        scope,
+        attemptId: sendAttemptId,
+      });
+      if (!startedAttempt) {
+        return NextResponse.json(
+          {
+            error: "This send attempt is already in progress. Verify the thread before trying again.",
+            send_status: "in_progress",
+          },
+          { status: 409 },
+        );
+      }
+    } catch (error) {
+      return NextResponse.json(
+        { error: error?.message || "Could not start the send attempt safely." },
+        { status: 500 },
+      );
+    }
+  }
   try {
-    if (shouldSimulateEmailOnly) {
+    if (!providerAlreadySent && shouldSimulateEmailOnly) {
       currentSendStage = "test_mode";
       providerMessageId = `email-simulated-test-mode-${threadId}-${Date.now()}`;
       await logAgentStatus(serviceClient, "email_simulated_test_mode", "info", {
@@ -1668,7 +1833,7 @@ export async function POST(request, { params }) {
         intended_cc: ccEmails,
         intended_bcc: bccEmails,
       });
-    } else if (mailbox.provider === "smtp") {
+    } else if (!providerAlreadySent && mailbox.provider === "smtp") {
       const senderConfig = resolvePostmarkSender(mailbox, senderDisplayName, { shop });
       sentFromEmail = senderConfig.fromEmail;
       const references = isForward
@@ -1709,7 +1874,7 @@ export async function POST(request, { params }) {
             }
           : {}),
       });
-    } else {
+    } else if (!providerAlreadySent) {
       currentSendStage = "token_refresh";
       const token = await getAccessToken(serviceClient, mailbox);
       if (mailbox.provider === "gmail") {
@@ -1810,15 +1975,20 @@ export async function POST(request, { params }) {
       errorClass: failure.errorClass,
       statusCode: failure.statusCode,
     });
-    if (failure.outcome !== "unknown") {
+    if (failure.outcome === "unknown") {
+      await markAttemptUnknown({
+        serviceClient,
+        scope,
+        attemptId: sendAttemptId,
+        errorClass: failure.errorClass,
+      }).catch(() => null);
+    } else {
       await releaseSendReservation({
         serviceClient,
         scope,
-        reservationId: sendAttemptId,
-        attemptMarker,
-        reservationCreated,
-        originalProviderMessageId,
-      });
+        attemptId: sendAttemptId,
+        errorClass: failure.errorClass,
+      }).catch(() => null);
     }
     if (mailbox.provider === "smtp") {
       void logAgentStatus(serviceClient, "send_smtp_fail", "error", {
@@ -1853,7 +2023,7 @@ export async function POST(request, { params }) {
       );
     }
     if (failure.outcome === "unknown") {
-      return buildUnknownSendResponse();
+      return buildUnknownSendResponse(sendAttemptId);
     }
     if (
       lowerMessage.includes("pending approval") &&
@@ -1884,45 +2054,73 @@ export async function POST(request, { params }) {
 
   const snippet = buildSnippet(persistedBodyText);
   const persistedProviderMessageId =
-    providerMessageId || `sent-${mailbox.provider}-${threadId}-${Date.now()}`;
-  let insertedMessage = null;
-  let insertError = null;
-  let finalizeReservationQuery = serviceClient
-    .from("mail_messages")
-    .update({
-      provider: mailbox.provider,
-      provider_message_id: persistedProviderMessageId,
-      subject,
-      snippet,
-      body_text: persistedBodyText,
-      body_html: finalBodyHtml || persistedBodyHtml || null,
-      clean_body_text: persistedBodyText,
-      clean_body_html: persistedBodyHtml || null,
-      quoted_body_text: null,
-      quoted_body_html: null,
-      from_name: sentFromName,
-      from_email: sentFromEmail,
-      from_me: true,
-      to_emails: deliveryTo,
-      cc_emails: deliveryCc,
-      bcc_emails: deliveryBcc,
-      is_read: true,
-      sent_at: nowIso,
-      received_at: null,
-      is_draft: false,
-      ai_draft_text: null,
-      updated_at: nowIso,
-    })
-    .eq("id", sendAttemptId)
-    .eq("thread_id", threadId)
-    .eq("provider_message_id", attemptMarker)
-    .eq("is_draft", true);
-  finalizeReservationQuery = applyScope(finalizeReservationQuery, scope);
-  const result = await finalizeReservationQuery.select("id").maybeSingle();
-  insertedMessage = result.data;
-  insertError = result.error;
+    providerMessageId || `sent-${mailbox.provider}-${sendAttemptId}`;
 
-  if (insertError || !insertedMessage) {
+  if (!providerAlreadySent) {
+    let sentAttempt = null;
+    try {
+      sentAttempt = await markAttemptSent({
+        serviceClient,
+        scope,
+        attemptId: sendAttemptId,
+        persistedProviderMessageId,
+      });
+    } catch (error) {
+      await markAttemptUnknown({
+        serviceClient,
+        scope,
+        attemptId: sendAttemptId,
+        errorClass: "attempt_persistence_after_provider",
+      }).catch(() => null);
+      sentAttempt = null;
+    }
+    if (!sentAttempt) {
+      void logOutboundAttempt({
+        serviceClient,
+        scope,
+        sendAttemptId,
+        provider: mailbox.provider,
+        operationType,
+        stage: "persist",
+        outcome: "unknown",
+        startedAt: attemptStartedAt,
+        errorClass: "attempt_persistence_after_provider",
+      }).catch(() => null);
+      return buildUnknownSendResponse(sendAttemptId);
+    }
+  }
+
+  let insertedMessage = null;
+  try {
+    insertedMessage = await loadOutboundConversationMessage(
+      serviceClient,
+      scope,
+      existingSentAttempt?.message_id || null,
+    );
+    if (!insertedMessage) {
+      const messageId = await persistOutboundConversationMessage({
+        serviceClient,
+        scope,
+        draftMessage: composerDraft,
+        userId: supabaseUserId,
+        mailbox,
+        threadId,
+        subject,
+        snippet,
+        persistedBodyText,
+        finalBodyHtml,
+        persistedBodyHtml,
+        sentFromName,
+        sentFromEmail,
+        deliveryTo,
+        deliveryCc,
+        deliveryBcc,
+        persistedProviderMessageId,
+        nowIso,
+      });
+      insertedMessage = messageId ? { id: messageId } : null;
+    }
+  } catch (error) {
     void logOutboundAttempt({
       serviceClient,
       scope,
@@ -1945,10 +2143,52 @@ export async function POST(request, { params }) {
     return NextResponse.json(
       {
         error:
-          "The email provider may have accepted the message, but Sona could not finalize the thread. Verify the thread before trying again.",
-        send_status: "unknown",
+          "The email was accepted, but Sona could not finalize the thread locally. Refresh before trying again.",
+        send_status: "sent",
+        send_attempt_id: sendAttemptId,
       },
-      { status: 504 },
+      { status: 500 },
+    );
+  }
+
+  if (!insertedMessage?.id) {
+    return NextResponse.json(
+      {
+        error:
+          "The email was accepted, but Sona could not finalize the thread locally. Refresh before trying again.",
+        send_status: "sent",
+        send_attempt_id: sendAttemptId,
+      },
+      { status: 500 },
+    );
+  }
+
+  try {
+    const attemptMessageUpdate = await updateOutboundAttempt({
+      serviceClient,
+      scope,
+      attemptId: sendAttemptId,
+      expectedState: "sent",
+      patch: { message_id: insertedMessage.id },
+    });
+    if (!attemptMessageUpdate) throw new Error("Could not link the sent message to the send attempt.");
+  } catch (error) {
+    void logAgent(serviceClient, {
+      provider: mailbox.provider,
+      send_attempt_id: sendAttemptId,
+      operation: operationType,
+      stage: "persist",
+      outcome: "success",
+      error_class: "attempt_message_link",
+    }).catch(() => null);
+    return NextResponse.json(
+      {
+        error:
+          "The email was sent, but Sona could not finish its local send record. Refresh before trying again.",
+        send_status: "sent",
+        send_attempt_id: sendAttemptId,
+      },
+      { status: 500 },
     );
   }
 
@@ -2024,13 +2264,10 @@ export async function POST(request, { params }) {
     let staleDraftDeleteQuery = serviceClient
       .from("mail_messages")
     .delete()
-    .eq("thread_id", threadId)
-    .eq("from_me", true)
-    .eq("is_draft", true)
-    .or(
-      `provider_message_id.is.null,provider_message_id.not.like.${SEND_ATTEMPT_MARKER_PREFIX}%`,
-    )
-    .neq("id", insertedMessage.id);
+      .eq("thread_id", threadId)
+      .eq("from_me", true)
+      .eq("is_draft", true)
+      .neq("id", insertedMessage.id);
     staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
     await staleDraftDeleteQuery;
   } else {
@@ -2039,10 +2276,7 @@ export async function POST(request, { params }) {
       .delete()
       .eq("thread_id", threadId)
       .eq("from_me", true)
-      .eq("is_draft", true)
-      .or(
-        `provider_message_id.is.null,provider_message_id.not.like.${SEND_ATTEMPT_MARKER_PREFIX}%`,
-      );
+      .eq("is_draft", true);
     staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
     await staleDraftDeleteQuery;
   }
@@ -2092,6 +2326,40 @@ export async function POST(request, { params }) {
     .eq("id", threadId);
   updateThreadQuery = applyScope(updateThreadQuery, scope);
   await updateThreadQuery;
+
+  try {
+    const completedAttempt = await updateOutboundAttempt({
+      serviceClient,
+      scope,
+      attemptId: sendAttemptId,
+      expectedState: "sent",
+      patch: {
+        message_id: insertedMessage.id,
+        completed_at: nowIso,
+      },
+    });
+    if (!completedAttempt) {
+      throw new Error("Could not finalize the outbound send attempt.");
+    }
+  } catch (error) {
+    void logAgent(serviceClient, {
+      provider: mailbox.provider,
+      send_attempt_id: sendAttemptId,
+      operation: operationType,
+      stage: "complete",
+      outcome: "success",
+      error_class: "attempt_completion",
+    }).catch(() => null);
+    return NextResponse.json(
+      {
+        error:
+          "The email was sent, but Sona could not finish its local send state. Refresh before trying again.",
+        send_status: "sent",
+        send_attempt_id: sendAttemptId,
+      },
+      { status: 500 },
+    );
+  }
 
   await captureV2DraftPreviewFeedback({
     serviceClient,

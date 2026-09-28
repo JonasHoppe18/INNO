@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  buildOutboundAttemptLog,
-  buildSendAttemptMarker,
   classifyOutboundError,
   createProviderHttpError,
-  describeExistingSendAttempt,
   fetchWithOutboundTimeout,
-  normalizeSendAttemptId,
 } from "../outbound-send-reliability.js";
+import {
+  buildOutboundRequestFingerprint,
+  describeOutboundSendAttempt,
+  isUniqueViolation,
+} from "../outbound-send-attempts.js";
 
-const attemptId = "11111111-1111-4111-8111-111111111111";
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -84,49 +84,56 @@ describe("outbound send reliability", () => {
     });
   });
 
-  it("does not retry a reserved attempt after an unknown result", () => {
-    const marker = buildSendAttemptMarker(attemptId);
-    expect(normalizeSendAttemptId(attemptId)).toBe(attemptId);
-    expect(describeExistingSendAttempt({
-      id: attemptId,
-      is_draft: true,
-      provider_message_id: marker,
-    }, attemptId)).toEqual({ state: "unknown" });
-    expect(describeExistingSendAttempt({
-      id: attemptId,
-      is_draft: false,
-      provider: "smtp",
-      provider_message_id: "postmark-message-id",
-    }, attemptId)).toMatchObject({ state: "sent" });
-  });
-
-  it("records privacy-safe reply and forward attempt metadata", () => {
-    expect(buildOutboundAttemptLog({
-      sendAttemptId: attemptId,
+  it("uses a stable immutable fingerprint and never overloads mail_messages", () => {
+    const first = buildOutboundRequestFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
       provider: "smtp",
       operationType: "reply",
-      stage: "provider_send",
-      outcome: "success",
-      durationMs: 1234.4,
-    })).toMatchObject({
-      send_attempt_id: attemptId,
-      operation: "reply",
-      stage: "provider_send",
-      outcome: "success",
-      duration_ms: 1234,
+      subject: "Re: Order",
+      bodyText: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      to: ["customer@example.com"],
+      attachments: [{
+        filename: "invoice.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 3,
+        content_base64: "YWJj",
+      }],
     });
-    expect(buildOutboundAttemptLog({
-      sendAttemptId: attemptId,
+    const same = buildOutboundRequestFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
       provider: "smtp",
-      operationType: "forward",
-      stage: "provider_send",
-      outcome: "unknown",
-      durationMs: 80,
-      errorClass: "timeout",
-    })).toMatchObject({
-      operation: "forward",
-      outcome: "unknown",
-      error_class: "timeout",
+      operationType: "reply",
+      subject: "Re: Order",
+      bodyText: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      to: ["customer@example.com"],
+      attachments: [{
+        filename: "invoice.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 3,
+        content_base64: "YWJj",
+      }],
     });
+    const edited = buildOutboundRequestFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
+      provider: "smtp",
+      operationType: "reply",
+      subject: "Re: Order",
+      bodyText: "Hello again",
+      to: ["customer@example.com"],
+    });
+
+    expect(first).toHaveLength(64);
+    expect(same).toBe(first);
+    expect(edited).not.toBe(first);
+    expect(describeOutboundSendAttempt({
+      state: "unknown",
+      request_fingerprint: first,
+    }, first)).toEqual({ state: "unknown", attempt: expect.any(Object) });
+    expect(isUniqueViolation({ code: "23505" })).toBe(true);
   });
 });

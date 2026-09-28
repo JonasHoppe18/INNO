@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildClientSendFingerprint,
   ClientSendTimeoutError,
   createClientSendAttemptId,
   fetchWithClientSendTimeout,
@@ -19,6 +20,33 @@ describe("client send reliability", () => {
     expect(createClientSendAttemptId()).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
+  });
+
+  it("changes the client fingerprint when the composed message changes", async () => {
+    const first = await buildClientSendFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
+      operationType: "reply",
+      bodyText: "Hello",
+      to: ["customer@example.com"],
+    });
+    const same = await buildClientSendFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
+      operationType: "reply",
+      bodyText: "Hello",
+      to: ["customer@example.com"],
+    });
+    const edited = await buildClientSendFingerprint({
+      threadId: "thread-1",
+      mailboxId: "mailbox-1",
+      operationType: "reply",
+      bodyText: "Hello again",
+      to: ["customer@example.com"],
+    });
+
+    expect(same).toBe(first);
+    expect(edited).not.toBe(first);
   });
 
   it("aborts a hung request so the composer can leave loading state", async () => {
