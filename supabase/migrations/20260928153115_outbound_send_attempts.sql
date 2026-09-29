@@ -139,3 +139,21 @@ comment on table public.outbound_send_attempts is
 
 comment on column public.outbound_send_attempts.request_fingerprint is
   'SHA-256 of the immutable outbound request payload; used to detect edits and remount retries.';
+
+-- Provider message IDs are mailbox-scoped identifiers in the existing send
+-- contracts. This index makes local message finalization converge on one row
+-- after a provider succeeds but the attempt link is lost. The production
+-- duplicate audit was clean before adding this constraint.
+create unique index if not exists mail_messages_provider_mailbox_message_idx
+  on public.mail_messages (mailbox_id, provider, provider_message_id)
+  where provider_message_id is not null;
+
+-- Attachment keys are populated only by the new finalization path. Including
+-- the ordinal preserves intentional duplicate filenames and duplicate bytes
+-- while making concurrent finalizers converge on one attachment set.
+alter table public.mail_attachments
+  add column if not exists attachment_key text;
+
+create unique index if not exists mail_attachments_message_key_idx
+  on public.mail_attachments (message_id, attachment_key)
+  where attachment_key is not null;

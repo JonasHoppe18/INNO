@@ -63,6 +63,10 @@ function fallbackFingerprint(value) {
 }
 
 export async function buildClientSendFingerprint(input) {
+  // This fingerprint only detects edits across React remounts. The server
+  // derives the authoritative fingerprint after loading server-owned Forward
+  // content and attachments; this value is never trusted for authorization or
+  // provider idempotency.
   const payload = buildClientFingerprintPayload(input);
   if (globalThis.crypto?.subtle && typeof TextEncoder !== "undefined") {
     const digest = await globalThis.crypto.subtle.digest(

@@ -1709,9 +1709,14 @@ export function useComposerState({
         lastSendStatus === "new_attempt_required" ||
         (isNewTicket && !sendAttemptId)
       ) {
-        delete sendAttemptIdsRef.current[attemptKey];
-        delete sendAttemptFingerprintsRef.current[attemptKey];
-        clearStoredSendAttempt(selectedThreadId, composeMode);
+        for (const threadKey of new Set(
+          [selectedThreadId, threadIdForSend].filter(Boolean),
+        )) {
+          const key = `${threadKey}:${composeMode}`;
+          delete sendAttemptIdsRef.current[key];
+          delete sendAttemptFingerprintsRef.current[key];
+          clearStoredSendAttempt(threadKey, composeMode);
+        }
       }
       reportClientEvent({
         event: "send_completed",

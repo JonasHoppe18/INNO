@@ -47,6 +47,11 @@ import {
   readResponseJsonWithOutboundTimeout,
   readResponseTextWithOutboundTimeout,
 } from "@/lib/server/outbound-send-reliability";
+import {
+  loadOutboundConversationMessage,
+  persistOutboundAttachments,
+  persistOutboundConversationMessage,
+} from "@/lib/server/outbound-send-finalization";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -1083,97 +1088,6 @@ async function loadComposerDraft(serviceClient, scope, { draftMessageId, threadI
   return data || null;
 }
 
-async function loadOutboundConversationMessage(serviceClient, scope, messageId) {
-  if (!messageId) return null;
-  let query = serviceClient
-    .from("mail_messages")
-    .select("id, thread_id, mailbox_id, provider_message_id, is_draft")
-    .eq("id", messageId)
-    .eq("from_me", true)
-    .eq("is_draft", false)
-    .limit(1);
-  query = applyScope(query, scope);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(error.message);
-  return data || null;
-}
-
-async function persistOutboundConversationMessage({
-  serviceClient,
-  scope,
-  draftMessage,
-  userId,
-  mailbox,
-  threadId,
-  subject,
-  snippet,
-  persistedBodyText,
-  finalBodyHtml,
-  persistedBodyHtml,
-  sentFromName,
-  sentFromEmail,
-  deliveryTo,
-  deliveryCc,
-  deliveryBcc,
-  persistedProviderMessageId,
-  nowIso,
-}) {
-  const fields = {
-    provider: mailbox.provider,
-    provider_message_id: persistedProviderMessageId,
-    subject,
-    snippet,
-    body_text: persistedBodyText,
-    body_html: finalBodyHtml || persistedBodyHtml || null,
-    clean_body_text: persistedBodyText,
-    clean_body_html: persistedBodyHtml || null,
-    quoted_body_text: null,
-    quoted_body_html: null,
-    from_name: sentFromName,
-    from_email: sentFromEmail,
-    from_me: true,
-    to_emails: deliveryTo,
-    cc_emails: deliveryCc,
-    bcc_emails: deliveryBcc,
-    is_read: true,
-    sent_at: nowIso,
-    received_at: null,
-    is_draft: false,
-    ai_draft_text: null,
-    updated_at: nowIso,
-  };
-
-  if (draftMessage?.id) {
-    let updateQuery = serviceClient
-      .from("mail_messages")
-      .update(fields)
-      .eq("id", draftMessage.id)
-      .eq("thread_id", threadId)
-      .eq("from_me", true)
-      .eq("is_draft", true);
-    updateQuery = applyScope(updateQuery, scope);
-    const { data, error } = await updateQuery.select("id").maybeSingle();
-    if (error) throw new Error(error.message);
-    if (data?.id) return data.id;
-  }
-
-  const { data, error } = await serviceClient
-    .from("mail_messages")
-    .insert({
-      id: crypto.randomUUID(),
-      user_id: userId,
-      workspace_id: scope?.workspaceId || null,
-      mailbox_id: mailbox.id,
-      thread_id: threadId,
-      created_at: nowIso,
-      ...fields,
-    })
-    .select("id")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.id || null;
-}
-
 async function markAttemptFailed({ serviceClient, scope, attemptId, errorClass }) {
   return updateOutboundAttempt({
     serviceClient,
@@ -1706,7 +1620,12 @@ export async function POST(request, { params }) {
 
   const operationType = isForward ? "forward" : "reply";
   let sendAttemptId = clientSendAttemptId;
-  const requestFingerprint = buildOutboundRequestFingerprint({
+  // This is the only authoritative fingerprint. It is derived after the
+  // authorized forward source and its attachments have been loaded, so the
+  // client cannot omit or rewrite server-owned content. The browser UUID is
+  // only the logical-attempt handle and the server rejects it if this
+  // canonical request changes.
+  const canonicalRequestFingerprint = buildOutboundRequestFingerprint({
     threadId,
     mailboxId: mailbox.id,
     provider: mailbox.provider,
@@ -1745,7 +1664,7 @@ export async function POST(request, { params }) {
       operationType,
       provider: mailbox.provider,
       attemptId: sendAttemptId,
-      requestFingerprint,
+      requestFingerprint: canonicalRequestFingerprint,
     });
   } catch (error) {
     return NextResponse.json(
@@ -2095,7 +2014,13 @@ export async function POST(request, { params }) {
     insertedMessage = await loadOutboundConversationMessage(
       serviceClient,
       scope,
-      existingSentAttempt?.message_id || null,
+      {
+        messageId: existingSentAttempt?.message_id || null,
+        mailboxId: mailbox.id,
+        threadId,
+        provider: mailbox.provider,
+        providerMessageId: persistedProviderMessageId,
+      },
     );
     if (!insertedMessage) {
       const messageId = await persistOutboundConversationMessage({
@@ -2193,58 +2118,34 @@ export async function POST(request, { params }) {
   }
 
   if (insertedMessage?.id) {
-    let clearExistingAttachmentsQuery = serviceClient
-      .from("mail_attachments")
-      .delete()
-      .eq("message_id", insertedMessage.id);
-    clearExistingAttachmentsQuery = applyScope(
-      clearExistingAttachmentsQuery,
-      scope,
-      {
-        workspaceColumn: null,
-        userColumn: "user_id",
-      },
-    );
-    await clearExistingAttachmentsQuery;
-
-    if (deliveryAttachments.length) {
-      const attachmentRows = deliveryAttachments.map((attachment) => ({
-        user_id: supabaseUserId,
-        mailbox_id: mailbox.id,
-        message_id: insertedMessage.id,
+    try {
+      await persistOutboundAttachments({
+        serviceClient,
+        attachments: deliveryAttachments,
+        userId: supabaseUserId,
+        mailboxId: mailbox.id,
+        messageId: insertedMessage.id,
         provider: mailbox.provider,
-        provider_attachment_id: attachment?.is_inline
-          ? attachment?.content_id || null
-          : null,
-        filename: attachment.filename,
-        mime_type: attachment.mime_type,
-        size_bytes: attachment.size_bytes,
-        storage_path: `inline:${attachment.mime_type};base64,${sanitizeBase64(
-          attachment.content_base64,
-        )}`,
-        created_at: nowIso,
-      }));
-      const { error: attachmentInsertError } = await serviceClient
-        .from("mail_attachments")
-        .insert(attachmentRows);
-      if (attachmentInsertError) {
-        void logAgent(serviceClient, {
-          provider: mailbox.provider,
+        nowIso,
+      });
+    } catch (error) {
+      void logAgent(serviceClient, {
+        provider: mailbox.provider,
+        send_attempt_id: sendAttemptId,
+        operation: operationType,
+        stage: "persist",
+        outcome: "success",
+        error_class: "attachment_persistence",
+      }).catch(() => null);
+      return NextResponse.json(
+        {
+          error:
+            "Email was sent, but Sona could not save its attachment record. Refresh the thread before retrying.",
+          send_status: "sent",
           send_attempt_id: sendAttemptId,
-          operation: operationType,
-          stage: "persist",
-          outcome: "success",
-          error_class: "attachment_persistence",
-        }).catch(() => null);
-        return NextResponse.json(
-          {
-            error:
-              "Email was sent, but Sona could not save its attachment record. Refresh the thread before retrying.",
-            send_status: "sent",
-          },
-          { status: 500 },
-        );
-      }
+        },
+        { status: 500 },
+      );
     }
   }
 
@@ -2325,7 +2226,26 @@ export async function POST(request, { params }) {
     })
     .eq("id", threadId);
   updateThreadQuery = applyScope(updateThreadQuery, scope);
-  await updateThreadQuery;
+  const { error: threadStatusError } = await updateThreadQuery;
+  if (threadStatusError) {
+    void logAgent(serviceClient, {
+      provider: mailbox.provider,
+      send_attempt_id: sendAttemptId,
+      operation: operationType,
+      stage: "complete",
+      outcome: "success",
+      error_class: "thread_status_persistence",
+    }).catch(() => null);
+    return NextResponse.json(
+      {
+        error:
+          "The email was sent, but Sona could not update the ticket status. Refresh the thread before trying again.",
+        send_status: "sent",
+        send_attempt_id: sendAttemptId,
+      },
+      { status: 500 },
+    );
+  }
 
   try {
     const completedAttempt = await updateOutboundAttempt({
