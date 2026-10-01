@@ -446,6 +446,8 @@ function ComposerComponent({
   canSend = false,
   onSend,
   isSending = false,
+  deliveryError = null,
+  onDeliveryErrorDismiss = null,
   mode,
   onModeChange,
   toLabel,
@@ -973,6 +975,7 @@ function ComposerComponent({
     if (!trimmed) return;
     setter((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     inputSetter("");
+    onDeliveryErrorDismiss?.();
   };
 
   const onRecipientKey = (event, value, setter, inputSetter) => {
@@ -984,6 +987,7 @@ function ComposerComponent({
 
   const removeRecipient = (valueToRemove, setter) => {
     setter((prev) => prev.filter((item) => item !== valueToRemove));
+    onDeliveryErrorDismiss?.();
   };
 
   const buildRecipients = (existing, pendingValue) => {
@@ -1019,6 +1023,7 @@ function ComposerComponent({
   const handleAddAttachments = (event) => {
     const files = Array.from(event?.target?.files || []);
     if (!files.length) return;
+    onDeliveryErrorDismiss?.();
     setAttachments((prev) => {
       const next = [...prev];
       files.forEach((file) => {
@@ -1035,6 +1040,7 @@ function ComposerComponent({
   };
 
   const removeAttachment = (targetFile) => {
+    onDeliveryErrorDismiss?.();
     setAttachments((prev) =>
       prev.filter(
         (file) =>
@@ -1363,6 +1369,11 @@ function ComposerComponent({
     value,
   ]);
 
+  const handleModeChange = (nextMode) => {
+    onDeliveryErrorDismiss?.();
+    onModeChange?.(nextMode);
+  };
+
   const handleReplyEditorInput = (event) => {
     const html = String(event?.currentTarget?.innerHTML || "");
     const htmlWithMarkers = replaceInlineImageTagsWithMarkers(html);
@@ -1467,6 +1478,7 @@ function ComposerComponent({
       .join("\n");
 
     if (inlineAttachments.length) {
+      onDeliveryErrorDismiss?.();
       setAttachments((prev) => [...prev, ...inlineAttachments]);
     }
     if (pasteRange && replyEditorRef.current?.contains(pasteRange.commonAncestorContainer)) {
@@ -1719,9 +1731,10 @@ function ComposerComponent({
               <input
                 id="new-ticket-subject"
                 value={newTicketSubject}
-                onChange={(event) =>
-                  onNewTicketSubjectChange?.(event.target.value)
-                }
+                onChange={(event) => {
+                  onDeliveryErrorDismiss?.();
+                  onNewTicketSubjectChange?.(event.target.value);
+                }}
                 placeholder="Subject"
                 disabled={disabled || isSending}
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
@@ -1736,7 +1749,10 @@ function ComposerComponent({
                   <select
                     aria-label="Send from mailbox"
                     value={selectedMailboxId || ""}
-                    onChange={(event) => onMailboxChange?.(event.target.value)}
+                    onChange={(event) => {
+                      onDeliveryErrorDismiss?.();
+                      onMailboxChange?.(event.target.value);
+                    }}
                     disabled={disabled || isSending}
                     className="h-7 max-w-[220px] rounded-md border border-border bg-background px-2 text-[13px] text-foreground outline-none"
                   >
@@ -2302,6 +2318,31 @@ function ComposerComponent({
                 ))}
               </div>
             ) : null}
+            {deliveryError ? (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className={`mt-3 flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 text-[12px] ${
+                  deliveryError.kind === "unknown"
+                    ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+                    : "border-destructive/30 bg-destructive/5 text-destructive"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold">{deliveryError.title}</p>
+                  <p className="mt-0.5 leading-5">{deliveryError.message}</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Dismiss delivery error"
+                  title="Dismiss"
+                  onClick={() => onDeliveryErrorDismiss?.()}
+                  className="shrink-0 rounded-md p-1 opacity-70 transition-opacity hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -2428,9 +2469,9 @@ function ComposerComponent({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onModeChange("reply")}>Reply to customer</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onModeChange("forward")}>Forward email</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onModeChange("note")}>Internal note</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleModeChange("reply")}>Reply to customer</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleModeChange("forward")}>Forward email</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleModeChange("note")}>Internal note</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button

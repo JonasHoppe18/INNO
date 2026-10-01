@@ -9,6 +9,7 @@ import {
   fetchWithClientSendTimeout,
   readResponseJsonWithClientSendTimeout,
 } from "@/lib/send-reliability";
+import { getSendErrorPresentation } from "@/lib/inbox/send-error";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -134,6 +135,7 @@ export function useComposerState({
   const [, setSignatureByThread] = useState({});
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
+  const [deliveryErrorByThread, setDeliveryErrorByThread] = useState({});
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState(
     {},
   );
@@ -1010,6 +1012,12 @@ export function useComposerState({
         threadIdOverride || selectedThreadId || "",
       ).trim();
       if (!targetThreadId) return;
+      setDeliveryErrorByThread((prev) => {
+        if (!prev[targetThreadId]) return prev;
+        const next = { ...prev };
+        delete next[targetThreadId];
+        return next;
+      });
       if (composerMode === "note") {
         setNoteValueByThread((prev) => ({
           ...prev,
@@ -1048,6 +1056,22 @@ export function useComposerState({
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [composerMode, draftValueByThread, selectedThreadId],
+  );
+
+  const clearDeliveryError = useCallback(
+    (threadIdOverride = null) => {
+      const targetThreadId = String(
+        threadIdOverride || selectedThreadId || "",
+      ).trim();
+      if (!targetThreadId) return;
+      setDeliveryErrorByThread((prev) => {
+        if (!prev[targetThreadId]) return prev;
+        const next = { ...prev };
+        delete next[targetThreadId];
+        return next;
+      });
+    },
+    [selectedThreadId],
   );
 
   const saveThreadDraft = useCallback(
@@ -1312,6 +1336,7 @@ export function useComposerState({
       return;
     }
     const sendStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    clearDeliveryError(selectedThreadId);
     sendingStartedAtRef.current = Date.now();
     const draftMessageIdForSend = [draftMessage?.id, activeDraftId].find(isUuid) || null;
     const attemptKey = `${selectedThreadId}:${composeMode}`;
@@ -1540,7 +1565,13 @@ export function useComposerState({
       });
       lastSendStatus = data?.send_status || (res.ok ? "sent" : "failed");
       if (!res.ok) {
-        throw new Error(data?.error || "Could not send reply.");
+        const error = new Error(data?.error || "Could not send reply.");
+        error.sendError = getSendErrorPresentation({
+          errorCode: data?.error_code,
+          sendStatus: data?.send_status,
+          message: data?.error,
+        });
+        throw error;
       }
       // Set edit badge directly from send response — no separate DB query needed
       if (data?.edit_classification && threadIdForSend) {
@@ -1700,6 +1731,12 @@ export function useComposerState({
           (typeof performance !== "undefined" ? performance.now() : Date.now()) -
           sendStartedAt,
       });
+      setDeliveryErrorByThread((prev) => {
+        if (!prev[threadIdForSend]) return prev;
+        const next = { ...prev };
+        delete next[threadIdForSend];
+        return next;
+      });
       // Wired to selectNext() in queue views (Task 10, Plan 2) — see file
       // header comment.
       if (typeof onSent === "function") onSent();
@@ -1727,6 +1764,15 @@ export function useComposerState({
           (typeof performance !== "undefined" ? performance.now() : Date.now()) -
           sendStartedAt,
       });
+      setDeliveryErrorByThread((prev) => ({
+        ...prev,
+        [threadIdForSend]:
+          err?.sendError ||
+          getSendErrorPresentation({
+            sendStatus: lastSendStatus,
+            message: err?.message,
+          }),
+      }));
       toast.error(err?.message || "Could not send draft.", { id: toastId });
     } finally {
       const elapsed = Date.now() - (sendingStartedAtRef.current || 0);
@@ -1753,6 +1799,8 @@ export function useComposerState({
     setActiveDraftId,
     isSending,
     setIsSending,
+    deliveryErrorByThread,
+    clearDeliveryError,
     suppressAutoDraftByThread,
     setSuppressAutoDraftByThread,
     proposalOnlyByThread,

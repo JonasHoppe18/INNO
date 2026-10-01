@@ -2684,6 +2684,8 @@ export function InboxSplitView({
     setActiveDraftId,
     isSending,
     setIsSending,
+    deliveryErrorByThread,
+    clearDeliveryError,
     suppressAutoDraftByThread,
     setSuppressAutoDraftByThread,
     proposalOnlyByThread,
@@ -3793,6 +3795,12 @@ export function InboxSplitView({
               : null
           }
           isSending={isSending}
+          deliveryError={
+            selectedThreadId
+              ? deliveryErrorByThread[selectedThreadId] || null
+              : null
+          }
+          onDeliveryErrorDismiss={() => clearDeliveryError(selectedThreadId)}
           composerMode={composerMode}
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}

@@ -201,6 +201,8 @@ function TicketDetailComponent({
   newTicketSubject = "",
   onNewTicketSubjectChange = null,
   isSending = false,
+  deliveryError = null,
+  onDeliveryErrorDismiss = null,
   isWorkspaceTestMode = false,
   headerActions = null,
   rightHeaderActions = null,
@@ -970,6 +972,8 @@ function TicketDetailComponent({
               canSend={canSend}
               onSend={onSend}
               isSending={isSending}
+              deliveryError={deliveryError}
+              onDeliveryErrorDismiss={onDeliveryErrorDismiss}
               mode={composerMode}
               onModeChange={onComposerModeChange}
               toLabel={toLabel}

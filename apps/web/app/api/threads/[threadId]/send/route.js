@@ -1161,6 +1161,7 @@ function buildUnknownSendResponse(attemptId = null) {
       error:
         "The send status is unknown. The email provider may have accepted the message. Verify the thread before trying again.",
       send_status: "unknown",
+      error_code: "send_status_unknown",
       send_attempt_id: attemptId || null,
     },
     { status: 504 },
@@ -1937,6 +1938,7 @@ export async function POST(request, { params }) {
           error:
             "This recipient cannot currently receive email because the address has been marked inactive by the email provider.",
           send_status: "failed",
+          error_code: "recipient_suppressed",
         },
         { status: 422 },
       );
@@ -1963,12 +1965,20 @@ export async function POST(request, { params }) {
             "Postmark account is pending approval. You can only send to recipients on your own domain right now.",
           recipient_domains: Array.from(new Set(recipientDomains)),
           from_domain: String(sentFromEmail || "").split("@")[1] || null,
+          error_code: "send_failed",
         },
         { status: 400 },
       );
     }
     const status = /refresh/i.test(message) ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json(
+      {
+        error:
+          "Sona couldn't send this message. The message was not sent. Please review the error and try again.",
+        error_code: "send_failed",
+      },
+      { status },
+    );
   }
 
   const snippet = buildSnippet(persistedBodyText);
@@ -2070,6 +2080,7 @@ export async function POST(request, { params }) {
         error:
           "The email was accepted, but Sona could not finalize the thread locally. Refresh before trying again.",
         send_status: "sent",
+        error_code: "send_accepted_local_finalize_pending",
         send_attempt_id: sendAttemptId,
       },
       { status: 500 },
@@ -2082,6 +2093,7 @@ export async function POST(request, { params }) {
         error:
           "The email was accepted, but Sona could not finalize the thread locally. Refresh before trying again.",
         send_status: "sent",
+        error_code: "send_accepted_local_finalize_pending",
         send_attempt_id: sendAttemptId,
       },
       { status: 500 },
@@ -2111,6 +2123,7 @@ export async function POST(request, { params }) {
         error:
           "The email was sent, but Sona could not finish its local send record. Refresh before trying again.",
         send_status: "sent",
+        error_code: "send_accepted_local_finalize_pending",
         send_attempt_id: sendAttemptId,
       },
       { status: 500 },
@@ -2142,6 +2155,7 @@ export async function POST(request, { params }) {
           error:
             "Email was sent, but Sona could not save its attachment record. Refresh the thread before retrying.",
           send_status: "sent",
+          error_code: "send_accepted_local_finalize_pending",
           send_attempt_id: sendAttemptId,
         },
         { status: 500 },
@@ -2241,6 +2255,7 @@ export async function POST(request, { params }) {
         error:
           "The email was sent, but Sona could not update the ticket status. Refresh the thread before trying again.",
         send_status: "sent",
+        error_code: "send_accepted_local_finalize_pending",
         send_attempt_id: sendAttemptId,
       },
       { status: 500 },
@@ -2275,6 +2290,7 @@ export async function POST(request, { params }) {
         error:
           "The email was sent, but Sona could not finish its local send state. Refresh before trying again.",
         send_status: "sent",
+        error_code: "send_accepted_local_finalize_pending",
         send_attempt_id: sendAttemptId,
       },
       { status: 500 },
