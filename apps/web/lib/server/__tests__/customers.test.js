@@ -46,14 +46,9 @@ function directory(messages) {
 describe("customer directory identity", () => {
   it.each([
     { classification_key: "spam" },
-    { classification_key: null },
-    {
-      classification_key: "support",
-      classification_reason: "fallback:no_active_categories",
-    },
     { classification_key: "notification" },
     { classification_key: "support", status: "Spam" },
-  ])("excludes non-support and spam conversations: %j", (overrides) => {
+  ])("excludes explicit spam and notifications: %j", (overrides) => {
     expect(
       buildCustomerDirectory({
         messages: [message()],
@@ -63,6 +58,28 @@ describe("customer directory identity", () => {
       }),
     ).toEqual([]);
   });
+  it.each([
+    { classification_key: null },
+    { classification_key: "" },
+    {
+      classification_key: "support",
+      classification_reason: "fallback:no_active_categories",
+    },
+  ])(
+    "retains customer history without a confirmed classification: %j",
+    (overrides) => {
+      const [customer] = buildCustomerDirectory({
+        messages: [message()],
+        threads: [{ ...threads[0], ...overrides }],
+        mailboxes,
+        shops,
+      });
+      expect(customer).toMatchObject({
+        email: "ada@example.com",
+        ticketCount: 1,
+      });
+    },
+  );
   it("keeps support history when a customer also has spam tickets", () => {
     const [customer] = buildCustomerDirectory({
       messages: [message(), message({ thread_id: "two" })],

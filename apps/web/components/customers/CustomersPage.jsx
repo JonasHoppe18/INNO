@@ -320,9 +320,8 @@ export function CustomersPage() {
                   <TableHead className="h-9">Email</TableHead>
                   <TableHead className="h-9">Tickets</TableHead>
                   <TableHead className="h-9">Orders</TableHead>
-                  <TableHead className="h-9">Last contact</TableHead>
-                  <TableHead className="h-9 w-10 rounded-r-lg">
-                    <span className="sr-only">Open profile</span>
+                  <TableHead className="h-9 rounded-r-lg">
+                    Last contact
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -330,16 +329,21 @@ export function CustomersPage() {
                 {pageRows.map((customer) => (
                   <TableRow
                     key={customer.id}
-                    className="border-border/40 hover:bg-muted/30"
+                    className="cursor-pointer border-border/40 outline-none hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    tabIndex={0}
+                    aria-label={`Open ${customer.name}`}
+                    onClick={() => setSelected(customer)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelected(customer);
+                      }
+                    }}
                   >
                     <TableCell className="py-2 pl-4">
-                      <button
-                        type="button"
-                        className="rounded-md py-1 text-left font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setSelected(customer)}
-                      >
+                      <span className="inline-block py-1 font-medium">
                         {customer.name}
-                      </button>
+                      </span>
                     </TableCell>
                     <TableCell className="py-2 text-muted-foreground">
                       {customer.email}
@@ -357,28 +361,10 @@ export function CustomersPage() {
                       </div>
                     </TableCell>
                     <TableCell className="py-2">
-                      <button
-                        type="button"
-                        className="rounded-md text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setSelected(customer)}
-                        aria-label={`View orders for ${customer.name}`}
-                      >
-                        <OrderState result={orderResults[customer.id]} />
-                      </button>
+                      <OrderState result={orderResults[customer.id]} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap py-2 text-muted-foreground">
                       {date(customer.lastContactAt)}
-                    </TableCell>
-                    <TableCell className="py-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7"
-                        aria-label={`Open ${customer.name}`}
-                        onClick={() => setSelected(customer)}
-                      >
-                        <ChevronRight />
-                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
