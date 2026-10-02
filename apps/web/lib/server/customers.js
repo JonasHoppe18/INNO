@@ -40,7 +40,27 @@ export function buildCustomerDirectory({
     const thread = threadMap.get(message.thread_id);
     const mailbox = mailboxMap.get(message.mailbox_id);
     if (!thread || !mailbox || thread.mailbox_id !== mailbox.id) continue;
-    if (thread.classification_key === "notification") continue;
+    // Unclassified historical mail includes unsolicited sales and spam. Only
+    // confirmed support conversations belong in the customer directory.
+    if (
+      String(thread.classification_key || "")
+        .trim()
+        .toLowerCase() !== "support"
+    )
+      continue;
+    if (
+      String(thread.classification_reason || "")
+        .trim()
+        .toLowerCase()
+        .startsWith("fallback:")
+    )
+      continue;
+    if (
+      String(thread.status || "")
+        .trim()
+        .toLowerCase() === "spam"
+    )
+      continue;
     const email = normalizeEmailAddress(getEffectiveSenderEmail(message));
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || ownEmails.has(email))
       continue;
@@ -140,7 +160,7 @@ export async function loadCustomerDirectory(client, scope) {
       client
         .from("mail_threads")
         .select(
-          "id, mailbox_id, subject, status, ticket_number, last_message_at, classification_key",
+          "id, mailbox_id, subject, status, ticket_number, last_message_at, classification_key, classification_reason",
         )
         .eq("workspace_id", workspaceId)
         .order("id"),

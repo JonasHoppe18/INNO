@@ -133,7 +133,6 @@ export function CustomersPage() {
   const [refresh, setRefresh] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [shopFilter, setShopFilter] = useState("all");
   const [sort, setSort] = useState("recent");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
@@ -149,7 +148,6 @@ export function CustomersPage() {
     setSelected(null);
     setOrderResults({});
     setPage(1);
-    setShopFilter("all");
     fetch("/api/customers", { cache: "no-store", signal: controller.signal })
       .then(readJson)
       .then(setData)
@@ -164,7 +162,7 @@ export function CustomersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, filter, shopFilter, sort]);
+  }, [search, filter, sort]);
 
   useEffect(() => {
     if (!selected) return;
@@ -208,7 +206,6 @@ export function CustomersPage() {
             `${customer.name} ${customer.email}`
               .toLowerCase()
               .includes(query)) &&
-          (shopFilter === "all" || customer.shopId === shopFilter) &&
           (filter !== "open" || customer.openTicketCount > 0) &&
           (filter !== "returning" || customer.ticketCount > 1),
       )
@@ -219,7 +216,7 @@ export function CustomersPage() {
             ? b.ticketCount - a.ticketCount
             : String(b.lastContactAt).localeCompare(String(a.lastContactAt)),
       );
-  }, [customers, search, filter, shopFilter, sort]);
+  }, [customers, search, filter, sort]);
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const orderResult = selected ? orderResults[selected.id] : null;
@@ -265,7 +262,7 @@ export function CustomersPage() {
             <ToggleGroupItem value="returning">Repeat contacts</ToggleGroupItem>
           </ToggleGroup>
           <p className="text-xs text-muted-foreground">
-            Customers who have written to your inbox
+            Customers with support conversations
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
@@ -279,23 +276,6 @@ export function CustomersPage() {
               className="pl-9"
             />
           </div>
-          {(data?.shops.length || 0) > 1 && (
-            <Select value={shopFilter} onValueChange={setShopFilter}>
-              <SelectTrigger className="w-44" aria-label="Filter by store">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All stores</SelectItem>
-                  {data.shops.map((shop) => (
-                    <SelectItem key={shop.id} value={shop.id}>
-                      {shop.shop_name || shop.shop_domain}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          )}
           <Select value={sort} onValueChange={setSort}>
             <SelectTrigger className="w-44" aria-label="Sort customers">
               <ArrowDownUp className="mr-2 size-3.5 text-muted-foreground" />
@@ -349,7 +329,6 @@ export function CustomersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-5">Customer</TableHead>
-                  <TableHead>Store</TableHead>
                   <TableHead>Tickets</TableHead>
                   <TableHead>Orders</TableHead>
                   <TableHead>Last contact</TableHead>
@@ -379,9 +358,6 @@ export function CustomersPage() {
                           </span>
                         </span>
                       </button>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {customer.shopName || "No store connected"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -488,18 +464,9 @@ export function CustomersPage() {
                   </a>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-muted/20 p-4">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">Store</p>
-                  <p className="flex items-center gap-1.5 text-sm">
-                    <Store className="size-3.5 shrink-0" />
-                    {selected.shopName || "Not connected"}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">First contact</p>
-                  <p className="text-sm">{date(selected.firstContactAt)}</p>
-                </div>
+              <div className="flex flex-col gap-1 rounded-lg border border-border bg-muted/20 p-4">
+                <p className="text-xs text-muted-foreground">First contact</p>
+                <p className="text-sm">{date(selected.firstContactAt)}</p>
               </div>
               <section
                 className="flex flex-col gap-3"

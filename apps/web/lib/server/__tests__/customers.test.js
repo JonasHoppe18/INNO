@@ -14,10 +14,21 @@ const threads = [
     id: "one",
     mailbox_id: "inbox-a",
     status: "needs_attention",
+    classification_key: "support",
     ticket_number: 12,
   },
-  { id: "two", mailbox_id: "inbox-a", status: "Solved" },
-  { id: "three", mailbox_id: "inbox-b", status: "waiting_customer" },
+  {
+    id: "two",
+    mailbox_id: "inbox-a",
+    classification_key: "support",
+    status: "Solved",
+  },
+  {
+    id: "three",
+    mailbox_id: "inbox-b",
+    classification_key: "support",
+    status: "waiting_customer",
+  },
 ];
 const message = (overrides = {}) => ({
   id: "m",
@@ -33,6 +44,36 @@ function directory(messages) {
 }
 
 describe("customer directory identity", () => {
+  it.each([
+    { classification_key: "spam" },
+    { classification_key: null },
+    {
+      classification_key: "support",
+      classification_reason: "fallback:no_active_categories",
+    },
+    { classification_key: "notification" },
+    { classification_key: "support", status: "Spam" },
+  ])("excludes non-support and spam conversations: %j", (overrides) => {
+    expect(
+      buildCustomerDirectory({
+        messages: [message()],
+        threads: [{ ...threads[0], ...overrides }],
+        mailboxes,
+        shops,
+      }),
+    ).toEqual([]);
+  });
+  it("keeps support history when a customer also has spam tickets", () => {
+    const [customer] = buildCustomerDirectory({
+      messages: [message(), message({ thread_id: "two" })],
+      threads: [threads[0], { ...threads[1], classification_key: "spam" }],
+      mailboxes,
+      shops,
+    });
+    expect(customer.ticketCount).toBe(1);
+    expect(customer.tickets[0].id).toBe("one");
+  });
+
   it("excludes system notifications from customer contacts", () => {
     const result = buildCustomerDirectory({
       messages: [message()],
