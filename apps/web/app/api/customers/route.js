@@ -7,6 +7,8 @@ import { loadCustomerDirectory } from "@/lib/server/customers";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 import { ShopifyReadOnlyProvider } from "@/lib/greenfield-support/shopify-read-only";
 
+import { fetchCustomerOrderCounts } from "@/lib/server/customer-order-counts";
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
@@ -40,7 +42,57 @@ export async function GET(request) {
   }
   try {
     const directory = await loadCustomerDirectory(client, scope);
-    const customerId = new URL(request.url).searchParams.get("customer");
+    const params = new URL(request.url).searchParams;
+    const countIds = [...new Set(params.getAll("count"))];
+    if (countIds.length) {
+      if (countIds.length > 25)
+        return NextResponse.json(
+          { error: "Too many customers." },
+          { status: 400 },
+        );
+      const customers = countIds.map((id) =>
+        directory.customers.find((row) => row.id === id),
+      );
+      if (customers.some((customer) => !customer))
+        return NextResponse.json(
+          { error: "Customer not found." },
+          { status: 404 },
+        );
+      const counts = {};
+      const groups = new Map();
+      for (const customer of customers) {
+        if (!customer.shopId) {
+          counts[customer.id] = { status: "not_connected" };
+          continue;
+        }
+        if (!groups.has(customer.shopId)) groups.set(customer.shopId, []);
+        groups.get(customer.shopId).push(customer);
+      }
+      await Promise.all(
+        [...groups].map(async ([shopId, rows]) => {
+          try {
+            const credentials = await resolveShopifyCredentialsWithDiagnostics(
+              client,
+              scope,
+              {
+                requestedShopId: shopId,
+                reason: "customers_order_counts",
+                log: () => {},
+              },
+            );
+            Object.assign(
+              counts,
+              await fetchCustomerOrderCounts(credentials, rows),
+            );
+          } catch {
+            for (const customer of rows)
+              counts[customer.id] = { status: "error" };
+          }
+        }),
+      );
+      return NextResponse.json({ counts });
+    }
+    const customerId = params.get("customer");
     if (!customerId) return NextResponse.json(directory);
     const customer = directory.customers.find((row) => row.id === customerId);
     if (!customer)

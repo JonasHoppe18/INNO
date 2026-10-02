@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   directory: vi.fn(),
   credentials: vi.fn(),
   history: vi.fn(),
+  counts: vi.fn(),
   fetchImpl: null,
 }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
@@ -23,6 +24,9 @@ vi.mock("@/lib/server/customers", () => ({
 }));
 vi.mock("@/lib/server/shopify-credentials", () => ({
   resolveShopifyCredentialsWithDiagnostics: mocks.credentials,
+}));
+vi.mock("@/lib/server/customer-order-counts", () => ({
+  fetchCustomerOrderCounts: mocks.counts,
 }));
 vi.mock("@/lib/greenfield-support/shopify-read-only", () => ({
   ShopifyReadOnlyProvider: class {
@@ -110,6 +114,44 @@ describe("customers API access", () => {
     } finally {
       mockFetch.mockRestore();
     }
+  });
+  it("counts only workspace customers using the explicit shop", async () => {
+    mocks.counts.mockResolvedValue({
+      "shop:ada@example.com": { status: "checked", count: 125 },
+    });
+    const response = await GET(
+      new Request(
+        "http://localhost/api/customers?count=shop%3Aada%40example.com",
+      ),
+    );
+    expect(await response.json()).toEqual({
+      counts: { "shop:ada@example.com": { status: "checked", count: 125 } },
+    });
+    expect(mocks.credentials).toHaveBeenCalledWith(
+      {},
+      { workspaceId: "workspace" },
+      expect.objectContaining({ requestedShopId: "shop" }),
+    );
+    expect(mocks.history).not.toHaveBeenCalled();
+  });
+  it("rejects out-of-workspace count requests before contacting Shopify", async () => {
+    expect(
+      (await GET(new Request("http://localhost/api/customers?count=other")))
+        .status,
+    ).toBe(404);
+    expect(mocks.counts).not.toHaveBeenCalled();
+    expect(mocks.credentials).not.toHaveBeenCalled();
+  });
+  it("keeps failed counts distinct from zero", async () => {
+    mocks.counts.mockRejectedValue(new Error("access denied"));
+    const response = await GET(
+      new Request(
+        "http://localhost/api/customers?count=shop%3Aada%40example.com",
+      ),
+    );
+    expect(await response.json()).toEqual({
+      counts: { "shop:ada@example.com": { status: "error" } },
+    });
   });
   it("distinguishes unlinked inboxes and failed lookups from zero orders", async () => {
     mocks.directory.mockResolvedValue({

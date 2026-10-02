@@ -122,12 +122,7 @@ function OrderState({ result }) {
     return <span className="text-muted-foreground">Unavailable</span>;
   if (result.status === "not_connected")
     return <span className="text-muted-foreground">Not connected</span>;
-  return (
-    <span className="tabular-nums">
-      {result.orders.length}
-      {result.orders.length === result.limit ? "+" : ""}
-    </span>
-  );
+  return <span className="tabular-nums">{result.count}</span>;
 }
 
 export function CustomersPage() {
@@ -143,6 +138,7 @@ export function CustomersPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [orderResults, setOrderResults] = useState({});
+  const [orderCounts, setOrderCounts] = useState({});
   const [orderRefresh, setOrderRefresh] = useState(0);
 
   useEffect(() => {
@@ -153,6 +149,7 @@ export function CustomersPage() {
     setData(null);
     setSelected(null);
     setOrderResults({});
+    setOrderCounts({});
     setPage(1);
     fetch("/api/customers", { cache: "no-store", signal: controller.signal })
       .then(readJson)
@@ -225,6 +222,32 @@ export function CustomersPage() {
   }, [customers, search, filter, sort]);
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const countIdsKey = JSON.stringify(pageRows.map((customer) => customer.id));
+  useEffect(() => {
+    const ids = JSON.parse(countIdsKey);
+    if (!ids.length) return;
+    const controller = new AbortController();
+    setOrderCounts(
+      Object.fromEntries(ids.map((id) => [id, { status: "loading" }])),
+    );
+    const params = new URLSearchParams();
+    ids.forEach((id) => params.append("count", id));
+    fetch(`/api/customers?${params}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(readJson)
+      .then((result) => {
+        if (!controller.signal.aborted) setOrderCounts(result.counts);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setOrderCounts(
+            Object.fromEntries(ids.map((id) => [id, { status: "error" }])),
+          );
+      });
+    return () => controller.abort();
+  }, [countIdsKey, data, organizationId, orderRefresh]);
   const orderResult = selected ? orderResults[selected.id] : null;
 
   return (
@@ -327,7 +350,7 @@ export function CustomersPage() {
                     Customer name
                   </TableHead>
                   <TableHead className="h-8 w-[34%]">Email</TableHead>
-                  <TableHead className="h-8 w-[8%] text-right">
+                  <TableHead className="h-8 w-[8%] text-center">
                     Tickets
                   </TableHead>
                   <TableHead className="h-8 w-[11%] text-right">
@@ -367,11 +390,11 @@ export function CustomersPage() {
                     >
                       {customer.email}
                     </TableCell>
-                    <TableCell className="py-1.5 text-right tabular-nums">
+                    <TableCell className="py-1.5 text-center tabular-nums">
                       {customer.ticketCount}
                     </TableCell>
                     <TableCell className="py-1.5 text-right">
-                      <OrderState result={orderResults[customer.id]} />
+                      <OrderState result={orderCounts[customer.id]} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap py-1.5 pr-3 text-right text-muted-foreground">
                       {date(customer.lastContactAt)}
