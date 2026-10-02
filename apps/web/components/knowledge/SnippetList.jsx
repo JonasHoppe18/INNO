@@ -21,7 +21,7 @@ export function SnippetList({ snippets, selectedId, onSelect }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search snippets..."
-          className="flex-1 bg-transparent text-[11px] text-gray-600 placeholder:text-gray-300 outline-none dark:text-gray-400 dark:placeholder:text-gray-600"
+          className="flex-1 bg-transparent text-xs text-gray-600 placeholder:text-gray-300 outline-none dark:text-gray-400 dark:placeholder:text-gray-600"
         />
       </div>
       <div className="flex-1 overflow-y-auto divide-y divide-gray-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:divide-gray-800">
@@ -70,12 +70,12 @@ function SnippetRow({ snippet, active, onClick }) {
       {/* Title with Q&A indicator */}
       <span
         className={cn(
-          "flex items-center gap-1.5 truncate text-[12.5px] font-medium leading-snug",
+          "flex items-center gap-1.5 truncate text-xs font-medium leading-snug",
           active ? "text-indigo-700 dark:text-indigo-300" : "text-gray-800 dark:text-gray-100"
         )}
       >
         {isQa && (
-          <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
+          <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
             Q&amp;A
           </span>
         )}
@@ -84,7 +84,7 @@ function SnippetRow({ snippet, active, onClick }) {
 
       {/* Content preview */}
       {preview && (
-        <span className="truncate text-[11px] leading-snug text-gray-400">
+        <span className="truncate text-xs leading-snug text-gray-400">
           {preview}
         </span>
       )}
@@ -96,7 +96,7 @@ function SnippetRow({ snippet, active, onClick }) {
             <span
               key={tag}
               className={cn(
-                "rounded-full px-1.5 py-0.5 text-[9px]",
+                "rounded-full px-1.5 py-0.5 text-xs",
                 productTags.includes(tag)
                   ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400"
                   : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"

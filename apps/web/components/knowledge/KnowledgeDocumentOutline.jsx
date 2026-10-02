@@ -26,12 +26,12 @@ export function KnowledgeDocumentOutline({
     <div className="flex h-full flex-col rounded-xl border bg-card">
       <div className="border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-section-heading font-semibold uppercase tracking-wide text-muted-foreground">
             Sections
           </h3>
           <span className="text-xs text-muted-foreground">{items.length}</span>
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-xs text-muted-foreground">
           Each section heading below becomes a focused knowledge unit the AI retrieves from.
         </p>
       </div>
@@ -48,7 +48,7 @@ export function KnowledgeDocumentOutline({
               onClick={() => onSelectSection?.(section.id)}
               title={section.title}
               className={cn(
-                "block w-full truncate rounded-md px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                "block w-full truncate rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                 activeSectionId === section.id && "bg-muted font-medium text-foreground",
               )}
             >

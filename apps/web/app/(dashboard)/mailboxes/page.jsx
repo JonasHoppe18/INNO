@@ -117,7 +117,7 @@ export default async function MailboxesPage() {
       <MailboxesOnboardingTracker />
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-semibold">Mailboxes</h1>
+          <h1 className="text-page-heading font-semibold">Mailboxes</h1>
           <p className="text-sm text-muted-foreground">
             Manage the email accounts Sona uses to draft replies.
           </p>
@@ -127,7 +127,7 @@ export default async function MailboxesPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">
+          <h2 className="text-section-heading font-semibold text-slate-900">
             Connected accounts
           </h2>
           <p className="text-sm text-muted-foreground">

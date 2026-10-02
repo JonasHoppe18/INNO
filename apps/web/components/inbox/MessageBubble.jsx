@@ -205,9 +205,9 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[13px] leading-[1.5] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_*]:font-[inherit] [&_*]:text-[13px] [&_*]:leading-[1.5] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-sm leading-[1.5] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_*]:font-[inherit] [&_*]:text-sm [&_*]:leading-[1.5] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 const EMAIL_MODAL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-base leading-[1.55] text-foreground [&_*]:!whitespace-normal [&_table]:!w-full [&_table]:table-fixed [&_td]:break-words [&_th]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
 
 const IMAGE_FILENAME_RE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 
@@ -312,7 +312,7 @@ function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
         </div>
 
         {images.length > 1 ? (
-          <div className="mt-3 text-[13px] font-medium text-white/60">
+          <div className="mt-3 text-sm font-medium text-white/60">
             {index + 1} / {images.length}
           </div>
         ) : null}
@@ -353,7 +353,7 @@ function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
           rel="noreferrer"
           download
           onClick={(e) => e.stopPropagation()}
-          className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/20"
+          className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white/80 transition-colors hover:bg-white/20"
         >
           <Download className="h-3.5 w-3.5" />
           Download
@@ -371,7 +371,7 @@ function AiEditBadge({ editStats }) {
   if (edit_classification === "no_edit") return null;
   if (pct != null) {
     return (
-      <span className="ml-auto text-[11px] text-muted-foreground/60">
+      <span className="ml-auto text-xs text-muted-foreground/60">
         {pct}% edited
       </span>
     );
@@ -639,7 +639,7 @@ function MessageBubbleComponent({
               <div className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1", isOutbound && "justify-end text-right")}>
                 <span
                   className={cn(
-                    "text-[13px] font-semibold leading-5",
+                    "text-sm font-semibold leading-5",
                     isInternalNote
                       ? "text-amber-800 dark:text-amber-200"
                       : isOutbound
@@ -650,17 +650,17 @@ function MessageBubbleComponent({
                   {displaySenderName}
                 </span>
                 {timestamp ? (
-                  <span className="text-[12px] font-normal tabular-nums text-muted-foreground">
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">
                     {timestamp}
                   </span>
                 ) : null}
                 {isInternalNote ? (
-                  <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:border-amber-300/30 dark:bg-amber-500/10 dark:text-amber-200">
                     Internal note
                   </span>
                 ) : null}
                 {isDraft ? (
-                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium leading-4 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300">
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium leading-4 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300">
                     Draft
                   </span>
                 ) : null}
@@ -679,7 +679,7 @@ function MessageBubbleComponent({
               )}
             >
               <div
-                className={cn("px-3.5 py-2.5 text-[13px] leading-[1.5] text-foreground", isOutbound && "text-[13px]")}
+                className={cn("px-3.5 py-2.5 text-sm leading-[1.5] text-foreground", isOutbound && "text-sm")}
                 onClick={(e) => {
                   if (e.target.tagName !== "IMG") return;
                   const src = e.target.getAttribute("src");
@@ -688,11 +688,11 @@ function MessageBubbleComponent({
                 }}
               >
                 {showTranslation ? (
-                  <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-foreground">
+                  <p className="whitespace-pre-wrap text-sm leading-[1.5] text-foreground">
                     {translatedText}
                   </p>
                 ) : !isOutbound && translationLoading ? (
-                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
                     Translating…
                   </div>
@@ -719,7 +719,7 @@ function MessageBubbleComponent({
 
             {fileAttachments.length ? (
               <div className="rounded-xl border border-border bg-card px-4 pb-3 pt-2">
-                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Files</p>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Files</p>
                 <div className="flex flex-wrap gap-1.5">
                   {fileAttachments.map((attachment) => (
                     <button
@@ -728,14 +728,14 @@ function MessageBubbleComponent({
                       onClick={() => setSelectedAttachment(attachment)}
                       className="group/file flex w-[240px] items-center gap-2 overflow-hidden rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-muted"
                     >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors group-hover/file:bg-muted/80">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors group-hover/file:bg-muted/80">
                         {String(attachment?.mime_type || "").includes("pdf") ? "PDF" : "File"}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-[12px] font-medium text-foreground">
+                        <p className="truncate text-xs font-medium text-foreground">
                           {attachment?.filename || "Attachment"}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           {attachment?.size_bytes ? formatBytes(attachment.size_bytes) : attachment?.mime_type || "Unknown"}
                         </p>
                       </div>
@@ -752,7 +752,7 @@ function MessageBubbleComponent({
                   onClick={() => {
                     startEmailOpenTransition(() => setViewEmailOpen(true));
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                 >
                   <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
@@ -761,7 +761,7 @@ function MessageBubbleComponent({
                   <button
                     type="button"
                     onClick={handleToggleTranslation}
-                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm opacity-60 transition-opacity hover:bg-muted hover:opacity-100 group-hover/bubble:opacity-100 focus-visible:opacity-100"
                   >
                     <Globe className="h-3.5 w-3.5" />
                     <span>{showTranslation ? "Show original" : "Translate"}</span>
@@ -780,30 +780,30 @@ function MessageBubbleComponent({
           <div className="max-h-[65vh] overflow-auto bg-card px-5 py-4">
             <div className="space-y-2 text-sm">
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">From</span>
-                <span className="text-[13px] text-foreground">{senderDetails}</span>
+                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">From</span>
+                <span className="text-sm text-foreground">{senderDetails}</span>
               </div>
               {toList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">To</span>
-                  <span className="text-[13px] text-foreground">{toList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">To</span>
+                  <span className="text-sm text-foreground">{toList.join(", ")}</span>
                 </div>
               ) : null}
               {ccList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Cc</span>
-                  <span className="text-[13px] text-foreground">{ccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cc</span>
+                  <span className="text-sm text-foreground">{ccList.join(", ")}</span>
                 </div>
               ) : null}
               {shouldShowBcc ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Bcc</span>
-                  <span className="text-[13px] text-foreground">{bccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bcc</span>
+                  <span className="text-sm text-foreground">{bccList.join(", ")}</span>
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Date</span>
-                <span className="text-[13px] text-foreground">{fullTimestamp || "-"}</span>
+                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</span>
+                <span className="text-sm text-foreground">{fullTimestamp || "-"}</span>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
@@ -817,7 +817,7 @@ function MessageBubbleComponent({
                   className={cn(
                     EMAIL_MODAL_BODY_CLASS,
                     shouldFormatRawPlainBody &&
-                      "text-[14px] leading-6 text-foreground [&_*]:text-[14px] [&_*]:leading-6"
+                      "text-base leading-6 text-foreground [&_*]:text-base [&_*]:leading-6"
                   )}
                   dangerouslySetInnerHTML={{
                     __html: shouldFormatRawPlainBody
@@ -872,7 +872,7 @@ function MessageBubbleComponent({
                   href={selectedAttachmentInlineUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
                 >
                   Open in new tab
                 </a>
@@ -880,7 +880,7 @@ function MessageBubbleComponent({
                   href={selectedAttachmentUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download

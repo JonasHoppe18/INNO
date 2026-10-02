@@ -422,14 +422,14 @@ function GeneralTab({
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">General</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">General</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage workspace details and ticket lifecycle defaults.</p>
       </div>
 
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="px-6 pb-2 pt-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Workspace details</h3>
+            <h3 className="text-section-heading font-semibold text-foreground">Workspace details</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">Your connected store and shared workspace preferences.</p>
           </div>
         </div>
@@ -480,7 +480,7 @@ function GeneralTab({
 
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="px-6 pb-2 pt-5">
-          <h3 className="text-base font-semibold text-foreground">Ticket lifecycle</h3>
+          <h3 className="text-section-heading font-semibold text-foreground">Ticket lifecycle</h3>
           <p className="mt-0.5 text-sm text-muted-foreground">Choose when inactive tickets should move forward automatically.</p>
         </div>
         <div className="px-6 pb-2">
@@ -539,7 +539,7 @@ function GeneralTab({
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="flex items-center justify-between px-6 py-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Test Mode</h3>
+            <h3 className="text-section-heading font-semibold text-foreground">Test Mode</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Simulate actions without writing to Shopify, shipping providers, or other integrations.
             </p>
@@ -603,7 +603,7 @@ function AiInstructionsTab({ value, onChange, onSave, saving }) {
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">AI instructions</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">AI instructions</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Define the shared brand context and tone Sona uses when drafting replies.
         </p>
@@ -918,10 +918,10 @@ function MembersTab({
     <>
       <section className="w-full space-y-5">
         <div className="mb-6">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">TEAM</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-primary">TEAM</p>
           <div className="mt-1 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">Team Members</h2>
+              <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Team Members</h2>
               <p className="mt-1 text-sm text-muted-foreground">Manage who has access to your workspace.</p>
             </div>
             <Button
@@ -937,7 +937,7 @@ function MembersTab({
         </div>
 
         <div className="w-full overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <div className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             <p>Member</p>
             <p>Role</p>
             <p>Signature</p>
@@ -1009,7 +1009,7 @@ function MembersTab({
                     <Badge
                       variant="secondary"
                       className={cn(
-                        "h-7 rounded-md border-0 px-3 text-[13px] font-semibold",
+                        "h-7 rounded-md border-0 px-3 text-sm font-semibold",
                         rolePillClassName
                       )}
                     >
@@ -1185,7 +1185,7 @@ function BillingTab() {
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Billing</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Billing</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage your subscription and plan.</p>
       </div>
 
@@ -1735,7 +1735,7 @@ function EmailSettings({
     <section className="w-full space-y-5">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Email</h2>
+          <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Email</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Configure customer-facing messages, routing and sender controls.
           </p>
@@ -1953,7 +1953,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Category</span>
                     <span>Forward to</span>
                     <span>Mode</span>
@@ -2071,7 +2071,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Destination</span>
@@ -2247,7 +2247,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Note</span>
@@ -2932,8 +2932,8 @@ function ProfileTab({ user, isLoaded }) {
     <>
       <section className="w-full space-y-5">
         <div className="mb-6">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">PROFILE</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Personal Profile</h2>
+          <p className="text-xs font-bold uppercase tracking-wider text-primary">PROFILE</p>
+          <h2 className="mt-1 text-page-heading font-semibold tracking-tight text-foreground">Personal Profile</h2>
           <p className="mt-1 text-sm text-muted-foreground">Manage your account details and preferences.</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6">
@@ -4623,13 +4623,13 @@ export function SettingsPanel() {
       </div>
       <aside className="hidden h-full w-[224px] shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="px-5 pb-5 pt-8">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">Settings</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Settings</h1>
         </div>
         <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
           {MENU_SECTIONS.map((section) => (
             <div key={section.label}>
               {section.label ? (
-                <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   {section.label}
                 </p>
               ) : null}
@@ -4643,7 +4643,7 @@ export function SettingsPanel() {
                       onClick={() => handleSelectTab(item.key)}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
+                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
                           ? "bg-accent font-semibold text-accent-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"

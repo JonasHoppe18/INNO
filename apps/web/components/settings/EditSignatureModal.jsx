@@ -188,7 +188,7 @@ function StepperInput({ value, onChange, min, max }) {
 
 function SectionLabel({ children }) {
   return (
-    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{children}</p>
+    <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{children}</p>
   );
 }
 
@@ -655,7 +655,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     size="sm"
                     onClick={addLanguageSignature}
                     disabled={!languageInput.trim()}
-                    className="h-9 shrink-0 border-slate-200 bg-white text-xs"
+                    className="h-9 shrink-0 border-slate-200 bg-white text-sm"
                   >
                     Add language
                   </Button>
@@ -674,7 +674,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                        className="h-7 px-2 text-sm text-slate-400 hover:text-red-500"
                         onClick={() => setLanguageSignatures((previous) => {
                           const next = { ...previous };
                           delete next[code];
@@ -718,7 +718,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 border-slate-200 text-xs"
+                    className="h-8 border-slate-200 text-sm"
                     onClick={() => setBuilderOpen(true)}
                   >
                     Configure template
@@ -749,7 +749,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700"
+                      className="h-7 px-2 text-sm text-slate-500 hover:text-slate-700"
                       onClick={() => setBuilderOpen(true)}
                     >
                       Edit
@@ -758,7 +758,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                      className="h-7 px-2 text-sm text-slate-400 hover:text-red-500"
                       onClick={() => setTemplateHtml("")}
                     >
                       Clear
@@ -902,7 +902,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                           <div className={`w-full ${builderDraft.layout === opt.value ? "[&_div]:bg-white/60 [&_.logo-block]:bg-white" : ""}`}>
                             {opt.preview}
                           </div>
-                          <span className="text-[10px] font-medium leading-none">{opt.label}</span>
+                          <span className="text-xs font-medium leading-none">{opt.label}</span>
                         </button>
                       ))}
                     </div>
@@ -995,7 +995,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       {builderDraft.accentColor ? (
                         <button
                           type="button"
-                          className="text-xs text-slate-400 underline hover:text-slate-600"
+                          className="text-sm text-slate-400 underline hover:text-slate-600"
                           onClick={() => handleBuilderField("accentColor", "")}
                         >
                           Clear
@@ -1061,7 +1061,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     <button
                       type="button"
                       onClick={handleLogoPickerOpen}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
                     >
                       Choose file
                     </button>
@@ -1080,7 +1080,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       />
                       <button
                         type="button"
-                        className="text-xs text-slate-400 underline hover:text-red-500"
+                        className="text-sm text-slate-400 underline hover:text-red-500"
                         onClick={() => handleBuilderField("logoUrl", "")}
                       >
                         Remove logo

@@ -14,7 +14,7 @@ export default async function DocumentPage() {
     <DashboardPageShell>
       <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">Upload dine dokumenter til Sona</h1>
+          <h1 className="text-page-heading font-semibold">Upload dine dokumenter til Sona</h1>
         </div>
       </header>
     </DashboardPageShell>

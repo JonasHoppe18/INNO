@@ -214,7 +214,7 @@ function SidebarExpandedNavigation({
 
       <SidebarContent className="gap-0">
         <NavMain items={expandedItems} />
-        <div className="px-4 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
+        <div className="px-4 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
           Tickets
         </div>
         <NavQueue
@@ -653,7 +653,7 @@ export function AppSidebar({
             />
             <div className="flex min-w-0 flex-1 flex-col bg-background">
               <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4 pt-2">
-                <p className="shrink-0 text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">
+                <p className="shrink-0 text-base font-semibold tracking-[-0.01em] text-sidebar-foreground">
                   Inbox
                 </p>
                 <SidebarMenu className="w-auto shrink-0">
@@ -902,7 +902,7 @@ export function AppSidebar({
                       )}
                     >
                       <span className={cn(
-                        "inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium",
+                        "inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium",
                         rule.matcher_type === "domain"
                           ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
                           : "bg-muted text-muted-foreground"

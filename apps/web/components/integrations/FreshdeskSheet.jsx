@@ -340,7 +340,7 @@ export function FreshdeskSheet({ children, onConnected, initialData = null }) {
           
           {/* TRIN 1 */}
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">1. Access</h3>
+            <h3 className="text-section-heading font-bold text-muted-foreground uppercase tracking-wider">1. Access</h3>
             <div className="space-y-2">
               <Label htmlFor="fd-domain">Freshdesk domain</Label>
               <Input
@@ -359,7 +359,7 @@ export function FreshdeskSheet({ children, onConnected, initialData = null }) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Find it under Profile Settings in Freshdesk.
               </p>
             </div>

@@ -329,7 +329,7 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            <h3 className="text-section-heading font-bold text-muted-foreground uppercase tracking-wider">
               1. Access
             </h3>
             <div className="space-y-2">
@@ -350,7 +350,7 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Find it under your Gorgias profile settings.
               </p>
             </div>
@@ -363,7 +363,7 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Used as the sender when creating drafts in Gorgias.
               </p>
             </div>

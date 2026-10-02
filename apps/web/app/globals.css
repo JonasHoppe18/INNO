@@ -284,9 +284,31 @@
 
 :root {
   color-scheme: light;
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  font-family: var(--font-inter), "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
   line-height: 1.5;
+}
+
+/* Application typography. Keep the root rem at 16px: spacing is unchanged.
+   Marketing retains its existing type scale; dashboard portals inherit these
+   variables from html through :has(), including Radix overlays in body. */
+html:has(.dashboard-theme), html:has(.design-typography) {
+  --text-caption-size: 0.75rem;
+  --text-caption-leading: 1rem;
+  --text-ui-size: 0.8125rem;
+  --text-body-size: 0.875rem;
+  --text-body-leading: 1.25rem;
+  --weight-regular: 450;
+  --weight-medium: 550;
+  --weight-semibold: 650;
+}
+
+html:has(.dashboard-theme) body, html:has(.design-typography) body,
+.dashboard-theme, .design-typography {
+  font-size: var(--text-ui-size);
+  font-weight: var(--weight-regular);
+  line-height: 1.25rem;
+  font-optical-sizing: auto;
 }
 
 @layer base {

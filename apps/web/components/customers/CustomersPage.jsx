@@ -255,7 +255,7 @@ export function CustomersPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight">Customers</h1>
+            <h1 className="text-page-heading font-semibold tracking-tight">Customers</h1>
           </div>
         </div>
       </header>
@@ -269,13 +269,13 @@ export function CustomersPage() {
             onValueChange={(value) => value && setFilter(value)}
             aria-label="Customer filter"
           >
-            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="all">
+            <ToggleGroupItem className="h-8 px-3 text-sm" value="all">
               All customers
             </ToggleGroupItem>
-            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="open">
+            <ToggleGroupItem className="h-8 px-3 text-sm" value="open">
               Open tickets
             </ToggleGroupItem>
-            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="returning">
+            <ToggleGroupItem className="h-8 px-3 text-sm" value="returning">
               Repeat contacts
             </ToggleGroupItem>
           </ToggleGroup>
@@ -288,12 +288,12 @@ export function CustomersPage() {
               placeholder="Search customers…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="h-10 rounded-xl border-0 bg-transparent pl-9 text-[13px] shadow-none focus-visible:ring-0"
+              className="h-10 rounded-xl border-0 bg-transparent pl-9 text-sm shadow-none focus-visible:ring-0"
             />
           </div>
           <Select value={sort} onValueChange={setSort}>
             <SelectTrigger
-              className="h-8 w-40 shrink-0 rounded-none rounded-r-xl border-0 border-l border-border/60 text-[13px] shadow-none focus:ring-0"
+              className="h-8 w-40 shrink-0 rounded-none rounded-r-xl border-0 border-l border-border/60 text-sm shadow-none focus:ring-0"
               aria-label="Sort customers"
             >
               <ArrowDownUp className="mr-2 size-3.5 text-muted-foreground" />
@@ -343,7 +343,7 @@ export function CustomersPage() {
           </BlankState>
         ) : (
           <>
-            <Table className="min-w-[760px] table-fixed text-[13px]">
+            <Table className="min-w-[760px] table-fixed text-sm">
               <TableHeader className="[&_tr]:border-0">
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
                   <TableHead className="h-8 w-[32%] rounded-l-lg pl-3">
@@ -457,7 +457,7 @@ export function CustomersPage() {
                   <AvatarFallback>{initials(selected.name)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <h2 className="truncate text-lg font-semibold">
+                  <h2 className="truncate text-section-heading font-semibold">
                     {selected.name}
                   </h2>
                   <a
@@ -479,7 +479,7 @@ export function CustomersPage() {
               >
                 <div className="flex items-center gap-2">
                   <Ticket className="size-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">Tickets</h3>
+                  <h3 className="text-section-heading font-semibold">Tickets</h3>
                   <Badge variant="secondary">{selected.ticketCount}</Badge>
                 </div>
                 <div className="divide-y divide-border rounded-lg border border-border">
@@ -515,7 +515,7 @@ export function CustomersPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Package className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Orders</h3>
+                    <h3 className="text-section-heading font-semibold">Orders</h3>
                     {orderResult?.status === "checked" && (
                       <Badge variant="secondary">
                         {orderResult.orders.length}

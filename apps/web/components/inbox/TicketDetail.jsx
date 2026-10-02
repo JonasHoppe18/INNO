@@ -742,8 +742,8 @@ function TicketDetailComponent({
             <Inbox className="h-5 w-5" />
           </span>
           <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold text-foreground">Select a ticket</h2>
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
+            <h2 className="text-section-heading font-semibold text-foreground">Select a ticket</h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
               Choose a conversation from the inbox to view the thread.
             </p>
           </div>
@@ -822,14 +822,14 @@ function TicketDetailComponent({
               type="button"
               onClick={onBackToInbox}
               aria-label="Back to inbox"
-              className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 lg:hidden"
+              className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 lg:hidden"
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               <span>Inbox</span>
             </button>
           ) : null}
           <span
-            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-mono text-[12px] tabular-nums tracking-[-0.01em] ${
+            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-mono text-xs tabular-nums tracking-[-0.01em] ${
               hasTicketNumber
                 ? "font-medium text-muted-foreground"
                 : "text-muted-foreground/60"
@@ -844,7 +844,7 @@ function TicketDetailComponent({
           ) : null}
           {threadSubject ? (
             <span className="hidden min-w-0 items-center gap-2 2xl:inline-flex">
-              <span className="min-w-0 max-w-[min(38vw,360px)] truncate text-[12px] font-semibold tracking-[-0.01em] text-foreground">
+              <span className="min-w-0 max-w-[min(38vw,360px)] truncate text-xs font-semibold tracking-[-0.01em] text-foreground">
                 {threadSubject}
               </span>
             </span>
@@ -876,7 +876,7 @@ function TicketDetailComponent({
             aria-live="polite"
             className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center"
           >
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
               <Loader2 className="size-3 animate-spin text-violet-500" aria-hidden="true" />
               Loading conversation
             </span>
@@ -990,7 +990,7 @@ function TicketDetailComponent({
             return (
               <Fragment key={message.id}>
                 {shouldShowDaySeparator ? (
-                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-muted-foreground/80">
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-xs font-medium text-muted-foreground/80">
                     <span className="h-px flex-1 bg-border/60" />
                     <span className="rounded-full border border-border/70 bg-background/80 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
                       {formatMessageDayLabel(message)}
@@ -999,7 +999,7 @@ function TicketDetailComponent({
                   </div>
                 ) : null}
                 {shouldShowNewMessagesDivider ? (
-                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-[11px] font-medium text-violet-700/80">
+                  <div className="!mt-3 mb-1 flex items-center gap-3 px-1 text-xs font-medium text-violet-700/80">
                     <span className="h-px flex-1 bg-violet-200/80" />
                     <span className="rounded-full border border-violet-200/80 bg-violet-50 px-2.5 py-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.03)]">
                       New messages
@@ -1104,7 +1104,7 @@ function TicketDetailComponent({
               type="button"
               onClick={handleReviewPendingAction}
               aria-label="Review action above"
-              className="group inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-background/75 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+              className="group inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-background/75 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
             >
               <span className="truncate">Review action above</span>
               <ChevronUp
@@ -1155,7 +1155,7 @@ function TicketDetailComponent({
           <div className="px-3 pb-1">
             <div className="mx-auto w-full max-w-[900px] rounded-xl border border-transparent bg-transparent px-3 py-2">
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex items-center gap-2 text-[13px] font-medium text-slate-700">
+                <div className="min-w-0 flex items-center gap-2 text-sm font-medium text-slate-700">
                   <span className="truncate">
                     Mark this ticket as solved.
                   </span>

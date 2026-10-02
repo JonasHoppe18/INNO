@@ -29,11 +29,11 @@ function DesignLabContent() {
   const [saved, setSaved] = useState(false);
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
+    <main className="design-typography mx-auto flex min-h-svh max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <Badge variant="ai" className="w-fit">Local experiment</Badge>
-          <h1 className="text-2xl font-semibold tracking-tight">Sona design lab</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight">Sona design lab</h1>
           <p className="text-sm text-muted-foreground">Shared components with fictional data. No messages or settings are saved to Sona.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -44,6 +44,12 @@ function DesignLabContent() {
           <Button asChild><Link href="/inbox">Open inbox<ArrowUpRight data-icon="inline-end" /></Link></Button>
         </div>
       </header>
+      <section aria-label="Typography scale" className="flex flex-wrap items-baseline gap-x-8 gap-y-2 rounded-lg border border-border bg-card px-4 py-3">
+        <p className="text-page-heading">Page title · 16 px</p>
+        <p className="text-base">Reading text · 14 px</p>
+        <p className="text-sm">UI text · 13 px</p>
+        <p className="text-xs text-muted-foreground">Metadata · 12 px</p>
+      </section>
       <Tabs defaultValue="components">
         <TabsList aria-label="Design examples">
           <TabsTrigger value="components">Components</TabsTrigger>
@@ -99,7 +105,7 @@ function DesignLabContent() {
         <TabsContent value="inbox" className="mt-6">
           <div className="grid overflow-hidden rounded-xl border bg-card md:grid-cols-[300px_1fr]">
             <section aria-label="Demo conversation list" className="divide-y border-b md:border-b-0 md:border-r">
-              <h2 className="px-3 py-4 text-sm font-semibold">Demo conversations</h2>
+              <h2 className="px-3 py-4 text-section-heading font-semibold">Demo conversations</h2>
               {tickets.map((ticket, index) => <TicketListItem key={ticket.id} thread={ticket} customerLabel={`Demo customer ${index + 1}`} timestamp="2026-10-02T08:00:00Z" isActive={selected === ticket.id} unreadCount={index === 0 ? 1 : 0} onSelect={() => setSelected(ticket.id)} />)}
             </section>
             <section className="flex min-w-0 flex-col gap-6 bg-background p-6" aria-label="Demo conversation">

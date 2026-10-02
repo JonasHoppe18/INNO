@@ -9,7 +9,7 @@ let availableTagsCache = null;
 
 function SectionLabel({ children }) {
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
       {children}
     </span>
   );
@@ -57,7 +57,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—", compact 
           onKeyDown={handleKeyDown}
           aria-label={`Edit ${label.toLowerCase()}`}
           rows={compact ? 2 : 3}
-          className={`w-full rounded-md border border-input bg-background px-2 py-1.5 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none ${compact ? "text-[12px]" : "text-sm"}`}
+          className={`w-full rounded-md border border-input bg-background px-2 py-1.5 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none ${compact ? "text-xs" : "text-sm"}`}
         />
       ) : (
         <div className="group/field relative">
@@ -65,7 +65,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—", compact 
             type="button"
             onClick={() => setEditing(true)}
             aria-label={`Edit ${label.toLowerCase()}`}
-            className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${compact ? "text-[12px] leading-[1.45]" : "text-[13px] leading-5"} ${
+            className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${compact ? "text-xs leading-[1.45]" : "text-sm leading-5"} ${
               value ? "text-foreground" : "text-muted-foreground"
             }`}
           >
@@ -114,7 +114,7 @@ function ProductField({ value, availableProducts, onSave }) {
           type="button"
           onClick={() => { setOpen((v) => !v); setSearch(""); }}
           aria-label="Edit ticket product"
-          className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-[13px] leading-5 transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
+          className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-sm leading-5 transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
             value ? "text-foreground" : "text-muted-foreground"
           }`}
         >
@@ -300,7 +300,7 @@ function TagsSection({ threadId }) {
             <button
               type="button"
               onClick={() => setDropdownOpen((v) => !v)}
-              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-[3px] text-[11px] font-medium text-muted-foreground transition-[transform,color,border-color,background-color] duration-150 ease-out hover:border-violet-300 hover:bg-violet-50/70 hover:text-violet-700 active:scale-[0.97] dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-[3px] text-xs font-medium text-muted-foreground transition-[transform,color,border-color,background-color] duration-150 ease-out hover:border-violet-300 hover:bg-violet-50/70 hover:text-violet-700 active:scale-[0.97] dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
             >
               <Plus className="w-3 h-3" />
               Add tag
@@ -324,7 +324,7 @@ function TagsSection({ threadId }) {
           </div>
         )}
         {assignedTags.length === 0 && unassigned.length === 0 ? (
-          <span className="py-1 text-[12px] text-muted-foreground">No tags yet</span>
+          <span className="py-1 text-xs text-muted-foreground">No tags yet</span>
         ) : null}
       </div>
     </div>
@@ -334,7 +334,7 @@ function TagsSection({ threadId }) {
 function ReadOnlyTag({ tag }) {
   return (
     <span
-      className="inline-flex max-w-full items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-medium text-orange-700"
+      className="inline-flex max-w-full items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700"
       title={tag.source === "ai" ? "Set by AI" : "Set manually"}
     >
       <span className="truncate">{tag.name}</span>
@@ -416,7 +416,7 @@ export function TicketMetadataSnapshot({ threadId }) {
             <button
               type="button"
               onClick={() => setSummaryExpanded((value) => !value)}
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
             >
               {summaryExpanded ? "Show less" : "Show more"}
             </button>
@@ -426,7 +426,7 @@ export function TicketMetadataSnapshot({ threadId }) {
           <div className="h-9 animate-pulse rounded-md bg-muted/55" aria-label="Loading summary" />
         ) : (
           <p
-            className={`${summaryExpanded ? "" : "line-clamp-2"} text-[12px] leading-[1.45] ${summary ? "text-foreground" : "text-muted-foreground italic"}`}
+            className={`${summaryExpanded ? "" : "line-clamp-2"} text-xs leading-[1.45] ${summary ? "text-foreground" : "text-muted-foreground italic"}`}
             title={summary || undefined}
           >
             {summary || "No summary yet"}
@@ -437,7 +437,7 @@ export function TicketMetadataSnapshot({ threadId }) {
       {metadata?.detected_product?.title ? (
         <section className="space-y-1.5 border-b border-border/70 pb-2.5">
           <SectionLabel>Ticket product</SectionLabel>
-          <p className="truncate text-[12px] leading-[1.45] text-foreground" title={metadata.detected_product.title}>
+          <p className="truncate text-xs leading-[1.45] text-foreground" title={metadata.detected_product.title}>
             {metadata.detected_product.title}
           </p>
         </section>
@@ -455,7 +455,7 @@ export function TicketMetadataSnapshot({ threadId }) {
       {typeof metadata?.solution_summary === "string" && metadata.solution_summary.trim() ? (
         <section className="space-y-1.5 border-b border-border/70 pb-2.5">
           <SectionLabel>Solution</SectionLabel>
-          <p className="line-clamp-2 text-[12px] leading-[1.45] text-foreground" title={metadata.solution_summary.trim()}>
+          <p className="line-clamp-2 text-xs leading-[1.45] text-foreground" title={metadata.solution_summary.trim()}>
             {metadata.solution_summary.trim()}
           </p>
         </section>

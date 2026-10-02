@@ -356,10 +356,10 @@ export function KnowledgeDocumentEditorCard({
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold">{title}</h2>
+                    <h2 className="text-section-heading font-semibold">{title}</h2>
                     <span
                       aria-live="polite"
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
                     >
                       {currentStatus}
                     </span>

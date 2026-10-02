@@ -176,7 +176,7 @@ export function InternalRulesClient() {
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
               <Shield className="h-4 w-4" />
             </div>
-            <h1 className="text-lg font-semibold">Internal rules</h1>
+            <h1 className="text-page-heading font-semibold">Internal rules</h1>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-gray-500 dark:text-gray-400">
             Rules that govern <em>how</em> the AI handles a case — e.g. how a faulty
@@ -234,12 +234,12 @@ export function InternalRulesClient() {
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {(rule.trigger_intent || []).length === 0 ? (
-                        <Badge variant="secondary" className="text-[11px]">
+                        <Badge variant="secondary" className="text-xs">
                           Applies to all inquiries
                         </Badge>
                       ) : (
                         rule.trigger_intent.map((intent) => (
-                          <Badge key={intent} variant="secondary" className="text-[11px]">
+                          <Badge key={intent} variant="secondary" className="text-xs">
                             {INTENT_LABEL[intent] || intent}
                           </Badge>
                         ))

@@ -10,6 +10,21 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        xs: ['var(--text-caption-size, 0.75rem)', { lineHeight: 'var(--text-caption-leading, 1rem)' }],
+        sm: ['var(--text-ui-size, 0.875rem)', { lineHeight: '1.25rem' }],
+        base: ['var(--text-body-size, 1rem)', { lineHeight: 'var(--text-body-leading, 1.5rem)' }],
+        'page-heading': ['1rem', { lineHeight: '1.5rem', fontWeight: '650', letterSpacing: '-0.0125em' }],
+        'section-heading': ['0.875rem', { lineHeight: '1.25rem', fontWeight: '650' }],
+      },
+      fontWeight: {
+        normal: 'var(--weight-regular, 400)',
+        medium: 'var(--weight-medium, 500)',
+        semibold: 'var(--weight-semibold, 600)',
+      },
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',

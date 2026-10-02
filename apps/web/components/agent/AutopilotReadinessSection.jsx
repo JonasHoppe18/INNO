@@ -64,12 +64,12 @@ function CategoryRow({ category, onToggle, disabled }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-slate-900">{category.label}</span>
             {category.sona_recommends && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 border border-violet-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 border border-violet-100">
                 <Sparkles className="h-2.5 w-2.5" />
                 Sona recommends
               </span>
             )}
-            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border", cfg.bg, cfg.color)}>
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border", cfg.bg, cfg.color)}>
               <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
               {cfg.label}
             </span>
@@ -77,18 +77,18 @@ function CategoryRow({ category, onToggle, disabled }) {
           <div className="space-y-1">
             <OutcomeBar value={category.no_edit_rate} />
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-slate-400">
+              <span className="text-xs text-slate-400">
                 {pct !== null ? `${pct}% sent without edits` : "No labeled sends yet"}
                 {category.ticket_count > 0 && ` · ${category.ticket_count} labeled ticket${category.ticket_count !== 1 ? "s" : ""}`}
                 {category.major_edit_count > 0 && ` · ${category.major_edit_count} major edit${category.major_edit_count !== 1 ? "s" : ""}`}
               </span>
               {!canEnable && category.readiness !== "insufficient_data" && (
-                <span className="text-[11px] text-slate-400">
+                <span className="text-xs text-slate-400">
                   {category.readiness === "learning" ? "Needs more consistency" : "Quality too low"}
                 </span>
               )}
               {category.readiness === "insufficient_data" && (
-                <span className="text-[11px] text-slate-400">More reviewed sends required</span>
+                <span className="text-xs text-slate-400">More reviewed sends required</span>
               )}
             </div>
           </div>
@@ -175,9 +175,9 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1.5 max-w-xl">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-[15px] font-semibold text-slate-900">Autopilot eligibility by ticket type</h2>
+              <h2 className="text-section-heading font-semibold text-slate-900">Autopilot eligibility by ticket type</h2>
               {enabledCount > 0 && (
-                <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[11px]">
+                <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs">
                   {enabledCount} selected
                 </Badge>
               )}
@@ -212,7 +212,7 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
         ) : (
           <>
             {readyCount > 0 && (
-              <p className="text-[12px] text-slate-500 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Sona recommends an autopilot pilot for <span className="font-medium text-slate-700">{readyCount} {readyCount === 1 ? "category" : "categories"}</span> based on recent human send outcomes.
               </p>
             )}
@@ -227,7 +227,7 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11px] text-slate-400">
+            <p className="mt-3 text-xs text-slate-400">
               Based on the last 90 days. Ready requires at least 30 labeled sends, at least 95% sent without edits, no major edits, and a 90% lower statistical confidence bound. Only Ready categories can be selected.
             </p>
           </>

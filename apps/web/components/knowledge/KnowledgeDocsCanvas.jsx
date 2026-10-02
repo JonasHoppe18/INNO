@@ -18,7 +18,7 @@ export function KnowledgeDocsCanvas({ editor, emptyState = null }) {
           "[&_.ProseMirror_ol]:my-3 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-6",
           "[&_.ProseMirror_li]:my-1 [&_.ProseMirror_li>p]:my-1",
           "[&_.ProseMirror_a]:text-indigo-600 [&_.ProseMirror_a]:underline dark:[&_.ProseMirror_a]:text-indigo-400",
-          "[&_.ProseMirror]:text-[14px] [&_.ProseMirror]:text-gray-800 dark:[&_.ProseMirror]:text-gray-100",
+          "[&_.ProseMirror]:text-base [&_.ProseMirror]:text-gray-800 dark:[&_.ProseMirror]:text-gray-100",
         )}
       />
       {emptyState && (

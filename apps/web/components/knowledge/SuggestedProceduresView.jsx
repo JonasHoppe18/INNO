@@ -55,7 +55,7 @@ function ConfidenceBadge({ confidence }) {
     : confidence === "MEDIUM"
       ? "border-blue-200 bg-blue-50 text-blue-700"
       : "border-gray-200 bg-gray-100 text-gray-600";
-  return <Badge variant="outline" className={cn("text-[10px] font-semibold", classes)}>{confidence || "—"}</Badge>;
+  return <Badge variant="outline" className={cn("text-xs font-semibold", classes)}>{confidence || "—"}</Badge>;
 }
 
 function StepsEditor({ steps, onChange, disabled }) {
@@ -94,7 +94,7 @@ function SuggestionCard({ suggestion, onOpen }) {
       <span className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><FileCheck2 className="size-4" /></span>
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold text-gray-900">{suggestion.title}</span><Badge variant="outline" className={cn("text-[10px] font-medium", STATUS_CLASSES[suggestion.status] || STATUS_CLASSES.suggested)}>{STATUS_LABELS[suggestion.status] || "Needs review"}</Badge></span>
+          <span className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold text-gray-900">{suggestion.title}</span><Badge variant="outline" className={cn("text-xs font-medium", STATUS_CLASSES[suggestion.status] || STATUS_CLASSES.suggested)}>{STATUS_LABELS[suggestion.status] || "Needs review"}</Badge></span>
           <span className="mt-1 block text-xs leading-5 text-gray-500">{suggestion.trigger}</span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gray-500" />
@@ -185,7 +185,7 @@ export function SuggestedProceduresView({ suggestions, loading, error, onRefresh
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-600"><Sparkles className="size-3.5" /> Merchant review</div>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-900">Suggested procedures</h2>
+          <h2 className="mt-2 text-section-heading font-semibold tracking-tight text-gray-900">Suggested procedures</h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Aggregate historical support patterns, ready for review. Suggestions stay outside Sona&apos;s knowledge until you explicitly publish one.</p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={loading}><RefreshCw className={cn("size-4", loading && "animate-spin")} /> Refresh</Button>
@@ -194,7 +194,7 @@ export function SuggestedProceduresView({ suggestions, loading, error, onRefresh
       <div className="mt-6 flex items-start gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-xs leading-5 text-indigo-900"><CircleCheck className="mt-0.5 size-4 shrink-0 text-indigo-600" /><span><strong className="font-semibold">Historical evidence is not policy.</strong> Review the workflow, check current Knowledge V1 dependencies, then publish only the version you approve.</span></div>
       {error ? <p className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{error}</p> : null}
       {loading ? <div className="mt-4 grid gap-3 lg:grid-cols-2"><div className="h-36 animate-pulse rounded-xl bg-gray-100" /><div className="h-36 animate-pulse rounded-xl bg-gray-100" /></div> : null}
-      {!loading && !suggestions.length ? <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center"><FileCheck2 className="size-6 text-gray-400" /><h3 className="mt-3 text-sm font-semibold text-gray-800">No suggested procedures yet</h3><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Import the reviewed audit candidates into this DEV workspace to begin merchant review.</p></div> : null}
+      {!loading && !suggestions.length ? <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center"><FileCheck2 className="size-6 text-gray-400" /><h3 className="mt-3 text-section-heading font-semibold text-gray-800">No suggested procedures yet</h3><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Import the reviewed audit candidates into this DEV workspace to begin merchant review.</p></div> : null}
       {!loading && suggestions.length ? <div className="mt-4 grid gap-3 lg:grid-cols-2">{suggestions.map((suggestion) => <SuggestionCard key={suggestion.id} suggestion={suggestion} onOpen={openSuggestion} />)}</div> : null}
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => { if (!open && !saving) setSelected(null); }}>

@@ -7,9 +7,29 @@ Kilder til implementerede værdier på branchen er `apps/web/app/globals.css`, `
 ## Stack og layout
 
 - Behold shadcn new-york, Radix, CVA, `cn` og Lucide. Nye controls bruger eksisterende `components/ui`.
-- Behold Inter, eksisterende typografistørrelser og `--radius: 0.5rem`.
+- Inter 4.1 indlæses lokalt via `next/font/local` (normal og italic, variabel vægt). Behold `--radius: 0.5rem`.
 - Behold inboxens rail, kønavigation, samtaleliste, tabs, beskeder og composer. Ingen ændring af panelbredder, placering eller funktioner i dette forsøg.
 - Behold eksisterende spacing og responsive adfærd. Farvearbejde er ikke tilladelse til at redesigne siderne.
+
+## Typografi
+
+Fonten er Inter, samme familie som Shopifys publicerede Polaris-tokens. Den tidligere CSS navngav Inter uden at indlæse fonten. Fontfiler og SIL Open Font License ligger i `apps/web/app/fonts/`. Ingen font-request til tredjepart ved runtime.
+
+| Rolle | Klasse | Størrelse / linjehøjde | Vægt |
+| --- | --- | --- | --- |
+| Navigation, controls, tabeller | `text-sm` | 13 / 20 px | 450; labels 550 |
+| Metadata og hjælpetekst | `text-xs` | 12 / 16 px | 450 |
+| Længere tekst og svar-editor | `text-base` | 14 / 20 px (editor 1.5) | 450 |
+| Sidetitel | `text-page-heading` | 16 / 24 px | 650 |
+| Sektionsoverskrift | `text-section-heading` | 14 / 20 px | 650 |
+
+Brug de fælles roller frem for nye `text-[Npx]`. Størrelser må variere efter rolle, men samme rolle skal have samme størrelse. `font-normal`, `font-medium` og `font-semibold` bruger 450, 550 og 650 i dashboardet, som de publicerede Polaris-fonttokens. Mobil-inputs beholder 16 px for at undgå automatisk zoom.
+
+Skalaen aktiveres på dashboard og design-lab via CSS-variabler; Radix-overlays i body følger samme tokens. Root-rem forbliver 16 px, så spacing ikke skaleres ned. Marketingens eksisterende skala bevares. Rich text med eksplicit formatering og kode/ID i monospace bevarer deres rolle.
+
+Shopifys offentlige [designregler](https://shopify.dev/docs/apps/design/visual-design#typography) angiver mindst 13 px til body/controls og 12 px til captions. [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts) dokumenterer Inter og vægtene. Sonas 16 px sidetitel er vores lokale fortolkning af den kompakte reference, ikke en verificeret måling af den nyeste Shopify-admin.
+
+`SonaActivityContent.jsx` og `KnowledgeCategoriesClient.jsx` ejes af den åbne PR80 og er ikke redigeret her. Deres standardklasser arver skalaen; deres egne pixelstørrelser og større headings kræver et senere gennemløb efter afklaring af PR80.
 
 ## Fælles farver
 

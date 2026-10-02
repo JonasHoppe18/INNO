@@ -135,7 +135,7 @@ function ProductCard({ product, onClick }) {
             )}
           </div>
           <span
-            className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
+            className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
               count > 0
                 ? "bg-primary/10 text-primary"
                 : "bg-muted text-muted-foreground"
@@ -272,11 +272,11 @@ function ProductsSection({ shopId, categorySlug }) {
           <BookOpen className="size-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-indigo-900 dark:text-indigo-100">General product knowledge</div>
-          <div className="text-[11px] text-indigo-500 mt-0.5 dark:text-indigo-400">Applies across all products — start here for brand-wide guides, FAQs, and shared procedures</div>
+          <div className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">General product knowledge</div>
+          <div className="text-xs text-indigo-500 mt-0.5 dark:text-indigo-400">Applies across all products — start here for brand-wide guides, FAQs, and shared procedures</div>
         </div>
         <span
-          className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
+          className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
             generalCount > 0
               ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"
               : "border border-indigo-200 bg-white text-indigo-400 dark:border-indigo-700 dark:bg-transparent dark:text-indigo-500"
@@ -290,8 +290,8 @@ function ProductsSection({ shopId, categorySlug }) {
       <div className="flex flex-col gap-3 pt-1">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Product-specific knowledge</h3>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">{products.length}</span>
+            <h3 className="text-section-heading font-medium text-gray-700 dark:text-gray-300">Product-specific knowledge</h3>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{products.length}</span>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
             {products.length > 8 && (
@@ -311,7 +311,7 @@ function ProductsSection({ shopId, categorySlug }) {
                 <button
                   type="button"
                   onClick={() => setOnlyMissing((v) => !v)}
-                  className={`h-9 rounded-lg border px-3 text-[11px] transition-[border-color,background-color,color] duration-150 ease-out ${
+                  className={`h-9 rounded-lg border px-3 text-xs transition-[border-color,background-color,color] duration-150 ease-out ${
                     onlyMissing
                       ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
                       : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600"
@@ -365,11 +365,11 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
       <div className="rounded-lg border border-dashed border-indigo-100 bg-indigo-50/30 px-5 py-5 dark:border-indigo-800/40 dark:bg-indigo-950/20">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
-          <p className="text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
             Start with a common question
           </p>
         </div>
-        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Click one to pre-fill the editor with the question + Guide type. You only need to write the answer.
         </p>
         <div className="mt-3 flex flex-col gap-1.5">
@@ -378,7 +378,7 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
               key={s}
               type="button"
               onClick={() => onStarterClick(s)}
-              className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
+              className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-xs text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
             >
               <span className="truncate">{s}</span>
               <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400 dark:text-gray-600 dark:group-hover:text-indigo-500" />
@@ -388,7 +388,7 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
         <button
           type="button"
           onClick={onAdd}
-          className="mt-3 text-[11.5px] text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
+          className="mt-3 text-sm text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
         >
           Or start from scratch
         </button>
@@ -409,15 +409,15 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   {snippet.format === "qa" && (
-                    <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
+                    <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
                       Q&amp;A
                     </span>
                   )}
-                  <span className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">
+                  <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
                     {snippet.title}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-[11.5px] text-gray-500 dark:text-gray-400">
+                <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
                   {(snippet.format === "qa" && snippet.answer
                     ? snippet.answer
                     : snippet.content || ""
@@ -427,27 +427,27 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-1">
                   {snippet.usable_as && (
-                    <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-[9.5px] text-purple-600 dark:bg-purple-950/40 dark:text-purple-400">
+                    <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-xs text-purple-600 dark:bg-purple-950/40 dark:text-purple-400">
                       {KNOWLEDGE_TYPE_LABELS[snippet.usable_as] || snippet.usable_as}
                     </span>
                   )}
                   {(snippet.issue_types || []).slice(0, 3).map((t) => (
                     <span
                       key={t}
-                      className="rounded-full bg-green-50 px-1.5 py-0.5 text-[9.5px] text-green-700 dark:bg-green-950/40 dark:text-green-400"
+                      className="rounded-full bg-green-50 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-950/40 dark:text-green-400"
                     >
                       {ISSUE_TYPE_LABEL_MAP[t] || t}
                     </span>
                   ))}
                   {(snippet.issue_types || []).length > 3 && (
-                    <span className="text-[9.5px] text-gray-400 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
                       +{snippet.issue_types.length - 3}
                     </span>
                   )}
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-[10.5px] text-gray-400 dark:text-gray-500">
+                <p className="text-xs text-gray-400 dark:text-gray-500">
                   {formatRelativeTimestamp(snippet.created_at)}
                 </p>
               </div>
@@ -458,7 +458,7 @@ function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClic
       <button
         type="button"
         onClick={onAdd}
-        className="flex w-full items-center gap-2 border-t border-gray-100 bg-gray-50/40 px-4 py-2.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-500 dark:hover:bg-gray-800/50 dark:hover:text-gray-300"
+        className="flex w-full items-center gap-2 border-t border-gray-100 bg-gray-50/40 px-4 py-2.5 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-500 dark:hover:bg-gray-800/50 dark:hover:text-gray-300"
       >
         <Plus className="h-3.5 w-3.5" />
         Add snippet
@@ -576,10 +576,10 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold">{title}</h2>
+                    <h2 className="text-section-heading font-semibold">{title}</h2>
                     <span
                       aria-live="polite"
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
                     >
                       {isDirty ? "Unsaved changes" : "Pinned"}
                     </span>
@@ -599,7 +599,7 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
                     {syncing ? "Syncing…" : "Sync from Shopify"}
                   </Button>
                   {syncedAgo && (
-                    <p className="text-[10.5px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Last synced {syncedAgo}
                     </p>
                   )}
@@ -612,7 +612,7 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
                 <p className="text-xs text-muted-foreground">
                   Use section headings to organise delivery times, exceptions, and address changes.
                 </p>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
                 </span>
               </div>
@@ -755,7 +755,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             <Icon className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold leading-tight">{label}</h1>
+            <h1 className="text-page-heading font-semibold leading-tight">{label}</h1>
             {categoryMeta?.description && (
               <p className="text-sm text-muted-foreground">{categoryMeta.description}</p>
             )}
@@ -827,7 +827,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       {isProductCategory && (
         <>
           <div>
-            <h2 className="text-sm font-medium mb-3">Products</h2>
+            <h2 className="text-section-heading font-medium mb-3">Products</h2>
             <ProductsSection shopId={shopId} categorySlug={categorySlug} />
           </div>
         </>
@@ -838,7 +838,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
         <>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-medium">Snippets</h2>
+              <h2 className="text-section-heading font-medium">Snippets</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 {categorySlug === "returns"
                   ? "Legacy snippets remain available for reference and specific cases. Saved replies continue to behave as separate macros."
@@ -883,7 +883,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       >
         <DialogContent className="max-h-[90vh] w-[min(96vw,900px)] max-w-none overflow-hidden p-0 sm:max-w-none">
           <DialogHeader className="border-b border-gray-100 px-5 py-3">
-            <DialogTitle className="text-[14px] font-semibold">
+            <DialogTitle className="text-base font-semibold">
               {editingSnippet ? "Edit snippet" : "New snippet"}
             </DialogTitle>
           </DialogHeader>

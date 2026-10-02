@@ -266,16 +266,16 @@ function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopi
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-gray-900">Sources</h2>
+        <h2 className="text-section-heading font-semibold text-gray-900">Sources</h2>
         <p className="mt-1 text-xs leading-5 text-gray-500">See where Sona&apos;s knowledge comes from and which records each source created.</p>
       </div>
       <div className="flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white p-4 shadow-sm shadow-gray-100/70 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Package className="size-4" /></span>
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-gray-800">Shopify</span><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700">{shopifySource?.connected === false ? "Not connected" : "Connected"}</Badge></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-gray-800">Shopify</span><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-xs font-medium text-emerald-700">{shopifySource?.connected === false ? "Not connected" : "Connected"}</Badge></div>
             <p className="mt-1 text-xs leading-5 text-gray-500">Import policies and product information as drafts for review. Shopify remains the source of truth.</p>
-            {shopifySource?.source ? <p className="mt-1 text-[11px] text-gray-400">{shopifySource.source.counts.total} item{shopifySource.source.counts.total === 1 ? "" : "s"} · {shopifySource.source.counts.published} published · {shopifySource.source.counts.draft} draft</p> : null}
+            {shopifySource?.source ? <p className="mt-1 text-xs text-gray-400">{shopifySource.source.counts.total} item{shopifySource.source.counts.total === 1 ? "" : "s"} · {shopifySource.source.counts.published} published · {shopifySource.source.counts.draft} draft</p> : null}
           </div>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onSyncShopify} disabled={shopifyLoading || shopifySource?.connected === false} className="shrink-0"><RefreshCw className={cn("size-4", shopifyLoading && "animate-spin")} />{shopifyLoading ? "Syncing…" : "Sync from Shopify"}</Button>
@@ -283,7 +283,7 @@ function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopi
       {!sources.length ? (
         <div className="flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-500"><FileText className="size-5" /></span>
-          <h2 className="mt-4 text-sm font-semibold text-gray-800">No other sources yet</h2>
+          <h2 className="mt-4 text-section-heading font-semibold text-gray-800">No other sources yet</h2>
           <p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Add a document or create knowledge manually to see where Sona learns from.</p>
           <Button size="sm" className="mt-5" onClick={onAddSource}><FileText className="size-4" /> Add a source</Button>
         </div>
@@ -300,12 +300,12 @@ function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopi
                   <span className="block truncate text-sm font-semibold text-gray-800">{source.title}</span>
                   <span className="mt-1 block text-xs text-gray-500">{source.kind} · {source.records.length} knowledge item{source.records.length === 1 ? "" : "s"}</span>
                 </span>
-                <span className="shrink-0 text-right text-[11px] text-gray-400">Updated {formatDate(source.latest)}</span>
+                <span className="shrink-0 text-right text-xs text-gray-400">Updated {formatDate(source.latest)}</span>
               </summary>
               <div className="border-t border-gray-100 px-4 py-3">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500"><span>{published} published</span><span>{drafts} draft{drafts === 1 ? "" : "s"}</span></div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500"><span>{published} published</span><span>{drafts} draft{drafts === 1 ? "" : "s"}</span></div>
                 <div className="mt-3 flex flex-col gap-2">
-                  {source.records.map((record) => <div key={record.id} className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate text-gray-700">{record.title}</span><Badge variant="outline" className={cn("shrink-0 text-[10px] font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></div>)}
+                  {source.records.map((record) => <div key={record.id} className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate text-gray-700">{record.title}</span><Badge variant="outline" className={cn("shrink-0 text-xs font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></div>)}
                 </div>
               </div>
             </details>
@@ -521,7 +521,7 @@ export function GreenfieldKnowledgePageClient() {
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-600"><BookOpen className="size-3.5" /> Knowledge</div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Knowledge</h1>
+          <h1 className="mt-2 text-page-heading font-semibold tracking-tight text-gray-900">Knowledge</h1>
           <p className="mt-1 max-w-xl text-sm leading-6 text-gray-500">Manage the policies, product guidance and procedures Sona uses when helping customers.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -557,7 +557,7 @@ export function GreenfieldKnowledgePageClient() {
 
             {error ? <div className="mt-4"><ErrorMessage>{error}</ErrorMessage></div> : null}
             <div className="mt-4 overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm shadow-gray-100/70">
-              <div className="hidden grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] gap-4 border-b border-gray-100 bg-gray-50/70 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 md:grid">
+              <div className="hidden grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] gap-4 border-b border-gray-100 bg-gray-50/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 md:grid">
                 <span>Knowledge</span><span>Type</span><span>Applies to</span><span>Source</span><span>Status</span>
               </div>
               {loading ? <div className="flex flex-col gap-3 p-5"><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /></div> : null}
@@ -574,7 +574,7 @@ export function GreenfieldKnowledgePageClient() {
                   </button>
                 );
               }) : null}
-              {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-sm font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
+              {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-section-heading font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
             </div>
           </> : activeView === "sources" ? <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} onSyncShopify={syncShopify} shopifySource={shopifySource} shopifyLoading={shopifyLoading} /> : <SuggestedProceduresView suggestions={suggestions} loading={suggestionsLoading} error={suggestionsError} onRefresh={loadSuggestions} onPublished={loadRecords} />}
         </div>
@@ -596,7 +596,7 @@ export function GreenfieldKnowledgePageClient() {
               <div className="grid gap-2"><Label htmlFor="greenfield-task">What problem does this solve?</Label><Input id="greenfield-task" value={form.task_key} onChange={(event) => updateForm("task_key", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. Microphone is not working" /></div>
               <div className="grid gap-2"><Label htmlFor="greenfield-aliases">How customers might describe it <span className="font-normal text-gray-400">(optional)</span></Label><Input id="greenfield-aliases" value={form.customer_aliases.join(", ")} onChange={(event) => updateForm("customer_aliases", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))} disabled={!isEditable || saving} placeholder="mic not working, nobody can hear me" /></div>
               <div className="grid gap-2"><Label>Instructions</Label><ProcedureBlockEditor blocks={form.procedure_blocks} onChange={updateProcedureBlocks} disabled={!isEditable || saving} /></div>
-            </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">{form.type === "policy" ? "Policy content" : form.type === "product" ? "Product information" : "Brand information"}</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder={form.type === "policy" ? "Explain the policy in plain language..." : form.type === "product" ? "Describe the product information Sona should use..." : "Describe the brand guidance Sona should follow..."} className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
+            </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">{form.type === "policy" ? "Policy content" : form.type === "product" ? "Product information" : "Brand information"}</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder={form.type === "policy" ? "Explain the policy in plain language..." : form.type === "product" ? "Describe the product information Sona should use..." : "Describe the brand guidance Sona should follow..."} className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-xs text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
             <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
             {selected ? <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-3 text-xs text-gray-500"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-gray-700"><SourceIcon source={selected.source} />{displaySourceLabel(selected.source)}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-gray-700">{formatDate(selected.updated_at)}</span></div></div> : null}
           </div>

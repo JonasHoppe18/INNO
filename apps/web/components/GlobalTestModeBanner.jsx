@@ -59,10 +59,10 @@ export function GlobalTestModeBanner() {
   return (
     <div ref={bannerRef}>
       <div className="flex h-9 items-center justify-center gap-2 bg-indigo-800 px-4">
-        <p className="text-[13px] font-medium tracking-[0.05em] text-white">Test mode is enabled.</p>
+        <p className="text-sm font-medium tracking-[0.05em] text-white">Test mode is enabled.</p>
         <Link
           href="/settings"
-          className="text-[13px] font-medium tracking-[0.05em] text-indigo-100 underline underline-offset-2 hover:text-white"
+          className="text-sm font-medium tracking-[0.05em] text-indigo-100 underline underline-offset-2 hover:text-white"
         >
           Manage settings
         </Link>

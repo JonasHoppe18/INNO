@@ -132,7 +132,7 @@ export function SnippetTwoPanel({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold leading-tight">
+          <h1 className="text-page-heading font-semibold leading-tight">
             {productTitle ?? "General"}
           </h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
@@ -202,7 +202,7 @@ export function SnippetTwoPanel({
                     key={starter}
                     type="button"
                     onClick={() => handleAddSnippet(starter)}
-                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
+                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-xs text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
                   >
                     <span className="truncate">{starter}</span>
                     <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400 dark:text-gray-600 dark:group-hover:text-indigo-500" />
@@ -212,7 +212,7 @@ export function SnippetTwoPanel({
               <button
                 type="button"
                 onClick={() => handleAddSnippet()}
-                className="text-[11.5px] text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline dark:hover:text-gray-300"
+                className="text-xs text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline dark:hover:text-gray-300"
               >
                 Or start from scratch
               </button>

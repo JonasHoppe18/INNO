@@ -77,14 +77,14 @@ function SourceCard({ source }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium text-foreground leading-snug">{title || `Source`}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="text-[10px] text-muted-foreground">{meta.label}</span>
+              <span className="text-xs text-muted-foreground">{meta.label}</span>
               {source.usable_as && (
-                <span className={`inline-flex items-center rounded border px-1 py-px text-[10px] font-medium ${usableStyle}`}>
+                <span className={`inline-flex items-center rounded border px-1 py-px text-xs font-medium ${usableStyle}`}>
                   {source.usable_as}
                 </span>
               )}
               {riskFlags.map((flag) => (
-                <span key={flag} className="inline-flex items-center gap-0.5 rounded border border-orange-200 bg-orange-50 px-1 py-px text-[10px] text-orange-600">
+                <span key={flag} className="inline-flex items-center gap-0.5 rounded border border-orange-200 bg-orange-50 px-1 py-px text-xs text-orange-600">
                   <AlertTriangle className="h-2.5 w-2.5" />
                   {flag.replace(/_/g, " ")}
                 </span>
@@ -178,7 +178,7 @@ function QualitySummary({ dims, overall }) {
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quality</p>
           <p className={`mt-1 text-3xl font-semibold tabular-nums ${tone.text}`}>{overall ?? "—"}</p>
         </div>
-        <Badge variant="outline" className={`bg-background text-[10px] ${tone.text}`}>
+        <Badge variant="outline" className={`bg-background text-xs ${tone.text}`}>
           {tone.label}
         </Badge>
       </div>
@@ -331,7 +331,7 @@ function EvalActionPreview({ action, result, onQualityUpdate }) {
             </p>
           </div>
         </div>
-        <Badge variant={isApproved ? "default" : isRejected ? "secondary" : "outline"} className="shrink-0 text-[10px]">
+        <Badge variant={isApproved ? "default" : isRejected ? "secondary" : "outline"} className="shrink-0 text-xs">
           {isApproved ? "Approved test" : isRejected ? "Rejected" : "Awaiting review"}
         </Badge>
       </div>
@@ -351,7 +351,7 @@ function EvalActionPreview({ action, result, onQualityUpdate }) {
               </p>
             </div>
             {orderName ? (
-              <Badge variant="outline" className="shrink-0 bg-background text-[10px]">
+              <Badge variant="outline" className="shrink-0 bg-background text-xs">
                 {String(orderName).startsWith("#") ? orderName : `#${orderName}`}
               </Badge>
             ) : null}
@@ -397,7 +397,7 @@ function EvalActionPreview({ action, result, onQualityUpdate }) {
           </div>
           <div>
             <p className="text-muted-foreground">Action type</p>
-            <p className="font-mono text-[11px]">{actionType}</p>
+            <p className="font-mono text-xs">{actionType}</p>
           </div>
         </div>
         {decisionError && <p className="text-xs text-destructive">{decisionError}</p>}
@@ -407,7 +407,7 @@ function EvalActionPreview({ action, result, onQualityUpdate }) {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Customer reply preview
               </p>
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-xs">
                 after {isRejected ? "reject" : "approve"}
               </Badge>
             </div>
@@ -424,7 +424,7 @@ function EvalActionPreview({ action, result, onQualityUpdate }) {
             <summary className="cursor-pointer select-none font-medium text-muted-foreground">
               Action payload
             </summary>
-            <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-muted-foreground">
+            <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-xs text-muted-foreground">
               {JSON.stringify(payload, null, 2)}
             </pre>
           </details>
@@ -465,17 +465,17 @@ function EvalResultRow({ result }) {
         <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
         <span className="flex-1 truncate text-sm">{label}</span>
         {actions.length > 0 && (
-          <Badge variant="secondary" className="shrink-0 text-[10px]">
+          <Badge variant="secondary" className="shrink-0 text-xs">
             {actions.length} action{actions.length !== 1 ? "s" : ""}
           </Badge>
         )}
         {confidence != null && (
-          <Badge variant="outline" className="shrink-0 text-[10px]">
+          <Badge variant="outline" className="shrink-0 text-xs">
             {Math.round(confidence * 100)}%
           </Badge>
         )}
         {displayResult.send_ready === true && (
-          <Badge className="shrink-0 bg-emerald-600 text-[10px] text-white hover:bg-emerald-600">
+          <Badge className="shrink-0 bg-emerald-600 text-xs text-white hover:bg-emerald-600">
             Send-ready
           </Badge>
         )}
@@ -513,7 +513,7 @@ function EvalResultRow({ result }) {
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-3">
                   <div className="mb-2 flex items-center gap-1.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Human reply</p>
-                    <Badge variant="outline" className="text-[10px] py-0">Zendesk</Badge>
+                    <Badge variant="outline" className="text-xs py-0">Zendesk</Badge>
                   </div>
                   <div className="max-h-[40vh] overflow-auto">
                     {displayResult.human_reply
@@ -542,10 +542,10 @@ function EvalResultRow({ result }) {
                   <div className="rounded-xl border bg-card p-3 text-xs">
                     <div className="mb-2 flex flex-wrap items-center gap-1.5">
                       {displayResult.likely_root_cause && (
-                        <Badge variant="outline" className="text-[10px]">root: {displayResult.likely_root_cause}</Badge>
+                        <Badge variant="outline" className="text-xs">root: {displayResult.likely_root_cause}</Badge>
                       )}
                       {displayResult.primary_gap && (
-                        <Badge variant="secondary" className="text-[10px]">gap: {displayResult.primary_gap}</Badge>
+                        <Badge variant="secondary" className="text-xs">gap: {displayResult.primary_gap}</Badge>
                       )}
                     </div>
                     {missingFor10.length > 0 && (
@@ -615,7 +615,7 @@ function EvalResultRow({ result }) {
                       Why Sona wrote this
                     </p>
                     {sources.length > 0 && (
-                      <span className="text-[10px] text-muted-foreground">{sources.length} source{sources.length !== 1 ? "s" : ""} retrieved</span>
+                      <span className="text-xs text-muted-foreground">{sources.length} source{sources.length !== 1 ? "s" : ""} retrieved</span>
                     )}
                   </div>
                   {sources.length === 0 ? (
@@ -679,7 +679,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
               {run.count} included ticket{run.count !== 1 ? "s" : ""} · {run.send_ready_count ?? 0} send-ready
               {run.excluded_count > 0 ? ` · ${run.excluded_count} excluded` : ""} · <span className="font-mono">{run.model}</span>
               {run.pipeline_version === "v2" && (
-                <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-semibold text-violet-700">V2</span>
+                <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-xs font-semibold text-violet-700">V2</span>
               )}
               {run.created_at && ` · ${new Date(run.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
             </p>
@@ -693,7 +693,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
             ].map(([abbr, val]) => (
               <div key={abbr} className="text-center">
                 <p className="text-xs font-medium tabular-nums">{Math.round(val * 10) / 10}</p>
-                <p className="text-[10px] text-muted-foreground">{abbr}</p>
+                <p className="text-xs text-muted-foreground">{abbr}</p>
               </div>
             ))}
           </div>
@@ -708,7 +708,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                className="rounded px-2 py-1 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
               >
                 {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Slet"}
               </button>
@@ -1054,7 +1054,7 @@ export function EvalPanel({ fullPage = false }) {
               />
             </div>
           ))}
-          <button type="button" onClick={addEmail} className="text-xs text-muted-foreground hover:text-foreground">
+          <button type="button" onClick={addEmail} className="text-sm text-muted-foreground hover:text-foreground">
             + Add email
           </button>
         </div>
@@ -1091,7 +1091,7 @@ export function EvalPanel({ fullPage = false }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center gap-1.5">
                         <p className="truncate text-xs font-medium">{ticket.subject || "(no subject)"}</p>
-                        {ticket.intent && <Badge variant="outline" className="shrink-0 text-[10px] py-0">{ticket.intent}</Badge>}
+                        {ticket.intent && <Badge variant="outline" className="shrink-0 text-xs py-0">{ticket.intent}</Badge>}
                       </div>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{ticket.customer_body?.slice(0, 90)}…</p>
                     </div>

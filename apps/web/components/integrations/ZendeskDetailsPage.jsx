@@ -345,7 +345,7 @@ export function ZendeskDetailsPage() {
             <Image src={zendeskLogo} alt="Zendesk logo" width={34} height={34} className="object-contain" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Zendesk</h1>
+            <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Zendesk</h1>
             <p className="mt-1 text-sm text-muted-foreground">Connection, credentials and ticket history.</p>
           </div>
         </div>
@@ -448,7 +448,7 @@ export function ZendeskDetailsPage() {
 
       <section className="flex flex-col gap-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">Sync progress</h2>
+          <h2 className="text-section-heading font-semibold tracking-tight text-foreground">Sync progress</h2>
           <p className="mt-1 text-sm text-muted-foreground">Track the one-time import of historical Zendesk tickets.</p>
         </div>
 

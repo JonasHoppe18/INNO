@@ -45,3 +45,18 @@ Screenshots og målte farver ligger lokalt i `/tmp/sona-design-local-1002b-evide
 De første runtime-forsøg ramte lav diskplads, en grænse for åbne filer og rester fra genstart/build. Oprydning omfattede kun forsøgets genererede `.next`-filer. Den afsluttende build bestod efter en ren start; dev-serveren blev derefter startet alene med højere procesgrænse og korrekt localhost-origin.
 
 Ingen mails er sendt, og der er ikke ændret agent-, automation-, V2- eller database-logik. Ingen deploy er udført.
+
+## Typografi — lokalt gennemløb
+
+Inter 4.1 normal og italic indlæses via next/font/local. SIL OFL følger fontfilerne. Dashboardets UI-tekst bruger 13/20 px, metadata 12/16 px, længere tekst 14/20 px og sidetitler 16/24 px. Vægte er 450/550/650; root-rem er fortsat 16 px. Sidetitelstørrelsen er Sonas lokale fortolkning af referencen.
+
+- Produktionsbuild efter typografiændringer: bestået, inklusive lint, typecheck og 161 sider. Samme MJML-warnings som før.
+- Separat tsc --noEmit: bestået. Lint af ændrede JSX-filer: bestået.
+- Browsermåling Customers: tabel og søgefelt 13/20 px, vægt 450; titel 16/24 px, vægt 650. Ingen horisontal overflow.
+- Settings: General-overskrift 16 px, navigation og input 13 px.
+- Inbox med eksisterende DEV Customer-fixture: contenteditable svar-editor 14/21 px. Ingen tekst indtastet eller mail sendt. Ingen horisontal overflow.
+- Design-lab: alle fire skalaroller målt i computed styles, med Inter-familien fra lokal font-loader. Lokalt screenshot: /tmp/sona-design-local-1002b-evidence/06-inter-light-components.png.
+- Radix-dialog efter genstart: Inter, body og knapper 13 px, titel 16 px. Light og dark vist i design-lab; mobil og fuldt sideaudit er stadig ikke verificeret.
+- PR80-filerne SonaActivityContent.jsx og KnowledgeCategoriesClient.jsx er ikke redigeret; deres lokale pixel-overrides kræver senere afstemning.
+
+Ingen push eller ny PR.

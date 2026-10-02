@@ -173,10 +173,10 @@ function TicketListItemComponent({
             className="size-2 shrink-0 rounded-full bg-primary ring-2 ring-accent"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
+        <span className={cn("min-w-0 flex-1 truncate text-sm font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
-        <span className={cn("shrink-0 text-[11px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
+        <span className={cn("shrink-0 text-xs text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
           {formatMessageTime(timestamp)}
         </span>
       </div>
@@ -184,7 +184,7 @@ function TicketListItemComponent({
         className="flex min-w-0 items-center gap-2"
         title={metadataTitle || undefined}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted-foreground">
           <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
@@ -194,16 +194,16 @@ function TicketListItemComponent({
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground/75">
+        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground/75">
           {ticketNumberLabel ? (
-            <span className="shrink-0 font-mono text-[10px] font-medium leading-none tabular-nums text-muted-foreground/70">
+            <span className="shrink-0 font-mono text-xs font-medium leading-none tabular-nums text-muted-foreground/70">
               {ticketNumberLabel}
             </span>
           ) : null}
           {reason && reason.key !== "new" ? (
             <span
               className={
-                "max-w-[96px] truncate whitespace-nowrap text-[11px] " +
+                "max-w-[96px] truncate whitespace-nowrap text-xs " +
                 (reason.key === "customer_replied"
                   ? "text-warning-foreground"
                   : reason.key === "approve_close"
@@ -225,7 +225,7 @@ function TicketListItemComponent({
               <span className="sr-only">{statusLabel}</span>
             </span>
           ) : waitAge ? (
-            <span className="max-w-[90px] truncate whitespace-nowrap text-[11px] text-muted-foreground/70">{waitAge}</span>
+            <span className="max-w-[90px] truncate whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
           ) : null}
           {!hasTicketRef ? (
             <span className="sr-only">No ticket ID</span>
@@ -241,7 +241,7 @@ function TicketListItemComponent({
             event.stopPropagation();
             onApproveClose?.();
           }}
-          className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+          className="text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           Approve
         </button>
@@ -251,7 +251,7 @@ function TicketListItemComponent({
             event.stopPropagation();
             onKeepWaiting?.();
           }}
-          className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+          className="text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           Keep waiting
         </button>

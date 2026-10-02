@@ -25,7 +25,7 @@ export function CopyField({ label, value }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
           aria-label={`Copy ${label}`}
         >
           {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}

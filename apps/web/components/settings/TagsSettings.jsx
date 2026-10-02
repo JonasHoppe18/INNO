@@ -260,7 +260,7 @@ export function TagsSettings() {
     <div className="w-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Tags</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Tags</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Create tags to categorize tickets. AI automatically applies relevant tags as soon as a new email is received.
           </p>

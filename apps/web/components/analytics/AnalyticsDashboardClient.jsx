@@ -122,7 +122,7 @@ function AnalyticsHeader({ period, range, report, refreshing, onPeriod, onRange,
     <header className="bg-background">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-4 pt-6 md:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-7">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight">Analytics</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">Support performance, business impact and Sona value.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +176,7 @@ function ReportIntro({ report }) {
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy[0]}</p>
-      <h2 className="mt-1.5 text-xl font-semibold tracking-tight">{copy[1]}</h2>
+      <h2 className="mt-1.5 text-section-heading font-semibold tracking-tight">{copy[1]}</h2>
       <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{copy[2]}</p>
     </div>
   );
@@ -427,7 +427,7 @@ function TicketDrilldown({ data, metricKey, title, onBack }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Breadcrumb><BreadcrumbList><BreadcrumbItem><button type="button" onClick={onBack} className="transition-colors hover:text-foreground">Analytics</button></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>Tickets</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
-          <h2 className="mt-3 text-xl font-semibold tracking-tight">{title}</h2>
+          <h2 className="mt-3 text-section-heading font-semibold tracking-tight">{title}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{formatNumber(filtered.length)} of {formatNumber(tickets.length)} tickets</p>
         </div>
         <Button variant="ghost" onClick={onBack}><ArrowLeft data-icon="inline-start" />Back to report</Button>

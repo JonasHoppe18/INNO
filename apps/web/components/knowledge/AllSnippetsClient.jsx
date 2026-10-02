@@ -67,7 +67,7 @@ function formatRelative(iso) {
 
 function FilterChip({ label, onClear }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
       {label}
       <button
         type="button"
@@ -92,11 +92,11 @@ function MultiSelectFilter({ label, options, selected, onChange }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[12px] text-gray-600 transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600">
+        <button className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-600 transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600">
           <Filter className="h-3 w-3 text-gray-400" />
           {label}
           {count > 0 && (
-            <span className="ml-0.5 rounded-full bg-indigo-100 px-1.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">
+            <span className="ml-0.5 rounded-full bg-indigo-100 px-1.5 text-xs font-medium text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">
               {count}
             </span>
           )}
@@ -104,7 +104,7 @@ function MultiSelectFilter({ label, options, selected, onChange }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-gray-400">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
           {label}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -129,7 +129,7 @@ function SnippetEditDialog({ snippet, shopId, open, onOpenChange, onSaved, onDel
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[min(96vw,900px)] max-w-none overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <DialogTitle className="text-[14px] font-semibold">
+          <DialogTitle className="text-base font-semibold">
             Edit snippet
           </DialogTitle>
         </DialogHeader>
@@ -282,10 +282,10 @@ export function AllSnippetsClient() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+          <h1 className="text-page-heading font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             All snippets
           </h1>
-          <p className="mt-0.5 text-[13px] text-gray-500">
+          <p className="mt-0.5 text-sm text-gray-500">
             Search and filter every snippet across categories and products.
           </p>
         </div>
@@ -300,7 +300,7 @@ export function AllSnippetsClient() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search title, content, question, answer..."
-              className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:placeholder:text-gray-600 dark:focus:ring-indigo-900/50"
+              className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-xs text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:placeholder:text-gray-600 dark:focus:ring-indigo-900/50"
             />
           </div>
           <MultiSelectFilter
@@ -383,13 +383,13 @@ export function AllSnippetsClient() {
             <button
               type="button"
               onClick={clearAllFilters}
-              className="text-[11px] text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline"
+              className="text-sm text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline"
             >
               Clear all
             </button>
           </div>
         )}
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-400">
           {loading
             ? "Loading..."
             : `Showing ${filtered.length} of ${snippets.length} snippet${snippets.length === 1 ? "" : "s"}`}
@@ -408,14 +408,14 @@ export function AllSnippetsClient() {
           <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
             <FileText className="h-5 w-5 text-gray-400" />
           </div>
-          <p className="text-[13px] font-medium text-gray-700 dark:text-gray-300">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {hasAnyFilter ? "No snippets match your filters" : "No snippets yet"}
           </p>
           {hasAnyFilter && (
             <button
               type="button"
               onClick={clearAllFilters}
-              className="mt-2 text-[11.5px] text-indigo-600 hover:text-indigo-700"
+              className="mt-2 text-sm text-indigo-600 hover:text-indigo-700"
             >
               Clear filters
             </button>
@@ -434,15 +434,15 @@ export function AllSnippetsClient() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       {s.format === "qa" && (
-                        <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
+                        <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
                           Q&amp;A
                         </span>
                       )}
-                      <span className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">
+                      <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
                         {s.title}
                       </span>
                     </div>
-                    <p className="mt-0.5 truncate text-[11.5px] text-gray-500">
+                    <p className="mt-0.5 truncate text-xs text-gray-500">
                       {(s.format === "qa" && s.answer
                         ? s.answer
                         : s.content || ""
@@ -452,37 +452,37 @@ export function AllSnippetsClient() {
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-1">
                       {s.category && (
-                        <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9.5px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                           {CATEGORY_LABELS[s.category] || s.category}
                         </span>
                       )}
                       {s.product_title && (
-                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9.5px] text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
                           {s.product_title}
                         </span>
                       )}
                       {s.usable_as && (
-                        <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-[9.5px] text-purple-600 dark:bg-purple-950/40 dark:text-purple-400">
+                        <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-xs text-purple-600 dark:bg-purple-950/40 dark:text-purple-400">
                           {KNOWLEDGE_TYPE_LABELS[s.usable_as] || s.usable_as}
                         </span>
                       )}
                       {(s.issue_types || []).slice(0, 3).map((t) => (
                         <span
                           key={t}
-                          className="rounded-full bg-green-50 px-1.5 py-0.5 text-[9.5px] text-green-700 dark:bg-green-950/40 dark:text-green-400"
+                          className="rounded-full bg-green-50 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-950/40 dark:text-green-400"
                         >
                           {ISSUE_TYPE_LABEL_MAP[t] || t}
                         </span>
                       ))}
                       {(s.issue_types || []).length > 3 && (
-                        <span className="text-[9.5px] text-gray-400">
+                        <span className="text-xs text-gray-400">
                           +{s.issue_types.length - 3}
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="text-[10.5px] text-gray-400">
+                    <p className="text-xs text-gray-400">
                       {formatRelative(s.updated_at || s.created_at)}
                     </p>
                   </div>

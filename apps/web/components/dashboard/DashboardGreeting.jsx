@@ -12,7 +12,7 @@ export default function DashboardGreeting({ firstName, conversationCount = 0, at
 
   return (
     <div className="pb-1">
-      <h1 className="text-2xl font-semibold tracking-tight">
+      <h1 className="text-page-heading font-semibold tracking-tight">
         {greeting}, <span className="text-indigo-600 dark:text-indigo-400">{firstName}</span> 👋
       </h1>
       <p className="mt-0.5 text-sm text-muted-foreground">

@@ -325,7 +325,7 @@ export function PlaygroundPanel({ children }) {
                   type="button"
                   onClick={handleRunTest}
                   disabled={isSimLoading || !activeSimulation?.body}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-black disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-50"
                 >
                   {isSimLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                   {isSimLoading ? "Simulating" : "Simulate"}
@@ -607,7 +607,7 @@ function PipelineTrace({ debug }) {
                     <p className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700">
                       {src.source_label || "Unknown source"}
                     </p>
-                    <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${tag.color}`}>
+                    <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-xs font-medium ${tag.color}`}>
                       {tag.label}
                     </span>
                   </div>
@@ -635,12 +635,12 @@ function PipelineTrace({ debug }) {
               <div key={i} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-emerald-900">{f.key}</span>
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700">
                     {f.type} · confirmed
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-emerald-800">{f.value}</p>
-                <p className="mt-0.5 text-[10px] text-emerald-600/80">{f.origin_table}</p>
+                <p className="mt-0.5 text-xs text-emerald-600/80">{f.origin_table}</p>
               </div>
             ))}
           </div>
@@ -659,7 +659,7 @@ function PipelineTrace({ debug }) {
               <div key={i} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-sky-900">{f.label}</span>
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-white px-1.5 py-0.5 text-xs font-medium text-sky-700">
                     {LIVE_SOURCE_LABELS[f.source] ?? f.source} · verified
                   </span>
                 </div>
@@ -680,7 +680,7 @@ function PipelineTrace({ debug }) {
           <div className="space-y-1.5">
             {guardrails.map((g, i) => (
               <div key={i} className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
-                <span className="inline-flex shrink-0 items-center rounded-full border border-orange-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
+                <span className="inline-flex shrink-0 items-center rounded-full border border-orange-200 bg-white px-1.5 py-0.5 text-xs font-medium text-orange-700">
                   {g.topic} · {g.reason}
                 </span>
                 <p className="mt-1 text-xs leading-relaxed text-orange-800">{g.message}</p>

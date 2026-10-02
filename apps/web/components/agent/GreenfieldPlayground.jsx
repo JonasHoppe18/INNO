@@ -159,7 +159,7 @@ function AgentActivity({ trace, working = false, inline = false }) {
         type="button"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
-        className="group inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50/80 hover:text-violet-800 active:scale-[0.985] dark:text-violet-300 dark:hover:bg-violet-950/30 dark:hover:text-violet-200"
+        className="group inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50/80 hover:text-violet-800 active:scale-[0.985] dark:text-violet-300 dark:hover:bg-violet-950/30 dark:hover:text-violet-200"
       >
         <span className={`flex size-4 items-center justify-center rounded-full ${working ? "bg-violet-100 dark:bg-violet-950/60" : "bg-violet-50 dark:bg-violet-950/40"}`}>
           {working ? <Loader2 className="size-3 animate-spin text-violet-600 dark:text-violet-300" /> : <Check className="size-3 text-violet-600 dark:text-violet-300" strokeWidth={2.5} />}
@@ -182,14 +182,14 @@ function AgentActivity({ trace, working = false, inline = false }) {
                 <div key={`${step.title}-${index}`} className={`flex items-start gap-2.5 px-2 py-1.5 ${pending ? "animate-in fade-in-0 slide-in-from-bottom-1 duration-200" : ""}`} aria-current={active ? "step" : undefined}>
                   <StepIcon className={`mt-0.5 size-3.5 shrink-0 ${active ? "animate-spin text-violet-500" : pending ? "text-muted-foreground/45" : "text-violet-500/85 dark:text-violet-300"}`} strokeWidth={active ? 2 : 2.25} />
                   <span className="min-w-0">
-                    <span className={`block text-[12px] ${active ? "font-semibold text-violet-800 dark:text-violet-200" : pending ? "font-medium text-muted-foreground/65" : "font-medium text-foreground"}`}>{step.title}</span>
-                    <span className={`mt-0.5 block text-[10.5px] leading-relaxed ${pending ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{step.detail}</span>
+                    <span className={`block text-xs ${active ? "font-semibold text-violet-800 dark:text-violet-200" : pending ? "font-medium text-muted-foreground/65" : "font-medium text-foreground"}`}>{step.title}</span>
+                    <span className={`mt-0.5 block text-xs leading-relaxed ${pending ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{step.detail}</span>
                   </span>
                 </div>
               );
             })}
             {!working && sources.length ? (
-              <div className="flex items-center gap-2 px-2 py-1.5 text-[10.5px] text-muted-foreground">
+              <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
                 <Globe2 className="size-3.5 shrink-0 text-violet-500/80 dark:text-violet-300" />
                 <span>{sources.length} verified source{sources.length === 1 ? "" : "s"} used</span>
               </div>
@@ -208,33 +208,33 @@ function SourceCard({ source, index }) {
   return (
     <details className="group overflow-hidden rounded-lg bg-muted/[0.22] pb-1 transition-colors duration-150 ease-out open:bg-muted/40" open={index === 0}>
       <summary className="flex cursor-pointer list-none items-start gap-3 px-2.5 py-3 transition-colors duration-150 ease-out hover:bg-muted/35">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 font-mono text-xs font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
         <span className="min-w-0 flex-1">
           <span className="mb-1 flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
-            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{humanize(source?.knowledge_type || "knowledge")}</span>
+            {source?.authority ? <span className="rounded-md border border-border/80 bg-muted/30 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{humanize(source.authority)}</span> : null}
           </span>
-          <span className="block truncate text-[13px] font-semibold text-foreground">{source?.title || "Untitled source"}</span>
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
+          <span className="block truncate text-sm font-semibold text-foreground">{source?.title || "Untitled source"}</span>
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{provenance.source_label || provenance.source_kind || "Unknown provenance"}</span>
         </span>
         <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
       </summary>
       <div className="px-3 pb-3 pt-1 text-xs leading-relaxed text-muted-foreground">
         <div className="mb-3 flex flex-wrap gap-1.5">
-          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Rank {source.rank}</span> : null}
-          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">Score {source.score.toFixed(2)}</span> : null}
-          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-[10px] font-medium">{humanize(provenance.source_kind)}</span> : null}
+          {Number.isInteger(source?.rank) ? <span className="rounded-md bg-muted/50 px-2 py-1 text-xs font-medium">Rank {source.rank}</span> : null}
+          {typeof source?.score === "number" ? <span className="rounded-md bg-muted/50 px-2 py-1 text-xs font-medium">Score {source.score.toFixed(2)}</span> : null}
+          {provenance.source_kind ? <span className="rounded-md bg-muted/50 px-2 py-1 text-xs font-medium">{humanize(provenance.source_kind)}</span> : null}
         </div>
         <div className="flex flex-col gap-3">
           {sections.length ? sections.map((section, sectionIndex) => (
             <div key={`${section.heading || "excerpt"}-${sectionIndex}`}>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-foreground/70">{section.heading || "Excerpt used"}</p>
               <p className="whitespace-pre-wrap text-foreground/80">{section.content || "No excerpt captured."}</p>
             </div>
           )) : <p className="text-foreground/70">{preview}</p>}
         </div>
         {(provenance.source_id || provenance.source_uri) ? (
-          <p className="mt-3 pt-2 text-[10.5px] text-muted-foreground/80">
+          <p className="mt-3 pt-2 text-xs text-muted-foreground/80">
             {provenance.source_id ? `Source ID: ${provenance.source_id}` : ""}{provenance.source_id && provenance.source_uri ? " · " : ""}{provenance.source_uri ? provenance.source_uri : ""}
           </p>
         ) : null}
@@ -249,8 +249,8 @@ function ProviderCheck({ result }) {
     <div className="flex items-start gap-2.5 rounded-lg bg-muted/35 px-3 py-2.5">
       <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${successful ? "bg-emerald-500" : result?.status ? "bg-amber-500" : "bg-muted-foreground/50"}`} aria-hidden="true" />
       <div className="min-w-0">
-        <p className="truncate text-[12px] font-medium text-foreground">{toolLabel(result?.tool)}</p>
-        <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
+        <p className="truncate text-xs font-medium text-foreground">{toolLabel(result?.tool)}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{result?.provider || "Provider"} · {humanize(result?.status || "not recorded")}</p>
       </div>
     </div>
   );
@@ -267,19 +267,19 @@ function AnswerInspector({ message }) {
       <div className="shrink-0 px-0 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer details</p>
-            <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.01em] text-foreground">Why Sona replied</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Answer details</p>
+            <h2 className="mt-1 text-section-heading font-semibold tracking-[-0.01em] text-foreground">Why Sona replied</h2>
           </div>
-          {trace ? <span className="rounded-full bg-muted/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
+          {trace ? <span className="rounded-full bg-muted/60 px-2 py-1 text-xs font-semibold text-muted-foreground">{sources.length} source{sources.length === 1 ? "" : "s"}</span> : null}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           {trace ? "The verified information and checks behind the selected reply." : "The information behind a reply will appear here."}
         </p>
       </div>
       {!trace ? (
         <div className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center">
-          <p className="text-[13px] font-semibold text-foreground">No answer selected</p>
-          <p className="mt-1 max-w-[26ch] text-[11px] leading-relaxed text-muted-foreground">Send a message and select a reply to see its sources and checks.</p>
+          <p className="text-sm font-semibold text-foreground">No answer selected</p>
+          <p className="mt-1 max-w-[26ch] text-xs leading-relaxed text-muted-foreground">Send a message and select a reply to see its sources and checks.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-0 py-2">
@@ -294,8 +294,8 @@ function AnswerInspector({ message }) {
               {buildReasoningSteps(trace).map((step, index) => (
                 <li key={`${step.title}-${index}`} className="relative">
                   <span className={`absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full border-2 border-card ${step.status === "complete" ? "bg-foreground" : "bg-muted-foreground/50"}`} />
-                  <p className="text-[12px] font-semibold text-foreground">{step.title}</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{step.detail}</p>
+                  <p className="text-xs font-semibold text-foreground">{step.title}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{step.detail}</p>
                 </li>
               ))}
             </ol>
@@ -307,7 +307,7 @@ function AnswerInspector({ message }) {
                 {sources.map((source, index) => <SourceCard key={`${source?.provenance?.source_id || source?.title || "source"}-${index}`} source={source} index={index} />)}
               </div>
             ) : (
-              <div className="rounded-lg bg-muted/35 px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
+              <div className="rounded-lg bg-muted/35 px-3 py-3 text-xs leading-relaxed text-muted-foreground">No knowledge source was returned for this response.</div>
             )}
           </InspectorSection>
 
@@ -321,10 +321,10 @@ function AnswerInspector({ message }) {
             <InspectorSection title="Proposed actions" count={simulatedActions.length}>
               <div className="flex flex-col gap-2">
                 {simulatedActions.map((action, index) => (
-                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                  <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold">{actionLabel(action?.action)}</p>
-                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.1em]">Dry run</span>
                     </div>
                     <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
                     {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
@@ -334,7 +334,7 @@ function AnswerInspector({ message }) {
             </InspectorSection>
           ) : null}
 
-          <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-[10.5px] leading-relaxed text-muted-foreground">
+          <div className="mt-5 rounded-lg bg-muted/35 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
             Only verified facts, provenance and high-level steps are shown.
           </div>
         </div>
@@ -347,8 +347,8 @@ function InspectorSection({ title, count, children }) {
   return (
     <section className="mb-5 last:mb-0">
       <div className="mb-2.5 flex items-center gap-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
-        {typeof count === "number" ? <span className="text-[10px] text-muted-foreground/70">{count}</span> : null}
+        <h3 className="text-section-heading font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        {typeof count === "number" ? <span className="text-xs text-muted-foreground/70">{count}</span> : null}
       </div>
       {children}
     </section>
@@ -358,8 +358,8 @@ function InspectorSection({ title, count, children }) {
 function InspectorStat({ label, value }) {
   return (
     <div className="rounded-lg bg-muted/45 px-2 py-2 text-center">
-      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-[12px] font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-xs font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -374,19 +374,19 @@ function MessageBubble({ message, onInspect, inspected }) {
       <div className="w-full max-w-[min(78%,44rem)]">
         <div className={`flex items-center gap-2 ${isUser ? "" : hasActivity ? "justify-between" : "justify-end"}`}>
           {hasActivity ? <AgentActivity trace={message.trace} inline /> : null}
-          <p className={`text-[10.5px] font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
+          <p className={`text-xs font-semibold tracking-wide ${isUser ? "text-muted-foreground" : "text-right text-slate-600 dark:text-slate-300"}`}>
             {isUser ? "Customer" : comparisonOnly ? "Previous response · comparison only" : "Sona"}
             {message.created_at ? <span className="ml-2 font-normal text-muted-foreground/60">{formatTime(message.created_at)}</span> : null}
           </p>
         </div>
-        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-sky-50 text-foreground dark:bg-sky-950/30"}`}>
+        <p className={`mt-1 whitespace-pre-wrap rounded-[16px] px-4 py-3 text-sm leading-[1.55] ${isUser ? "rounded-tl-md bg-muted/80 text-foreground" : "rounded-tr-md bg-sky-50 text-foreground dark:bg-sky-950/30"}`}>
           {message.content}
         </p>
         {canInspect ? (
           <button
             type="button"
             onClick={() => onInspect?.(message.id)}
-            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${inspected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
             aria-pressed={inspected}
           >
             {inspected ? "Viewing evidence" : "View evidence"}
@@ -453,7 +453,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
-          <DialogTitle className="text-[14px] font-semibold">{productionMode ? "Choose a production ticket" : "Choose a previous ticket"}</DialogTitle>
+          <DialogTitle className="text-base font-semibold">{productionMode ? "Choose a production ticket" : "Choose a previous ticket"}</DialogTitle>
           <DialogDescription className="sr-only">
             Choose a scoped ticket to load its raw conversation into the read-only playground.
           </DialogDescription>
@@ -465,18 +465,18 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search ticket number, subject, customer..."
-              className="flex-1 bg-transparent text-[12px] text-gray-700 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="flex-1 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
               autoFocus
             />
           </div>
-          {pickerError ? <p className="border-b border-red-100 bg-red-50/60 px-5 py-2.5 text-[11.5px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{pickerError}</p> : null}
+          {pickerError ? <p className="border-b border-red-100 bg-red-50/60 px-5 py-2.5 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">{pickerError}</p> : null}
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="space-y-1.5 p-3">
                 {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-14 w-full rounded-md" />)}
               </div>
             ) : filteredTickets.length === 0 ? (
-              <p className="px-5 py-10 text-center text-[12px] text-gray-400 dark:text-gray-500">{query ? "No tickets match your search." : "No previous tickets found."}</p>
+              <p className="px-5 py-10 text-center text-xs text-gray-400 dark:text-gray-500">{query ? "No tickets match your search." : "No previous tickets found."}</p>
             ) : (
               <ul className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filteredTickets.map((ticket) => (
@@ -487,10 +487,10 @@ function TicketPickerDialog({ open, onOpenChange, onPick, productionMode }) {
                       onClick={() => handlePick(ticket)}
                       className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800/50"
                     >
-                      <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">{ticket.ticket_number ? `#${ticket.ticket_number} · ` : ""}{ticket.subject || "(no subject)"}</span>
-                      {ticket.customer_email ? <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">{ticket.customer_email}</span> : null}
-                      {ticket.preview ? <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">{ticket.preview}</span> : null}
-                      {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-slate-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
+                      <span className="truncate text-xs font-medium text-gray-800 dark:text-gray-100">{ticket.ticket_number ? `#${ticket.ticket_number} · ` : ""}{ticket.subject || "(no subject)"}</span>
+                      {ticket.customer_email ? <span className="truncate text-xs text-gray-500 dark:text-gray-400">{ticket.customer_email}</span> : null}
+                      {ticket.preview ? <span className="truncate text-xs text-gray-400 dark:text-gray-500">{ticket.preview}</span> : null}
+                      {loadingTicketId === ticket.thread_id ? <span className="mt-1 inline-flex items-center gap-1 text-xs text-slate-600"><Loader2 className="h-3 w-3 animate-spin" /> Loading ticket...</span> : null}
                     </button>
                   </li>
                 ))}
@@ -698,13 +698,13 @@ export function GreenfieldPlayground() {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.025em] text-foreground">Playground</h1>
-          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-gray-500 dark:text-gray-400">
+          <h1 className="text-page-heading font-semibold tracking-[-0.025em] text-foreground">Playground</h1>
+          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-500 dark:text-gray-400">
             {ticketRequired ? "Test how Sona would handle a real support ticket in a safe, read-only workspace." : "Test a customer conversation with Sona in a safe, read-only workspace."}
           </p>
         </div>
         <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          <span className="text-[11px] font-medium text-muted-foreground">Read-only</span>
+          <span className="text-xs font-medium text-muted-foreground">Read-only</span>
           {selectedSession ? (
             <Button type="button" variant="outline" size="sm" onClick={deleteSession} disabled={sending} className="gap-1.5 rounded-lg transition-transform active:scale-[0.97]">
               New conversation
@@ -721,10 +721,10 @@ export function GreenfieldPlayground() {
         </div>
       </div>
 
-      {error ? <div role="alert" className="shrink-0 rounded-xl bg-red-50/80 px-3.5 py-2.5 text-[12px] text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
+      {error ? <div role="alert" className="shrink-0 rounded-xl bg-red-50/80 px-3.5 py-2.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</div> : null}
 
       <details className="group shrink-0 overflow-hidden rounded-lg bg-muted/35">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/55">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/55">
           <span>Previous conversations <span className="font-normal text-muted-foreground">({sessions.length})</span></span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
         </summary>
@@ -735,7 +735,7 @@ export function GreenfieldPlayground() {
                 <button
                   type="button"
                   key={session.id}
-                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-xs transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-sky-50/70 dark:bg-sky-950/25" : ""}`}
+                  className={`flex min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2 text-left text-sm transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.995] ${selectedSession?.id === session.id ? "bg-sky-50/70 dark:bg-sky-950/25" : ""}`}
                   onClick={() => load(session.id)}
                 >
                   <span className="truncate font-medium text-foreground">{session.title}</span>
@@ -743,7 +743,7 @@ export function GreenfieldPlayground() {
                 </button>
               ))}
             </div>
-          ) : <p className="px-2 py-2 text-[11.5px] text-muted-foreground">No saved conversations yet.</p>}
+          ) : <p className="px-2 py-2 text-xs text-muted-foreground">No saved conversations yet.</p>}
         </div>
       </details>
 
@@ -751,12 +751,12 @@ export function GreenfieldPlayground() {
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-3 border-b border-border/50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
-              <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Customer conversation"}</p>
+              <p className="truncate text-sm font-semibold text-foreground">{selectedSession?.title || "New conversation"}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{selectedSession?.source_thread_id ? "Imported support ticket" : "Customer conversation"}</p>
             </div>
             {!ticketRequired ? (
               <label className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/45 px-2.5 py-1.5 sm:max-w-[240px]">
-                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Customer</span>
+                <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Customer</span>
                 <input
                   id="playground-customer-email"
                   type="email"
@@ -764,19 +764,19 @@ export function GreenfieldPlayground() {
                   onChange={(event) => setCustomerEmail(event.target.value)}
                   placeholder="Optional email"
                   disabled={sending}
-                  className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
                 />
               </label>
             ) : null}
           </div>
 
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-muted/[0.12] px-5 py-5 sm:px-8">
-            {loading ? <p className="text-[12px] text-muted-foreground">Loading playground…</p> : null}
+            {loading ? <p className="text-xs text-muted-foreground">Loading playground…</p> : null}
             {!loading && !hasMessages ? (
               <div className="flex h-full min-h-[240px] flex-col items-center justify-center py-12 text-center animate-in fade-in-0 duration-300">
                 <div className="max-w-[30rem] space-y-1.5">
-                  <p className="text-[15px] font-semibold text-foreground">{ticketRequired ? "Choose a ticket to begin" : "Write the first message"}</p>
-                  <p className="text-[12px] leading-relaxed text-muted-foreground">{ticketRequired ? "Sona will create a candidate reply here without sending anything to the customer." : "Your messages and Sona's replies will appear here as a conversation."}</p>
+                  <p className="text-base font-semibold text-foreground">{ticketRequired ? "Choose a ticket to begin" : "Write the first message"}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{ticketRequired ? "Sona will create a candidate reply here without sending anything to the customer." : "Your messages and Sona's replies will appear here as a conversation."}</p>
                   {!ticketRequired ? (
                     <div className="mt-5 flex flex-wrap justify-center gap-2">
                       {STARTER_MESSAGES.map((starterMessage) => (
@@ -784,14 +784,14 @@ export function GreenfieldPlayground() {
                           key={starterMessage}
                           type="button"
                           onClick={() => setDraft(starterMessage)}
-                          className="rounded-lg bg-background px-3 py-2 text-[11px] text-muted-foreground shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-900 hover:text-white active:scale-[0.98] dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                          className="rounded-lg bg-background px-3 py-2 text-xs text-muted-foreground shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-slate-900 hover:text-white active:scale-[0.98] dark:hover:bg-slate-100 dark:hover:text-slate-900"
                         >
                           {starterMessage}
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="mt-5 rounded-lg bg-background text-[11px] shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-transform active:scale-[0.98]">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="mt-5 rounded-lg bg-background text-xs shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-transform active:scale-[0.98]">
                       Choose ticket
                     </Button>
                   )}
@@ -809,7 +809,7 @@ export function GreenfieldPlayground() {
             {sending ? (
               <div className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-1 duration-200" role="status" aria-live="polite">
                 <div className="flex w-full max-w-[min(88%,42rem)] flex-col items-end">
-                  <p className="text-right text-[10.5px] font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
+                  <p className="text-right text-xs font-semibold tracking-wide text-slate-600 dark:text-slate-300">Sona</p>
                   <AgentActivity working />
                 </div>
               </div>
@@ -819,8 +819,8 @@ export function GreenfieldPlayground() {
           <form className="shrink-0 bg-background px-4 pb-4 pt-3 sm:px-5" onSubmit={send}>
             <div className="mx-auto flex w-full flex-col overflow-hidden rounded-xl bg-muted/[0.42] transition-[background-color,box-shadow] duration-150 ease-out focus-within:bg-muted/55 focus-within:shadow-[0_0_0_2px_hsl(var(--foreground)/0.08)]">
               <div className="flex items-center justify-between gap-3 px-4 pb-0 pt-3">
-                <span className="text-[11px] font-medium text-foreground/70">Customer message</span>
-                <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘ Enter to send</span>
+                <span className="text-xs font-medium text-foreground/70">Customer message</span>
+                <span className="hidden text-xs text-muted-foreground/70 sm:inline">⌘ Enter to send</span>
               </div>
               <textarea
                 value={draft}
@@ -836,10 +836,10 @@ export function GreenfieldPlayground() {
                 maxLength={12000}
                 disabled={sending || (ticketRequired && !selectedSession)}
                 aria-label="Customer message"
-                className="min-h-[68px] w-full resize-none border-0 bg-transparent px-4 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+                className="min-h-[68px] w-full resize-none border-0 bg-transparent px-4 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
               />
               <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-0.5">
-                <p className="truncate text-[10.5px] text-muted-foreground">{sending ? "Sona is replying…" : `Turn ${currentTurn} · read-only · nothing will be sent`}</p>
+                <p className="truncate text-xs text-muted-foreground">{sending ? "Sona is replying…" : `Turn ${currentTurn} · read-only · nothing will be sent`}</p>
                 <Button
                   type="submit"
                   disabled={!draft.trim() || sending || (ticketRequired && !selectedSession)}

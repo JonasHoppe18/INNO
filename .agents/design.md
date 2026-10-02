@@ -173,3 +173,7 @@ Det er kontrol af forslagets farver og statiske skitse. Keyboard, responsive lay
 - Skal "Afventer kunde" være neutral, så violet kan stå for Sona og selection?
 - Føles den kompakte inbox og de mere luftige settings som samme produkt i skitsen?
 - Første implementeringsrunde foreslås at være tokens, fælles controls og app-ramme. Derefter inbox med fiktive data, før vi breder ændringerne ud.
+
+## Lokal typografiprøve
+
+Samme lokale branch afprøver nu lokalt indlæst Inter og en fælles skala: UI 13 px, metadata 12 px, læsetekst 14 px og sidetitler 16 px. Se [design-system.md](design-system.md#typografi) for tokens, kilder og undtagelser. Layoutets panelbredder og spacing er bevaret. Stadig ingen push eller PR uden godkendelse.

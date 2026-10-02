@@ -2022,7 +2022,7 @@ export function KnowledgePageClient() {
     <>
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold text-foreground">Brain Center</h1>
+          <h1 className="text-page-heading font-semibold text-foreground">Brain Center</h1>
           <p className="text-sm text-muted-foreground">
             Combine rules, facts, and historical context so Sona responds with accurate answers and the right tone.
           </p>
@@ -2108,7 +2108,7 @@ export function KnowledgePageClient() {
                               <div className="flex min-w-0 items-center gap-2">
                                 <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
                                 {item.kind === "snippet" && item.is_stale && (
-                                  <span className="shrink-0 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                  <span className="shrink-0 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-700">
                                     Needs review
                                   </span>
                                 )}
@@ -2119,7 +2119,7 @@ export function KnowledgePageClient() {
                                 ? `${Number(item.row_count || 0)} rows · ${formatDate(item.created_at)}`
                                 : formatDate(item.created_at)}
                               {item.kind === "snippet" && item.usable_as ? (
-                                <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                                   {item.usable_as === "fact" && "FAQ / Product info"}
                                   {item.usable_as === "procedure" && "Procedure"}
                                   {item.usable_as === "policy" && "Policy"}
@@ -2212,12 +2212,12 @@ export function KnowledgePageClient() {
                         <div className="flex items-center gap-2">
                           <p className="truncate text-sm font-medium text-foreground">{reply.title || "Untitled reply"}</p>
                           {reply?.category ? (
-                            <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">
+                            <span className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-500">
                               {reply.category}
                             </span>
                           ) : null}
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                            className={`rounded-full border px-2 py-0.5 text-xs ${
                               reply?.is_active
                                 ? "border-emerald-200 text-emerald-700"
                                 : "border-gray-200 text-gray-500"
@@ -2737,7 +2737,7 @@ export function KnowledgePageClient() {
 
                   {/* Products */}
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] text-gray-500">Produkter</Label>
+                    <Label className="text-xs text-gray-500">Produkter</Label>
                     {snippetProducts.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1">
                         {snippetProducts.map((p) => (
@@ -2754,7 +2754,7 @@ export function KnowledgePageClient() {
                     )}
                     <Input
                       placeholder="Tilføj produkt og tryk Enter (fx a-blaze)"
-                      className="h-7 text-xs"
+                      className="h-7 text-sm"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -2770,7 +2770,7 @@ export function KnowledgePageClient() {
 
                   {/* Issue types */}
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] text-gray-500">Issue types</Label>
+                    <Label className="text-xs text-gray-500">Issue types</Label>
                     <div className="flex flex-wrap gap-1">
                       {ISSUE_TYPE_OPTIONS.map((t) => (
                         <button
@@ -2981,7 +2981,7 @@ export function KnowledgePageClient() {
                           <p className="truncate text-xs text-gray-600">
                             {image?.filename || "saved-reply-image"}
                           </p>
-                          <p className="shrink-0 text-[11px] text-gray-500">
+                          <p className="shrink-0 text-xs text-gray-500">
                             {formatFileSize(image?.size_bytes)}
                           </p>
                         </div>
@@ -3023,7 +3023,7 @@ export function KnowledgePageClient() {
                           className="max-h-40 w-auto rounded border border-gray-200 bg-white object-contain"
                         />
                         {isInline && image?.content_id ? (
-                          <p className="mt-1 truncate text-[11px] text-gray-500">
+                          <p className="mt-1 truncate text-xs text-gray-500">
                             CID: {String(image.content_id)}
                           </p>
                         ) : null}
@@ -3076,7 +3076,7 @@ export function KnowledgePageClient() {
             <p className="text-sm text-muted-foreground">No rows found in this import.</p>
           ) : (
             <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-              <div className="grid grid-cols-12 gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <div className="grid grid-cols-12 gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <div className="col-span-1">Row</div>
                 <div className="col-span-4">Input</div>
                 <div className="col-span-5">Answer</div>
