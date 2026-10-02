@@ -130,7 +130,7 @@ export function CustomersPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [refresh, setRefresh] = useState(0);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("recent");
@@ -158,7 +158,7 @@ export function CustomersPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [organizationId, isLoaded, refresh]);
+  }, [organizationId, isLoaded, retryAttempt]);
 
   useEffect(() => {
     setPage(1);
@@ -232,15 +232,6 @@ export function CustomersPage() {
             Every customer conversation, connected to their store.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loading}
-          onClick={() => setRefresh((value) => value + 1)}
-        >
-          <RefreshCw data-icon="inline-start" />
-          Refresh
-        </Button>
       </header>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -291,7 +282,7 @@ export function CustomersPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRefresh((value) => value + 1)}
+              onClick={() => setRetryAttempt((value) => value + 1)}
             >
               Try again
             </Button>
