@@ -957,7 +957,7 @@ function MembersTab({
               const rawRole = String(member?.workspace_role || "").toLowerCase();
               const isAdminLikeRole = rawRole.includes("admin") || rawRole.includes("owner");
               const rolePillClassName = isAdminLikeRole
-                ? "bg-violet-100 text-violet-600"
+                ? "bg-accent text-accent-foreground"
                 : "bg-blue-100 text-blue-600";
               const isOwner = rawRole.includes("owner");
               const memberUserId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
@@ -3028,7 +3028,7 @@ function ProfileTab({ user, isLoaded }) {
                     }}
                     className={cn(
                       "rounded-xl border p-3 text-left transition-colors",
-                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-slate-50",
+                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-muted",
                       themeLoading || savingProfile ? "cursor-not-allowed opacity-60" : ""
                     )}
                   >
@@ -4645,7 +4645,7 @@ export function SettingsPanel() {
                       className={cn(
                         "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-muted font-semibold text-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
+                          ? "bg-accent font-semibold text-accent-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >

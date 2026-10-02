@@ -1,8 +1,14 @@
 # Sona designforslag
 
-Status: udkast til fælles gennemgang. Oprettet 2. oktober 2026.
+Status: lokalt designforsøg, afventer gennemgang. Oprettet 2. oktober 2026.
 
-Dette dokument foreslår Sonas kommende design. [design-system.md](design-system.md) beskriver stadig den implementerede UI og gælder ved almindelige ændringer. Værdierne her bliver først implementeringsregler, når vi har valgt retningen og opdateret tokens og den eksisterende dokumentation sammen.
+Dette dokument samler designretningen. Brugeren har valgt at bevare Sonas nuværende layout og afprøve farver og fælles komponentmønstre lokalt. [design-system.md](design-system.md) beskriver nu implementeringen på forsøgsbranchen. Forsøget er ikke godkendt til merge.
+
+Branch: `codex/sona-design-local-1002b`. Worktree: `.worktrees/sona-design-local-1002b`. Den tidligere draft-PR #85 er lukket. Denne branch pusher vi ikke, og vi opretter først PR efter brugerens godkendelse.
+
+Start lokalt fra worktreets rod med `npm --workspace apps/web run dev -- --hostname localhost --port 3106`. Hvis serveren rammer `EMFILE`, kør `ulimit -n 8192` i samme terminal før start. Det ændrer kun denne proces og dens børn. Brug kun en ignoreret `.env.local` med dev-konfiguration som beskrevet i [environments.md](environments.md). `NEXT_PUBLIC_DASHBOARD_URL` skal være `http://localhost:3106`, så navigation ikke sender reviewet ud på en anden server. Hvis lokal diskplads er begrænset, kan `SONA_DESIGN_DISABLE_WEBPACK_CACHE=1` slå Webpacks genererede diskcache fra.
+
+Åbn `/inbox` for den rigtige UI og `/design-lab` for fiktive eksempler på shared controls, badges, light/dark, overlays og samtalerækker. Design-lab ændrer ikke backend-data og findes kun under `next dev`.
 
 ## Anbefalet retning
 
@@ -10,7 +16,7 @@ Sona skal føles som et gennemarbejdet arbejdsredskab med en tydelig identitet. 
 
 Det visuelle løft kommer fra ens afstande, bedre teksthierarki, rolige paneler og præcis feedback. Inbox skal stadig kunne bruges en hel arbejdsdag. Store gradients, store overskrifter og farvede kort overalt vil gøre arbejdet mere uroligt.
 
-Se [den visuelle skitse](design/sona-direction.svg). Den viser foreslåede farver og komponenter i light og dark med fiktive data. Det er en retningsskitse, ikke et screenshot af appen eller en færdig responsive løsning.
+Den tidligere [visuelle skitse](design/sona-direction.svg) viser paletteidéen med fiktive data. Den er historisk reference, ikke en ny layoutspecifikation. Den lokale app er nu reviewgrundlaget. Panelernes placering, bredder, typografi og spacing bevares.
 
 | Retning | Udtryk | Vurdering |
 | --- | --- | --- |
@@ -42,7 +48,7 @@ Værdierne er læst i `apps/web/app/globals.css`, `apps/web/tailwind.config.ts` 
 - `app-sidebar.jsx` har en kompakt rail på 68 px. `InboxSplitView.jsx` indeholder både semantiske tokens og særskilte blå, violet, grønne og grå utility-farver.
 - Inbox-status bruger i dag blå til `needs_attention`, violet til `waiting_customer`, amber til `waiting_third_party` og grøn til `resolved`. Det skal vurderes samlet før ændring.
 
-Det er en kildekodegennemgang. Den aktuelle app er ikke visuelt auditeret i dev-browseren i denne opgave.
+Udgangspunktet ovenfor er en kildekodegennemgang af den oprindelige UI. På forsøgsbranchen er lokale komponenter og den rigtige inbox også gennemgået i browseren mod dev.
 
 ## Farver og tokens
 
@@ -59,7 +65,7 @@ Alle værdier nedenfor er forslag. Hex er til designreview. Ved implementering k
 | `--primary-foreground`, `--sidebar-primary-foreground` | `#FFFFFF` | `#201A36` | Tekst på primary |
 | `--accent`, `--sidebar-accent` | `#EEE9FF` | `#302841` | Valgt navigation og valgt række |
 | `--accent-foreground`, `--sidebar-accent-foreground` | `#5838BC` | `#D8CCFF` | Tekst på valgt element |
-| `--sidebar-background` | `#EFEFED` | `#18181E` | Fast navigation |
+| `--sidebar-background` | `#F4F4F2` | `#18181E` | Fast navigation |
 | `--sidebar-foreground` | `#454550` | `#CECED8` | Navigationens tekst |
 | `--border`, `--sidebar-border` | `#E2E2E0` | `#393942` | Dekorative opdelinger |
 | `--input` | `#858590` | `#777783` | Control-kant, hvor kanten er nødvendig for at finde feltet |
@@ -143,14 +149,14 @@ På smalle skærme viser inbox ét hovedområde ad gangen med tydelig tilbage-na
 - Design controls med mindst 24 × 24 px mål og helst 44 × 44 px på touch. Følg [WCAG target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html). Små ikoner kan have større klikområde.
 - Alle icon-only handlinger har tilgængeligt navn. Tooltips kan forklare en genvej, men må ikke være eneste kilde til vigtig information.
 
-## Implementering efter gennemgang
+## Resterende arbejde før en eventuel PR
 
-1. Vælg palette og gennemgå inbox-statusfarver. Se også konkrete Mobbin-skærme, når biblioteket virker igen.
-2. Lav en lokal component-preview med fiktive data for button, input, tabs, badge, table, dialog og composer i light og dark. Ingen kunde-mails i offentlige previews.
-3. Opdatér globale tokens og Tailwind-mapping samlet. Fjern eller begræns `.settings-theme`-overrides, så settings og inbox arver samme regler. Tilføj status-token-par.
+1. Gennemgå det lokale farveforsøg og inbox-statusfarver. Se også konkrete Mobbin-skærme, når biblioteket virker igen.
+2. Gennemgå den eksisterende lokale `/design-lab` med fiktive data. Previewet bruger de faktiske shared controls og samtalerækker. Composer-eksemplet er en fixture, ikke den fulde composer.
+3. Globale tokens, Tailwind-mapping, shared controls og settings-arv er ændret i første forsøg. Vurdér paletten før vi udvider ændringerne.
 4. Ret de fælles komponenter og app-rammen først. Gennemgå hardcodede farver i inbox og øvrige sider bagefter. Ren tokenudskiftning fanger dem ikke alle.
 5. Afprøv inbox, Customers, Knowledge, settings, integrationer og analytics i dev. Dokumentér lokale før/efter-billeder, kontrast, keyboard, light/dark og smalle skærme.
-6. Opdatér `design-system.md`, når ændringerne faktisk er implementeret. Markér accepterede beslutninger her, så agenter ikke vælger hver sin stil.
+6. `design-system.md` beskriver forsøgsbranchen. Markér først beslutninger som godkendte efter brugerens review. Opret da en PR. Hvis forsøget forkastes, kan denne lokale worktree/branch fjernes.
 
 UI-arbejdet skal følge greenfield som default. Denne designopgave giver ikke mandat til at ændre V2-pipeline, action-logik, automation eller deploye til prod.
 
@@ -158,7 +164,7 @@ UI-arbejdet skal følge greenfield som default. Denne designopgave giver ikke ma
 
 Den visuelle SVG er renderet lokalt med Quick Look og gennemgået for tekstoverlap og afskæring. XML og relative dokumentlinks er kontrolleret. Kontrast er beregnet med sRGB relativ luminans. Light primary med hvid tekst er 5.47:1, dark primary med mørk tekst er 7.64:1. Alle 12 status-tekstpar er mindst 5.07:1, og de to inputkanter er mindst 3.65:1 mod deres panelbaggrund.
 
-Det er kontrol af forslagets farver og statiske skitse. Keyboard, responsive layout, indlæst font og faktisk komponentkontrast mangler stadig dev-verifikation ved implementering. Ingen runtime-filer er ændret, og app-tests eller dependency-installation er derfor ikke kørt.
+Det er kontrol af forslagets farver og statiske skitse. Keyboard, responsive layout, indlæst font og faktisk komponentkontrast mangler stadig dev-verifikation ved implementering. Disse målinger gælder den oprindelige skitse. Forsøgsbranchens runtime-verifikation registreres separat med branch, revision og begrænsninger.
 
 ## Punkter til vores gennemgang
 

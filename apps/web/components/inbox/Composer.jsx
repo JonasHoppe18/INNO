@@ -637,7 +637,7 @@ function ComposerComponent({
       span.setAttribute("contenteditable", "false");
       span.dataset.snippetId = snippet.snippet_id;
       span.className =
-        "inline rounded px-1 mx-0.5 bg-violet-100 text-violet-700 font-medium dark:bg-violet-500/20 dark:text-violet-200 select-none";
+        "inline rounded px-1 mx-0.5 bg-accent text-accent-foreground font-medium select-none";
       span.textContent = `/${snippet.title || "snippet"}`;
       range.insertNode(span);
 
@@ -1690,12 +1690,12 @@ function ComposerComponent({
   if (collapsed) {
     return (
       <div className="flex-none bg-transparent px-3 pb-3 pt-2 sm:px-4">
-        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 shadow-[0_10px_24px_hsl(var(--foreground)/0.06)]">
+        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/90 px-3 py-2.5 shadow-[0_10px_24px_hsl(var(--foreground)/0.06)]">
           <span className="text-[12px] font-medium text-muted-foreground">Reply box hidden</span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[12px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -1724,10 +1724,10 @@ function ComposerComponent({
         onDrop={handleDrop}
         className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
           isEmptyReply
-            ? "rounded-[22px] border-border/60 bg-background/95"
-            : "rounded-[22px] border-border/70 bg-background/95"
+            ? "rounded-[22px] border-border/60 bg-card/95"
+            : "rounded-[22px] border-border/70 bg-card/95"
         } ${
-          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : ""
+          isDragOver ? "border-primary shadow-primary/15" : ""
         } ${disabled ? "opacity-60" : ""}`}
         style={{
           height: `${composerHeightPx}px`,
@@ -1736,9 +1736,9 @@ function ComposerComponent({
         }}
       >
         {isDragOver ? (
-          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[26px] bg-violet-50/90 dark:bg-violet-900/40 backdrop-blur-[1px]">
-            <Paperclip className="h-6 w-6 text-violet-500" />
-            <span className="text-[13px] font-medium text-violet-600 dark:text-violet-400">Drop to attach</span>
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[26px] bg-accent/90 backdrop-blur-[1px]">
+            <Paperclip className="h-6 w-6 text-primary" />
+            <span className="text-[13px] font-medium text-primary">Drop to attach</span>
           </div>
         ) : null}
         {!isEmptyReply && !isNote ? (
@@ -1778,7 +1778,7 @@ function ComposerComponent({
                     value={selectedMailboxId || ""}
                     onChange={(event) => onMailboxChange?.(event.target.value)}
                     disabled={disabled || isSending}
-                    className="h-7 max-w-[220px] rounded-lg border border-border/70 bg-background/80 px-2 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                    className="h-7 max-w-[220px] rounded-lg border border-border/70 bg-card/80 px-2 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <option value="">Select mailbox</option>
                     {mailboxes.map((mailbox) => {
@@ -1827,7 +1827,7 @@ function ComposerComponent({
               disabled={disabled || isSending}
               onClick={() => setShowCC((prev) => !prev)}
               aria-label="Add Cc recipients"
-              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Cc
             </button>
@@ -1836,7 +1836,7 @@ function ComposerComponent({
               disabled={disabled || isSending}
               onClick={() => setShowBCC((prev) => !prev)}
               aria-label="Add Bcc recipients"
-              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Bcc
             </button>
@@ -1845,7 +1845,7 @@ function ComposerComponent({
               onClick={onToggleCollapse}
               aria-label="Hide reply box"
               title="Hide reply box"
-              className="rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+              className="rounded-md p-1 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1945,17 +1945,17 @@ function ComposerComponent({
           }`}>
             {refineOpen && !isNote ? (
               <div
-                className="relative mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
+                className="relative mb-2 flex flex-col gap-2 rounded-xl border border-primary/20 bg-accent/70 px-3 py-2.5"
                 style={{
                   animation: "refine-slide-in 180ms cubic-bezier(0.23,1,0.32,1) both",
                 }}
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-500 dark:text-violet-400">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-primary">
                     Refine draft
                   </div>
-                  <div className="text-[10.5px] text-violet-400 dark:text-violet-400/70">
-                    Type <kbd className="rounded bg-violet-200/60 dark:bg-violet-500/20 px-1 font-mono">/</kbd> to attach a knowledge snippet
+                  <div className="text-[10.5px] text-accent-foreground">
+                    Type <kbd className="rounded bg-primary/15 px-1 font-mono">/</kbd> to attach a knowledge snippet
                   </div>
                 </div>
                 <div className="relative flex items-center gap-2">
@@ -1968,7 +1968,7 @@ function ComposerComponent({
                     {refineIsEmpty ? (
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[13px] text-violet-400/70 dark:text-violet-400/50"
+                        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[13px] text-accent-foreground/70"
                       >
                         Write a custom instruction... (type / to attach a snippet)
                       </span>
@@ -2037,7 +2037,7 @@ function ComposerComponent({
                     type="button"
                     disabled={refineIsEmpty}
                     onClick={handleRefineSubmit}
-                    className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground disabled:opacity-40 hover:bg-primary/90 transition-colors"
                     aria-label="Submit refinement"
                   >
                     Apply
@@ -2064,7 +2064,7 @@ function ComposerComponent({
                     >
                       {refineSlashQuery ? (
                         <div className="border-b border-gray-100 bg-gray-50/50 px-3 py-1.5 text-[10.5px] text-gray-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
-                          Filter: <span className="font-mono text-violet-600 dark:text-violet-400">/{refineSlashQuery}</span>
+                          Filter: <span className="font-mono text-primary">/{refineSlashQuery}</span>
                         </div>
                       ) : null}
                       <div className="max-h-64 overflow-y-auto py-1">
@@ -2100,13 +2100,13 @@ function ComposerComponent({
                                     onClick={() => handlePickRefineSnippet(s)}
                                     className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors ${
                                       isActive
-                                        ? "bg-violet-50 dark:bg-violet-500/15"
+                                        ? "bg-accent"
                                         : "hover:bg-gray-50 dark:hover:bg-zinc-800/50"
                                     }`}
                                   >
                                     <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
                                       {s.format === "qa" && (
-                                        <span className="rounded-sm bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                        <span className="rounded-sm bg-accent px-1 text-[9px] font-semibold uppercase tracking-wide text-accent-foreground">
                                           Q&amp;A
                                         </span>
                                       )}
@@ -2283,7 +2283,7 @@ function ComposerComponent({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[13px] leading-[1.5] text-foreground outline-none selection:bg-violet-100 selection:text-foreground [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[13px] leading-[1.5] text-foreground outline-none selection:bg-accent selection:text-foreground [&_a]:cursor-pointer [&_a]:text-primary [&_a]:underline [&_a:hover]:text-primary/80 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
@@ -2342,7 +2342,7 @@ function ComposerComponent({
                     <button
                       type="button"
                       onClick={() => removeAttachment(file)}
-                      className="-mr-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+                      className="-mr-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-card/80 hover:text-foreground"
                       aria-label={`Remove ${file.name}`}
                     >
                       <X className="h-3 w-3" />
@@ -2356,13 +2356,13 @@ function ComposerComponent({
             <TooltipProvider delayDuration={300}>
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               {isSending ? (
-                <div className="flex items-center gap-1.5 text-[12px] font-medium text-violet-500">
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-primary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Sending reply...
                 </div>
               ) : showDraftLoadingState ? (
-                <div className="flex items-center gap-1.5 text-[12px] text-violet-500">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
+                <div className="flex items-center gap-1.5 text-[12px] text-primary">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                   {isRefiningDraft ? "Refining draft..." : "Drafting reply..."}
                 </div>
               ) : !isNote ? (
@@ -2472,8 +2472,8 @@ function ComposerComponent({
                           }}
                           aria-label="Refine draft with AI"
                           className={refineOpen
-                            ? "rounded-md bg-violet-100 p-1.5 text-violet-600 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-100 active:scale-95 dark:bg-violet-500/25 dark:text-violet-300 dark:hover:bg-violet-500/30"
-                            : "rounded-md p-1.5 text-violet-400 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-600 active:scale-95 dark:text-violet-500 dark:hover:bg-violet-500/15 dark:hover:text-violet-400"}
+                            ? "rounded-md bg-accent p-1.5 text-accent-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent active:scale-95"
+                            : "rounded-md p-1.5 text-primary transition-[background-color,color,transform] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"}
                         >
                           <Sparkles className="h-4 w-4" />
                         </button>
@@ -2492,9 +2492,9 @@ function ComposerComponent({
                     type="button"
                     disabled={disabled || showDraftLoadingState || isSending}
                     aria-label={`Change composer mode. Current mode: ${isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}`}
-                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 ${
+                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       isNote
-                        ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
+                        ? "bg-warning text-warning-foreground"
                         : "bg-muted/45 text-foreground/80 hover:bg-muted"
                     }`}
                   >
@@ -2518,7 +2518,7 @@ function ComposerComponent({
                 title={isSending ? "Sending reply..." : "Send reply (⌘↵ / Ctrl+↵)"}
                 aria-busy={isSending}
                 aria-keyshortcuts="Meta+Enter Control+Enter"
-                className="h-9 w-9 rounded-full bg-violet-600 p-0 text-white shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-violet-700 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-2"
+                className="size-9 rounded-full p-0"
               >
                 {isSending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2580,7 +2580,7 @@ function ComposerComponent({
                           </span>
                         ) : null}
                         {imageCount > 0 ? (
-                          <span className="shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-500/20 px-1.5 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400">
+                          <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[11px] text-accent-foreground">
                             {imageCount === 1 ? "1 image" : `${imageCount} images`}
                           </span>
                         ) : null}
@@ -2590,7 +2590,7 @@ function ComposerComponent({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); applySavedReplyInsert(reply); }}
-                      className="mt-0.5 shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 opacity-0 transition-opacity duration-150 hover:bg-accent group-hover/row:opacity-100"
+                      className="mt-0.5 shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground/80 opacity-0 transition-opacity duration-150 hover:bg-accent group-hover/row:opacity-100"
                     >
                       Insert
                     </button>

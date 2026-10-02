@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
+import { badgeVariants } from "@/components/ui/badge";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
   CANONICAL_STATUS_OPTIONS,
@@ -214,7 +215,7 @@ function FirstTagPill({ threadId, refreshTrigger }) {
   return (
     <span
       title={tag.name}
-      className="hidden h-7 max-w-[9rem] shrink-0 items-center truncate rounded-md border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[11px] font-medium leading-none text-violet-700 transition-colors lg:inline-flex dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-300"
+      className="hidden h-7 max-w-[9rem] shrink-0 items-center truncate rounded-md border border-primary/20 bg-accent px-2.5 py-1 text-[11px] font-medium leading-none text-accent-foreground transition-colors lg:inline-flex"
     >
       {tag.name}
     </span>
@@ -329,10 +330,10 @@ function InboxHeaderActions({
     CANONICAL_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ||
     "Needs attention";
   const statusStylesByStatus = {
-    needs_attention: "border-blue-200/80 bg-blue-50/90 text-blue-700",
-    waiting_customer: "border-violet-200/80 bg-violet-50/90 text-violet-700",
-    waiting_third_party: "border-amber-200/80 bg-amber-50/90 text-amber-700",
-    resolved: "border-green-200/80 bg-green-50/90 text-green-700",
+    needs_attention: badgeVariants({ variant: "info" }),
+    waiting_customer: badgeVariants({ variant: "neutral" }),
+    waiting_third_party: badgeVariants({ variant: "warning" }),
+    resolved: badgeVariants({ variant: "success" }),
   };
   const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
@@ -471,8 +472,8 @@ function InboxHeaderActions({
                     }}
                     className={`flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-left text-sm transition-colors duration-150 ${
                       isActive
-                        ? "bg-gray-900 text-white"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground hover:bg-muted"
                     }`}
                   >
                     <OptionIcon className="h-4 w-4 shrink-0" />
@@ -563,7 +564,7 @@ function WorkspaceTabsRow({
             >
               {isActive ? (
                 <span
-                  className={`absolute inset-x-2 bottom-0 h-0.5 ${inline ? "rounded-full" : "rounded-b-lg"} bg-indigo-500`}
+                  className={`absolute inset-x-2 bottom-0 h-0.5 ${inline ? "rounded-full" : "rounded-b-lg"} bg-primary`}
                 />
               ) : null}
               <button
@@ -572,7 +573,7 @@ function WorkspaceTabsRow({
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
                 {unreadCount > 0 ? (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                 ) : null}
                 <div className="min-w-0 pr-1">
                   <span className={`block min-w-0 truncate text-[12px] leading-4 ${isActive ? "font-semibold" : "font-medium"}`}>
@@ -3844,7 +3845,7 @@ export function InboxSplitView({
                 View details
                 {hasActionableReturnTrackingAction ? (
                   <span
-                    className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-violet-500 ring-2 ring-white"
+                    className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-card"
                     aria-label="Return tracking action available"
                   />
                 ) : null}

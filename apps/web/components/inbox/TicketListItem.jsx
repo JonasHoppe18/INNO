@@ -7,10 +7,10 @@ import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 import { formatTicketReference } from "@/lib/tickets/reference";
 
 const STATUS_DOT_STYLES = {
-  New: "bg-emerald-500",
-  Open: "bg-blue-500",
-  Pending: "bg-orange-500",
-  Waiting: "bg-violet-500",
+  New: "bg-success-foreground",
+  Open: "bg-info-foreground",
+  Pending: "bg-warning-foreground",
+  Waiting: "bg-muted-foreground",
   Solved: "bg-muted-foreground/60",
 };
 
@@ -133,14 +133,13 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70",
+        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
-        // lavender surface and stronger brand rail.
-        isUnread && "hover:bg-violet-50/55 dark:hover:bg-violet-500/[0.08]",
-        isActive && "bg-violet-50/85 hover:bg-violet-100/90 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.19]",
+        // accent surface.
+        isActive && "bg-accent hover:bg-accent",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -171,7 +170,7 @@ function TicketListItemComponent({
         {isUnread ? (
           <span
             aria-label="Unread"
-            className="size-2 shrink-0 rounded-full bg-violet-600 ring-2 ring-violet-100 dark:bg-violet-400 dark:ring-violet-500/20"
+            className="size-2 shrink-0 rounded-full bg-primary ring-2 ring-accent"
           />
         ) : null}
         <span className={cn("min-w-0 flex-1 truncate text-[12px] font-medium text-foreground", isUnread && "font-bold")}>
@@ -191,7 +190,7 @@ function TicketListItemComponent({
           </span>
           {hasAiDraft ? (
             <span title="Draft ready" aria-label="Draft ready" className="shrink-0">
-              <Sparkles className="h-3 w-3 text-amber-400" />
+              <Sparkles className="h-3 w-3 text-primary" />
             </span>
           ) : null}
         </div>
@@ -206,10 +205,10 @@ function TicketListItemComponent({
               className={
                 "max-w-[96px] truncate whitespace-nowrap text-[11px] " +
                 (reason.key === "customer_replied"
-                  ? "text-amber-700 dark:text-amber-500"
+                  ? "text-warning-foreground"
                   : reason.key === "approve_close"
-                    ? "text-purple-700 dark:text-purple-400"
-                    : "text-green-700 dark:text-green-500")
+                    ? "text-accent-foreground"
+                    : "text-success-foreground")
               }
             >
               {reason.label}

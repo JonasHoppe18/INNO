@@ -1,53 +1,61 @@
 # UI-designsystem
 
-Forslag til kommende designretning ligger i [design.md](design.md). Det er et udkast til gennemgang. Denne fil beskriver fortsat den implementerede UI.
+Denne branch indeholder et lokalt designforsøg, som ikke er godkendt til merge. Retningen og kilderne står i [design.md](design.md). Arbejdet bevarer Sonas eksisterende layout og afprøver fælles farver og komponentregler.
 
-Dokumentér det der **allerede kører** i `apps/web`. Opfind ikke ny palet, ny font eller nyt komponentbibliotek.
+Kilder til implementerede værdier på branchen er `apps/web/app/globals.css`, `apps/web/tailwind.config.ts` og `apps/web/components/ui/`. Dokumentet beskriver denne branch, ikke den nuværende prod-UI.
 
-Kilder (sandhed for værdier): `apps/web/app/globals.css`, `apps/web/tailwind.config.ts`, `apps/web/components.json`.
+## Stack og layout
 
-## Stack
+- Behold shadcn new-york, Radix, CVA, `cn` og Lucide. Nye controls bruger eksisterende `components/ui`.
+- Behold Inter, eksisterende typografistørrelser og `--radius: 0.5rem`.
+- Behold inboxens rail, kønavigation, samtaleliste, tabs, beskeder og composer. Ingen ændring af panelbredder, placering eller funktioner i dette forsøg.
+- Behold eksisterende spacing og responsive adfærd. Farvearbejde er ikke tilladelse til at redesigne siderne.
 
-- shadcn **new-york**, `baseColor: neutral`, CSS-variabler, Lucide.
-- Primitiver: `apps/web/components/ui/` (Radix + CVA + `cn`/`clsx`).
-- Font: Inter, derefter system-ui (`globals.css` `:root`).
-- `--radius: 0.5rem`. Tailwind `rounded-lg/md/sm` er afledt af den.
+## Fælles farver
 
-## Tokens
+Brug semantiske Tailwind-klasser. Hex-værdier må kun stå i designreference eller ændres via token-definitionen. Tilføj ikke nye violet/indigo/purple-nuancer i de enkelte komponenter.
 
-Brug semantiske Tailwind-klasser: `bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-card`, `bg-primary`, `bg-sidebar`, `text-sidebar-foreground`, osv. Ikke vilkårlige hex, medmindre du retter selve tokenet.
+| Rolle | Klasser | Regel |
+| --- | --- | --- |
+| Appens canvas | `bg-background`, `text-foreground` | Varm lys neutral i light, flad mørk neutral i dark |
+| Kort, composer og overlays | `bg-card`, `bg-popover` | Hvidt i light, lidt lysere panel i dark |
+| Primær handling | `bg-primary`, `text-primary-foreground` | Samme violet i hele appen. Dark bruger lys violet med mørk tekst |
+| Valgt element | `bg-accent`, `text-accent-foreground` | Svag violet. Bruges til selection, ikke almindelig hover |
+| Neutrale grupper og hover | `bg-muted`, `text-muted-foreground` | Hover skal kunne skelnes fra valgt element |
+| Sidebar | `bg-sidebar` og `sidebar-*` | Samme brand og statusregler som indholdet |
+| Borders og inputs | `border-border`, `border-input` | Svag opdeling, tydeligere kant på felter |
+| Fokus | `ring-ring`, `ring-offset-background` | Synligt keyboard-fokus i begge temaer |
 
-Light (`:root` i `@layer base`):
+`.settings-theme` har ikke længere egne token-overrides. Settings skal arve samme farver som inbox og øvrige sider. Radix-portaler arver globale tokens, så popovers ikke får et andet tema end deres trigger.
 
-- Baggrund/kort næsten hvid; `--foreground` næsten sort.
-- `--primary` default i base er nær-sort (`0 0% 9%`). Settings-skaller overskriver til violet: `.settings-theme` `--primary: 252 79% 61%`.
-- `--destructive: 0 84.2% 60.2%`.
-- Sidebar light: `--sidebar-background: 0 0% 98%`.
+## Status og AI
 
-Dark (`.dark`):
+Statusfarver defineres via `success`, `warning`, `info` og `danger` med `foreground` og `border` for hvert tema. Brug `Badge`-varianter eller `badgeVariants` i custom controls.
 
-- `--background: 222 14% 9%`; kort lidt lysere.
-- `--primary: 246 82% 72%` (samme violet som settings dark).
-- Body har svage radiale highlights — kopier ikke nye gradients ind i inbox uden grund.
+| Betydning | Badge-variant |
+| --- | --- |
+| Needs attention | `info` |
+| Waiting on customer | `neutral` |
+| Waiting on third party / afventer godkendelse | `warning` |
+| Resolved / tilsluttet / gemt | `success` |
+| Sona-udkast og AI | `ai` |
+| Fejl | `danger` |
+| Destruktiv handling | `Button variant="destructive"` |
 
-Når du styler settings, forvent `.settings-theme` (violet primary, egne muted/border/sidebar-tokens). Uden for den skal: følg globale tokens.
+Labels skal altid følge farven. Godkendt, godkendt i testtilstand og udført er forskellige tilstande. Status-/action-logik må ikke ændres som del af styling.
 
-## Komponenter
+## Controls
 
-- Nye controls: eksisterende `components/ui` først, derefter samme shadcn-mønster. Ikke et tredje knap-system.
-- Inbox: `InboxSplitView`, sidebar (`app-sidebar`, `nav-queue`), status-tabs, composer. Udvid mønstrene der — ikke en ny mail-klient-layout.
-- Ikoner: Lucide, samme stroke/størrelse som nabokontrol.
+- `Button` ejer farver, hover, fokus og disabled. Brug variants; `className` bruges til lokal størrelse og placering. Den runde send-knap beholder sin størrelse og form, men arver primary.
+- `Input`, `Select` og `Textarea` bruger card-baggrund, inputkant og samme fokusring. Behold labels og eksisterende validering.
+- Sidebar og tabeller bruger neutral hover og svag violet selection. Aktive tabs bruger accenttekst eller primary-markering afhængigt af deres eksisterende mønster.
+- Ændr fælles komponenter først. Et override på en enkelt side skal have en konkret funktionel grund.
+- Ikke alle gamle hardcodede farver er migreret. Gennemgå dem side for side før godkendelse; dette forsøg er første fælles gennemløb.
 
-## Motion
+## Motion og evidens
 
-Eksisterende kurve: `cubic-bezier(0.23, 1, 0.32, 1)` (reveal, landing, view-enter, settings-tab). Korte UI-enter ~180–200ms. Ær `prefers-reduced-motion` (eksisterende media queries dropper transform/animation).
+Behold eksisterende kurve `cubic-bezier(0.23, 1, 0.32, 1)` og korte UI-overgange. Ingen `transition: all`. Respektér `prefers-reduced-motion`.
 
-Ingen `transition: all`. Foretræk konkrete properties.
+Lokal review foregår i appen og på `/design-lab`. Design-lab er kun tilgængelig under `next dev`, bruger fiktive data og har ingen backend-write-handlinger. Behold normal authentication.
 
-## Polish
-
-Efter tokens og mønstre: projekt-skills `.claude/skills/emil-design-eng` og `.claude/skills/frontend-design`. De erstatter ikke dette skema.
-
-## Evidens
-
-Screenshots af UI er fine. Screenshots af rigtige kunde-mails, PII eller shops uploades ikke til offentlige hosts. Se [factory.md](factory.md).
+Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må ikke uploades til offentlige hosts. Ingen push eller PR før brugeren har godkendt forsøget.
