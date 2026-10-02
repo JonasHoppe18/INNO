@@ -234,8 +234,8 @@ export function CustomersPage() {
         </div>
       </header>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <ToggleGroup
             type="single"
             size="sm"
@@ -247,11 +247,8 @@ export function CustomersPage() {
             <ToggleGroupItem value="open">Open tickets</ToggleGroupItem>
             <ToggleGroupItem value="returning">Repeat contacts</ToggleGroupItem>
           </ToggleGroup>
-          <p className="text-xs text-muted-foreground">
-            Customers with support conversations
-          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -259,11 +256,14 @@ export function CustomersPage() {
               placeholder="Search by name or email…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="pl-9"
+              className="rounded-xl pl-9 shadow-sm"
             />
           </div>
           <Select value={sort} onValueChange={setSort}>
-            <SelectTrigger className="w-44" aria-label="Sort customers">
+            <SelectTrigger
+              className="w-44 border-0 shadow-none"
+              aria-label="Sort customers"
+            >
               <ArrowDownUp className="mr-2 size-3.5 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
@@ -312,40 +312,39 @@ export function CustomersPage() {
         ) : (
           <>
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-5">Customer</TableHead>
-                  <TableHead>Tickets</TableHead>
-                  <TableHead>Orders</TableHead>
-                  <TableHead>Last contact</TableHead>
-                  <TableHead className="w-10">
+              <TableHeader className="[&_tr]:border-0">
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="h-9 rounded-l-lg pl-4">
+                    Customer name
+                  </TableHead>
+                  <TableHead className="h-9">Email</TableHead>
+                  <TableHead className="h-9">Tickets</TableHead>
+                  <TableHead className="h-9">Orders</TableHead>
+                  <TableHead className="h-9">Last contact</TableHead>
+                  <TableHead className="h-9 w-10 rounded-r-lg">
                     <span className="sr-only">Open profile</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pageRows.map((customer) => (
-                  <TableRow key={customer.id}>
-                    <TableCell className="pl-5">
+                  <TableRow
+                    key={customer.id}
+                    className="border-border/40 hover:bg-muted/30"
+                  >
+                    <TableCell className="py-2 pl-4">
                       <button
                         type="button"
-                        className="flex items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="rounded-md py-1 text-left font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => setSelected(customer)}
                       >
-                        <Avatar className="size-9">
-                          <AvatarFallback>
-                            {initials(customer.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="flex flex-col gap-0.5">
-                          <span className="font-medium">{customer.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {customer.email}
-                          </span>
-                        </span>
+                        {customer.name}
                       </button>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2 text-muted-foreground">
+                      {customer.email}
+                    </TableCell>
+                    <TableCell className="py-2">
                       <div className="flex items-center gap-2">
                         <span className="tabular-nums">
                           {customer.ticketCount}
@@ -357,7 +356,7 @@ export function CustomersPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2">
                       <button
                         type="button"
                         className="rounded-md text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
@@ -367,13 +366,14 @@ export function CustomersPage() {
                         <OrderState result={orderResults[customer.id]} />
                       </button>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                    <TableCell className="whitespace-nowrap py-2 text-muted-foreground">
                       {date(customer.lastContactAt)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2">
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="size-7"
                         aria-label={`Open ${customer.name}`}
                         onClick={() => setSelected(customer)}
                       >
@@ -384,7 +384,7 @@ export function CustomersPage() {
                 ))}
               </TableBody>
             </Table>
-            <div className="flex items-center justify-between gap-4 border-t border-border px-5 py-3">
+            <div className="flex items-center justify-between gap-4 px-4 py-2">
               <p className="text-xs text-muted-foreground">
                 {(page - 1) * PAGE_SIZE + 1}–
                 {Math.min(page * PAGE_SIZE, visible.length)} of {visible.length}{" "}
@@ -392,7 +392,7 @@ export function CustomersPage() {
               </p>
               <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
                   aria-label="Previous page"
                   disabled={page <= 1}
@@ -404,7 +404,7 @@ export function CustomersPage() {
                   {page} / {pages}
                 </span>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
                   aria-label="Next page"
                   disabled={page >= pages}
