@@ -66,7 +66,7 @@ Labels skal altid følge farven. Godkendt, godkendt i testtilstand og udført er
 
 ## Controls
 
-- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: 28 px høj, 13 px tekst, vægt 450, neutral card-baggrund og ingen skygge. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
+- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: 28 px høj, 13 px tekst, almindelig vægt 400, neutral card-baggrund og ingen skygge. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
 - Ticketlisten bruger vægt 450 til læste afsendere og metadata, 650 til ulæste afsendere og 550 til ulæste emner. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
 - Composerens skygge er 4/16 px ved 4 % og 1/3 px ved 3 %. Sekundære controls og beskedhandlinger bruger regular vægt.
 - `Button` ejer farver, hover, fokus og disabled. Brug variants; `className` bruges til lokal størrelse og placering. Den runde send-knap beholder sin størrelse og form, men arver primary.
