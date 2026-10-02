@@ -90,7 +90,7 @@ import {
   X,
 } from "lucide-react";
 
-const ticketToolbarControlClass = "h-7 w-auto cursor-pointer gap-1 rounded-lg border border-border/70 bg-card px-2 py-1 text-sm font-[400] leading-none text-muted-foreground shadow-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 active:scale-[0.98]";
+const ticketToolbarControlClass = "h-7 w-auto cursor-pointer gap-1.5 rounded-md border border-border/70 bg-card px-2 py-1 text-sm font-[400] leading-5 text-foreground shadow-none [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:stroke-[1.75] transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 active:scale-[0.98]";
 
 const DEFAULT_TICKET_STATE = {
   status: null,

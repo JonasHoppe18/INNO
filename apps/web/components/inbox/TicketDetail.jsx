@@ -829,7 +829,7 @@ function TicketDetailComponent({
             </button>
           ) : null}
           <span
-            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-mono text-xs font-[400] tabular-nums tracking-[-0.01em] ${
+            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-sans text-sm font-[400] not-italic tabular-nums tracking-normal ${
               hasTicketNumber
                 ? "text-muted-foreground"
                 : "text-muted-foreground/60"
