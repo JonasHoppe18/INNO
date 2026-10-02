@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1120" viewBox="0 0 1440 1120" role="img" aria-labelledby="title desc">
+<title id="title">Sona designforslag: varm neutral og violet</title>
+<desc id="desc">Fiktiv inbox i light mode og settings i dark mode. Farver, status og komponenter til designreview.</desc>
+<rect x="0" y="0" width="1440" height="1120" rx="0" fill="#F7F7F5"/>
+<text x="32" y="52" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="30" font-weight="600">Sona · designforslag</text>
+<text x="32" y="81" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Varm neutral + violet  /  Udkast til gennemgang  /  2. oktober 2026</text>
+<rect x="32" y="110" width="28" height="28" rx="8" fill="#F7F7F5" stroke="#E2E2E0"/>
+<text x="70" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Canvas</text>
+<rect x="205" y="110" width="28" height="28" rx="8" fill="#FFFFFF" stroke="#E2E2E0"/>
+<text x="243" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Panel</text>
+<rect x="378" y="110" width="28" height="28" rx="8" fill="#6C4DE6" stroke="#E2E2E0"/>
+<text x="416" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Primary</text>
+<rect x="551" y="110" width="28" height="28" rx="8" fill="#EEE9FF" stroke="#E2E2E0"/>
+<text x="589" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Selection</text>
+<rect x="724" y="110" width="28" height="28" rx="8" fill="#16624F" stroke="#E2E2E0"/>
+<text x="762" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Success</text>
+<rect x="897" y="110" width="28" height="28" rx="8" fill="#83520D" stroke="#E2E2E0"/>
+<text x="935" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Warning</text>
+<rect x="1070" y="110" width="28" height="28" rx="8" fill="#B42318" stroke="#E2E2E0"/>
+<text x="1108" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Danger</text>
+<rect x="1243" y="110" width="28" height="28" rx="8" fill="#245FA6" stroke="#E2E2E0"/>
+<text x="1281" y="129" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Info</text>
+<text x="32" y="184" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="600">Inbox · light</text>
+<rect x="32" y="204" width="1376" height="440" rx="12" fill="#FFFFFF" stroke="#E2E2E0"/>
+<rect x="33" y="205" width="203" height="438" rx="10" fill="#EFEFED"/>
+<text x="52" y="242" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="600">sona</text>
+<text x="52" y="268" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Demo workspace</text>
+<rect x="44" y="285" width="180" height="36" rx="8" fill="#EEE9FF"/>
+<text x="60" y="308" fill="#5838BC" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="600">Inbox</text>
+<text x="60" y="351" fill="#454550" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Customers</text>
+<text x="60" y="389" fill="#454550" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Knowledge</text>
+<text x="60" y="427" fill="#454550" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Analytics</text>
+<text x="60" y="465" fill="#454550" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Integrations</text>
+<text x="60" y="613" fill="#454550" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Settings</text>
+<path d="M236 204V644" stroke="#E2E2E0"/>
+<path d="M545 204V644" stroke="#E2E2E0"/>
+<path d="M1115 204V644" stroke="#E2E2E0"/>
+<text x="256" y="242" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="600">Assigned to you</text>
+<text x="256" y="271" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">12 conversations</text>
+<rect x="252" y="285" width="277" height="34" rx="8" fill="#FFFFFF" stroke="#858590"/>
+<text x="265" y="307" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="400">Search conversations…</text>
+<rect x="248" y="334" width="289" height="68" rx="8" fill="#EEE9FF"/>
+<text x="264" y="356" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Demo customer A</text>
+<text x="501" y="356" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">2m</text>
+<text x="264" y="379" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="400">Where is my order?</text>
+<text x="264" y="430" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Demo customer B</text>
+<text x="501" y="430" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">8m</text>
+<text x="264" y="453" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="400">Exchange request</text>
+<text x="264" y="504" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Demo customer C</text>
+<text x="501" y="504" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">14m</text>
+<text x="264" y="527" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="400">Delivery options</text>
+<text x="569" y="243" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="600">Where is my order?</text>
+<rect x="569" y="260" width="141" height="26" rx="6" fill="#EBF3FF"/>
+<text x="579" y="278" fill="#245FA6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">Needs attention</text>
+<text x="569" y="329" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">Demo customer A</text>
+<text x="569" y="358" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="400">Hi, could you help me check the delivery?</text>
+<text x="569" y="382" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="400">My order has not arrived yet.</text>
+<rect x="569" y="421" width="522" height="198" rx="12" fill="#FFFFFF" stroke="#858590"/>
+<rect x="585" y="437" width="108" height="26" rx="6" fill="#EEE9FF"/>
+<text x="595" y="455" fill="#5838BC" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">Sona draft</text>
+<text x="585" y="490" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="400">Hi! I can help you check the delivery.</text>
+<text x="585" y="514" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="400">Here is a suggested reply for your review.</text>
+<path d="M570 548H1090" stroke="#E2E2E0"/>
+<text x="585" y="589" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Reply · demo mailbox</text>
+<rect x="927" y="565" width="148" height="36" rx="8" fill="#6C4DE6"/>
+<text x="950" y="588" fill="#FFFFFF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Review &amp; send</text>
+<text x="1139" y="243" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="600">Customer context</text>
+<text x="1139" y="280" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Demo customer A</text>
+<text x="1139" y="308" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Shop: Demo store</text>
+<path d="M1139 330H1384" stroke="#E2E2E0"/>
+<text x="1139" y="360" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Order #DEMO-1042</text>
+<rect x="1139" y="379" width="95" height="26" rx="6" fill="#EBF3FF"/>
+<text x="1149" y="397" fill="#245FA6" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">In transit</text>
+<text x="1139" y="445" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Agent action</text>
+<rect x="1139" y="464" width="159" height="26" rx="6" fill="#FFF4DA"/>
+<text x="1149" y="482" fill="#83520D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">Awaiting approval</text>
+<text x="1139" y="511" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">No external action executed.</text>
+<text x="32" y="690" fill="#25252D" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="600">Settings · dark</text>
+<rect x="32" y="710" width="1376" height="338" rx="12" fill="#15151A"/>
+<rect x="33" y="711" width="203" height="336" rx="10" fill="#18181E"/>
+<text x="52" y="749" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="600">sona</text>
+<text x="52" y="788" fill="#B0B0BF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Workspace settings</text>
+<rect x="44" y="806" width="180" height="36" rx="8" fill="#302841"/>
+<text x="60" y="829" fill="#D8CCFF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="600">General</text>
+<text x="60" y="868" fill="#CECED8" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Mailboxes</text>
+<text x="60" y="906" fill="#CECED8" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Integrations</text>
+<text x="264" y="753" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="600">Workspace</text>
+<text x="264" y="781" fill="#B0B0BF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Shared appearance and controls across Sona.</text>
+<rect x="264" y="806" width="660" height="216" rx="12" fill="#1E1E25" stroke="#393942"/>
+<text x="288" y="842" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="600">Workspace details</text>
+<text x="288" y="876" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="500">Workspace name</text>
+<rect x="288" y="888" width="612" height="36" rx="8" fill="#1E1E25" stroke="#777783"/>
+<text x="300" y="911" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Demo workspace</text>
+<text x="288" y="984" fill="#B0B0BF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Changes apply to this workspace.</text>
+<rect x="790" y="961" width="110" height="36" rx="8" fill="#B5A3FF"/>
+<text x="812" y="984" fill="#201A36" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Save changes</text>
+<rect x="948" y="806" width="432" height="216" rx="12" fill="#1E1E25" stroke="#393942"/>
+<text x="972" y="842" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="600">Shopify connection</text>
+<rect x="972" y="862" width="98" height="26" rx="6" fill="#19382C"/>
+<text x="982" y="880" fill="#8AD8B5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500">Connected</text>
+<text x="972" y="916" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="400">Demo store</text>
+<text x="972" y="942" fill="#B0B0BF" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="400">Last sync: today, 09:42</text>
+<rect x="972" y="961" width="160" height="36" rx="8" fill="#1E1E25" stroke="#777783"/>
+<text x="990" y="984" fill="#F4F4F5" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500">Manage connection</text>
+<text x="32" y="1086" fill="#64646F" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="400">Retningsskitse med fiktive data. Ingen produktændringer eller kundeoplysninger.</text>
+</svg>
