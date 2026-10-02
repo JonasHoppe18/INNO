@@ -108,19 +108,25 @@ function BlankState({ icon: Icon, title, children }) {
 
 function OrderState({ result }) {
   if (!result)
-    return <span className="text-muted-foreground">View orders</span>;
+    return (
+      <span
+        title="Open customer to view orders"
+        className="text-muted-foreground"
+      >
+        —
+      </span>
+    );
   if (result.status === "loading")
     return <span className="text-muted-foreground">Checking…</span>;
   if (result.status === "error")
     return <span className="text-muted-foreground">Unavailable</span>;
   if (result.status === "not_connected")
-    return <span className="text-muted-foreground">No store connected</span>;
+    return <span className="text-muted-foreground">Not connected</span>;
   return (
-    <Badge variant={result.orders.length ? "secondary" : "outline"}>
-      {result.orders.length
-        ? `${result.orders.length}${result.orders.length === result.limit ? "+" : ""} orders`
-        : "No orders found"}
-    </Badge>
+    <span className="tabular-nums">
+      {result.orders.length}
+      {result.orders.length === result.limit ? "+" : ""}
+    </span>
   );
 }
 
@@ -222,19 +228,16 @@ export function CustomersPage() {
   const orderResult = selected ? orderResults[selected.id] : null;
 
   return (
-    <main className="flex min-w-0 flex-col gap-7 bg-background px-4 py-6 text-foreground lg:px-10 lg:py-10">
+    <main className="flex min-w-0 flex-col gap-5 bg-background px-4 py-6 text-foreground lg:px-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Customers</h1>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Every customer conversation, connected to their store.
-          </p>
         </div>
       </header>
 
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ToggleGroup
             type="single"
@@ -243,25 +246,31 @@ export function CustomersPage() {
             onValueChange={(value) => value && setFilter(value)}
             aria-label="Customer filter"
           >
-            <ToggleGroupItem value="all">All customers</ToggleGroupItem>
-            <ToggleGroupItem value="open">Open tickets</ToggleGroupItem>
-            <ToggleGroupItem value="returning">Repeat contacts</ToggleGroupItem>
+            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="all">
+              All customers
+            </ToggleGroupItem>
+            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="open">
+              Open tickets
+            </ToggleGroupItem>
+            <ToggleGroupItem className="h-8 px-3 text-[13px]" value="returning">
+              Repeat contacts
+            </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-48 flex-1">
+        <div className="flex items-center rounded-xl border border-border/70 bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring">
+          <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label="Search customers"
-              placeholder="Search by name or email…"
+              placeholder="Search customers…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="rounded-xl pl-9 shadow-sm"
+              className="h-10 rounded-xl border-0 bg-transparent pl-9 text-[13px] shadow-none focus-visible:ring-0"
             />
           </div>
           <Select value={sort} onValueChange={setSort}>
             <SelectTrigger
-              className="w-44 border-0 shadow-none"
+              className="h-8 w-40 shrink-0 rounded-none rounded-r-xl border-0 border-l border-border/60 text-[13px] shadow-none focus:ring-0"
               aria-label="Sort customers"
             >
               <ArrowDownUp className="mr-2 size-3.5 text-muted-foreground" />
@@ -311,16 +320,20 @@ export function CustomersPage() {
           </BlankState>
         ) : (
           <>
-            <Table>
+            <Table className="min-w-[760px] table-fixed text-[13px]">
               <TableHeader className="[&_tr]:border-0">
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="h-9 rounded-l-lg pl-4">
+                  <TableHead className="h-8 w-[32%] rounded-l-lg pl-3">
                     Customer name
                   </TableHead>
-                  <TableHead className="h-9">Email</TableHead>
-                  <TableHead className="h-9">Tickets</TableHead>
-                  <TableHead className="h-9">Orders</TableHead>
-                  <TableHead className="h-9 rounded-r-lg">
+                  <TableHead className="h-8 w-[34%]">Email</TableHead>
+                  <TableHead className="h-8 w-[8%] text-right">
+                    Tickets
+                  </TableHead>
+                  <TableHead className="h-8 w-[11%] text-right">
+                    Orders
+                  </TableHead>
+                  <TableHead className="h-8 w-[15%] rounded-r-lg pr-3 text-right">
                     Last contact
                   </TableHead>
                 </TableRow>
@@ -329,7 +342,7 @@ export function CustomersPage() {
                 {pageRows.map((customer) => (
                   <TableRow
                     key={customer.id}
-                    className="cursor-pointer border-border/40 outline-none hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="cursor-pointer h-9 border-border/40 outline-none hover:bg-muted/50 focus-visible:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     tabIndex={0}
                     aria-label={`Open ${customer.name}`}
                     onClick={() => setSelected(customer)}
@@ -340,28 +353,34 @@ export function CustomersPage() {
                       }
                     }}
                   >
-                    <TableCell className="py-2 pl-4">
-                      <span className="inline-block py-1 font-medium">
+                    <TableCell className="py-1.5 pl-3">
+                      <span
+                        className="block truncate font-medium"
+                        title={customer.name}
+                      >
                         {customer.name}
                       </span>
                     </TableCell>
-                    <TableCell className="py-2 text-muted-foreground">
+                    <TableCell
+                      className="truncate py-1.5 text-muted-foreground"
+                      title={customer.email}
+                    >
                       {customer.email}
                     </TableCell>
-                    <TableCell className="py-2 tabular-nums">
+                    <TableCell className="py-1.5 text-right tabular-nums">
                       {customer.ticketCount}
                     </TableCell>
-                    <TableCell className="py-2">
+                    <TableCell className="py-1.5 text-right">
                       <OrderState result={orderResults[customer.id]} />
                     </TableCell>
-                    <TableCell className="whitespace-nowrap py-2 text-muted-foreground">
+                    <TableCell className="whitespace-nowrap py-1.5 pr-3 text-right text-muted-foreground">
                       {date(customer.lastContactAt)}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <div className="flex items-center justify-between gap-4 px-4 py-2">
+            <div className="flex items-center justify-between gap-4 px-3 py-2">
               <p className="text-xs text-muted-foreground">
                 {(page - 1) * PAGE_SIZE + 1}–
                 {Math.min(page * PAGE_SIZE, visible.length)} of {visible.length}{" "}
