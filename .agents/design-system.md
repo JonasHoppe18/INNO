@@ -1,5 +1,7 @@
 # UI-designsystem
 
+Forslag til kommende designretning ligger i [design.md](design.md). Det er et udkast til gennemgang. Denne fil beskriver fortsat den implementerede UI.
+
 Dokumentér det der **allerede kører** i `apps/web`. Opfind ikke ny palet, ny font eller nyt komponentbibliotek.
 
 Kilder (sandhed for værdier): `apps/web/app/globals.css`, `apps/web/tailwind.config.ts`, `apps/web/components.json`.
