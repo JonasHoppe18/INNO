@@ -20,6 +20,7 @@ import {
   PanelLeftOpen,
   SquarePenIcon,
   Trash2,
+  UsersIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -66,6 +67,11 @@ const baseData = {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboardIcon,
+    },
+    {
+      title: "Customers",
+      url: "/customers",
+      icon: UsersIcon,
     },
     {
       title: "Knowledge",
