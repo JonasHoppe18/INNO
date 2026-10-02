@@ -746,7 +746,7 @@ function MessageBubbleComponent({
             ) : null}
 
             {!isInternalNote && !grouped ? (
-              <div className={cn("flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground", isOutbound && "justify-end")}>
+              <div className={cn("flex flex-wrap items-center gap-3 px-1 text-sm font-normal text-muted-foreground", isOutbound && "justify-end")}>
                 <button
                   type="button"
                   onClick={() => {

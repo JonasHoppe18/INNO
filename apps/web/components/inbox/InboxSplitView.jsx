@@ -34,7 +34,6 @@ import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
-import { badgeVariants } from "@/components/ui/badge";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
   CANONICAL_STATUS_OPTIONS,
@@ -90,6 +89,8 @@ import {
   User,
   X,
 } from "lucide-react";
+
+const ticketToolbarControlClass = "h-7 w-auto cursor-pointer gap-1 rounded-lg border border-border/70 bg-card px-2 py-1 text-sm font-normal leading-none text-muted-foreground shadow-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 active:scale-[0.98]";
 
 const DEFAULT_TICKET_STATE = {
   status: null,
@@ -329,13 +330,6 @@ function InboxHeaderActions({
   const currentLabel =
     CANONICAL_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ||
     "Needs attention";
-  const statusStylesByStatus = {
-    needs_attention: badgeVariants({ variant: "info" }),
-    waiting_customer: badgeVariants({ variant: "neutral" }),
-    waiting_third_party: badgeVariants({ variant: "warning" }),
-    resolved: badgeVariants({ variant: "success" }),
-  };
-  const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
     <div className="flex items-center gap-1.5">
       <Select
@@ -344,7 +338,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket status"
-          className={`h-7 max-w-[10.5rem] w-auto cursor-pointer gap-1 rounded-lg border px-2 py-1 text-sm font-semibold leading-none shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98] ${statusStyles}`}
+          className={ticketToolbarControlClass}
         >
           {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -367,7 +361,7 @@ function InboxHeaderActions({
       >
         <SelectTrigger
           aria-label="Ticket assignee"
-          className="h-7 max-w-[7.75rem] w-auto cursor-pointer gap-1 rounded-lg border border-border/70 bg-muted/30 px-2 py-1 text-sm font-medium leading-none text-muted-foreground shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/70 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+          className={ticketToolbarControlClass}
         >
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
@@ -386,7 +380,7 @@ function InboxHeaderActions({
           <button
             type="button"
             aria-label="More ticket actions"
-            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-border/70 bg-background px-2 py-1 text-sm font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+            className={`inline-flex shrink-0 ${ticketToolbarControlClass}`}
           >
             More
             <ChevronDown className="h-3.5 w-3.5" />
@@ -3840,7 +3834,7 @@ export function InboxSplitView({
                 type="button"
                 onClick={() => setInsightsOpen(true)}
                 aria-label="View ticket details"
-                className="relative inline-flex h-7 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-lg border border-border/70 bg-background px-2 py-1 text-sm font-medium leading-none text-foreground/75 shadow-sm transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out hover:bg-muted/60 hover:text-foreground hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1 active:scale-[0.98]"
+                className={`relative inline-flex shrink-0 whitespace-nowrap ${ticketToolbarControlClass}`}
               >
                 View details
                 {hasActionableReturnTrackingAction ? (

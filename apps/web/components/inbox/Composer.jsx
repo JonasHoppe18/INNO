@@ -1690,12 +1690,12 @@ function ComposerComponent({
   if (collapsed) {
     return (
       <div className="flex-none bg-transparent px-3 pb-3 pt-2 sm:px-4">
-        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/90 px-3 py-2.5 shadow-[0_10px_24px_hsl(var(--foreground)/0.06)]">
-          <span className="text-xs font-medium text-muted-foreground">Reply box hidden</span>
+        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/90 px-3 py-2.5 shadow-[0_2px_8px_hsl(var(--foreground)/0.04)]">
+          <span className="text-xs font-normal text-muted-foreground">Reply box hidden</span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-sm font-normal text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -1722,7 +1722,7 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_14px_34px_hsl(var(--foreground)/0.08),0_2px_8px_hsl(var(--foreground)/0.04)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_4px_16px_hsl(var(--foreground)/0.04),0_1px_3px_hsl(var(--foreground)/0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
           isEmptyReply
             ? "rounded-[22px] border-border/60 bg-card/95"
             : "rounded-[22px] border-border/70 bg-card/95"
@@ -1755,7 +1755,7 @@ function ComposerComponent({
         <div className="flex flex-wrap items-center justify-between gap-2 bg-transparent px-4 pb-1.5 pt-3">
           {isNewTicket ? (
             <div className="flex w-full min-w-0 items-center gap-2 border-b border-border/60 pb-1.5">
-              <label htmlFor="new-ticket-subject" className="shrink-0 font-medium text-muted-foreground">
+              <label htmlFor="new-ticket-subject" className="shrink-0 font-normal text-muted-foreground">
                 Subject
               </label>
               <input
@@ -1772,7 +1772,7 @@ function ComposerComponent({
             <div className="flex flex-1 flex-wrap items-center gap-2">
               {isNewTicket ? (
                 <label className="flex shrink-0 items-center gap-1.5">
-                  <span className="font-medium text-muted-foreground">From</span>
+                  <span className="font-normal text-muted-foreground">From</span>
                   <select
                     aria-label="Send from mailbox"
                     value={selectedMailboxId || ""}
@@ -1793,7 +1793,7 @@ function ComposerComponent({
                   </select>
                 </label>
               ) : null}
-              <span className="font-medium text-muted-foreground">To:</span>
+              <span className="font-normal text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
@@ -1827,7 +1827,7 @@ function ComposerComponent({
               disabled={disabled || isSending}
               onClick={() => setShowCC((prev) => !prev)}
               aria-label="Add Cc recipients"
-              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md px-1 py-0.5 font-normal text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Cc
             </button>
@@ -1836,7 +1836,7 @@ function ComposerComponent({
               disabled={disabled || isSending}
               onClick={() => setShowBCC((prev) => !prev)}
               aria-label="Add Bcc recipients"
-              className="rounded-md px-1 py-0.5 font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md px-1 py-0.5 font-normal text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Bcc
             </button>
@@ -1853,7 +1853,7 @@ function ComposerComponent({
         </div>
         {showCC ? (
           <div className="flex items-start gap-2 px-4 py-1.5 text-xs text-foreground">
-            <span className="font-medium text-muted-foreground">Cc:</span>
+            <span className="font-normal text-muted-foreground">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
                 key={recipient}
@@ -1895,7 +1895,7 @@ function ComposerComponent({
         ) : null}
         {showBCC ? (
           <div className="flex items-start gap-2 px-4 py-1.5 text-xs text-foreground">
-            <span className="font-medium text-muted-foreground">Bcc:</span>
+            <span className="font-normal text-muted-foreground">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
                 key={`bcc-${recipient}`}
@@ -2451,7 +2451,7 @@ function ComposerComponent({
                       type="button"
                       disabled={disabled || showDraftLoadingState || isGeneratingDraft || isSending}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-medium text-foreground/80 transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+                      className={`rounded-lg px-2.5 py-1 text-xs font-normal text-foreground/80 transition-[background-color,border-color,box-shadow,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
                         isEmptyReply
                           ? "border border-transparent bg-muted/55 hover:bg-muted"
                           : "border border-transparent bg-transparent hover:bg-muted/70"
@@ -2492,7 +2492,7 @@ function ComposerComponent({
                     type="button"
                     disabled={disabled || showDraftLoadingState || isSending}
                     aria-label={`Change composer mode. Current mode: ${isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}`}
-                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-sm font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    className={`inline-flex h-8 items-center gap-1 rounded-xl px-2.5 py-1 text-sm font-normal transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       isNote
                         ? "bg-warning text-warning-foreground"
                         : "bg-muted/45 text-foreground/80 hover:bg-muted"
@@ -2590,7 +2590,7 @@ function ComposerComponent({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); applySavedReplyInsert(reply); }}
-                      className="mt-0.5 shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground/80 opacity-0 transition-opacity duration-150 hover:bg-accent group-hover/row:opacity-100"
+                      className="mt-0.5 shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-normal text-foreground/80 opacity-0 transition-opacity duration-150 hover:bg-accent group-hover/row:opacity-100"
                     >
                       Insert
                     </button>

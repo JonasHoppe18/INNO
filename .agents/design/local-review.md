@@ -60,3 +60,12 @@ Inter 4.1 normal og italic indlæses via next/font/local. SIL OFL følger fontfi
 - PR80-filerne SonaActivityContent.jsx og KnowledgeCategoriesClient.jsx er ikke redigeret; deres lokale pixel-overrides kræver senere afstemning.
 
 Ingen push eller ny PR.
+
+## Inbox-polish efter review
+
+- Status, assignee, More og View details bruger samme styling. Browsermål: alle 28 px høje, tekst 13 px / vægt 450, hvid baggrund, neutral kant og ingen skygge.
+- Statusmenu åbnet med alle fire options. Escape lukker og returnerer fokus; ingen status ændret.
+- Composer-skygge målt til 4/16 px ved 4 % og 1/3 px ved 3 %.
+- Læste tickets og metadata lettere; ulæste navne beholder vægt 650. Replied-label og mindre cap på metadata giver emnet mere plads uden ændrede panelbredder.
+- Målrettet lint for fire ændrede komponenter bestået; diff-check bestået. Browser viser ingen horisontal overflow i desktop-inbox.
+- Kun dev-fixture brugt til samtalekontrol. Intet sendt, ingen statusmutation. Ingen push eller PR.

@@ -173,10 +173,10 @@ function TicketListItemComponent({
             className="size-2 shrink-0 rounded-full bg-primary ring-2 ring-accent"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-sm font-medium text-foreground", isUnread && "font-bold")}>
+        <span className={cn("min-w-0 flex-1 truncate text-sm font-normal text-foreground", isUnread && "font-semibold")}>
           {customerLabel}
         </span>
-        <span className={cn("shrink-0 text-xs text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
+        <span className="shrink-0 text-xs font-normal text-muted-foreground">
           {formatMessageTime(timestamp)}
         </span>
       </div>
@@ -185,7 +185,9 @@ function TicketListItemComponent({
         title={metadataTitle || undefined}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted-foreground">
-          <span className={cn("min-w-0 truncate", isUnread && "font-semibold text-foreground")}>
+          <span
+            title={thread.subject || "Untitled ticket"}
+            className={cn("min-w-0 truncate font-normal", isUnread && "font-medium text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
           {hasAiDraft ? (
@@ -196,14 +198,16 @@ function TicketListItemComponent({
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground/75">
           {ticketNumberLabel ? (
-            <span className="shrink-0 font-mono text-xs font-medium leading-none tabular-nums text-muted-foreground/70">
+            <span className="shrink-0 font-mono text-xs font-normal leading-none tabular-nums text-muted-foreground/70">
               {ticketNumberLabel}
             </span>
           ) : null}
           {reason && reason.key !== "new" ? (
             <span
+              title={reason.label}
+              aria-label={reason.label}
               className={
-                "max-w-[96px] truncate whitespace-nowrap text-xs " +
+                "max-w-[64px] truncate whitespace-nowrap text-xs font-normal " +
                 (reason.key === "customer_replied"
                   ? "text-warning-foreground"
                   : reason.key === "approve_close"
@@ -211,7 +215,7 @@ function TicketListItemComponent({
                     : "text-success-foreground")
               }
             >
-              {reason.label}
+              {reason.key === "customer_replied" ? "Replied" : reason.label}
             </span>
           ) : showLegacyStatus ? (
             <span
