@@ -227,11 +227,6 @@ export function CustomersPage() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-            {!loading && data && (
-              <Badge variant="secondary">
-                {customers.length.toLocaleString()}
-              </Badge>
-            )}
           </div>
           <p className="text-sm text-muted-foreground">
             Every customer conversation, connected to their store.
