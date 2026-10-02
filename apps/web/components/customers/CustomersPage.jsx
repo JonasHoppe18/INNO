@@ -348,17 +348,8 @@ export function CustomersPage() {
                     <TableCell className="py-2 text-muted-foreground">
                       {customer.email}
                     </TableCell>
-                    <TableCell className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="tabular-nums">
-                          {customer.ticketCount}
-                        </span>
-                        {customer.openTicketCount > 0 && (
-                          <Badge variant="secondary">
-                            {customer.openTicketCount} open
-                          </Badge>
-                        )}
-                      </div>
+                    <TableCell className="py-2 tabular-nums">
+                      {customer.ticketCount}
                     </TableCell>
                     <TableCell className="py-2">
                       <OrderState result={orderResults[customer.id]} />
