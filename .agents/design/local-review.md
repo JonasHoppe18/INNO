@@ -69,3 +69,7 @@ Ingen push eller ny PR.
 - Læste tickets og metadata lettere; ulæste navne beholder vægt 650. Replied-label og mindre cap på metadata giver emnet mere plads uden ændrede panelbredder.
 - Målrettet lint for fire ændrede komponenter bestået; diff-check bestået. Browser viser ingen horisontal overflow i desktop-inbox.
 - Kun dev-fixture brugt til samtalekontrol. Intet sendt, ingen statusmutation. Ingen push eller PR.
+
+## Hvid baggrund efter review
+
+Light canvas og sidebar ændret til #FFFFFF. Hover #F5F5F5 og borders #E5E5E5. Browser efter reload måler body rgb(255,255,255), begge baggrundstokens 0 0% 100%, og uændret lilla accent. Diff-check bestået. Dark er uændret. Kun lokale ændringer; ingen push eller PR.

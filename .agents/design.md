@@ -12,7 +12,7 @@ Start lokalt fra worktreets rod med `npm --workspace apps/web run dev -- --hostn
 
 ## Anbefalet retning
 
-Sona skal føles som et gennemarbejdet arbejdsredskab med en tydelig identitet. Jeg anbefaler varme, lyse baggrunde, hvide arbejdspaneler og violet til primære handlinger og aktiv navigation. Farven findes allerede i settings. Vi skal give den samme rolle i hele appen.
+Sona skal føles som et gennemarbejdet arbejdsredskab med en tydelig identitet. Efter lokal review bruger vi hvide baggrunde, hvide arbejdspaneler og violet til primære handlinger og aktiv navigation. Farven findes allerede i settings. Vi skal give den samme rolle i hele appen.
 
 Det visuelle løft kommer fra ens afstande, bedre teksthierarki, rolige paneler og præcis feedback. Inbox skal stadig kunne bruges en hel arbejdsdag. Store gradients, store overskrifter og farvede kort overalt vil gøre arbejdet mere uroligt.
 
@@ -20,7 +20,7 @@ Den tidligere [visuelle skitse](design/sona-direction.svg) viser paletteidéen m
 
 | Retning | Udtryk | Vurdering |
 | --- | --- | --- |
-| Varm neutral + violet | Lys grå med lidt varme, hvidt indhold, violet på handlinger og udvalgte elementer | Anbefalet. Samler den eksisterende settings-identitet med resten af Sona |
+| Hvid + violet | Hvidt canvas og navigation, svag grå hover, violet på handlinger og udvalgte elementer | Aktuel lokal retning efter review |
 | Kølig neutral + blå | Gråblå paneler og blå handlinger | Et alternativ, hvis violet føles for markant. Kræver at settings skifter identitet |
 | Neutral + grøn | Neutrale paneler og grønne handlinger | Et alternativ, men grøn vil både være brandfarve og successtatus. Det gør status mindre entydig |
 
@@ -56,18 +56,18 @@ Alle værdier nedenfor er forslag. Hex er til designreview. Ved implementering k
 
 | Rolle / CSS-token | Light | Dark | Brug |
 | --- | --- | --- | --- |
-| `--background` | `#F7F7F5` | `#15151A` | Appens baggrund |
+| `--background` | `#FFFFFF` | `#15151A` | Appens baggrund |
 | `--card`, `--popover` | `#FFFFFF` | `#1E1E25` | Arbejdspaneler og overlays |
 | `--foreground`, `--card-foreground`, `--popover-foreground` | `#25252D` | `#F4F4F5` | Brødtekst og titler |
-| `--muted`, `--secondary` | `#EFEFED` | `#282830` | Neutrale grupper og hover |
+| `--muted`, `--secondary` | `#F5F5F5` | `#282830` | Neutrale grupper og hover |
 | `--muted-foreground`, `--secondary-foreground` | `#64646F` | `#B0B0BF` | Metadata og sekundær tekst |
 | `--primary`, `--ring`, `--sidebar-primary`, `--sidebar-ring` | `#6C4DE6` | `#B5A3FF` | Primær handling og fokus |
 | `--primary-foreground`, `--sidebar-primary-foreground` | `#FFFFFF` | `#201A36` | Tekst på primary |
 | `--accent`, `--sidebar-accent` | `#EEE9FF` | `#302841` | Valgt navigation og valgt række |
 | `--accent-foreground`, `--sidebar-accent-foreground` | `#5838BC` | `#D8CCFF` | Tekst på valgt element |
-| `--sidebar-background` | `#F4F4F2` | `#18181E` | Fast navigation |
+| `--sidebar-background` | `#FFFFFF` | `#18181E` | Fast navigation |
 | `--sidebar-foreground` | `#454550` | `#CECED8` | Navigationens tekst |
-| `--border`, `--sidebar-border` | `#E2E2E0` | `#393942` | Dekorative opdelinger |
+| `--border`, `--sidebar-border` | `#E5E5E5` | `#393942` | Dekorative opdelinger |
 | `--input` | `#858590` | `#777783` | Control-kant, hvor kanten er nødvendig for at finde feltet |
 | `--destructive` | `#B42318` | `#FDA29B` | Destruktiv handling |
 | `--destructive-foreground` | `#FFFFFF` | `#351716` | Tekst på destruktiv handling |
@@ -86,7 +86,7 @@ Status får egne semantiske token-par, eksempelvis `--status-success-bg` og `--s
 | Warning | `#83520D` / `#FFF4DA` | `#F1CE80` / `#3D3018` | Afventer godkendelse, tredjepart |
 | Danger | `#B42318` / `#FEEDEC` | `#FDA29B` / `#422323` | Fejl, afbrudt handling |
 | Info | `#245FA6` / `#EBF3FF` | `#A5C9FF` / `#20334E` | Kræver opmærksomhed, information |
-| Neutral | `#64646F` / `#EFEFED` | `#B0B0BF` / `#282830` | Afventer kunde, inaktiv |
+| Neutral | `#64646F` / `#F5F5F5` | `#B0B0BF` / `#282830` | Afventer kunde, inaktiv |
 | AI / selection | `#5838BC` / `#EEE9FF` | `#D8CCFF` / `#302841` | Sona-udkast, valgt element |
 
 "Afventer kunde" foreslås neutral, så violet får en stabil rolle som brand og AI. Det ændrer den nuværende statuskodning og skal gennemgås særskilt. Behold tekstlabel og ikon ved alle statusser. "Sona-udkast", "Afventer godkendelse", "Godkendt i testtilstand" og "Udført" skal visuelt og sprogligt være forskellige. Et godkendt testresultat må ikke ligne en udført ekstern handling.
@@ -129,7 +129,7 @@ Inbox-paneler deles med rette skillelinjer. Runde kort bruges til afgrænsede op
 
 | Område | Retning |
 | --- | --- |
-| App-ramme og sidebar | Varm neutral navigation, tydeligt workspace/shop, violet aktivt element. Bevar rail og foldbar navigation. Afgør senere, om søgning skal samles her |
+| App-ramme og sidebar | Hvid navigation, tydeligt workspace/shop, violet aktivt element. Bevar rail og foldbar navigation. Afgør senere, om søgning skal samles her |
 | Inbox | Bevar kø, samtale og kundekontekst i det eksisterende split-view. Hvid læseflade, rolig kø, valgt samtale i svag violet. Composer har tydeligt afsenderfelt, udkaststatus og send-handling |
 | Sona / agentaktivitet | Samme rolige flader som resten af appen. Violet på AI-label. Vis kilder, handlinger og godkendelsesstatus uden konstant pulsering eller dekorativ glow |
 | Customers | Genbrug tabel, søgning, filtre og detail-sheet. Samme toolbar som knowledge. Workspace og butikskontekst skal kunne aflæses |
@@ -168,7 +168,7 @@ Det er kontrol af forslagets farver og statiske skitse. Keyboard, responsive lay
 
 ## Punkter til vores gennemgang
 
-- Er varm neutral + violet den rigtige identitet, eller skal vi prøve den køligere blå retning?
+- Er hvid + violet den rigtige identitet på tværs af siderne?
 - Hvor meget farve skal sidebar have? Forslaget bruger neutral baggrund og violet på aktive elementer.
 - Skal "Afventer kunde" være neutral, så violet kan stå for Sona og selection?
 - Føles den kompakte inbox og de mere luftige settings som samme produkt i skitsen?
@@ -177,3 +177,7 @@ Det er kontrol af forslagets farver og statiske skitse. Keyboard, responsive lay
 ## Lokal typografiprøve
 
 Samme lokale branch afprøver nu lokalt indlæst Inter og en fælles skala: UI 13 px, metadata 12 px, læsetekst 14 px og sidetitler 16 px. Se [design-system.md](design-system.md#typografi) for tokens, kilder og undtagelser. Layoutets panelbredder og spacing er bevaret. Stadig ingen push eller PR uden godkendelse.
+
+## Hvid baggrund efter lokal review
+
+Canvas og sidebar bruger nu hvid i light. Hover er neutral grå (#F5F5F5), skillelinjer #E5E5E5, og selection er fortsat svag violet. Den oprindelige SVG viser den tidligere varme retning. Dark og toolbarens typografi er uændret.

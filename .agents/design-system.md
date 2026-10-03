@@ -37,12 +37,12 @@ Brug semantiske Tailwind-klasser. Hex-værdier må kun stå i designreference el
 
 | Rolle | Klasser | Regel |
 | --- | --- | --- |
-| Appens canvas | `bg-background`, `text-foreground` | Varm lys neutral i light, flad mørk neutral i dark |
+| Appens canvas | `bg-background`, `text-foreground` | Hvid i light, flad mørk neutral i dark |
 | Kort, composer og overlays | `bg-card`, `bg-popover` | Hvidt i light, lidt lysere panel i dark |
 | Primær handling | `bg-primary`, `text-primary-foreground` | Samme violet i hele appen. Dark bruger lys violet med mørk tekst |
 | Valgt element | `bg-accent`, `text-accent-foreground` | Svag violet. Bruges til selection, ikke almindelig hover |
 | Neutrale grupper og hover | `bg-muted`, `text-muted-foreground` | Hover skal kunne skelnes fra valgt element |
-| Sidebar | `bg-sidebar` og `sidebar-*` | Samme brand og statusregler som indholdet |
+| Sidebar | `bg-sidebar` og `sidebar-*` | Hvid i light; samme brand og statusregler som indholdet |
 | Borders og inputs | `border-border`, `border-input` | Svag opdeling, tydeligere kant på felter |
 | Fokus | `ring-ring`, `ring-offset-background` | Synligt keyboard-fokus i begge temaer |
 
