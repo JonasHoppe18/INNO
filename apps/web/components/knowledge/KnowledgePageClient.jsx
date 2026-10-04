@@ -801,12 +801,12 @@ export function KnowledgePageClient() {
 
   const renderStatusIcon = (isReady, isBusy) => {
     if (isBusy) {
-      return <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />;
+      return <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />;
     }
     return isReady ? (
-      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+      <CheckCircle2 className="h-4 w-4 text-success-foreground" />
     ) : (
-      <Circle className="h-4 w-4 text-gray-300" />
+      <Circle className="h-4 w-4 text-muted-foreground" />
     );
   };
 
@@ -2029,7 +2029,7 @@ export function KnowledgePageClient() {
         </div>
 
         <div className="space-y-4">
-          <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
+          <Card className="h-full rounded-xl border border-input/70 bg-card shadow-sm">
             <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <CardTitle className="text-lg">Knowledge Snippets</CardTitle>
@@ -2060,7 +2060,7 @@ export function KnowledgePageClient() {
                     }
                   }}
                   disabled={!shopId || bulkTagging}
-                  className="gap-1.5 text-gray-600"
+                  className="gap-1.5 text-muted-foreground"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${bulkTagging ? "animate-spin" : ""}`} />
                   {bulkTagging ? "Tagger..." : "Auto-tag alle"}
@@ -2070,7 +2070,7 @@ export function KnowledgePageClient() {
                   size="sm"
                   onClick={openCreateSnippetModal}
                   disabled={!shopId || loading}
-                  className="gap-1.5 bg-black text-white hover:bg-black/90"
+                  className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add Knowledge
@@ -2082,17 +2082,17 @@ export function KnowledgePageClient() {
                 <p className="text-sm text-muted-foreground">Loading snippets...</p>
               ) : knowledgeItems.length === 0 ? (
                 <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 text-center">
-                  <FileText className="h-12 w-12 text-gray-300" />
-                  <p className="text-sm font-medium text-gray-600">No custom knowledge yet.</p>
-                  <p className="text-xs text-gray-400">Add product manuals or guides to train the AI.</p>
+                  <FileText className="h-12 w-12 text-muted-foreground" />
+                  <p className="text-sm font-medium text-muted-foreground">No custom knowledge yet.</p>
+                  <p className="text-xs text-muted-foreground">Add product manuals or guides to train the AI.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="overflow-hidden rounded-lg border border-gray-100">
-                    <div className="border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <div className="border-b border-border bg-muted px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Snippets & Uploaded Files
                     </div>
-                    <div className="divide-y divide-gray-50">
+                    <div className="divide-y divide-border">
                       {knowledgeItems.map((item) => (
                         <div key={item.key} className="group flex items-center gap-3 px-4 py-3">
                           <div className="min-w-0 flex-1">
@@ -2108,7 +2108,7 @@ export function KnowledgePageClient() {
                               <div className="flex min-w-0 items-center gap-2">
                                 <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
                                 {item.kind === "snippet" && item.is_stale && (
-                                  <span className="shrink-0 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                                  <span className="shrink-0 rounded-full bg-warning border border-warning-border px-2 py-0.5 text-xs font-semibold text-warning-foreground">
                                     Needs review
                                   </span>
                                 )}
@@ -2162,7 +2162,7 @@ export function KnowledgePageClient() {
                                 : deletingSnippetId === item.id
                             }
                           >
-                            <Trash2 className="h-4 w-4 text-gray-500" />
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
                             <span className="sr-only">
                               {item.kind === "csv_import" ? "Delete CSV import" : "Delete snippet"}
                             </span>
@@ -2176,7 +2176,7 @@ export function KnowledgePageClient() {
             </CardContent>
           </Card>
 
-          <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
+          <Card className="h-full rounded-xl border border-input/70 bg-card shadow-sm">
             <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <CardTitle className="text-lg">Saved Replies</CardTitle>
@@ -2188,7 +2188,7 @@ export function KnowledgePageClient() {
                   size="sm"
                   onClick={openCreateSavedReplyModal}
                   disabled={loading}
-                  className="gap-1.5 bg-black text-white hover:bg-black/90"
+                  className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add Saved Reply
@@ -2200,27 +2200,27 @@ export function KnowledgePageClient() {
                 <p className="text-sm text-muted-foreground">Loading saved replies...</p>
               ) : savedReplies.length === 0 ? (
                 <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 text-center">
-                  <MessageSquareText className="h-12 w-12 text-gray-300" />
-                  <p className="text-sm font-medium text-gray-600">No saved replies yet.</p>
-                  <p className="text-xs text-gray-400">Create your first saved reply.</p>
+                  <MessageSquareText className="h-12 w-12 text-muted-foreground" />
+                  <p className="text-sm font-medium text-muted-foreground">No saved replies yet.</p>
+                  <p className="text-xs text-muted-foreground">Create your first saved reply.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-50 rounded-lg border border-gray-100">
+                <div className="divide-y divide-border rounded-lg border border-border">
                   {savedReplies.map((reply) => (
                     <div key={reply.id} className="group flex items-center gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="truncate text-sm font-medium text-foreground">{reply.title || "Untitled reply"}</p>
                           {reply?.category ? (
-                            <span className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-500">
+                            <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                               {reply.category}
                             </span>
                           ) : null}
                           <span
                             className={`rounded-full border px-2 py-0.5 text-xs ${
                               reply?.is_active
-                                ? "border-emerald-200 text-emerald-700"
-                                : "border-gray-200 text-gray-500"
+                                ? "border-success-border text-success-foreground"
+                                : "border-border text-muted-foreground"
                             }`}
                           >
                             {reply?.is_active ? "Active" : "Inactive"}
@@ -2255,7 +2255,7 @@ export function KnowledgePageClient() {
                           onClick={() => handleDeleteSavedReply(reply.id)}
                           disabled={deletingSavedReplyId === reply.id}
                         >
-                          <Trash2 className="h-4 w-4 text-gray-500" />
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
                           <span className="sr-only">Delete saved reply</span>
                         </Button>
                       </div>
@@ -2267,7 +2267,7 @@ export function KnowledgePageClient() {
           </Card>
 
           <div className="grid items-stretch gap-4 lg:grid-cols-1">
-            <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
+            <Card className="h-full rounded-xl border border-border/60 bg-card shadow-sm">
               <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <CardTitle className="flex items-center gap-2 text-lg">
@@ -2277,7 +2277,7 @@ export function KnowledgePageClient() {
                 </div>
               </CardHeader>
               <CardContent className="px-6 pb-6">
-                <div className="divide-y divide-gray-50 rounded-lg border border-gray-100 bg-white">
+                <div className="divide-y divide-border rounded-lg border border-border bg-card">
                   <button
                     type="button"
                     onClick={() => {
@@ -2285,16 +2285,16 @@ export function KnowledgePageClient() {
                       setPolicyModalOpen(true);
                     }}
                     disabled={!shopId || loading}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Undo2 className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Undo2 className="h-4 w-4 text-muted-foreground" />
                       <span>Return Policy</span>
                     </div>
                     {policyStatus.returnsConfigured ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success-foreground" />
                     ) : (
-                      <Circle className="h-4 w-4 text-gray-300" />
+                      <Circle className="h-4 w-4 text-muted-foreground" />
                     )}
                   </button>
                   <button
@@ -2304,26 +2304,26 @@ export function KnowledgePageClient() {
                       setPolicyModalOpen(true);
                     }}
                     disabled={!shopId || loading}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Truck className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Truck className="h-4 w-4 text-muted-foreground" />
                       <span>Shipping Policy</span>
                     </div>
                     {policyStatus.shippingConfigured ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success-foreground" />
                     ) : (
-                      <Circle className="h-4 w-4 text-gray-300" />
+                      <Circle className="h-4 w-4 text-muted-foreground" />
                     )}
                   </button>
                   <button
                     type="button"
                     onClick={handleSyncShopifyPolicies}
                     disabled={shopifyPoliciesLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Shield className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
                       <span>Shopify Policies</span>
                     </div>
                     {renderStatusIcon(shopifyPolicyCount > 0, shopifyPoliciesLoading || shopifyPoliciesSyncing)}
@@ -2332,10 +2332,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={loadFilesPreview}
                     disabled={filesLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <FileText className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
                       <span>Guide Files</span>
                     </div>
                     {renderStatusIcon(fileCount > 0, filesLoading || filesSyncing)}
@@ -2344,10 +2344,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={loadProductsPreview}
                     disabled={productsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Database className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Database className="h-4 w-4 text-muted-foreground" />
                       <span>Product Catalog</span>
                     </div>
                     {renderStatusIcon(productCount > 0, productsLoading)}
@@ -2356,10 +2356,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={handleSyncVariants}
                     disabled={variantsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Package className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Package className="h-4 w-4 text-muted-foreground" />
                       <span>Variants</span>
                     </div>
                     {renderStatusIcon(variantCount > 0, variantsLoading || variantsSyncing)}
@@ -2368,10 +2368,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={loadMetafieldsPreview}
                     disabled={metafieldsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Database className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Database className="h-4 w-4 text-muted-foreground" />
                       <span>Product Metafields</span>
                     </div>
                     {renderStatusIcon(metafieldCount > 0, metafieldsLoading)}
@@ -2380,10 +2380,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={handleSyncCollections}
                     disabled={collectionsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Database className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Database className="h-4 w-4 text-muted-foreground" />
                       <span>Collections</span>
                     </div>
                     {renderStatusIcon(collectionCount > 0, collectionsLoading || collectionsSyncing)}
@@ -2392,10 +2392,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={loadPagesPreview}
                     disabled={pagesLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <FileText className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
                       <span>Store Pages</span>
                     </div>
                     {renderStatusIcon(pageCount > 0, pagesLoading)}
@@ -2404,10 +2404,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={loadBlogsPreview}
                     disabled={blogsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <FileText className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
                       <span>Blog Articles</span>
                     </div>
                     {renderStatusIcon(blogCount > 0, blogsLoading || blogsSyncing)}
@@ -2416,10 +2416,10 @@ export function KnowledgePageClient() {
                     type="button"
                     onClick={handleSyncMetaobjects}
                     disabled={metaobjectsLoading || loading || !shopId}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <FileText className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
                       <span>Metaobjects</span>
                     </div>
                     {renderStatusIcon(metaobjectCount > 0, metaobjectsLoading || metaobjectsSyncing)}
@@ -2429,7 +2429,7 @@ export function KnowledgePageClient() {
             </Card>
 
             {hasHistoryConnection ? (
-              <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
+              <Card className="h-full rounded-xl border border-border/60 bg-card shadow-sm">
                 <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-1">
                     <CardTitle className="text-lg">Ticket history</CardTitle>
@@ -2441,7 +2441,7 @@ export function KnowledgePageClient() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     asChild
                   >
                     <Link href="/integrations">Manage</Link>
@@ -2449,13 +2449,13 @@ export function KnowledgePageClient() {
                 </CardHeader>
                 <CardContent className="px-6 pb-6 space-y-3">
                   {/* Connection status */}
-                  <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Cable className="h-4 w-4 text-gray-400" />
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-muted px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <Cable className="h-4 w-4 text-muted-foreground" />
                       <span>{String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)} connected</span>
                     </div>
                     {zendeskImportCount !== null && (
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         {zendeskImportCount === 0 ? "Not imported yet" : `${zendeskImportCount} tickets in knowledge base`}
                       </span>
                     )}
@@ -2470,7 +2470,7 @@ export function KnowledgePageClient() {
                       Manage ticket import
                     </Link>
                   </Button>
-                  <p className="text-xs text-gray-400 text-center">
+                  <p className="text-xs text-muted-foreground text-center">
                     Import and track ticket history from the integration details page.
                   </p>
                 </CardContent>
@@ -2546,17 +2546,17 @@ export function KnowledgePageClient() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-            <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
               <button
                 type="button"
-                className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "text" ? "bg-white font-medium text-gray-900 shadow-sm" : "text-gray-600"}`}
+                className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "text" ? "bg-card font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
                 onClick={() => setSnippetMode("text")}
               >
                 Text
               </button>
               <button
                 type="button"
-                className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "pdf" ? "bg-white font-medium text-gray-900 shadow-sm" : "text-gray-600"}`}
+                className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "pdf" ? "bg-card font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
                 onClick={() => setSnippetMode("pdf")}
                 disabled={Boolean(editingSnippetId)}
               >
@@ -2589,17 +2589,17 @@ export function KnowledgePageClient() {
                     <Button
                       type="button"
                       variant="outline"
-                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                      className="border-input text-foreground hover:bg-muted"
                       onClick={() => pdfFileInputRef.current?.click()}
                     >
                       Choose file
                     </Button>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-muted-foreground">
                       {pdfFile?.name || "No file selected"}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">PDF and image files are supported (max 15MB).</p>
-                  <p className="text-xs text-gray-500">CSV is also supported for structured support knowledge.</p>
+                  <p className="text-xs text-muted-foreground">PDF and image files are supported (max 15MB).</p>
+                  <p className="text-xs text-muted-foreground">CSV is also supported for structured support knowledge.</p>
                 </div>
               </>
             ) : (
@@ -2648,8 +2648,8 @@ export function KnowledgePageClient() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="snippet-content">Content</Label>
-                  <div className="overflow-hidden rounded-md border border-gray-200">
-                    <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1.5">
+                  <div className="overflow-hidden rounded-md border border-border">
+                    <div className="flex items-center gap-1 border-b border-border bg-muted px-2 py-1.5">
                       <Button
                         type="button"
                         variant="ghost"
@@ -2680,7 +2680,7 @@ export function KnowledgePageClient() {
                       >
                         <UnderlineIcon className="h-3.5 w-3.5" />
                       </Button>
-                      <div className="mx-1 h-4 w-px bg-gray-300" />
+                      <div className="mx-1 h-4 w-px bg-muted" />
                       <Button
                         type="button"
                         variant="ghost"
@@ -2704,7 +2704,7 @@ export function KnowledgePageClient() {
                     </div>
                     <div className="relative">
                       {!stripHtmlToPlainText(snippetContent) ? (
-                        <p className="pointer-events-none absolute left-3 top-3 text-sm text-gray-400">
+                        <p className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
                           Explain the issue and the exact troubleshooting steps...
                         </p>
                       ) : null}
@@ -2724,12 +2724,12 @@ export function KnowledgePageClient() {
                 {/* Tag fields */}
                 <div className="space-y-3 pt-1">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium text-gray-700">Tags</Label>
+                    <Label className="text-xs font-medium text-foreground">Tags</Label>
                     <button
                       type="button"
                       onClick={() => fetchTagSuggestions(snippetContent)}
                       disabled={tagSuggestLoading || !snippetContent}
-                      className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 transition-opacity"
+                      className="text-xs text-info-foreground hover:text-info-foreground disabled:opacity-40 transition-opacity"
                     >
                       {tagSuggestLoading ? "Analyserer..." : "Foreslå automatisk"}
                     </button>
@@ -2737,16 +2737,16 @@ export function KnowledgePageClient() {
 
                   {/* Products */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-500">Produkter</Label>
+                    <Label className="text-xs text-muted-foreground">Produkter</Label>
                     {snippetProducts.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1">
                         {snippetProducts.map((p) => (
-                          <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                          <span key={p} className="flex items-center gap-0.5 rounded-full bg-info px-2 py-0.5 text-xs text-info-foreground">
                             {p}
                             <button
                               type="button"
                               onClick={() => setSnippetProducts((prev) => prev.filter((x) => x !== p))}
-                              className="ml-0.5 hover:text-blue-600 leading-none"
+                              className="ml-0.5 hover:text-info-foreground leading-none"
                             >×</button>
                           </span>
                         ))}
@@ -2754,7 +2754,7 @@ export function KnowledgePageClient() {
                     )}
                     <Input
                       placeholder="Tilføj produkt og tryk Enter (fx a-blaze)"
-                      className="h-7 text-sm"
+                      className="h-7 text-input md:text-sm"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -2770,7 +2770,7 @@ export function KnowledgePageClient() {
 
                   {/* Issue types */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-500">Issue types</Label>
+                    <Label className="text-xs text-muted-foreground">Issue types</Label>
                     <div className="flex flex-wrap gap-1">
                       {ISSUE_TYPE_OPTIONS.map((t) => (
                         <button
@@ -2781,8 +2781,8 @@ export function KnowledgePageClient() {
                           )}
                           className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
                             snippetIssueTypes.includes(t)
-                              ? "bg-green-100 border-green-400 text-green-800"
-                              : "bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400"
+                              ? "bg-success border-success-border text-success-foreground"
+                              : "bg-muted border-input text-muted-foreground hover:border-input"
                           }`}
                         >
                           {ISSUE_TYPE_LABEL_MAP[t] || t}
@@ -2857,8 +2857,8 @@ export function KnowledgePageClient() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="saved-reply-content">Content</Label>
-              <div className="overflow-hidden rounded-md border border-gray-200">
-                <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1.5">
+              <div className="overflow-hidden rounded-md border border-border">
+                <div className="flex items-center gap-1 border-b border-border bg-muted px-2 py-1.5">
                   <Button
                     type="button"
                     variant="ghost"
@@ -2889,7 +2889,7 @@ export function KnowledgePageClient() {
                   >
                     <UnderlineIcon className="h-3.5 w-3.5" />
                   </Button>
-                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <div className="mx-1 h-4 w-px bg-muted" />
                   <Button
                     type="button"
                     variant="ghost"
@@ -2910,7 +2910,7 @@ export function KnowledgePageClient() {
                   >
                     <ListOrderedIcon className="h-3.5 w-3.5" />
                   </Button>
-                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <div className="mx-1 h-4 w-px bg-muted" />
                   <Button
                     type="button"
                     variant="ghost"
@@ -2924,7 +2924,7 @@ export function KnowledgePageClient() {
                 </div>
                 <div className="relative">
                   {!stripHtmlToPlainText(savedReplyContent) ? (
-                    <p className="pointer-events-none absolute left-3 top-3 text-sm text-gray-400">
+                    <p className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
                       Write the approved reply...
                     </p>
                   ) : null}
@@ -2938,7 +2938,7 @@ export function KnowledgePageClient() {
                     onMouseDown={handleSavedReplyEditorMouseDown}
                     onMouseMove={handleSavedReplyEditorMouseMove}
                     onMouseLeave={handleSavedReplyEditorMouseLeave}
-                    className="min-h-[240px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none [&_img]:my-2 [&_img]:inline-block [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-gray-200 [&_img]:align-middle"
+                    className="min-h-[240px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none [&_img]:my-2 [&_img]:inline-block [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border [&_img]:align-middle"
                   />
                 </div>
               </div>
@@ -2975,13 +2975,13 @@ export function KnowledgePageClient() {
                     return (
                       <div
                         key={`${image?.filename || "saved-reply-image"}-${image?.size_bytes || index}-${index}`}
-                        className="rounded-md border border-gray-200 bg-gray-50 p-2"
+                        className="rounded-md border border-border bg-muted p-2"
                       >
                         <div className="mb-2 flex items-center justify-between gap-3">
-                          <p className="truncate text-xs text-gray-600">
+                          <p className="truncate text-xs text-muted-foreground">
                             {image?.filename || "saved-reply-image"}
                           </p>
-                          <p className="shrink-0 text-xs text-gray-500">
+                          <p className="shrink-0 text-xs text-muted-foreground">
                             {formatFileSize(image?.size_bytes)}
                           </p>
                         </div>
@@ -3020,10 +3020,10 @@ export function KnowledgePageClient() {
                           width={640}
                           height={320}
                           unoptimized
-                          className="max-h-40 w-auto rounded border border-gray-200 bg-white object-contain"
+                          className="max-h-40 w-auto rounded border border-border bg-card object-contain"
                         />
                         {isInline && image?.content_id ? (
-                          <p className="mt-1 truncate text-xs text-gray-500">
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
                             CID: {String(image.content_id)}
                           </p>
                         ) : null}
@@ -3075,16 +3075,16 @@ export function KnowledgePageClient() {
           ) : csvPreviewRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No rows found in this import.</p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-              <div className="grid grid-cols-12 gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="overflow-hidden rounded-md border border-border bg-card">
+              <div className="grid grid-cols-12 gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <div className="col-span-1">Row</div>
                 <div className="col-span-4">Input</div>
                 <div className="col-span-5">Answer</div>
                 <div className="col-span-2">Topic</div>
               </div>
-              <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
+              <div className="max-h-[420px] divide-y divide-border overflow-y-auto">
                 {csvPreviewRows.map((row, index) => (
-                  <div key={`csv-preview-${index}`} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-700">
+                  <div key={`csv-preview-${index}`} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-foreground">
                     <div className="col-span-1">{Number(row?.row_index || 0) || "-"}</div>
                     <div className="col-span-4 whitespace-pre-wrap break-words">
                       {String(row?.input_text || "-")}
@@ -3106,7 +3106,7 @@ export function KnowledgePageClient() {
       <Dialog open={productsModalOpen} onOpenChange={setProductsModalOpen}>
         <DialogContent className="max-w-4xl overflow-hidden p-0">
           <div className="flex max-h-[600px] flex-col">
-            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-border px-6 pb-4 pt-6 pr-14">
               <div>
                 <DialogTitle>Product Catalog</DialogTitle>
                 <DialogDescription>View and manage the products currently synced from Shopify.</DialogDescription>
@@ -3115,7 +3115,7 @@ export function KnowledgePageClient() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="h-8 gap-1.5 border border-border text-sm text-foreground hover:bg-muted"
                 onClick={handleSyncProducts}
                 disabled={productsSyncing}
               >
@@ -3125,13 +3125,13 @@ export function KnowledgePageClient() {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {products.length === 0 ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No products found yet. Run product sync first.</p>
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <p className="text-sm text-muted-foreground">No products found yet. Run product sync first.</p>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     onClick={handleSyncProducts}
                     disabled={productsSyncing}
                   >
@@ -3139,54 +3139,54 @@ export function KnowledgePageClient() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-12 gap-3 border-b border-border bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <div className="col-span-6">Product</div>
                     <div className="col-span-3">Product ID</div>
                     <div className="col-span-1 text-right">Price</div>
                     <div className="col-span-2 text-right">Updated</div>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-border">
                     {products.map((product, index) => (
                       <div
                         key={`${product?.external_id || "p"}-${index}`}
-                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted"
                       >
                         <div className="col-span-6 min-w-0">
                           <div className="flex min-w-0 items-center gap-2.5">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100">
-                              <Package className="h-3.5 w-3.5 text-gray-500" />
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                              <Package className="h-3.5 w-3.5 text-muted-foreground" />
                             </div>
                             {product?.external_id && normalizedShopDomain ? (
                               <a
                                 href={`https://${normalizedShopDomain}/admin/products/${product.external_id}`}
                                 target="_blank"
                                 rel="noreferrer noopener"
-                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-foreground font-medium hover:text-info-foreground hover:underline transition-colors"
                               >
                                 <span className="truncate">{product?.title || "Untitled product"}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                                <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/link:text-info-foreground" />
                               </a>
                             ) : (
-                              <p className="truncate font-medium text-gray-900">{product?.title || "Untitled product"}</p>
+                              <p className="truncate font-medium text-foreground">{product?.title || "Untitled product"}</p>
                             )}
                           </div>
                         </div>
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate font-mono text-xs text-gray-400">{product?.external_id || "-"}</p>
+                          <p className="truncate font-mono text-xs text-muted-foreground">{product?.external_id || "-"}</p>
                         </div>
-                        <div className="col-span-1 text-right font-semibold text-gray-900">{formatPrice(product?.price)}</div>
-                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(product?.updated_at) || "-"}</div>
+                        <div className="col-span-1 text-right font-semibold text-foreground">{formatPrice(product?.price)}</div>
+                        <div className="col-span-2 text-right text-sm text-muted-foreground">{formatDate(product?.updated_at) || "-"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+            <div className="flex items-center justify-between border-t border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Total products: {products.length}</span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-success-foreground" />
                 Auto-sync enabled
               </span>
             </div>
@@ -3197,7 +3197,7 @@ export function KnowledgePageClient() {
       <Dialog open={pagesModalOpen} onOpenChange={setPagesModalOpen}>
         <DialogContent className="max-w-5xl overflow-hidden p-0">
           <div className="flex max-h-[600px] flex-col">
-            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-border px-6 pb-4 pt-6 pr-14">
               <div>
                 <DialogTitle>Store Pages</DialogTitle>
                 <DialogDescription>View pages currently synced from Shopify.</DialogDescription>
@@ -3206,7 +3206,7 @@ export function KnowledgePageClient() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="h-8 gap-1.5 border border-border text-sm text-foreground hover:bg-muted"
                 onClick={handleSyncPages}
                 disabled={pagesSyncing}
               >
@@ -3216,13 +3216,13 @@ export function KnowledgePageClient() {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {pages.length === 0 ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No pages found yet. Run page sync first.</p>
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <p className="text-sm text-muted-foreground">No pages found yet. Run page sync first.</p>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     onClick={handleSyncPages}
                     disabled={pagesSyncing}
                   >
@@ -3230,52 +3230,52 @@ export function KnowledgePageClient() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-12 gap-3 border-b border-border bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <div className="col-span-6">Page</div>
                     <div className="col-span-3">Page ID</div>
                     <div className="col-span-3 text-right">Updated</div>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-border">
                     {pages.map((page, index) => (
                       <div
                         key={`${page?.external_id || "page"}-${index}`}
-                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted"
                       >
                         <div className="col-span-6 min-w-0">
                           <div className="flex min-w-0 items-center gap-2.5">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100">
-                              <FileText className="h-3.5 w-3.5 text-gray-500" />
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                             </div>
                             {page?.external_id && normalizedShopDomain ? (
                               <a
                                 href={`https://${normalizedShopDomain}/admin/pages/${page.external_id}`}
                                 target="_blank"
                                 rel="noreferrer noopener"
-                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-foreground font-medium hover:text-info-foreground hover:underline transition-colors"
                               >
                                 <span className="truncate">{page?.title || "Untitled page"}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                                <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/link:text-info-foreground" />
                               </a>
                             ) : (
-                              <p className="truncate font-medium text-gray-900">{page?.title || "Untitled page"}</p>
+                              <p className="truncate font-medium text-foreground">{page?.title || "Untitled page"}</p>
                             )}
                           </div>
                         </div>
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate font-mono text-xs text-gray-400">{page?.external_id || "-"}</p>
+                          <p className="truncate font-mono text-xs text-muted-foreground">{page?.external_id || "-"}</p>
                         </div>
-                        <div className="col-span-3 text-right text-sm text-gray-500">{formatDate(page?.updated_at) || "-"}</div>
+                        <div className="col-span-3 text-right text-sm text-muted-foreground">{formatDate(page?.updated_at) || "-"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+            <div className="flex items-center justify-between border-t border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Total pages: {pages.length}</span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-success-foreground" />
                 Auto-sync enabled
               </span>
             </div>
@@ -3286,7 +3286,7 @@ export function KnowledgePageClient() {
       <Dialog open={metafieldsModalOpen} onOpenChange={setMetafieldsModalOpen}>
         <DialogContent className="max-w-5xl overflow-hidden p-0">
           <div className="flex max-h-[600px] flex-col">
-            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-border px-6 pb-4 pt-6 pr-14">
               <div>
                 <DialogTitle>Product Metafields</DialogTitle>
                 <DialogDescription>Technical specs and compatibility fields synced from Shopify.</DialogDescription>
@@ -3295,7 +3295,7 @@ export function KnowledgePageClient() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="h-8 gap-1.5 border border-border text-sm text-foreground hover:bg-muted"
                 onClick={handleSyncMetafields}
                 disabled={metafieldsSyncing}
               >
@@ -3305,13 +3305,13 @@ export function KnowledgePageClient() {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {metafields.length === 0 ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No metafields found yet. Run metafield sync first.</p>
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <p className="text-sm text-muted-foreground">No metafields found yet. Run metafield sync first.</p>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     onClick={handleSyncMetafields}
                     disabled={metafieldsSyncing}
                   >
@@ -3319,24 +3319,24 @@ export function KnowledgePageClient() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-12 gap-3 border-b border-border bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <div className="col-span-3">Namespace</div>
                     <div className="col-span-3">Key</div>
                     <div className="col-span-3">Owner</div>
                     <div className="col-span-3 text-right">Updated</div>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-border">
                     {metafields.map((field, index) => (
                       <div
                         key={`${field?.external_id || "metafield"}-${index}`}
-                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted"
                       >
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate font-mono text-xs text-gray-500">{field?.namespace || "-"}</p>
+                          <p className="truncate font-mono text-xs text-muted-foreground">{field?.namespace || "-"}</p>
                         </div>
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate font-medium text-gray-900">{field?.key || "-"}</p>
+                          <p className="truncate font-medium text-foreground">{field?.key || "-"}</p>
                         </div>
                         <div className="col-span-3 min-w-0">
                           {field?.owner_admin_url ? (
@@ -3344,26 +3344,26 @@ export function KnowledgePageClient() {
                               href={field.owner_admin_url}
                               target="_blank"
                               rel="noreferrer noopener"
-                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 hover:text-blue-600 hover:underline transition-colors"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-foreground hover:text-info-foreground hover:underline transition-colors"
                             >
                               <span className="truncate">{field?.owner_title || field?.owner_id || "Product"}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/link:text-info-foreground" />
                             </a>
                           ) : (
-                            <p className="truncate text-gray-700">{field?.owner_title || field?.owner_id || "-"}</p>
+                            <p className="truncate text-foreground">{field?.owner_title || field?.owner_id || "-"}</p>
                           )}
                         </div>
-                        <div className="col-span-3 text-right text-sm text-gray-500">{formatDate(field?.updated_at) || "-"}</div>
+                        <div className="col-span-3 text-right text-sm text-muted-foreground">{formatDate(field?.updated_at) || "-"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+            <div className="flex items-center justify-between border-t border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Total fields: {metafields.length}</span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-success-foreground" />
                 Auto-sync enabled
               </span>
             </div>
@@ -3374,7 +3374,7 @@ export function KnowledgePageClient() {
       <Dialog open={blogsModalOpen} onOpenChange={setBlogsModalOpen}>
         <DialogContent className="max-w-5xl overflow-hidden p-0">
           <div className="flex max-h-[600px] flex-col">
-            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-border px-6 pb-4 pt-6 pr-14">
               <div>
                 <DialogTitle>Blog Articles</DialogTitle>
                 <DialogDescription>Helpful guides and support posts synced from Shopify blogs.</DialogDescription>
@@ -3383,7 +3383,7 @@ export function KnowledgePageClient() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="h-8 gap-1.5 border border-border text-sm text-foreground hover:bg-muted"
                 onClick={handleSyncBlogs}
                 disabled={blogsSyncing}
               >
@@ -3393,13 +3393,13 @@ export function KnowledgePageClient() {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {blogs.length === 0 ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No blog articles found yet. Run blog sync first.</p>
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <p className="text-sm text-muted-foreground">No blog articles found yet. Run blog sync first.</p>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     onClick={handleSyncBlogs}
                     disabled={blogsSyncing}
                   >
@@ -3407,18 +3407,18 @@ export function KnowledgePageClient() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-12 gap-3 border-b border-border bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <div className="col-span-5">Article</div>
                     <div className="col-span-3">Blog</div>
                     <div className="col-span-2">Article ID</div>
                     <div className="col-span-2 text-right">Updated</div>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-border">
                     {blogs.map((article, index) => (
                       <div
                         key={`${article?.external_id || "blog"}-${index}`}
-                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted"
                       >
                         <div className="col-span-5 min-w-0">
                           {article?.external_id && normalizedShopDomain ? (
@@ -3426,32 +3426,32 @@ export function KnowledgePageClient() {
                               href={`https://${normalizedShopDomain}/admin/articles/${article.external_id}`}
                               target="_blank"
                               rel="noreferrer noopener"
-                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-foreground font-medium hover:text-info-foreground hover:underline transition-colors"
                             >
                               <span className="truncate">{article?.title || "Untitled article"}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/link:text-info-foreground" />
                             </a>
                           ) : (
-                            <p className="truncate font-medium text-gray-900">{article?.title || "Untitled article"}</p>
+                            <p className="truncate font-medium text-foreground">{article?.title || "Untitled article"}</p>
                           )}
                         </div>
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate text-gray-600">{article?.blog_title || "-"}</p>
+                          <p className="truncate text-muted-foreground">{article?.blog_title || "-"}</p>
                         </div>
                         <div className="col-span-2 min-w-0">
-                          <p className="truncate font-mono text-xs text-gray-400">{article?.external_id || "-"}</p>
+                          <p className="truncate font-mono text-xs text-muted-foreground">{article?.external_id || "-"}</p>
                         </div>
-                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(article?.updated_at) || "-"}</div>
+                        <div className="col-span-2 text-right text-sm text-muted-foreground">{formatDate(article?.updated_at) || "-"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+            <div className="flex items-center justify-between border-t border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Total articles: {blogs.length}</span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-success-foreground" />
                 Auto-sync enabled
               </span>
             </div>
@@ -3462,7 +3462,7 @@ export function KnowledgePageClient() {
       <Dialog open={filesModalOpen} onOpenChange={setFilesModalOpen}>
         <DialogContent className="max-w-5xl overflow-hidden p-0">
           <div className="flex max-h-[600px] flex-col">
-            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-border px-6 pb-4 pt-6 pr-14">
               <div>
                 <DialogTitle>Guide Files</DialogTitle>
                 <DialogDescription>
@@ -3473,7 +3473,7 @@ export function KnowledgePageClient() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="h-8 gap-1.5 border border-border text-sm text-foreground hover:bg-muted"
                 onClick={handleSyncFiles}
                 disabled={filesSyncing}
               >
@@ -3483,13 +3483,13 @@ export function KnowledgePageClient() {
             </DialogHeader>
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {shopFiles.length === 0 ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No guide files found yet. Run file sync first.</p>
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <p className="text-sm text-muted-foreground">No guide files found yet. Run file sync first.</p>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="border-input text-foreground hover:bg-muted"
                     onClick={handleSyncFiles}
                     disabled={filesSyncing}
                   >
@@ -3497,18 +3497,18 @@ export function KnowledgePageClient() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="grid grid-cols-12 gap-3 border-b border-border bg-muted/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <div className="col-span-5">File</div>
                     <div className="col-span-2">Type</div>
                     <div className="col-span-3">File ID</div>
                     <div className="col-span-2 text-right">Updated</div>
                   </div>
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-border">
                     {shopFiles.map((file, index) => (
                       <div
                         key={`${file?.external_id || "file"}-${index}`}
-                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted"
                       >
                         <div className="col-span-5 min-w-0">
                           {file?.url ? (
@@ -3516,32 +3516,32 @@ export function KnowledgePageClient() {
                               href={file.url}
                               target="_blank"
                               rel="noreferrer noopener"
-                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-foreground font-medium hover:text-info-foreground hover:underline transition-colors"
                             >
                               <span className="truncate">{file?.title || file?.file_name || "Untitled file"}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/link:text-info-foreground" />
                             </a>
                           ) : (
-                            <p className="truncate font-medium text-gray-900">{file?.title || file?.file_name || "Untitled file"}</p>
+                            <p className="truncate font-medium text-foreground">{file?.title || file?.file_name || "Untitled file"}</p>
                           )}
                         </div>
                         <div className="col-span-2 min-w-0">
-                          <p className="truncate text-xs text-gray-500">{file?.mime_type || file?.file_kind || "-"}</p>
+                          <p className="truncate text-xs text-muted-foreground">{file?.mime_type || file?.file_kind || "-"}</p>
                         </div>
                         <div className="col-span-3 min-w-0">
-                          <p className="truncate font-mono text-xs text-gray-400">{file?.external_id || "-"}</p>
+                          <p className="truncate font-mono text-xs text-muted-foreground">{file?.external_id || "-"}</p>
                         </div>
-                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(file?.updated_at) || "-"}</div>
+                        <div className="col-span-2 text-right text-sm text-muted-foreground">{formatDate(file?.updated_at) || "-"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+            <div className="flex items-center justify-between border-t border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Total files: {shopFiles.length}</span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-success-foreground" />
                 Guide-image OCR enabled
               </span>
             </div>

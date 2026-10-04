@@ -1,75 +1,62 @@
 # Lokalt designreview
 
-Forsøgsbranch: `codex/sona-design-local-1002b`. Base: `origin/main` ved `4042e513`. Ingen push eller ny PR. Den tidligere dokument-PR #85 er lukket.
+Branch: codex/sona-design-local-1002b. Dette gennemløb fortsætter fra 951b9548 i worktreet sona-design-local-1002b. Ingen push eller ny PR.
 
-## Hvad ændringen gør
+## Ændringer
 
-Layout, panelbredder, typografi og funktioner bevares. Fælles tokens samler varm neutral canvas, hvide paneler, violet primary/selection og statusfarver med light/dark-par. Settings arver globale tokens. Inboxens composer, samtalerækker, tabs og status-control bruger dem også. Fælles UI-komponenter ejer hover, focus og disabled.
+Hvid canvas og sidebar, Inter, neutral toolbar og svag violet selection. Customers, Analytics, Integrations, Settings og Knowledge-komponenterne bruger fælles semantiske tokens. Desktop-layout og panelbredder er bevaret.
 
-De eksisterende sider indeholder stadig enkelte hardcodede farver. De skal gennemgås før godkendelse til et fuldt rollout. SonaActivityContent og KnowledgeCategoriesClient, som er i en anden åben PR, er ikke ændret.
+| Before | After | Why |
+| --- | --- | --- |
+| Lokale farvepaletter i sider og overlays | Fælles tokens i begge temaer | Ens farver og statusroller |
+| Mobilfelter fulgte mindre body-token | text-input 16 px mobil, 13 px desktop | Læsbarhed uden automatisk zoom |
+| Fejlfelter havde normal kant | aria-invalid markerer kant og fokusring | Synlig fejl med koblet hjælpetekst |
+| Mobilnavigation manglede på flere sider | Fælles trigger, lukker ved sideskift | Hovedsider kan nås |
+| Settings-felter og Knowledge-knapper klippede | Controls wrapper; Members-tabellen scrolles lokalt | Desktop-layout bevares |
 
-## Lokal kørsel
+PR80-filerne KnowledgeCategoriesClient.jsx og SonaActivityContent.jsx er ikke redigeret. Deres lokale farver og størrelser afventer afstemning. [new-feature/SKILL.md](../skills/new-feature/SKILL.md) siger "stop and ask for direction" ved overlap.
 
-Fra worktreets rod:
+Logoer, chart-serier, brugerens tagfarver, formateret brugerindhold og theme-picker-miniaturer beholder egne farver. Marketing beholder sin skala.
+
+## Kørsel
+
+Fra worktreets rod, når der er diskplads:
 
 ```sh
 ulimit -n 8192
-npm --workspace apps/web run dev -- --hostname localhost --port 3106
+SONA_DESIGN_DISABLE_WEBPACK_CACHE=1 NODE_OPTIONS=--max-old-space-size=1024 npm --workspace apps/web run dev -- --hostname localhost --port 3106
 ```
 
-Brug den ignorerede dev-`.env.local`, og lad `NEXT_PUBLIC_DASHBOARD_URL` matche `http://localhost:3106`. Serveren er bundet til localhost. På denne maskine bruger forsøget `SONA_DESIGN_DISABLE_WEBPACK_CACHE=1` for at undgå en stor diskcache. Det er et valgfrit lokalt flag, ikke et krav for produktet.
+Dev-.env.local matcher localhost:3106. Cache- og hukommelsesflag er lokale hensyn til maskinen. [Inbox](http://localhost:3106/inbox) og [design-lab](http://localhost:3106/design-lab). Lab findes kun under next dev og bruger fiktive data.
 
-- `http://localhost:3106/inbox` viser det eksisterende produktlayout.
-- `http://localhost:3106/design-lab` viser faktiske shared controls og samtalerækker med fiktive data. Composer-eksemplet bruger Textarea og Button, ikke den fulde composer.
-
-## Verifikation
+## Checks
 
 | Check | Resultat | Evidens / begrænsning |
 | --- | --- | --- |
-| Produktionsbuild | Bestået | Compile, lint/typecheck og 161 statiske sider. Webpack advarer om dynamiske imports i MJML-afhængigheder |
-| Lint for ændrede JSX-filer | Bestået | Ingen warnings eller errors i de målrettede checks |
-| `git diff --check` | Bestået | Ingen whitespace-fejl |
-| Shared controls, light/dark | Bestået | Browseren viser begge paletter; primary og status er målt på faktisk renderede elementer |
-| Settings token-arv | Bestået | `--primary` er identisk på root og `.settings-theme` i begge temaer |
-| Kontrast | Bestået for målte par | 14 renderede tekst/baggrund-par er mindst 5.07:1. Light primary 5.47:1, dark primary 7.64:1 |
-| Dialog og Select | Bestået | Popover bruger samme palette. Dialog åbner, Escape lukker og fokus vender tilbage til trigger |
-| Lokal preview-feedback | Bestået | "Save preview" viser "Saved in this preview only". Ingen backend-write-handler |
-| Faktiske produktsider | Gennemgået | Inbox med dev-fixture, Customers, Settings og Knowledge åbnet i lokal browser mod dev |
-| Layout | Gennemgået | Samme inbox-rail, kønavigation, liste, tabs, besked og composer. Ingen panelbredder flyttet |
-| Desktop overflow | Bestået i design-lab | Faktisk viewport 1470 px, ingen horisontal overflow |
-| Smal viewport | Ikke verificeret | Browserens override til 390 px ændrede ikke faktisk `innerWidth`. Override nulstillet; der påstås ingen mobiltest |
-| Komplet keyboard-/sideaudit | Ikke udført | Første designforsøg. Alle legacy-overrides, 200 % zoom og fuldt workflow skal gennemgås før PR |
+| TypeScript | Bestået | tsc --noEmit --incremental false |
+| Lint | Bestået | Alle ændrede JSX-filer uden cache; sidste mobilrettelser kontrolleret separat |
+| Diff-check | Bestået | git diff --check |
+| Produktionsbuild | Blokeret | ENOSPC under webpack. Tidligere build med 161 sider validerer ikke sidste ændringer |
+| Mobil Customers | Bestået | Faktisk viewport og root scrollWidth 390 px; input 16 px |
+| Mobil Settings General | Bestået inden genstart | Test-email-feltet wrapper; ingen klippede felter |
+| Mobil Settings Members | Bestået inden genstart | Intern tabelscroll: 356 px synlig bredde, 748 px indhold |
+| Mobilnavigation | Bestået | Åbner, Escape lukker; Integrations → Analytics → Knowledge/new lukker menu efter sideskift |
+| Mobil Integrations | Bestået | 390 px uden sideoverflow eller klippede controls; h1 16 px og sektioner 14 px |
+| Shopify-overlay | Bestået | Inter og hvidt panel, Escape lukker. Ingen gemt eller frakoblet integration |
+| Mobil Knowledge/new | Bestået | 390 px root; input 16 px, header-controls inden for viewport efter wrap |
+| Knowledge source-sheet | Gennemgået | Panel 390 px, felter 16 px. Langt panel scrolles; ingen drafts oprettet |
+| Desktop | Bestået på målte sider | Analytics, Customers, Integrations, Knowledge/new: 1470 px root uden overflow; h1 16 px, input 13 px |
+| Desktop Settings efter genstart | Ufuldstændigt | Navigation og skeleton renderede; felter indlæste ikke før server blev stoppet |
+| Design-lab light/dark | Bestået | 390 px uden overflow; body hvid / rgb(21,21,26) |
+| Fejlkant og fokus | Bestået | Light kant og fokusring rgb(180,35,24); dark kant rgb(253,162,155) |
+| Select og Escape | Bestået | Demo Shop lukker og returnerer fokus til demo-shop |
 
-Screenshots og målte farver ligger lokalt i `/tmp/sona-design-local-1002b-evidence/`. Kun design-lab med fiktive data er gemt som screenshots. Ingen upload.
+Fejlvarianterne bruger Tailwind 3-syntaksen aria-[invalid=true]. Browsermåling fandt, at den kortere aria-invalid-variant ikke genererede CSS; det er rettet.
 
-De første runtime-forsøg ramte lav diskplads, en grænse for åbne filer og rester fra genstart/build. Oprydning omfattede kun forsøgets genererede `.next`-filer. Den afsluttende build bestod efter en ren start; dev-serveren blev derefter startet alene med højere procesgrænse og korrekt localhost-origin.
+## Evidens og resterende arbejde
 
-Ingen mails er sendt, og der er ikke ændret agent-, automation-, V2- eller database-logik. Ingen deploy er udført.
+Aktuelle lokale screenshots: /tmp/sona-design-local-1002b-evidence/01-mobile-error.png og 02-mobile-dark.png. Begge viser fiktive lab-data. Gamle screenshots fra før genstart findes ikke længere. Ingen video eller offentlig upload.
 
-## Typografi — lokalt gennemløb
+Der mangler fuldt produktionsbuild med mere diskplads, PR80-afstemning og komplet kontrol af alle legacy-underruter, integrationspaneler og 200 % zoom. Serveren er stoppet efter checks; kun dette worktrees genererede .next blev slettet for at gemme dokumentation sikkert.
 
-Inter 4.1 normal og italic indlæses via next/font/local. SIL OFL følger fontfilerne. Dashboardets UI-tekst bruger 13/20 px, metadata 12/16 px, længere tekst 14/20 px og sidetitler 16/24 px. Vægte er 450/550/650; root-rem er fortsat 16 px. Sidetitelstørrelsen er Sonas lokale fortolkning af referencen.
-
-- Produktionsbuild efter typografiændringer: bestået, inklusive lint, typecheck og 161 sider. Samme MJML-warnings som før.
-- Separat tsc --noEmit: bestået. Lint af ændrede JSX-filer: bestået.
-- Browsermåling Customers: tabel og søgefelt 13/20 px, vægt 450; titel 16/24 px, vægt 650. Ingen horisontal overflow.
-- Settings: General-overskrift 16 px, navigation og input 13 px.
-- Inbox med eksisterende DEV Customer-fixture: contenteditable svar-editor 14/21 px. Ingen tekst indtastet eller mail sendt. Ingen horisontal overflow.
-- Design-lab: alle fire skalaroller målt i computed styles, med Inter-familien fra lokal font-loader. Lokalt screenshot: /tmp/sona-design-local-1002b-evidence/06-inter-light-components.png.
-- Radix-dialog efter genstart: Inter, body og knapper 13 px, titel 16 px. Light og dark vist i design-lab; mobil og fuldt sideaudit er stadig ikke verificeret.
-- PR80-filerne SonaActivityContent.jsx og KnowledgeCategoriesClient.jsx er ikke redigeret; deres lokale pixel-overrides kræver senere afstemning.
-
-Ingen push eller ny PR.
-
-## Inbox-polish efter review
-
-- Status, assignee, More og View details bruger samme styling. Browsermål: alle 28 px høje, tekst 13 px / vægt 450, hvid baggrund, neutral kant og ingen skygge.
-- Statusmenu åbnet med alle fire options. Escape lukker og returnerer fokus; ingen status ændret.
-- Composer-skygge målt til 4/16 px ved 4 % og 1/3 px ved 3 %.
-- Læste tickets og metadata lettere; ulæste navne beholder vægt 650. Replied-label og mindre cap på metadata giver emnet mere plads uden ændrede panelbredder.
-- Målrettet lint for fire ændrede komponenter bestået; diff-check bestået. Browser viser ingen horisontal overflow i desktop-inbox.
-- Kun dev-fixture brugt til samtalekontrol. Intet sendt, ingen statusmutation. Ingen push eller PR.
-
-## Hvid baggrund efter review
-
-Light canvas og sidebar ændret til #FFFFFF. Hover #F5F5F5 og borders #E5E5E5. Browser efter reload måler body rgb(255,255,255), begge baggrundstokens 0 0% 100%, og uændret lilla accent. Diff-check bestået. Dark er uændret. Kun lokale ændringer; ingen push eller PR.
+Ingen mails sendt, settings eller knowledge gemt, backend-logik ændret eller deploy udført.

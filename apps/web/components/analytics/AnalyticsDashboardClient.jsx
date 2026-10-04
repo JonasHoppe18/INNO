@@ -207,8 +207,8 @@ function TimeDistribution({ rows = [], onSelect, title }) {
     <div className="flex flex-col gap-3">
       {rows.map((row) => (
         <button key={row.key} type="button" onClick={() => onSelect?.(row.key === "no_reply" ? "slow_first_replies" : "support_tickets", row.label)} className="analytics-pressable grid grid-cols-[76px_1fr_40px_42px] items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <span className={cn("text-right text-xs", row.key === "no_reply" ? "font-medium text-amber-700" : "text-muted-foreground")}>{row.label}</span>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("analytics-bar h-full rounded-full", row.key === "no_reply" ? "bg-amber-500" : "bg-primary/75")} style={{ width: `${Math.max(row.count ? 3 : 0, (row.count / max) * 100)}%` }} /></div>
+          <span className={cn("text-right text-xs", row.key === "no_reply" ? "font-medium text-warning-foreground" : "text-muted-foreground")}>{row.label}</span>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("analytics-bar h-full rounded-full", row.key === "no_reply" ? "bg-warning-foreground" : "bg-primary/75")} style={{ width: `${Math.max(row.count ? 3 : 0, (row.count / max) * 100)}%` }} /></div>
           <span className="text-right text-xs font-medium tabular-nums">{formatPercent(row.pct)}</span>
           <span className="text-right text-xs tabular-nums text-muted-foreground">{formatNumber(row.count)}</span>
         </button>
@@ -219,10 +219,10 @@ function TimeDistribution({ rows = [], onSelect, title }) {
 
 function QualityBreakdown({ breakdown = {} }) {
   const rows = [
-    ["Sent as-is", breakdown.sentAsIs, "bg-emerald-500"],
+    ["Sent as-is", breakdown.sentAsIs, "bg-success-foreground"],
     ["Minor edits", breakdown.minorEdits, "bg-primary"],
-    ["Major edits", breakdown.majorEdits, "bg-amber-500"],
-    ["Rejected", breakdown.rejected, "bg-rose-500"],
+    ["Major edits", breakdown.majorEdits, "bg-warning-foreground"],
+    ["Rejected", breakdown.rejected, "bg-danger-foreground"],
   ];
   if (!breakdown.total) return <EmptyState icon={Sparkles} title="Draft quality is collecting" description="Send and review more Sona drafts to unlock the quality distribution." />;
   return (
@@ -314,7 +314,7 @@ function SupportReport({ data, onDrilldown }) {
         <CardContent>
           {outcomes.csatAvailable ? (
             <div className="grid gap-5 sm:grid-cols-[220px_1fr] sm:items-center">
-              <div><p className="text-4xl font-semibold tracking-tight tabular-nums">{outcomes.csatAverage} / 5</p><div className="mt-3 flex gap-1" aria-label={`${outcomes.csatAverage} out of 5 stars`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={cn("size-4", index < csatStars ? "fill-amber-400 text-amber-400" : "text-muted")} />)}</div><p className="mt-2 text-xs text-muted-foreground">{formatNumber(outcomes.csatResponses)} responses</p></div>
+              <div><p className="text-4xl font-semibold tracking-tight tabular-nums">{outcomes.csatAverage} / 5</p><div className="mt-3 flex gap-1" aria-label={`${outcomes.csatAverage} out of 5 stars`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={cn("size-4", index < csatStars ? "fill-amber-400 text-warning-foreground" : "text-muted")} />)}</div><p className="mt-2 text-xs text-muted-foreground">{formatNumber(outcomes.csatResponses)} responses</p></div>
               <div className="rounded-lg bg-muted/35 p-4"><p className="text-xs text-muted-foreground">Positive CSAT</p><p className="mt-2 text-2xl font-semibold tabular-nums">{formatPercent(outcomes.csatPositiveRate)}</p><p className="mt-1 text-xs text-muted-foreground">Scores of 4 or 5</p></div>
             </div>
           ) : <EmptyState icon={Star} title="No CSAT responses yet" description="Customer satisfaction appears after feedback is submitted for support conversations." />}

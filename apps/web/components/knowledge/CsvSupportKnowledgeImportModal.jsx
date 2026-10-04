@@ -281,7 +281,7 @@ export function CsvSupportKnowledgeImportModal({
           </div>
 
           {headers.length > 0 ? (
-            <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+            <div className="space-y-4 rounded-lg border border-border bg-muted/50 p-3">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="csv-input-column">Main input column</Label>
@@ -289,7 +289,7 @@ export function CsvSupportKnowledgeImportModal({
                     id="csv-input-column"
                     value={inputColumn}
                     onChange={(event) => setInputColumn(event.target.value)}
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"
+                    className="w-full rounded-md border border-input bg-card px-2 py-2 text-sm"
                   >
                     <option value="">Select column</option>
                     {headers.map((header) => (
@@ -306,7 +306,7 @@ export function CsvSupportKnowledgeImportModal({
                     id="csv-answer-column"
                     value={answerColumn}
                     onChange={(event) => setAnswerColumn(event.target.value)}
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"
+                    className="w-full rounded-md border border-input bg-card px-2 py-2 text-sm"
                   >
                     <option value="">Select column</option>
                     {headers.map((header) => (
@@ -323,7 +323,7 @@ export function CsvSupportKnowledgeImportModal({
                     id="csv-topic-column"
                     value={topicColumn}
                     onChange={(event) => setTopicColumn(event.target.value)}
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"
+                    className="w-full rounded-md border border-input bg-card px-2 py-2 text-sm"
                   >
                     <option value="">Not mapped</option>
                     {headers.map((header) => (
@@ -340,7 +340,7 @@ export function CsvSupportKnowledgeImportModal({
                     id="csv-language-column"
                     value={languageColumn}
                     onChange={(event) => setLanguageColumn(event.target.value)}
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"
+                    className="w-full rounded-md border border-input bg-card px-2 py-2 text-sm"
                   >
                     <option value="">Not mapped</option>
                     {headers.map((header) => (
@@ -352,20 +352,20 @@ export function CsvSupportKnowledgeImportModal({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-gray-600">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Total rows: {rows.length}</span>
                 <span>Valid rows with current mapping: {validRowCount}</span>
               </div>
 
-              <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-                <div className="grid grid-cols-12 gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="overflow-hidden rounded-md border border-border bg-card">
+                <div className="grid grid-cols-12 gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <div className="col-span-5">Input</div>
                   <div className="col-span-5">Answer</div>
                   <div className="col-span-2">Topic</div>
                 </div>
-                <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
+                <div className="max-h-52 overflow-y-auto divide-y divide-border">
                   {previewRows.map((row, index) => (
-                    <div key={`preview-row-${index}`} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-700">
+                    <div key={`preview-row-${index}`} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-foreground">
                       <div className="col-span-5 truncate">{normalize(row?.[inputColumn]) || "-"}</div>
                       <div className="col-span-5 truncate">{normalize(row?.[answerColumn]) || "-"}</div>
                       <div className="col-span-2 truncate">{normalize(row?.[topicColumn]) || "-"}</div>

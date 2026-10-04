@@ -37,15 +37,15 @@ function EmailTemplateSummary({ template }) {
   const published = template?.published;
   const status = published?.id ? "Published" : draft?.id ? "Draft" : "Starter template";
   const statusClass = published?.id
-    ? "bg-emerald-50 text-emerald-700"
+    ? "bg-success text-success-foreground"
     : draft?.id
-      ? "bg-amber-50 text-amber-700"
-      : "bg-violet-50 text-violet-700";
+      ? "bg-warning text-warning-foreground"
+      : "bg-accent text-accent-foreground";
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
       <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+        <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
           <Mail className="size-4" />
         </div>
         <div className="min-w-0">

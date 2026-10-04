@@ -27,9 +27,9 @@ export function MetricLabel({ label, definition }) {
 }
 
 const changeTone = {
-  good: "text-emerald-700",
-  watch: "text-amber-700",
-  bad: "text-rose-700",
+  good: "text-success-foreground",
+  watch: "text-warning-foreground",
+  bad: "text-danger-foreground",
   neutral: "text-muted-foreground",
   muted: "text-muted-foreground",
 };

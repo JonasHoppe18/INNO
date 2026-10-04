@@ -407,20 +407,20 @@ export function SnippetEditor({
     <div className="flex h-full w-full flex-col">
       {/* Panel toolbar */}
       {!isNew && (
-        <div className="flex items-center justify-end gap-2 border-b border-gray-100 px-4 py-1.5 dark:border-gray-800">
+        <div className="flex items-center justify-end gap-2 border-b border-border px-4 py-1.5 ">
           {confirmDelete ? (
             <div className="flex items-center gap-3 text-xs">
-              <span className="text-gray-500">Delete this snippet?</span>
+              <span className="text-muted-foreground">Delete this snippet?</span>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="font-medium text-red-500 transition-colors hover:text-red-700"
+                className="font-medium text-danger-foreground transition-colors hover:text-danger-foreground"
               >
                 {deleting ? "Deleting..." : "Yes, delete"}
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="text-gray-400 transition-colors hover:text-gray-600"
+                className="text-muted-foreground transition-colors hover:text-muted-foreground"
               >
                 Cancel
               </button>
@@ -439,8 +439,8 @@ export function SnippetEditor({
                 className={cn(
                   "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   isDirty
-                    ? "text-gray-300"
-                    : "text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                    ? "text-muted-foreground"
+                    : "text-primary hover:bg-accent "
                 )}
                 title={isDirty ? "Save first" : "Run an A/B preview against a real ticket"}
               >
@@ -449,14 +449,14 @@ export function SnippetEditor({
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-500 dark:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-400">
+                  <button className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-muted-foreground   ">
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
                   <DropdownMenuItem
                     onClick={() => setConfirmDelete(true)}
-                    className="text-red-500 focus:text-red-500"
+                    className="text-danger-foreground focus:text-danger-foreground"
                   >
                     Delete snippet
                   </DropdownMenuItem>
@@ -487,7 +487,7 @@ export function SnippetEditor({
               ? "Title — short summary shown in the snippet list"
               : "Title..."
           }
-          className="w-full border-0 border-b-2 border-gray-100 bg-transparent pb-2 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-300 outline-none focus:border-indigo-200 transition-colors"
+          className="w-full border-0 border-b-2 border-border bg-transparent pb-2 text-input md:text-base font-bold text-foreground  placeholder:font-normal placeholder:text-muted-foreground outline-none focus:border-primary/30 transition-colors"
         />
 
         {/* Content — primary focus. Q&A format for Fact/Guide types boosts
@@ -495,21 +495,21 @@ export function SnippetEditor({
         {isQaType ? (
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-gray-600">
-                Customer question <span className="text-gray-400 font-normal">(optional)</span>
+              <Label className="text-xs font-medium text-muted-foreground">
+                Customer question <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <input
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="e.g. How do I pair my AirPods with iPhone?"
-                className="w-full rounded-lg border border-gray-100 bg-transparent px-4 py-3 text-sm text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-lg border border-border bg-transparent px-4 py-3 text-input md:text-sm text-foreground  placeholder:text-muted-foreground outline-none transition-colors focus:border-primary/30 focus:ring-2 focus:ring-ring"
               />
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted-foreground">
                 Phrase it the way a customer would ask. Adding this lets Sona reliably pick THIS snippet over similar ones. Leave empty to save as a plain guide.
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-gray-600">Answer</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Answer</Label>
               <textarea
                 ref={answerRef}
                 value={answer}
@@ -519,7 +519,7 @@ export function SnippetEditor({
                     ? "Step-by-step instructions the AI should follow exactly..."
                     : "The factual answer the AI should give..."
                 }
-                className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-sm leading-relaxed text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+                className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-border bg-transparent px-4 py-3.5 text-input md:text-sm leading-relaxed text-foreground  placeholder:text-muted-foreground outline-none transition-colors focus:border-primary/30 focus:ring-2 focus:ring-ring"
               />
             </div>
           </div>
@@ -530,32 +530,32 @@ export function SnippetEditor({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Write the knowledge here — be precise, the AI uses this word for word."
-              className="w-full min-h-[200px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-sm leading-relaxed text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+              className="w-full min-h-[200px] resize-none overflow-hidden rounded-lg border border-border bg-transparent px-4 py-3.5 text-input md:text-sm leading-relaxed text-foreground  placeholder:text-muted-foreground outline-none transition-colors focus:border-primary/30 focus:ring-2 focus:ring-ring"
             />
           </div>
         )}
 
         {/* AI settings — collapsible */}
-        <div className="rounded-lg border border-gray-100 overflow-hidden dark:border-gray-800">
+        <div className="rounded-lg border border-border overflow-hidden ">
           <button
             type="button"
             onClick={() => setMetaOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3.5 py-2.5 text-left transition-colors hover:bg-gray-50/80 dark:hover:bg-gray-800/40"
+            className="flex w-full items-center justify-between px-3.5 py-2.5 text-left transition-colors hover:bg-muted/80 "
           >
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-500">AI settings</span>
+              <span className="text-xs font-medium text-muted-foreground">AI settings</span>
               {!metaOpen && metaSummary && (
-                <span className="text-xs text-gray-400">{metaSummary}</span>
+                <span className="text-xs text-muted-foreground">{metaSummary}</span>
               )}
               {!metaOpen && !metaSummary && (
-                <span className="text-xs text-gray-300">type, products, tags — AI fills automatically</span>
+                <span className="text-xs text-muted-foreground">type, products, tags — AI fills automatically</span>
               )}
             </div>
-            <ChevronDown className={cn("h-3.5 w-3.5 text-gray-300 transition-transform duration-150", metaOpen && "rotate-180")} />
+            <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-150", metaOpen && "rotate-180")} />
           </button>
 
           {metaOpen && (
-            <div className="border-t border-gray-100 px-3.5 py-3.5 space-y-4 dark:border-gray-800">
+            <div className="border-t border-border px-3.5 py-3.5 space-y-4 ">
               {/* Knowledge type */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Knowledge type</Label>
@@ -576,16 +576,16 @@ export function SnippetEditor({
               {/* Products */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Products</Label>
-                <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+                <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-border bg-muted px-2.5 py-2  ">
                   {products.map((p) => (
                     <span
                       key={p}
-                      className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-700 dark:text-indigo-300"
+                      className="inline-flex items-center gap-1 rounded-full bg-accent border border-primary/30 px-2 py-0.5 text-xs text-accent-foreground   "
                     >
                       {p}
                       <button
                         onClick={() => removeProduct(p)}
-                        className="text-indigo-300 hover:text-indigo-500 leading-none"
+                        className="text-primary hover:text-primary leading-none"
                       >
                         <X className="h-2.5 w-2.5" />
                       </button>
@@ -601,7 +601,7 @@ export function SnippetEditor({
                       }
                     }}
                     placeholder={products.length === 0 ? "Add product names — press Enter" : "+ add"}
-                    className="min-w-[160px] flex-1 bg-transparent text-xs text-gray-400 placeholder:text-gray-300 outline-none"
+                    className="min-w-[160px] flex-1 bg-transparent text-input md:text-sm text-muted-foreground placeholder:text-muted-foreground outline-none"
                   />
                 </div>
               </div>
@@ -611,7 +611,7 @@ export function SnippetEditor({
                 <Label className="text-xs text-muted-foreground">Issue types</Label>
                 <div
                   className={cn(
-                    "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/40",
+                    "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-border bg-muted px-2.5 py-2  ",
                     tags.length === 0 && "border-dashed"
                   )}
                 >
@@ -624,14 +624,14 @@ export function SnippetEditor({
                         className={cn(
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
                           isAi
-                            ? "border border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-400"
-                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                            ? "border border-success-border bg-success text-success-foreground   "
+                            : "bg-muted text-muted-foreground  "
                         )}
                       >
                         {label}
                         <button
                           onClick={() => removeTag(tag)}
-                          className="text-gray-300 hover:text-gray-500 leading-none"
+                          className="text-muted-foreground hover:text-muted-foreground leading-none"
                         >
                           <X className="h-2.5 w-2.5" />
                         </button>
@@ -642,20 +642,20 @@ export function SnippetEditor({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-sm text-gray-400 transition-colors hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:text-gray-500 dark:hover:border-indigo-600 dark:hover:text-indigo-400"
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-input px-2 py-0.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary    "
                       >
                         <Plus className="h-2.5 w-2.5" />
                         {tags.length === 0 ? "Pick issue types" : "Add"}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-64 p-2">
-                      <p className="px-2 pt-1 pb-2 text-xs text-gray-400">
+                      <p className="px-2 pt-1 pb-2 text-xs text-muted-foreground">
                         Pick from the canonical list — these are the only tags the AI searches for.
                       </p>
                       <div className="max-h-72 overflow-y-auto">
                         {Object.entries(ISSUE_TYPE_GROUPS).map(([group, options]) => (
                           <div key={group} className="mb-1.5">
-                            <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                            <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                               {group}
                             </p>
                             <div className="space-y-0.5">
@@ -669,12 +669,12 @@ export function SnippetEditor({
                                     className={cn(
                                       "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors",
                                       selected
-                                        ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                                        : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+                                        ? "bg-accent text-accent-foreground  "
+                                        : "text-foreground hover:bg-muted  "
                                     )}
                                   >
                                     <span>{opt.label}</span>
-                                    {selected && <Check className="h-3 w-3 text-indigo-600" />}
+                                    {selected && <Check className="h-3 w-3 text-primary" />}
                                   </button>
                                 );
                               })}
@@ -687,7 +687,7 @@ export function SnippetEditor({
                 </div>
                 {tags.some((t) => aiTags.has(t)) && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-xs text-green-600 dark:border-green-800 dark:bg-green-950/40 dark:text-green-400">AI</span>
+                    <span className="rounded-full border border-success-border bg-success px-1.5 py-0.5 text-xs text-success-foreground   ">AI</span>
                     Green tags were set automatically on save. Add or remove freely.
                   </p>
                 )}

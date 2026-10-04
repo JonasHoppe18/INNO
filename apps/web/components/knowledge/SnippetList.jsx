@@ -15,16 +15,16 @@ export function SnippetList({ snippets, selectedId, onSelect }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5 dark:border-gray-800">
-        <Search className="h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-gray-600" />
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5 ">
+        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground " />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search snippets..."
-          className="flex-1 bg-transparent text-xs text-gray-600 placeholder:text-gray-300 outline-none dark:text-gray-400 dark:placeholder:text-gray-600"
+          className="flex-1 bg-transparent text-input md:text-sm text-muted-foreground placeholder:text-muted-foreground outline-none  "
         />
       </div>
-      <div className="flex-1 overflow-y-auto divide-y divide-gray-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:divide-gray-800">
+      <div className="flex-1 overflow-y-auto divide-y divide-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ">
         {filtered.map((snippet) => (
           <SnippetRow
             key={snippet.snippet_id}
@@ -55,15 +55,15 @@ function SnippetRow({ snippet, active, onClick }) {
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-50/80 dark:hover:bg-gray-800/50",
-        active && "bg-gray-100/60 dark:bg-gray-800/60"
+        "relative flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/80 ",
+        active && "bg-muted/60 "
       )}
     >
       {/* Left accent bar */}
       <span
         className={cn(
           "absolute left-0 top-0 h-full w-[3px] rounded-r transition-colors duration-150",
-          active ? "bg-indigo-400" : "bg-transparent"
+          active ? "bg-primary" : "bg-transparent"
         )}
       />
 
@@ -71,11 +71,11 @@ function SnippetRow({ snippet, active, onClick }) {
       <span
         className={cn(
           "flex items-center gap-1.5 truncate text-xs font-medium leading-snug",
-          active ? "text-indigo-700 dark:text-indigo-300" : "text-gray-800 dark:text-gray-100"
+          active ? "text-accent-foreground " : "text-foreground "
         )}
       >
         {isQa && (
-          <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-400">
+          <span className="shrink-0 rounded-sm bg-accent px-1 text-xs font-semibold uppercase tracking-wide text-primary  ">
             Q&amp;A
           </span>
         )}
@@ -84,7 +84,7 @@ function SnippetRow({ snippet, active, onClick }) {
 
       {/* Content preview */}
       {preview && (
-        <span className="truncate text-xs leading-snug text-gray-400">
+        <span className="truncate text-xs leading-snug text-muted-foreground">
           {preview}
         </span>
       )}
@@ -98,8 +98,8 @@ function SnippetRow({ snippet, active, onClick }) {
               className={cn(
                 "rounded-full px-1.5 py-0.5 text-xs",
                 productTags.includes(tag)
-                  ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400"
-                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                  ? "bg-accent text-primary  "
+                  : "bg-muted text-muted-foreground  "
               )}
             >
               {tag}

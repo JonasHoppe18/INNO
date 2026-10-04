@@ -543,18 +543,18 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
               disabled={submitting || importCompleted}
             />
           </div>
-          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
             Domain can be entered with or without <code>https://</code>. Sona runs a one-time
             history import (up to 1000 tickets) in background batches.
           </p>
 
           {importCompleted ? (
-            <p className="text-xs text-emerald-700">
+            <p className="text-xs text-success-foreground">
               Initial import already completed. Disconnect and reconnect if you want to run it again.
             </p>
           ) : null}
           {status ? <p className="text-xs text-muted-foreground">{status}</p> : null}
-          {error ? <p className="text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="text-xs text-danger-foreground">{error}</p> : null}
 
           <SheetFooter className="pt-4 gap-2">
             <Button type="submit" className="w-full" disabled={submitting || importCompleted}>
@@ -575,9 +575,9 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
         </form>
 
         {hasExistingConfig ? (
-          <div className="mt-6 space-y-3 border-t border-slate-100 pt-6">
+          <div className="mt-6 space-y-3 border-t border-border pt-6">
             <div>
-              <h3 className="text-sm font-semibold">History</h3>
+              <h3 className="text-section-heading font-semibold">History</h3>
               <p className="text-xs text-muted-foreground">
                 Import your full Zendesk ticket history as tone examples for Sona&apos;s drafts.
               </p>
@@ -610,7 +610,7 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
 
             {historyError ? (
               <div className="space-y-2">
-                <p className="text-xs text-red-600">{historyError}</p>
+                <p className="text-xs text-danger-foreground">{historyError}</p>
                 {historyJob?.id ? (
                   <Button
                     type="button"

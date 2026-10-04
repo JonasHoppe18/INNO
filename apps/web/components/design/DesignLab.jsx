@@ -85,6 +85,7 @@ function DesignLabContent() {
               <CardHeader><CardTitle>Settings</CardTitle><CardDescription>Settings inherits the app palette, including focus and popovers.</CardDescription></CardHeader>
               <CardContent>
                 <FieldGroup>
+                  <Field><FieldLabel htmlFor="demo-invalid-email">Email with error</FieldLabel><Input id="demo-invalid-email" defaultValue="not-an-email" aria-invalid="true" aria-describedby="demo-email-error" /><p id="demo-email-error" className="text-xs text-destructive">Enter a valid email address.</p></Field>
                   <Field><FieldLabel htmlFor="demo-workspace">Workspace name</FieldLabel><Input id="demo-workspace" defaultValue="Demo workspace" /></Field>
                   <Field><FieldLabel htmlFor="demo-shop">Shop</FieldLabel><Select defaultValue="demo"><SelectTrigger id="demo-shop"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="demo">Demo store</SelectItem><SelectItem value="other">Another demo store</SelectItem></SelectGroup></SelectContent></Select></Field>
                 </FieldGroup>

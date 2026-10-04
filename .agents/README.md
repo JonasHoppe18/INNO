@@ -10,7 +10,7 @@ Mappen er til coding-agenter (Cursor, Claude Code, Codex). Læs i den rækkeføl
 | [greenfield/](greenfield/) | **Target** — ny E2E support-agent (default for nye features) |
 | [legacy/v2-pipeline.md](legacy/v2-pipeline.md) | Kun V2/hotfix på den nuværende prod-sti |
 | [design-system.md](design-system.md) | UI, layout, styling, nye komponenter |
-| [design.md](design.md) | Forslag til kommende designretning, tokens og fælles mønstre. Udkast til gennemgang |
+| [design.md](design.md) | Valgt lokal designretning, tokens og fælles mønstre. Afventer review |
 | [skills/](skills/) | Factory-skills (`new-feature`, `code-structure`, …) — se factory.md |
 
 Rodfilen `AGENTS.md` er den eneste auto-indgang.

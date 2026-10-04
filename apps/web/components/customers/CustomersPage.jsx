@@ -280,7 +280,7 @@ export function CustomersPage() {
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <div className="flex items-center rounded-xl border border-border/70 bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring">
+        <div className="flex items-center rounded-xl border border-border/70 bg-background shadow-sm focus-within:ring-2 focus-within:ring-ring">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -288,7 +288,7 @@ export function CustomersPage() {
               placeholder="Search customers…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="h-10 rounded-xl border-0 bg-transparent pl-9 text-sm shadow-none focus-visible:ring-0"
+              className="h-10 rounded-xl border-0 bg-transparent pl-9 text-input md:text-sm shadow-none focus-visible:ring-0"
             />
           </div>
           <Select value={sort} onValueChange={setSort}>

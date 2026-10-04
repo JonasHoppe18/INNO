@@ -150,9 +150,9 @@ export function SnippetTwoPanel({
       </div>
 
       {/* Two-panel — bleeds to page edges, defined height so children can use h-full */}
-      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 h-[calc(100svh-141px)] overflow-hidden dark:border-gray-800">
+      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-border h-[calc(100svh-141px)] overflow-hidden ">
         {/* Left: snippet list */}
-        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/30">
+        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-muted/50  ">
           {loading ? (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4].map((i) => (
@@ -169,7 +169,7 @@ export function SnippetTwoPanel({
         </div>
 
         {/* Right: editor or empty state */}
-        <div className="flex flex-1 overflow-hidden bg-white dark:bg-card">
+        <div className="flex flex-1 overflow-hidden bg-card">
           {newDraft || selectedSnippet ? (
             <SnippetEditor
               key={newDraft ? `new-${seedQuestion || "blank"}` : selectedId}
@@ -185,14 +185,14 @@ export function SnippetTwoPanel({
             />
           ) : snippets.length === 0 ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-5 px-8 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40">
-                <Lightbulb className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent ">
+                <Lightbulb className="h-5 w-5 text-primary " />
               </div>
               <div className="max-w-md">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                <p className="text-sm font-semibold text-foreground ">
                   Start with a common question
                 </p>
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Click one to pre-fill the editor, or write your own. Q&amp;A snippets dramatically improve how the AI matches customer messages.
                 </p>
               </div>
@@ -202,31 +202,31 @@ export function SnippetTwoPanel({
                     key={starter}
                     type="button"
                     onClick={() => handleAddSnippet(starter)}
-                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-xs text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
+                    className="group flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-left text-xs text-muted-foreground transition-[color,background-color,border-color,box-shadow,transform] hover:border-primary/30 hover:bg-accent/30 hover:text-accent-foreground  dark:bg-transparent    "
                   >
                     <span className="truncate">{starter}</span>
-                    <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400 dark:text-gray-600 dark:group-hover:text-indigo-500" />
+                    <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary  " />
                   </button>
                 ))}
               </div>
               <button
                 type="button"
                 onClick={() => handleAddSnippet()}
-                className="text-xs text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline dark:hover:text-gray-300"
+                className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-muted-foreground hover:underline "
               >
                 Or start from scratch
               </button>
             </div>
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                <FileText className="h-5 w-5 text-gray-400" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted ">
+                <FileText className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                <p className="text-sm font-medium text-muted-foreground ">
                   Select a snippet to edit
                 </p>
-                <p className="mt-0.5 text-xs text-gray-400">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   or add a new one
                 </p>
               </div>

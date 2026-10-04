@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { SidebarInset } from "@/components/ui/sidebar";
+import { SidebarInset, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SiteHeaderActionsProvider } from "@/components/site-header-actions";
 import { SetupBanner } from "@/components/onboarding/SetupBanner";
@@ -9,6 +10,11 @@ import { cn } from "@/lib/utils";
 
 export function DashboardShell({ children }) {
   const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
+
+  useEffect(() => {
+    setOpenMobile(false);
+  }, [pathname, setOpenMobile]);
   const isInboxWorkspace = pathname === "/inbox";
   const isSettingsWorkspace = pathname === "/settings";
   const isPlaygroundWorkspace = pathname === "/playground";
@@ -17,7 +23,12 @@ export function DashboardShell({ children }) {
   return (
     <SidebarInset className={cn(isFixedWorkspace ? "h-[calc(100svh_-_var(--app-top-offset,0px))] !min-h-0 overflow-hidden" : "min-h-svh")}>
       <SiteHeaderActionsProvider>
-        {isInboxWorkspace ? <SiteHeader /> : null}
+        {isInboxWorkspace ? <SiteHeader /> : (
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-4 md:hidden">
+            <SidebarTrigger aria-label="Open navigation" />
+            <span className="text-sm font-medium">Sona</span>
+          </div>
+        )}
         <SetupBanner />
         <div
           className={cn(

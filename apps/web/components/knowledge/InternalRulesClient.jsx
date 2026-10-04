@@ -173,12 +173,12 @@ export function InternalRulesClient() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-warning text-warning-foreground  ">
               <Shield className="h-4 w-4" />
             </div>
             <h1 className="text-page-heading font-semibold">Internal rules</h1>
           </div>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500 dark:text-gray-400">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground ">
             Rules that govern <em>how</em> the AI handles a case — e.g. how a faulty
             item should be routed, which case type you use internally, or when nothing
             may be promised before approval. They are always followed, but never sent
@@ -205,12 +205,12 @@ export function InternalRulesClient() {
       ) : rules.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning text-warning-foreground  ">
               <Shield className="h-5 w-5" />
             </div>
             <div>
               <p className="text-sm font-medium">No internal rules yet</p>
-              <p className="mx-auto mt-1 max-w-md text-xs text-gray-500 dark:text-gray-400">
+              <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground ">
                 Example: &quot;Faulty microphone = Return For Swap case. Route to the
                 production department. Never promise a replacement before the case is approved.&quot;
               </p>
@@ -229,7 +229,7 @@ export function InternalRulesClient() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">{rule.title}</p>
-                    <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">
+                    <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm text-muted-foreground ">
                       {rule.content}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -258,7 +258,7 @@ export function InternalRulesClient() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-gray-400 hover:text-red-600"
+                      className="h-8 w-8 text-muted-foreground hover:text-danger-foreground"
                       disabled={deletingId === rule.snippet_id}
                       onClick={() => handleDelete(rule)}
                     >
@@ -303,7 +303,7 @@ export function InternalRulesClient() {
             </div>
             <div className="space-y-1.5">
               <Label>Applies to inquiries about</Label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-muted-foreground ">
                 Choose which inquiries the rule should trigger on. Select none if the
                 rule applies to all inquiries.
               </p>
@@ -318,8 +318,8 @@ export function InternalRulesClient() {
                       disabled={saving}
                       className={`rounded-full border px-3 py-1 text-xs transition ${
                         active
-                          ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                          ? "border-warning-border bg-warning text-warning-foreground  "
+                          : "border-border bg-card text-muted-foreground hover:border-input   "
                       }`}
                     >
                       {opt.label}

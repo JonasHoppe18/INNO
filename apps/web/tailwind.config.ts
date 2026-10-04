@@ -14,6 +14,7 @@ const config: Config = {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
       },
       fontSize: {
+        input: ['1rem', { lineHeight: '1.25rem' }],
         xs: ['var(--text-caption-size, 0.75rem)', { lineHeight: 'var(--text-caption-leading, 1rem)' }],
         sm: ['var(--text-ui-size, 0.875rem)', { lineHeight: '1.25rem' }],
         base: ['var(--text-body-size, 1rem)', { lineHeight: 'var(--text-body-leading, 1.5rem)' }],

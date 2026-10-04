@@ -9,7 +9,7 @@ Kilder til implementerede værdier på branchen er `apps/web/app/globals.css`, `
 - Behold shadcn new-york, Radix, CVA, `cn` og Lucide. Nye controls bruger eksisterende `components/ui`.
 - Inter 4.1 indlæses lokalt via `next/font/local` (normal og italic, variabel vægt). Behold `--radius: 0.5rem`.
 - Behold inboxens rail, kønavigation, samtaleliste, tabs, beskeder og composer. Ingen ændring af panelbredder, placering eller funktioner i dette forsøg.
-- Behold eksisterende spacing og responsive adfærd. Farvearbejde er ikke tilladelse til at redesigne siderne.
+- Behold eksisterende spacing. Mobilnavigation og controls skal være tilgængelige uden klipning. Farvearbejde er ikke tilladelse til at redesigne siderne.
 
 ## Typografi
 
@@ -20,6 +20,7 @@ Fonten er Inter, samme familie som Shopifys publicerede Polaris-tokens. Den tidl
 | Navigation, controls, tabeller | `text-sm` | 13 / 20 px | 450; labels 550 |
 | Metadata og hjælpetekst | `text-xs` | 12 / 16 px | 450 |
 | Længere tekst og svar-editor | `text-base` | 14 / 20 px (editor 1.5) | 450 |
+| Redigerbare felter | `text-input md:text-sm` | 16 / 20 px mobil; 13 / 20 px desktop | 450 |
 | Sidetitel | `text-page-heading` | 16 / 24 px | 650 |
 | Sektionsoverskrift | `text-section-heading` | 14 / 20 px | 650 |
 
@@ -70,10 +71,10 @@ Labels skal altid følge farven. Godkendt, godkendt i testtilstand og udført er
 - Ticketlisten bruger vægt 450 til læste afsendere og metadata, 650 til ulæste afsendere og 550 til ulæste emner. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
 - Composerens skygge er 4/16 px ved 4 % og 1/3 px ved 3 %. Sekundære controls og beskedhandlinger bruger regular vægt.
 - `Button` ejer farver, hover, fokus og disabled. Brug variants; `className` bruges til lokal størrelse og placering. Den runde send-knap beholder sin størrelse og form, men arver primary.
-- `Input`, `Select` og `Textarea` bruger card-baggrund, inputkant og samme fokusring. Behold labels og eksisterende validering.
+- `Input`, `Select` og `Textarea` bruger card-baggrund, inputkant og samme fokusring. Behold labels og eksisterende validering. `aria-invalid` markerer kant og fokus med destructive; fejltekst forbindes med `aria-describedby`.
 - Sidebar og tabeller bruger neutral hover og svag violet selection. Aktive tabs bruger accenttekst eller primary-markering afhængigt af deres eksisterende mønster.
 - Ændr fælles komponenter først. Et override på en enkelt side skal have en konkret funktionel grund.
-- Ikke alle gamle hardcodede farver er migreret. Gennemgå dem side for side før godkendelse; dette forsøg er første fælles gennemløb.
+- Customers, Analytics, Integrations, Settings og de øvrige Knowledge-komponenter bruger nu fælles semantiske farver. PR80-filerne er fortsat undtaget. Logoer, chart-serier, brugerens tagfarver, formateret brugerindhold og theme-picker-miniaturer må beholde egne farver.
 
 ## Motion og evidens
 
@@ -82,3 +83,10 @@ Behold eksisterende kurve `cubic-bezier(0.23, 1, 0.32, 1)` og korte UI-overgange
 Lokal review foregår i appen og på `/design-lab`. Design-lab er kun tilgængelig under `next dev`, bruger fiktive data og har ingen backend-write-handlinger. Behold normal authentication.
 
 Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må ikke uploades til offentlige hosts. Ingen push eller PR før brugeren har godkendt forsøget.
+
+## Sidekontrol før review
+
+- Brug fælles tekstroller, knapvarianter og tokens til hover, selection, status og fokus. Nye lokale farvepaletter kræver en dokumenteret undtagelse.
+- Kontroller light/dark, keyboard-fokus, dropdowns og fejltekst i faktisk renderede controls.
+- På mobil har sider uden inboxens SiteHeader en fælles navigationstrigger. Felter bruger text-input; brede tabeller får lokal overflow-x-auto.
+- Bevar desktop-layoutet og undgå horisontal overflow på hele siden. Se [local-review.md](design/local-review.md) for gennemførte checks og begrænsninger.

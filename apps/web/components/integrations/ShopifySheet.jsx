@@ -211,7 +211,7 @@ export function ShopifySheet({
             />
           </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-danger-foreground">{error}</p>}
 
           <SheetFooter className="pt-2 flex-col gap-3 sm:flex-col">
             <Button
@@ -225,7 +225,7 @@ export function ShopifySheet({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full border-red-200 text-red-600 hover:bg-red-50"
+                className="w-full border-danger-border text-danger-foreground hover:bg-danger"
                 disabled={disconnecting || submitting}
                 onClick={handleDisconnect}
               >

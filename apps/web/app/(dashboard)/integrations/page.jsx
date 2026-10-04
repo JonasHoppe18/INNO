@@ -19,7 +19,7 @@ export default async function IntegrationsPage() {
     <DashboardPageShell className="space-y-14">
       <section className="space-y-4">
         <div>
-          <h2 className="text-2xl font-semibold">Sync with your e-commerce platform</h2>
+          <h1 className="text-page-heading font-semibold">Sync with your e-commerce platform</h1>
           <p className="text-sm text-muted-foreground">
             Sync orders, customers, and inventory across your channels.
           </p>
@@ -31,7 +31,7 @@ export default async function IntegrationsPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-2xl font-semibold">3PL</h2>
+          <h2 className="text-section-heading font-semibold">3PL</h2>
           <p className="text-sm text-muted-foreground">
             Connect your logistics providers to keep shipping operations in sync.
           </p>
@@ -44,7 +44,7 @@ export default async function IntegrationsPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-2xl font-semibold">Unify customer conversations</h2>
+          <h2 className="text-section-heading font-semibold">Unify customer conversations</h2>
           <p className="text-sm text-muted-foreground">
             Connect your helpdesk tools to Sona and get a complete overview of cases.
           </p>

@@ -329,7 +329,7 @@ export function TagsSettings() {
                         type="button"
                         onClick={() => handleDelete(tag)}
                         disabled={deletingId === tag.id}
-                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-danger hover:text-danger-foreground"
                         aria-label="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

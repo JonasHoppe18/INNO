@@ -61,9 +61,9 @@ function humanizeActionType(actionType = "") {
 function TypingDots() {
   return (
     <div className="flex items-center gap-1 py-0.5">
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300 [animation-delay:-0.3s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300 [animation-delay:-0.15s]" />
-      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-300" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
+      <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
     </div>
   );
 }
@@ -72,19 +72,19 @@ function MetaPill({ label, value, tone = "gray" }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset ring-black/5",
-        tone === "gray" && "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-        tone === "indigo" && "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
-        tone === "amber" && "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-        tone === "emerald" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset ring-border/5",
+        tone === "gray" && "bg-muted text-muted-foreground  ",
+        tone === "indigo" && "bg-accent text-primary  ",
+        tone === "amber" && "bg-warning text-warning-foreground  ",
+        tone === "emerald" && "bg-success text-success-foreground  ",
       )}
     >
       {tone !== "gray" && (
         <span
           className={cn("h-1.5 w-1.5 shrink-0 rounded-full",
-            tone === "indigo" && "bg-indigo-400",
-            tone === "amber" && "bg-amber-400",
-            tone === "emerald" && "bg-emerald-400",
+            tone === "indigo" && "bg-primary",
+            tone === "amber" && "bg-warning-foreground",
+            tone === "emerald" && "bg-success-foreground",
           )}
         />
       )}
@@ -100,12 +100,12 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
   useEffect(() => setDraft(turn.text), [turn.text]);
   return (
     <div className="flex gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground ring-1 ring-inset ring-ring/60   ">
         <User className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground ">
             Customer
           </p>
           {!editing && (
@@ -113,7 +113,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                className="rounded p-0.5 text-gray-300 transition-colors hover:text-gray-500"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-muted-foreground"
                 title="Edit"
               >
                 <Pencil className="h-3 w-3" />
@@ -122,7 +122,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
                 <button
                   type="button"
                   onClick={onRemove}
-                  className="rounded p-0.5 text-gray-300 transition-colors hover:text-red-400"
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-danger-foreground"
                   title="Remove"
                 >
                   <X className="h-3 w-3" />
@@ -137,7 +137,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={3}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-input md:text-sm leading-relaxed text-foreground outline-none transition-shadow focus:border-primary/30 focus:ring-2 focus:ring-ring     "
             />
             <div className="flex justify-end gap-1.5">
               <button
@@ -146,7 +146,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
                   setDraft(turn.text);
                   setEditing(false);
                 }}
-                className="rounded px-2 py-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground  "
               >
                 Cancel
               </button>
@@ -156,14 +156,14 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
                   onEdit(draft.trim());
                   setEditing(false);
                 }}
-                className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-indigo-700 active:scale-[0.97]"
+                className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground transition-[color,background-color,border-color,box-shadow,transform] hover:bg-primary/90 active:scale-[0.97]"
               >
                 Save
               </button>
             </div>
           </div>
         ) : (
-          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-gray-50 px-3 py-2.5 text-xs leading-relaxed text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50">
+          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted px-3 py-2.5 text-xs leading-relaxed text-foreground ring-1 ring-inset ring-ring/80   ">
             {turn.text}
           </p>
         )}
@@ -181,12 +181,12 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
   const acceptedAction = turn.acceptedAction || null;
   return (
     <div className="flex gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-primary ring-1 ring-inset ring-ring   ">
         <Bot className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary ">
             Sona AI{" "}
             {turn.edited && (
               <span className="font-normal normal-case opacity-60">(edited)</span>
@@ -196,7 +196,7 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded p-0.5 text-gray-300 transition-colors hover:text-gray-500"
+              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-muted-foreground"
               title="Edit before continuing"
             >
               <Pencil className="h-3 w-3" />
@@ -209,9 +209,9 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={Math.min(12, Math.max(3, Math.ceil(draft.length / 70)))}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-input md:text-sm leading-relaxed text-foreground outline-none transition-shadow focus:border-primary/30 focus:ring-2 focus:ring-ring     "
             />
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-muted-foreground ">
               Editing here simulates how an agent would rewrite the draft before sending. The next AI turn will see your edited version.
             </p>
             <div className="flex justify-end gap-1.5">
@@ -221,7 +221,7 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
                   setDraft(turn.text);
                   setEditing(false);
                 }}
-                className="rounded px-2 py-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground  "
               >
                 Cancel
               </button>
@@ -231,26 +231,26 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
                   onEdit(draft.trim());
                   setEditing(false);
                 }}
-                className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-indigo-700 active:scale-[0.97]"
+                className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground transition-[color,background-color,border-color,box-shadow,transform] hover:bg-primary/90 active:scale-[0.97]"
               >
                 Save edit
               </button>
             </div>
           </div>
         ) : turn.text ? (
-          <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-xs leading-relaxed text-gray-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
+          <p className="whitespace-pre-wrap rounded-lg border border-border bg-card px-3 py-2.5 text-xs leading-relaxed text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.04)]   ">
             {turn.text}
           </p>
         ) : proposedActions.length > 0 ? (
           null
         ) : (
-          <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs italic text-gray-400 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-500">
+          <p className="rounded-lg border border-dashed border-border bg-muted px-3 py-2 text-xs italic text-muted-foreground   ">
             No draft was generated for this turn.
           </p>
         )}
         {!editing && (meta.intent || meta.routing_hint || typeof meta.confidence === "number" || typeof meta.latency_ms === "number") && (
           <details className="group text-xs">
-            <summary className="flex cursor-pointer select-none list-none items-center gap-0.5 text-gray-400 transition-colors hover:text-gray-600">
+            <summary className="flex cursor-pointer select-none list-none items-center gap-0.5 text-muted-foreground transition-colors hover:text-muted-foreground">
               <ChevronRight className="h-3 w-3 transition-transform duration-150 group-open:rotate-90" />
               <span>Details</span>
             </summary>
@@ -269,7 +269,7 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             {Array.isArray(meta.sources) && meta.sources.length > 0 && (
               <ul className="mt-1.5 space-y-0.5 pl-3">
                 {meta.sources.slice(0, 6).map((s, i) => (
-                  <li key={i} className="truncate text-xs text-gray-400">
+                  <li key={i} className="truncate text-xs text-muted-foreground">
                     · {s.source_label || s.kind || "knowledge"}
                   </li>
                 ))}
@@ -277,11 +277,11 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             )}
             {Array.isArray(meta.provenance?.structured_facts) && meta.provenance.structured_facts.length > 0 && (
               <div className="mt-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Structured facts (confirmed)</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-success-foreground">Structured facts (confirmed)</p>
                 <ul className="mt-0.5 space-y-0.5 pl-3">
                   {meta.provenance.structured_facts.slice(0, 8).map((f, i) => (
-                    <li key={i} className="text-xs text-emerald-700">
-                      · {f.key}: {f.value} <span className="text-emerald-500/70">({f.origin_table})</span>
+                    <li key={i} className="text-xs text-success-foreground">
+                      · {f.key}: {f.value} <span className="text-success-foreground/70">({f.origin_table})</span>
                     </li>
                   ))}
                 </ul>
@@ -289,11 +289,11 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             )}
             {Array.isArray(meta.provenance?.live_facts) && meta.provenance.live_facts.length > 0 && (
               <div className="mt-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">Live facts (verified)</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-info-foreground">Live facts (verified)</p>
                 <ul className="mt-0.5 space-y-0.5 pl-3">
                   {meta.provenance.live_facts.slice(0, 8).map((f, i) => (
-                    <li key={i} className="text-xs text-sky-700">
-                      · {f.label}: {f.value} <span className="text-sky-500/70">({f.source})</span>
+                    <li key={i} className="text-xs text-info-foreground">
+                      · {f.label}: {f.value} <span className="text-info-foreground">({f.source})</span>
                     </li>
                   ))}
                 </ul>
@@ -301,10 +301,10 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             )}
             {Array.isArray(meta.provenance?.guardrails_unavailable) && meta.provenance.guardrails_unavailable.length > 0 && (
               <div className="mt-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">Guardrails / unavailable</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-warning-foreground">Guardrails / unavailable</p>
                 <ul className="mt-0.5 space-y-0.5 pl-3">
                   {meta.provenance.guardrails_unavailable.slice(0, 8).map((g, i) => (
-                    <li key={i} className="text-xs text-orange-700">
+                    <li key={i} className="text-xs text-warning-foreground">
                       · {g.topic}/{g.reason}: {g.message}
                     </li>
                   ))}
@@ -400,9 +400,9 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
+        <DialogHeader className="border-b border-border px-5 py-3.5 ">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <Inbox className="h-4 w-4 text-indigo-500" />
+            <Inbox className="h-4 w-4 text-primary" />
             Load a real ticket to simulate from
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -410,13 +410,13 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[65vh] flex-col">
-          <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-2.5 dark:border-gray-800">
-            <Search className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
+          <div className="flex items-center gap-2 border-b border-border px-5 py-2.5 ">
+            <Search className="h-3.5 w-3.5 text-muted-foreground " />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search subject, customer, preview..."
-              className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-300 outline-none dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="flex-1 bg-transparent text-input md:text-sm text-foreground placeholder:text-muted-foreground outline-none  "
             />
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -427,34 +427,34 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
                 ))}
               </div>
             ) : filtered.length === 0 ? (
-              <p className="px-5 py-10 text-center text-xs text-gray-400 dark:text-gray-500">
+              <p className="px-5 py-10 text-center text-xs text-muted-foreground ">
                 {query ? "No tickets match your search." : "No tickets found."}
               </p>
             ) : (
-              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+              <ul className="divide-y divide-border ">
                 {filtered.map((thread) => (
                   <li key={thread.thread_id}>
                     <button
                       type="button"
                       disabled={loadingThreadId !== null}
                       onClick={() => handlePick(thread)}
-                      className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800/50"
+                      className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-muted disabled:opacity-50 "
                     >
-                      <span className="truncate text-xs font-medium text-gray-800 dark:text-gray-100">
+                      <span className="truncate text-xs font-medium text-foreground ">
                         {thread.subject || "(no subject)"}
                       </span>
                       {thread.customer_email && (
-                        <span className="truncate text-xs text-gray-500 dark:text-gray-400">
+                        <span className="truncate text-xs text-muted-foreground ">
                           {thread.customer_email}
                         </span>
                       )}
                       {thread.preview && (
-                        <span className="truncate text-xs text-gray-400 dark:text-gray-500">
+                        <span className="truncate text-xs text-muted-foreground ">
                           {thread.preview}
                         </span>
                       )}
                       {loadingThreadId === thread.thread_id && (
-                        <span className="mt-1 inline-flex items-center gap-1 text-xs text-indigo-600">
+                        <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
                           <Loader2 className="h-3 w-3 animate-spin" />
                           Loading conversation...
                         </span>
@@ -745,10 +745,10 @@ export function SimulateConversationClient() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-page-heading font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+          <h1 className="text-page-heading font-semibold tracking-tight text-foreground ">
             Simulate a conversation
           </h1>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-0.5 text-xs text-muted-foreground ">
             Test how Sona answers as a ticket grows over multiple turns. Edit any reply before continuing to simulate how an agent would intervene.
           </p>
         </div>
@@ -774,28 +774,28 @@ export function SimulateConversationClient() {
       </div>
 
       {previewDocumentId && (
-        <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/30 dark:text-indigo-300">
+        <div className="mb-3 rounded-lg border border-primary/30 bg-accent px-3.5 py-2 text-xs text-accent-foreground   ">
           Draft knowledge document preview is active for this simulation only.
         </div>
       )}
 
       {/* Context strip */}
-      <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
-        <div className="grid grid-cols-1 divide-y divide-gray-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-gray-800">
+      <div className="mb-3 overflow-hidden rounded-lg border border-border bg-card shadow-sm   dark:shadow-none">
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0 ">
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground ">
               Subject
             </span>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="(simulated ticket)"
-              className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="flex-1 bg-transparent text-input md:text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50  "
               disabled={hasTurns}
             />
           </label>
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground ">
               Customer
             </span>
             <input
@@ -803,19 +803,19 @@ export function SimulateConversationClient() {
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="customer@example.com"
               type="email"
-              className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="flex-1 bg-transparent text-input md:text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50  "
               disabled={hasTurns}
             />
           </label>
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground ">
               Order #
             </span>
             <input
               value={orderNumber}
               onChange={(e) => setOrderNumber(e.target.value)}
               placeholder="e.g. 1048 (optional)"
-              className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="flex-1 bg-transparent text-input md:text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50  "
               disabled={hasTurns}
             />
           </label>
@@ -829,17 +829,17 @@ export function SimulateConversationClient() {
             type="checkbox"
             checked={autoAcceptActions}
             onChange={(e) => setAutoAcceptActions(e.target.checked)}
-            className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-1 focus:ring-indigo-300 dark:border-gray-600"
+            className="h-3.5 w-3.5 cursor-pointer rounded border-input text-primary focus:ring-1 focus:ring-ring "
           />
-          <span className="text-xs text-gray-600 dark:text-gray-400">
+          <span className="text-xs text-muted-foreground ">
             Auto-accept proposed actions
           </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
+          <span className="text-xs text-muted-foreground ">
             (test mode — nothing executes)
           </span>
         </label>
         {!hasTurns && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">
+          <p className="text-xs text-muted-foreground ">
             Tip: provide customer email or order # for accurate Shopify lookups.
           </p>
         )}
@@ -848,15 +848,15 @@ export function SimulateConversationClient() {
       {/* Transcript */}
       <div
         ref={scrollRef}
-        className="flex-1 space-y-5 overflow-y-auto rounded-xl border border-gray-200/60 bg-white px-5 py-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] dark:border-gray-800 dark:bg-card dark:shadow-none"
+        className="flex-1 space-y-5 overflow-y-auto rounded-xl border border-border/60 bg-card px-5 py-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)]  dark:shadow-none"
       >
         {!hasTurns && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center animate-in fade-in-0 duration-500">
             <div className="space-y-1">
-              <p className="text-base font-semibold text-gray-800 dark:text-gray-100">
+              <p className="text-base font-semibold text-foreground ">
                 Start a simulated conversation
               </p>
-              <p className="max-w-sm text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+              <p className="max-w-sm text-xs leading-relaxed text-muted-foreground ">
                 Write the customer&apos;s first message below, or load a real ticket to replay and extend.
               </p>
             </div>
@@ -902,14 +902,14 @@ export function SimulateConversationClient() {
 
         {running && (
           <div className="flex gap-3 animate-in fade-in-0 duration-200">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-primary ring-1 ring-inset ring-ring   ">
               <Bot className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary ">
                 Sona AI
               </p>
-              <div className="inline-flex rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40">
+              <div className="inline-flex rounded-lg border border-border bg-card px-3 py-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]  ">
                 <TypingDots />
               </div>
             </div>
@@ -918,22 +918,22 @@ export function SimulateConversationClient() {
 
         {!running && lastError && (
           <div className="flex gap-3 animate-in fade-in-0 duration-200">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-400 dark:ring-red-800/50">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-danger-foreground ring-1 ring-inset ring-danger-border   ">
               <X className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-red-500 dark:text-red-400">
+              <p className="text-xs font-semibold uppercase tracking-widest text-danger-foreground ">
                 Simulation failed
               </p>
-              <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5 dark:border-red-900/50 dark:bg-red-950/30">
-                <p className="text-xs text-red-700 dark:text-red-400">{lastError}</p>
+              <div className="rounded-lg border border-danger-border bg-danger/60 px-3 py-2.5  ">
+                <p className="text-xs text-danger-foreground ">{lastError}</p>
                 <div className="mt-2 flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={handleRetry} className="gap-1.5 transition-transform active:scale-[0.97]">
                     <RotateCcw className="h-3 w-3" />
                     Retry
                   </Button>
-                  <p className="text-xs text-red-500">
-                    If you keep seeing this, restart the dev server: <code className="rounded bg-white px-1 py-0.5">rm -rf .next &amp;&amp; npm run dev</code>
+                  <p className="text-xs text-danger-foreground">
+                    If you keep seeing this, restart the dev server: <code className="rounded bg-card px-1 py-0.5">rm -rf .next &amp;&amp; npm run dev</code>
                   </p>
                 </div>
               </div>
@@ -961,7 +961,7 @@ export function SimulateConversationClient() {
                   : "Write the customer's first message... (Cmd+Enter to send)"
               }
               rows={3}
-              className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
+              className="w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-input md:text-sm leading-relaxed text-foreground placeholder:text-muted-foreground outline-none transition-shadow focus:border-primary/30 focus:ring-2 focus:ring-ring/80 disabled:opacity-50      "
               disabled={running}
               autoFocus
             />
@@ -978,12 +978,12 @@ export function SimulateConversationClient() {
             </div>
           </div>
         ) : running ? (
-          <p className="px-2 text-xs text-gray-400">
+          <p className="px-2 text-xs text-muted-foreground">
             Sona is thinking...
           </p>
         ) : (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3 dark:border-indigo-800/50 dark:bg-indigo-950/30">
-            <p className="text-xs text-indigo-700 dark:text-indigo-400">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-accent/40 px-4 py-3  ">
+            <p className="text-xs text-accent-foreground ">
               The conversation ends on a customer message. Generate Sona&apos;s reply to continue.
             </p>
             <Button
