@@ -151,7 +151,7 @@ function assertSafeUrlTemplate(value, { allowHash = false } = {}) {
   return candidate.slice(0, 4000);
 }
 
-function normalizeBlock(block, depth = 0) {
+function normalizeBlock(block, depth = 0, purpose = "csat") {
   if (!block || typeof block !== "object" || depth > 6) {
     throw new CsatTemplateValidationError("Invalid email block.");
   }
@@ -179,7 +179,7 @@ function normalizeBlock(block, depth = 0) {
       if (!Array.isArray(column) || column.length > 30) {
         throw new CsatTemplateValidationError("Email columns contain too many blocks.");
       }
-      return column.map((child) => normalizeBlock(child, depth + 1));
+      return column.map((child) => normalizeBlock(child, depth + 1, purpose));
     });
     return normalized;
   }
@@ -237,7 +237,15 @@ function normalizeBlock(block, depth = 0) {
   }
 
   const customType = String(block.customType || "");
-  if (!ALLOWED_CUSTOM_BLOCK_TYPES.has(customType)) {
+  if (purpose === "confirmation" && customType === "confirmation-message") {
+    const fields = block.fieldValues || {};
+    return { ...normalized, customType, fieldValues: {
+      message: safeText(fields.message || "", 10000),
+      fontSize: clampNumber(fields.fontSize, 10, 32, 16),
+      color: safeHex(fields.color, "#172033"),
+    } };
+  }
+  if (purpose !== "csat" || !ALLOWED_CUSTOM_BLOCK_TYPES.has(customType)) {
     throw new CsatTemplateValidationError("This custom block is not allowed in CSAT emails.");
   }
   const fieldValues = block.fieldValues && typeof block.fieldValues === "object" ? block.fieldValues : {};
@@ -251,14 +259,14 @@ function normalizeBlock(block, depth = 0) {
   return normalized;
 }
 
-export function normalizeCsatTemplateContent(content) {
+export function normalizeCsatTemplateContent(content, { purpose = "csat" } = {}) {
   const source = content && typeof content === "object" ? content : createDefaultCsatEmailContent();
   const blocks = Array.isArray(source.blocks) ? source.blocks : [];
   if (blocks.length > 40) throw new CsatTemplateValidationError("CSAT emails can contain at most 40 sections.");
   const settings = source.settings && typeof source.settings === "object" ? source.settings : {};
-  const normalizedBlocks = blocks.map((block) => normalizeBlock(block));
+  const normalizedBlocks = blocks.map((block) => normalizeBlock(block, 0, purpose));
   const ratingBlockCount = countCsatRatingBlocks({ blocks: normalizedBlocks });
-  if (ratingBlockCount !== 1) {
+  if (purpose === "csat" && ratingBlockCount !== 1) {
     throw new CsatTemplateValidationError("CSAT emails must contain exactly one CSAT rating block.");
   }
   return {
@@ -289,8 +297,8 @@ export function replaceCsatVariables(value, data = CSAT_SAMPLE_DATA) {
   });
 }
 
-function decorateContentForRender(content, { data, linkMode, token, baseUrl } = {}) {
-  const normalized = normalizeCsatTemplateContent(content);
+function decorateContentForRender(content, { data, linkMode, token, baseUrl, purpose = "csat" } = {}) {
+  const normalized = normalizeCsatTemplateContent(content, { purpose });
   const responseUrls = Object.fromEntries(
     [1, 2, 3, 4, 5].map((score) => [
       score,
@@ -391,6 +399,7 @@ export async function renderCsatEmail({
   linkMode = "test",
   token = "",
   baseUrl = "",
+  purpose = "csat",
 } = {}) {
   if (linkMode === "live" && !token) {
     throw new CsatTemplateValidationError("A secure CSAT token is required for live rating links.");
@@ -400,11 +409,15 @@ export async function renderCsatEmail({
     linkMode,
     token,
     baseUrl,
+    purpose,
   });
   const { renderToMjml } = await import("@templatical/renderer");
   const mjml = await renderToMjml(decorated, {
     allowHtmlBlocks: false,
     renderCustomBlock: async (block) => {
+      if (purpose === "confirmation" && block.customType === "confirmation-message") {
+        return `<mj-text font-size="${block.fieldValues.fontSize}px" color="${block.fieldValues.color}">{{content}}</mj-text>`;
+      }
       if (block.customType !== "csat-rating") return "";
       return renderCsatRatingHtml(block.fieldValues);
     },

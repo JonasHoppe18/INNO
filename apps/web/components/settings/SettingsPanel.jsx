@@ -1886,7 +1886,7 @@ function EmailSettings({
               </p>
             </div>
             <div className="min-w-0 space-y-3">
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1896,6 +1896,9 @@ function EmailSettings({
                 >
                   <PenLine className="mr-2 h-4 w-4" />
                   Edit
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/settings/confirmation/email${selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : ""}`}>Customize email design</Link>
                 </Button>
               </div>
               <div className="min-w-0 rounded-xl border border-border bg-card p-4">
@@ -3071,6 +3074,7 @@ function ProfileTab({ user, isLoaded }) {
 export function SettingsPanel() {
   const { ready: readsReady, readResponse } = useScopedReadResource();
   const searchParams = useSearchParams();
+  const requestedConfirmationMailboxRef = useRef(searchParams?.get("mailbox_id") || "");
   const pathname = usePathname();
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
@@ -3481,12 +3485,15 @@ export function SettingsPanel() {
 
       // Apply customer-confirmation workspace default.
       if (autoReplyResponse?.ok) {
-        const setting = autoReplyPayload?.workspace_setting || autoReplyPayload?.setting || {};
-        const template = autoReplyPayload?.workspace_template || autoReplyPayload?.template || {};
+        const requestedMailbox = (autoReplyPayload?.mailboxes || []).find(
+          (mailbox) => mailbox.id === requestedConfirmationMailboxRef.current
+        );
+        const setting = requestedMailbox?.effective || autoReplyPayload?.workspace_setting || autoReplyPayload?.setting || {};
+        const template = requestedMailbox?.template || autoReplyPayload?.workspace_template || autoReplyPayload?.template || {};
         setConfirmationConfiguration(autoReplyPayload || null);
-        setSelectedConfirmationMailboxId("");
-        setAutoReplyInheritsWorkspace(false);
-        setInitialAutoReplyInheritsWorkspace(false);
+        setSelectedConfirmationMailboxId(requestedMailbox?.id || "");
+        setAutoReplyInheritsWorkspace(Boolean(requestedMailbox?.inherits_workspace));
+        setInitialAutoReplyInheritsWorkspace(Boolean(requestedMailbox?.inherits_workspace));
         setAutoReplyEnabled(Boolean(setting?.enabled));
         setInitialAutoReplyEnabled(Boolean(setting?.enabled));
         setAutoReplyIncludeTicketNumber(setting?.include_ticket_number !== false);

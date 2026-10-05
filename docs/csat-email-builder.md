@@ -4,6 +4,12 @@ This feature adds a workspace-scoped drag-and-drop CSAT email builder at
 `/settings/csat/email`, with grouped Thank You pages at
 `/settings/csat/thank-you`.
 
+The canvas, autosave, preview and toolbar live in
+`components/email/EmailTemplateBuilder.jsx`. `CsatEmailBuilder.jsx` supplies
+the CSAT palette, mandatory rating block and endpoints. The confirmation
+editor supplies its own message block and workspace/mailbox endpoints.
+CSAT normalization still requires exactly one rating block.
+
 ## Architecture
 
 ```text

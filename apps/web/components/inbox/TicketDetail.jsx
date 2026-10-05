@@ -1,3 +1,4 @@
+import { ConfirmationSent } from "@/components/inbox/ConfirmationSent";
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
@@ -1040,20 +1041,22 @@ function TicketDetailComponent({
                   </div>
                 ) : null}
                 <MessageRenderBoundary messageId={messageId || message?.id}>
-                  <MessageBubble
-                    message={message}
-                    direction={direction}
-                    attachments={messageAttachments}
-                    outboundSenderName={currentUserName}
-                    showMeta={!groupedWithPrevious}
-                    compactTimestamp
-                    showTimestamp={showMessageTimestamp}
-                    grouped={groupedWithPrevious}
-                    editStats={direction === "outbound" ? sentDraftStats : null}
-                    translatedText={getMessageTranslationText(message, translationItems)}
-                    translationLoading={translationLoading}
-                    onRequestTranslation={onRequestTranslation}
-                  />
+                  <ConfirmationSent message={message} enabled={Boolean(message.confirmation_sent_at && direction === "outbound" && !isDraft)}>
+                    <MessageBubble
+                      message={message}
+                      direction={direction}
+                      attachments={messageAttachments}
+                      outboundSenderName={currentUserName}
+                      showMeta={!groupedWithPrevious}
+                      compactTimestamp
+                      showTimestamp={showMessageTimestamp}
+                      grouped={groupedWithPrevious}
+                      editStats={direction === "outbound" && !message.confirmation_sent_at ? sentDraftStats : null}
+                      translatedText={getMessageTranslationText(message, translationItems)}
+                      translationLoading={translationLoading}
+                      onRequestTranslation={onRequestTranslation}
+                    />
+                  </ConfirmationSent>
                 </MessageRenderBoundary>
               </div>
               </Fragment>

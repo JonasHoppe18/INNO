@@ -15,6 +15,6 @@ Mappen er til coding-agenter (Cursor, Claude Code, Codex). Læs i den rækkeføl
 
 Rodfilen `AGENTS.md` er den eneste auto-indgang.
 
-**Ikke kanonisk** (læs kun som historik): `docs/superpowers/`, `docs/archive/`. Aktiv feature-doc uden for `.agents/`: `docs/csat-email-builder.md`.
+**Ikke kanonisk** (læs kun som historik): `docs/superpowers/`, `docs/archive/`. Aktiv feature-doc uden for `.agents/`: `docs/csat-email-builder.md` og `docs/confirmation-email-builder.md`.
 
 Greenfield er **target**. V2 er **legacy indtil cutover**. Bland dem ikke. Alt arbejde default til **dev**.
