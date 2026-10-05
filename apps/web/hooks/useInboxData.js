@@ -271,6 +271,7 @@ export function useThreadMessages(threadId, options = {}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [bodyFetchedThreadId, setBodyFetchedThreadId] = useState(threadId || null);
   const [fetchedThreadId, setFetchedThreadId] = useState(threadId || null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
@@ -310,7 +311,7 @@ export function useThreadMessages(threadId, options = {}) {
           if (isStale() || fullApplied) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           setData(rows);
-          setFetchedThreadId(requestThreadId);
+          setBodyFetchedThreadId(requestThreadId);
         }).catch(() => {});
         const payload = await fullRead;
         fullApplied = true;
@@ -324,6 +325,7 @@ export function useThreadMessages(threadId, options = {}) {
           }
           setData(rows);
           setAttachments(attachmentRows);
+          setBodyFetchedThreadId(requestThreadId);
           setFetchedThreadId(requestThreadId);
           reportClientEvent({
             event: "thread_detail_loaded",
@@ -438,7 +440,8 @@ export function useThreadMessages(threadId, options = {}) {
       const normalizedRows = Array.isArray(rows) ? rows : [];
       setData(normalizedRows);
       setDetail(null);
-      setFetchedThreadId(requestThreadId);
+      setBodyFetchedThreadId(requestThreadId);
+          setFetchedThreadId(requestThreadId);
       reportClientEvent({
         event: "thread_detail_loaded",
         threadId: requestThreadId,
@@ -522,7 +525,7 @@ export function useThreadMessages(threadId, options = {}) {
     setDetail(null);
   }, [seeded, seededKey, threadId]);
 
-  return { data, attachments, detail, loading, error, refresh: fetchMessages, fetchedThreadId };
+  return { data, attachments, detail, loading, error, refresh: fetchMessages, fetchedThreadId, bodyFetchedThreadId };
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {

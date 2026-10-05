@@ -1904,6 +1904,7 @@ export function InboxSplitView({
     loading: selectedThreadMessagesLoading,
     refresh: refreshSelectedThreadMessages,
     fetchedThreadId: messagesFetchedForThreadId,
+    bodyFetchedThreadId: bodiesFetchedForThreadId,
   } = useThreadMessages(selectedThreadId, {
     enabled:
       Boolean(selectedThreadId) &&
@@ -2377,7 +2378,7 @@ export function InboxSplitView({
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
     const dbDataIsForCurrentThread =
-      messagesFetchedForThreadId === selectedThreadId;
+      bodiesFetchedForThreadId === selectedThreadId;
     const rawBase =
       dbDataIsForCurrentThread &&
       Array.isArray(selectedThreadMessagesFromDb) &&
@@ -2410,7 +2411,7 @@ export function InboxSplitView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
   }, [
     localSentMessagesByThread,
-    messagesFetchedForThreadId,
+    bodiesFetchedForThreadId,
     messagesByThread,
     selectedThreadId,
     selectedThreadMessagesFromDb,
@@ -2429,15 +2430,15 @@ export function InboxSplitView({
     selectedThreadId &&
     !isLocalThreadId(selectedThreadId) &&
     (selectedThreadMessagesLoading ||
-      messagesFetchedForThreadId !== selectedThreadId) &&
+      bodiesFetchedForThreadId !== selectedThreadId) &&
     !hasSelectedThreadMessageCache &&
-    !(messagesFetchedForThreadId === selectedThreadId && selectedThreadMessagesFromDb.length),
+    !(bodiesFetchedForThreadId === selectedThreadId && selectedThreadMessagesFromDb.length),
   );
 
   useEffect(() => {
     if (
       selectedThreadId &&
-      messagesFetchedForThreadId === selectedThreadId &&
+      bodiesFetchedForThreadId === selectedThreadId &&
       Array.isArray(selectedThreadMessagesFromDb) &&
       selectedThreadMessagesFromDb.length
     ) {
@@ -2460,7 +2461,7 @@ export function InboxSplitView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
   }, [
-    messagesFetchedForThreadId,
+    bodiesFetchedForThreadId,
     selectedThreadId,
     selectedThreadMessagesFromDb,
   ]);
