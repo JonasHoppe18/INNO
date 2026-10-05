@@ -312,7 +312,7 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
               <PackageMinusIcon className="size-4" />
             </div>
             <div>
-              <CardTitle className="text-lg">Returns on the way back</CardTitle>
+              <CardTitle>Returns on the way back</CardTitle>
               <CardDescription className="mt-1">Customer returns that need a status check.</CardDescription>
             </div>
           </div>
@@ -323,7 +323,7 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
               </Badge>
             ) : null}
             {returnTrackingRows.length > 0 ? (
-              <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" onClick={() => setAllOpen(true)}>
+              <Button variant="ghost" size="sm" className="rounded-lg px-2" onClick={() => setAllOpen(true)}>
                 View all
               </Button>
             ) : null}

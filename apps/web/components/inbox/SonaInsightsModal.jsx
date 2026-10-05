@@ -45,7 +45,7 @@ const MANUAL_ACTION_ICON_TONES = {
 const SIDEBAR_ROW_CLASS =
   "group flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/30";
 const SIDEBAR_BACK_CLASS =
-  "inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 hover:text-foreground active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30";
+  "inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/45 hover:text-foreground active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30";
 
 function OrderStatusPill({ status }) {
   const raw = String(status || "").trim().toLowerCase();
@@ -66,7 +66,7 @@ function OrderStatusPill({ status }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
         tone,
       )}
     >
@@ -133,7 +133,7 @@ const buildShopifyOrderUrl = (order, shopDomain) => {
 
 function SidebarSectionLabel({ children }) {
   return (
-    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
       {children}
     </div>
   );
@@ -598,7 +598,7 @@ export function SonaInsightsModal({
       <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background lg:bg-muted/[0.12]">
         <div className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
           <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold tracking-[-0.015em]">Ticket details</h2>
+            <h2 className="text-section-heading font-semibold tracking-[-0.015em]">Ticket details</h2>
           </div>
           <Button
             type="button"
@@ -622,10 +622,10 @@ export function SonaInsightsModal({
               <section className="space-y-1.5 border-b border-border/70 pb-2">
                 <SidebarSectionLabel>Customer</SidebarSectionLabel>
                 <div className="min-w-0">
-                  <div className="truncate text-[13px] font-medium text-foreground">
+                  <div className="truncate text-sm font-medium text-foreground">
                     {customerDisplayName}
                   </div>
-                  <div className="truncate text-[11px] text-muted-foreground">
+                  <div className="truncate text-xs text-muted-foreground">
                     {effectiveLookup?.customer?.email || "No email available"}
                   </div>
                 </div>
@@ -642,7 +642,7 @@ export function SonaInsightsModal({
                           target="_blank"
                           rel="noreferrer"
                           aria-label={`Open order #${matchedOrder.id} in Shopify`}
-                          className="group/order inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
+                          className="group/order inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
                         >
                           <span className="truncate">#{matchedOrder.id}</span>
                           <ExternalLink
@@ -651,7 +651,7 @@ export function SonaInsightsModal({
                           />
                         </a>
                       ) : (
-                        <div className="truncate text-[13px] font-medium text-foreground">
+                        <div className="truncate text-sm font-medium text-foreground">
                           #{matchedOrder.id}
                         </div>
                       )}
@@ -663,12 +663,12 @@ export function SonaInsightsModal({
                         }
                       />
                     </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    <div className="mt-0.5 text-xs text-muted-foreground">
                       {formatOrderTotal(matchedOrder) || "Amount unavailable"}
                     </div>
                     {matchedOrderItems.length ? (
                       <div className="mt-2 border-t border-border/60 pt-2">
-                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
                           Order items
                         </div>
                         <div className="space-y-1">
@@ -676,14 +676,14 @@ export function SonaInsightsModal({
                             <div
                               key={`${matchedOrder.id}-item-${index}`}
                               title={item}
-                              className="flex min-w-0 items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"
+                              className="flex min-w-0 items-start gap-1.5 text-xs leading-4 text-muted-foreground"
                             >
                               <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
                               <span className="line-clamp-2 min-w-0">{item}</span>
                             </div>
                           ))}
                           {matchedOrderItems.length > 2 ? (
-                            <div className="pl-2.5 text-[10px] text-muted-foreground/70">
+                            <div className="pl-2.5 text-xs text-muted-foreground/70">
                               +{matchedOrderItems.length - 2} more
                             </div>
                           ) : null}
@@ -702,14 +702,14 @@ export function SonaInsightsModal({
                 <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
                   <div className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left">
-                    <span className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-foreground">
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
                       <span className="truncate">
                         {suggestedContext.intent || "Tracking"}
                         {suggestedContext.confidence ? ` · ${suggestedContext.confidence}` : ""}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
+                    <span className="shrink-0 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
                       Detected
                     </span>
                   </div>
@@ -720,17 +720,17 @@ export function SonaInsightsModal({
                     </div>
                   ) : trackingInfo ? (
                     <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2.5">
-                      <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+                      <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                         <Truck className="h-3.5 w-3.5 text-muted-foreground" />
                         {trackingInfo.trackingCarrier || "Tracking"}
                         {trackingInfo.trackingStatus ? (
-                          <span className="ml-auto text-[11px] text-muted-foreground">
+                          <span className="ml-auto text-xs text-muted-foreground">
                             {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
                           </span>
                         ) : null}
                       </div>
                       {trackingInfo.trackingNumber ? (
-                        <div className="mt-1 text-[11px] text-muted-foreground">
+                        <div className="mt-1 text-xs text-muted-foreground">
                           {trackingInfo.trackingUrl ? (
                             <a href={trackingInfo.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
                               #{trackingInfo.trackingNumber}
@@ -758,7 +758,7 @@ export function SonaInsightsModal({
                           <Button
                             type="button"
                             size="sm"
-                            className="h-7 bg-foreground px-2.5 text-xs text-background shadow-none hover:bg-foreground/90"
+                            className="h-7 bg-foreground px-2.5 text-sm text-background shadow-none hover:bg-foreground/90"
                             disabled={returnTrackingActionState?.submitting === returnTrackingNumber}
                             onClick={() => returnTrackingActionState?.onAdd?.(returnTrackingCandidate)}
                           >
@@ -768,7 +768,7 @@ export function SonaInsightsModal({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                            className="h-7 px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => returnTrackingActionState?.onDismiss?.(returnTrackingCandidate)}
                           >
                             Dismiss
@@ -786,7 +786,7 @@ export function SonaInsightsModal({
               {knowledgeGaps.length > 0 ? (
                 <section className="space-y-1.5 border-b border-border/70 pb-2">
                   <SidebarSectionLabel>Needs knowledge</SidebarSectionLabel>
-                  <div className="space-y-1 text-[11px] leading-snug text-muted-foreground">
+                  <div className="space-y-1 text-xs leading-snug text-muted-foreground">
                     {knowledgeGaps.map((gap, i) => (
                       <div key={i}>{gap.suggested_title || gap.gap_type}</div>
                     ))}
@@ -801,7 +801,7 @@ export function SonaInsightsModal({
                   onClick={() => setActiveTab("customer")}
                   className={SIDEBAR_ROW_CLASS}
                 >
-                  <span className="text-[13px] font-medium text-foreground">
+                  <span className="text-sm font-medium text-foreground">
                     {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
                   </span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
@@ -815,7 +815,7 @@ export function SonaInsightsModal({
                   onClick={() => setActiveTab("manual-actions")}
                   className={SIDEBAR_ROW_CLASS}
                 >
-                  <span className="text-[13px] font-medium text-foreground">View available actions</span>
+                  <span className="text-sm font-medium text-foreground">View available actions</span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
                 </button>
                 <button
@@ -823,7 +823,7 @@ export function SonaInsightsModal({
                   onClick={() => setSonaLogOpen(true)}
                   className={SIDEBAR_ROW_CLASS}
                 >
-                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                  <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Activity className="h-3.5 w-3.5 text-muted-foreground" />
                     View Sona activity
                   </span>
@@ -937,7 +937,7 @@ export function SonaInsightsModal({
                       <p className="mt-1 text-xs leading-relaxed">Find the customer or order under the Customer tab.</p>
                     </div>
                   )}
-                  <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                  <p className="px-1 pt-1 text-xs font-semibold uppercase tracking-widest text-slate-400/80">
                     Order actions
                   </p>
                   {availableManualActions.length ? (
@@ -961,8 +961,8 @@ export function SonaInsightsModal({
                             {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
                           </div>
                           <div className="grid min-w-0 flex-1 gap-0.5">
-                            <p className="text-[13px] font-medium text-foreground">{action.label}</p>
-                            <p className="text-[11px] leading-snug text-muted-foreground">{action.description}</p>
+                            <p className="text-sm font-medium text-foreground">{action.label}</p>
+                            <p className="text-xs leading-snug text-muted-foreground">{action.description}</p>
                           </div>
                           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover/action:translate-x-0.5 group-hover/action:text-foreground" />
                         </button>

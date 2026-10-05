@@ -340,7 +340,7 @@ export function FreshdeskSheet({ children, onConnected, initialData = null }) {
           
           {/* TRIN 1 */}
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">1. Access</h3>
+            <h3 className="text-section-heading font-bold text-muted-foreground uppercase tracking-wider">1. Access</h3>
             <div className="space-y-2">
               <Label htmlFor="fd-domain">Freshdesk domain</Label>
               <Input
@@ -359,24 +359,24 @@ export function FreshdeskSheet({ children, onConnected, initialData = null }) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Find it under Profile Settings in Freshdesk.
               </p>
             </div>
           </div>
 
-          <div className="h-px bg-slate-100" />
+          <div className="h-px bg-muted" />
 
           <p className="text-xs text-muted-foreground">
             Sona starts a background import job automatically right after connect.
           </p>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-danger-foreground">{error}</p>}
 
           <SheetFooter className="pt-4 flex-col gap-3 sm:flex-col">
             <Button
               type="submit"
-              className="w-full bg-black text-white"
+              className="w-full bg-primary text-primary-foreground"
               disabled={submitting || disconnecting}
             >
               {primaryCtaLabel}
@@ -385,7 +385,7 @@ export function FreshdeskSheet({ children, onConnected, initialData = null }) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full border-red-200 text-red-600 hover:bg-red-50"
+                className="w-full border-danger-border text-danger-foreground hover:bg-danger"
                 onClick={handleDisconnect}
                 disabled={disconnecting || submitting}
               >

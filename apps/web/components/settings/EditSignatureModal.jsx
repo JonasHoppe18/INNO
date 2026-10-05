@@ -106,11 +106,11 @@ const LAYOUT_OPTIONS = [
     label: "Logo left",
     preview: (
       <div className="flex items-start gap-1">
-        <div className="h-5 w-5 flex-shrink-0 rounded bg-slate-400" />
+        <div className="h-5 w-5 flex-shrink-0 rounded bg-muted" />
         <div className="flex flex-1 flex-col gap-0.5 pt-0.5">
-          <div className="h-1.5 w-full rounded bg-slate-300" />
-          <div className="h-1 w-3/4 rounded bg-slate-200" />
-          <div className="h-1 w-1/2 rounded bg-slate-200" />
+          <div className="h-1.5 w-full rounded bg-muted" />
+          <div className="h-1 w-3/4 rounded bg-muted" />
+          <div className="h-1 w-1/2 rounded bg-muted" />
         </div>
       </div>
     ),
@@ -121,11 +121,11 @@ const LAYOUT_OPTIONS = [
     preview: (
       <div className="flex items-start gap-1">
         <div className="flex flex-1 flex-col gap-0.5 pt-0.5">
-          <div className="h-1.5 w-full rounded bg-slate-300" />
-          <div className="h-1 w-3/4 rounded bg-slate-200" />
-          <div className="h-1 w-1/2 rounded bg-slate-200" />
+          <div className="h-1.5 w-full rounded bg-muted" />
+          <div className="h-1 w-3/4 rounded bg-muted" />
+          <div className="h-1 w-1/2 rounded bg-muted" />
         </div>
-        <div className="h-5 w-5 flex-shrink-0 rounded bg-slate-400" />
+        <div className="h-5 w-5 flex-shrink-0 rounded bg-muted" />
       </div>
     ),
   },
@@ -134,10 +134,10 @@ const LAYOUT_OPTIONS = [
     label: "Logo top",
     preview: (
       <div className="flex flex-col gap-1">
-        <div className="h-3 w-full rounded bg-slate-400" />
+        <div className="h-3 w-full rounded bg-muted" />
         <div className="flex flex-col gap-0.5">
-          <div className="h-1.5 w-full rounded bg-slate-300" />
-          <div className="h-1 w-2/3 rounded bg-slate-200" />
+          <div className="h-1.5 w-full rounded bg-muted" />
+          <div className="h-1 w-2/3 rounded bg-muted" />
         </div>
       </div>
     ),
@@ -148,10 +148,10 @@ const LAYOUT_OPTIONS = [
     preview: (
       <div className="flex flex-col gap-1">
         <div className="flex flex-col gap-0.5">
-          <div className="h-1.5 w-full rounded bg-slate-300" />
-          <div className="h-1 w-2/3 rounded bg-slate-200" />
+          <div className="h-1.5 w-full rounded bg-muted" />
+          <div className="h-1 w-2/3 rounded bg-muted" />
         </div>
-        <div className="h-3 w-full rounded bg-slate-400" />
+        <div className="h-3 w-full rounded bg-muted" />
       </div>
     ),
   },
@@ -166,19 +166,19 @@ const TEXT_ALIGN_OPTIONS = [
 function StepperInput({ value, onChange, min, max }) {
   const num = Number(value);
   return (
-    <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white">
+    <div className="flex h-9 items-center rounded-md border border-border bg-card">
       <button
         type="button"
         onClick={() => onChange(String(Math.max(min, num - 1)))}
-        className="flex h-full w-8 items-center justify-center text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 active:scale-95"
+        className="flex h-full w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-muted-foreground active:scale-95"
       >
         <Minus className="h-3 w-3" />
       </button>
-      <span className="w-10 select-none text-center text-sm text-slate-700">{value}</span>
+      <span className="w-10 select-none text-center text-sm text-foreground">{value}</span>
       <button
         type="button"
         onClick={() => onChange(String(Math.min(max, num + 1)))}
-        className="flex h-full w-8 items-center justify-center text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 active:scale-95"
+        className="flex h-full w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-muted-foreground active:scale-95"
       >
         <Plus className="h-3 w-3" />
       </button>
@@ -188,7 +188,7 @@ function StepperInput({ value, onChange, min, max }) {
 
 function SectionLabel({ children }) {
   return (
-    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{children}</p>
+    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{children}</p>
   );
 }
 
@@ -603,10 +603,10 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex w-[96vw] max-w-2xl flex-col overflow-hidden border-gray-200 bg-white" style={{ maxHeight: "92vh" }}>
+        <DialogContent className="flex w-[96vw] max-w-2xl flex-col overflow-hidden border-border bg-card" style={{ maxHeight: "92vh" }}>
           <DialogHeader>
-            <DialogTitle className="text-base">Edit Email Signature</DialogTitle>
-            <DialogDescription className="text-sm text-slate-500">
+            <DialogTitle className="text-page-heading">Edit Email Signature</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
               Update signature for {getDisplayName(member)}.
             </DialogDescription>
           </DialogHeader>
@@ -614,7 +614,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-0.5">
             {/* Plain text signature */}
             <div className="space-y-1.5">
-              <label htmlFor="member-signature" className="text-sm font-medium text-slate-700">
+              <label htmlFor="member-signature" className="text-sm font-medium text-foreground">
                 Signature
               </label>
               <Textarea
@@ -622,16 +622,16 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 value={signature}
                 onChange={(event) => setSignature(event.target.value)}
                 placeholder={"Best regards,\nYour Name"}
-                className="min-h-[100px] resize-y border-slate-200 text-sm"
+                className="min-h-[100px] resize-y border-border text-input md:text-sm"
               />
             </div>
 
             {/* Language-specific plain text signatures */}
-            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="space-y-3 rounded-xl border border-border bg-muted p-4">
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">Language-specific signatures</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="text-sm font-medium text-foreground">Language-specific signatures</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Use a matching sign-off when Sona replies in another language. The default remains the fallback.
                   </p>
                 </div>
@@ -647,7 +647,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       }
                     }}
                     placeholder="Language name, e.g. Danish"
-                    className="h-9 border-slate-200 bg-white text-sm"
+                    className="h-9 border-border bg-card text-input md:text-sm"
                   />
                   <Button
                     type="button"
@@ -655,7 +655,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     size="sm"
                     onClick={addLanguageSignature}
                     disabled={!languageInput.trim()}
-                    className="h-9 shrink-0 border-slate-200 bg-white text-xs"
+                    className="h-9 shrink-0 border-border bg-card text-sm"
                   >
                     Add language
                   </Button>
@@ -665,16 +665,16 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
               {Object.entries(languageSignatures).map(([code, value]) => {
                 const label = languageLabel(code);
                 return (
-                  <div key={code} className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-3">
+                  <div key={code} className="space-y-1.5 rounded-lg border border-border bg-card p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <label htmlFor={`member-signature-${code}`} className="text-sm font-medium text-slate-700">
+                      <label htmlFor={`member-signature-${code}`} className="text-sm font-medium text-foreground">
                         {label}
                       </label>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                        className="h-7 px-2 text-sm text-muted-foreground hover:text-danger-foreground"
                         onClick={() => setLanguageSignatures((previous) => {
                           const next = { ...previous };
                           delete next[code];
@@ -697,7 +697,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                               ? "Best regards\nYour Name"
                               : "Your sign-off\nYour Name"
                       }
-                      className="min-h-[82px] resize-y border-slate-200 text-sm"
+                      className="min-h-[82px] resize-y border-border text-input md:text-sm"
                     />
                   </div>
                 );
@@ -705,11 +705,11 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
             </div>
 
             {/* Visual template toggle row */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-border bg-muted p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">Extend with template</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="text-sm font-medium text-foreground">Extend with template</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Add a visual email footer without removing plain text signature.
                   </p>
                 </div>
@@ -718,7 +718,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 border-slate-200 text-xs"
+                    className="h-8 border-border text-sm"
                     onClick={() => setBuilderOpen(true)}
                   >
                     Configure template
@@ -729,11 +729,11 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     aria-checked={Boolean(templateIsActive)}
                     onClick={() => setTemplateIsActive((prev) => !prev)}
                     className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${
-                      templateIsActive ? "bg-emerald-500" : "bg-slate-300"
+                      templateIsActive ? "bg-success-foreground" : "bg-muted"
                     }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                      className={`inline-block h-4 w-4 transform rounded-full bg-card shadow-sm transition-transform ${
                         templateIsActive ? "translate-x-5" : "translate-x-1"
                       }`}
                     />
@@ -742,14 +742,14 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
               </div>
 
               {hasTemplate && (
-                <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <p className="truncate text-sm text-slate-600">{templateSummary}</p>
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                  <p className="truncate text-sm text-muted-foreground">{templateSummary}</p>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700"
+                      className="h-7 px-2 text-sm text-muted-foreground hover:text-foreground"
                       onClick={() => setBuilderOpen(true)}
                     >
                       Edit
@@ -758,7 +758,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                      className="h-7 px-2 text-sm text-muted-foreground hover:text-danger-foreground"
                       onClick={() => setTemplateHtml("")}
                     >
                       Clear
@@ -770,16 +770,16 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
 
             {/* Final preview */}
             <div className="space-y-2">
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Final Preview</p>
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm">
-                <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                  <p><span className="font-medium text-slate-700">From:</span> Sona Support <span className="text-slate-400">&lt;support@yourcompany.com&gt;</span></p>
-                  <p className="mt-0.5"><span className="font-medium text-slate-700">To:</span> customer@example.com</p>
-                  <p className="mt-0.5"><span className="font-medium text-slate-700">Subject:</span> Re: Your inquiry</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Final Preview</p>
+              <div className="overflow-hidden rounded-xl border border-border bg-card text-sm text-foreground shadow-sm">
+                <div className="border-b border-border bg-muted px-4 py-3 text-xs text-muted-foreground">
+                  <p><span className="font-medium text-foreground">From:</span> Sona Support <span className="text-muted-foreground">&lt;support@yourcompany.com&gt;</span></p>
+                  <p className="mt-0.5"><span className="font-medium text-foreground">To:</span> customer@example.com</p>
+                  <p className="mt-0.5"><span className="font-medium text-foreground">Subject:</span> Re: Your inquiry</p>
                 </div>
                 <div className="px-4 py-4">
-                  <p className="text-slate-600">Hi Customer, thanks for reaching out...</p>
-                  <p className="mt-4 whitespace-pre-line text-slate-700">{previewSignature}</p>
+                  <p className="text-muted-foreground">Hi Customer, thanks for reaching out...</p>
+                  <p className="mt-4 whitespace-pre-line text-foreground">{previewSignature}</p>
                   {templateIsActive && hasTemplate && (
                     <div className="mt-4" dangerouslySetInnerHTML={{ __html: templateHtml }} />
                   )}
@@ -788,7 +788,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
             </div>
           </div>
 
-          <DialogFooter className="mt-3 border-t border-gray-100 pt-3">
+          <DialogFooter className="mt-3 border-t border-border pt-3">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -796,7 +796,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="bg-slate-900 text-white hover:bg-slate-800"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {saving ? "Saving..." : "Save Signature"}
             </Button>
@@ -816,9 +816,9 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         }}
       >
         <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] w-[95vw] max-w-6xl flex-col overflow-hidden p-0">
-          <DialogHeader className="flex-shrink-0 border-b border-slate-100 px-6 py-5 pr-12">
-            <DialogTitle className="text-base">Signature Template Builder</DialogTitle>
-            <DialogDescription className="text-sm text-slate-500">
+          <DialogHeader className="flex-shrink-0 border-b border-border px-6 py-5 pr-12">
+            <DialogTitle className="text-page-heading">Signature Template Builder</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
               Build a visual footer and apply it to this team member.
             </DialogDescription>
           </DialogHeader>
@@ -829,15 +829,15 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
               <div className="space-y-4 pr-1 pb-1">
 
                 {/* Content */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-900">Content</h4>
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-foreground">Content</h4>
                   <div className="space-y-1.5">
                     <SectionLabel>Full Name</SectionLabel>
                     <Input
                       value={builderDraft.fullName}
                       onChange={(e) => handleBuilderField("fullName", e.target.value)}
                       placeholder="Full name"
-                      className="border-slate-200 text-sm"
+                      className="border-border text-input md:text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -846,7 +846,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       value={builderDraft.jobTitle}
                       onChange={(e) => handleBuilderField("jobTitle", e.target.value)}
                       placeholder="Support specialist"
-                      className="border-slate-200 text-sm"
+                      className="border-border text-input md:text-sm"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -856,7 +856,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                         value={builderDraft.phone}
                         onChange={(e) => handleBuilderField("phone", e.target.value)}
                         placeholder="+45 00000000"
-                        className="border-slate-200 text-sm"
+                        className="border-border text-input md:text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -865,7 +865,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                         value={builderDraft.email}
                         onChange={(e) => handleBuilderField("email", e.target.value)}
                         placeholder="name@company.com"
-                        className="border-slate-200 text-sm"
+                        className="border-border text-input md:text-sm"
                       />
                     </div>
                   </div>
@@ -875,14 +875,14 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       value={builderDraft.companyName}
                       onChange={(e) => handleBuilderField("companyName", e.target.value)}
                       placeholder="Company name"
-                      className="border-slate-200 text-sm"
+                      className="border-border text-input md:text-sm"
                     />
                   </div>
                 </div>
 
                 {/* Layout & Style */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
-                  <h4 className="text-sm font-semibold text-slate-900">Layout & Style</h4>
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                  <h4 className="text-sm font-semibold text-foreground">Layout & Style</h4>
 
                   {/* Layout picker */}
                   <div className="space-y-2">
@@ -893,16 +893,16 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                           key={opt.value}
                           type="button"
                           onClick={() => handleBuilderField("layout", opt.value)}
-                          className={`flex flex-col items-center gap-2 rounded-lg border p-2.5 text-center transition-all ${
+                          className={`flex flex-col items-center gap-2 rounded-lg border p-2.5 text-center transition-[color,background-color,border-color,box-shadow,transform] ${
                             builderDraft.layout === opt.value
-                              ? "border-slate-900 bg-slate-900 text-white"
-                              : "border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300 hover:bg-white"
+                              ? "border-input bg-primary text-primary-foreground"
+                              : "border-border bg-muted text-muted-foreground hover:border-input hover:bg-card"
                           }`}
                         >
-                          <div className={`w-full ${builderDraft.layout === opt.value ? "[&_div]:bg-white/60 [&_.logo-block]:bg-white" : ""}`}>
+                          <div className={`w-full ${builderDraft.layout === opt.value ? "[&_div]:bg-card/60 [&_.logo-block]:bg-card" : ""}`}>
                             {opt.preview}
                           </div>
-                          <span className="text-[10px] font-medium leading-none">{opt.label}</span>
+                          <span className="text-xs font-medium leading-none">{opt.label}</span>
                         </button>
                       ))}
                     </div>
@@ -911,7 +911,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                   {/* Text alignment */}
                   <div className="space-y-2">
                     <SectionLabel>Text Alignment</SectionLabel>
-                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                    <div className="flex rounded-lg border border-border bg-muted p-0.5">
                       {TEXT_ALIGN_OPTIONS.map((opt) => {
                         const Icon = opt.icon;
                         return (
@@ -920,10 +920,10 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                             type="button"
                             onClick={() => handleBuilderField("textAlign", opt.value)}
                             aria-label={opt.label}
-                            className={`flex flex-1 items-center justify-center rounded-md py-1.5 transition-all ${
+                            className={`flex flex-1 items-center justify-center rounded-md py-1.5 transition-[color,background-color,border-color,box-shadow,transform] ${
                               builderDraft.textAlign === opt.value
-                                ? "bg-white text-slate-900 shadow-sm"
-                                : "text-slate-400 hover:text-slate-600"
+                                ? "bg-card text-foreground shadow-sm"
+                                : "text-muted-foreground hover:text-muted-foreground"
                             }`}
                           >
                             <Icon className="h-3.5 w-3.5" />
@@ -979,7 +979,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     <div className="flex items-center gap-2.5">
                       <label className="relative cursor-pointer">
                         <div
-                          className="h-8 w-8 rounded-lg border border-slate-200 shadow-sm"
+                          className="h-8 w-8 rounded-lg border border-border shadow-sm"
                           style={{ backgroundColor: builderDraft.accentColor || "#111827" }}
                         />
                         <input
@@ -989,13 +989,13 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                           className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                         />
                       </label>
-                      <span className="font-mono text-sm text-slate-600">
+                      <span className="font-mono text-sm text-muted-foreground">
                         {builderDraft.accentColor || "#111827"}
                       </span>
                       {builderDraft.accentColor ? (
                         <button
                           type="button"
-                          className="text-xs text-slate-400 underline hover:text-slate-600"
+                          className="text-sm text-muted-foreground underline hover:text-muted-foreground"
                           onClick={() => handleBuilderField("accentColor", "")}
                         >
                           Clear
@@ -1006,10 +1006,10 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 </div>
 
                 {/* Text order */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
                   <div>
-                    <h4 className="text-sm font-semibold text-slate-900">Text Order</h4>
-                    <p className="mt-0.5 text-xs text-slate-500">Drag rows to reorder fields in the signature.</p>
+                    <h4 className="text-sm font-semibold text-foreground">Text Order</h4>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Drag rows to reorder fields in the signature.</p>
                   </div>
                   <div className="space-y-1.5">
                     {(Array.isArray(builderDraft.textOrder) ? builderDraft.textOrder : SIGNATURE_TEXT_FIELD_KEYS)
@@ -1025,20 +1025,20 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                             setDraggingFieldKey(null);
                           }}
                           onDragEnd={() => setDraggingFieldKey(null)}
-                          className={`flex cursor-grab items-center gap-2.5 rounded-lg border px-3 py-2 transition-all active:cursor-grabbing ${
+                          className={`flex cursor-grab items-center gap-2.5 rounded-lg border px-3 py-2 transition-[color,background-color,border-color,box-shadow,transform] active:cursor-grabbing ${
                             draggingFieldKey === fieldKey
-                              ? "border-slate-900 bg-slate-50 opacity-60"
-                              : "border-slate-200 bg-white hover:border-slate-300"
+                              ? "border-input bg-muted opacity-60"
+                              : "border-border bg-card hover:border-input"
                           }`}
                         >
-                          <GripVertical className="h-3.5 w-3.5 text-slate-300" />
+                          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
                           <input
                             type="checkbox"
                             checked={builderDraft?.fieldVisibility?.[fieldKey] !== false}
                             onChange={(e) => handleBuilderFieldVisibility(fieldKey, e.target.checked)}
                             className="accent-slate-900"
                           />
-                          <span className="text-sm text-slate-700">
+                          <span className="text-sm text-foreground">
                             {SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}
                           </span>
                         </div>
@@ -1047,8 +1047,8 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 </div>
 
                 {/* Logo */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-900">Logo</h4>
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-foreground">Logo</h4>
                   <input
                     ref={logoFileInputRef}
                     type="file"
@@ -1057,18 +1057,18 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                     className="hidden"
                     tabIndex={-1}
                   />
-                  <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed border-input bg-muted px-3 py-3">
                     <button
                       type="button"
                       onClick={handleLogoPickerOpen}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                      className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted"
                     >
                       Choose file
                     </button>
-                    <span className="text-xs text-slate-400">PNG or JPG · max 5 MB</span>
+                    <span className="text-xs text-muted-foreground">PNG or JPG · max 5 MB</span>
                   </div>
                   {logoUploadError ? (
-                    <p className="text-xs text-red-500">{logoUploadError}</p>
+                    <p className="text-xs text-danger-foreground">{logoUploadError}</p>
                   ) : null}
                   {builderDraft.logoUrl ? (
                     <div className="flex min-w-0 items-center gap-3">
@@ -1076,11 +1076,11 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                       <img
                         src={builderDraft.logoUrl}
                         alt="Logo preview"
-                        className="h-10 max-w-36 flex-shrink-0 rounded-md border border-slate-200 object-contain"
+                        className="h-10 max-w-36 flex-shrink-0 rounded-md border border-border object-contain"
                       />
                       <button
                         type="button"
-                        className="text-xs text-slate-400 underline hover:text-red-500"
+                        className="text-sm text-muted-foreground underline hover:text-danger-foreground"
                         onClick={() => handleBuilderField("logoUrl", "")}
                       >
                         Remove logo
@@ -1092,15 +1092,15 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
 
               {/* Right: preview */}
               <div className="self-start space-y-2.5 md:sticky md:top-0">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Preview</p>
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Preview</p>
+                <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                  <div className="border-b border-border bg-muted px-4 py-3 text-xs text-muted-foreground">
                     <p>From: [sender]</p>
                     <p className="mt-0.5">To: [recipient]</p>
                     <p className="mt-0.5">Subject: Re: Your request</p>
                   </div>
                   <div
-                    className="p-4 text-sm text-slate-700"
+                    className="p-4 text-sm text-foreground"
                     dangerouslySetInnerHTML={{ __html: builderPreviewHtml }}
                   />
                 </div>
@@ -1108,8 +1108,8 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
             </div>
           </div>
 
-          <DialogFooter className="flex-shrink-0 border-t border-slate-100 px-6 py-4">
-            <p className="mr-auto text-xs text-slate-400">
+          <DialogFooter className="flex-shrink-0 border-t border-border px-6 py-4">
+            <p className="mr-auto text-xs text-muted-foreground">
               {hasBuilderChanges ? "Unsaved changes" : ""}
             </p>
             <Button type="button" variant="outline" onClick={() => setBuilderOpen(false)}>
@@ -1117,7 +1117,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
             </Button>
             <Button
               type="button"
-              className="bg-slate-900 text-white hover:bg-slate-800"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => {
                 setTemplateHtml(buildSignatureTemplateFromBuilder(builderDraft));
                 setBuilderOpen(false);

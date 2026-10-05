@@ -170,10 +170,10 @@ export function WebshipperSheet({ children, onConnected, initialIntegration = nu
             />
           </div>
 
-          {error ? <p className="text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="text-xs text-danger-foreground">{error}</p> : null}
 
           <SheetFooter className="pt-4">
-            <Button type="submit" className="w-full bg-black text-white" disabled={saving}>
+            <Button type="submit" className="w-full bg-primary text-primary-foreground" disabled={saving}>
               {submitLabel}
             </Button>
           </SheetFooter>

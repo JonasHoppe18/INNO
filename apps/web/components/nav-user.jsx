@@ -150,7 +150,7 @@ export function NavUser({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            <DropdownMenuLabel className="px-2 py-1 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
               Workspace
             </DropdownMenuLabel>
             {organizations.map((organization) => (
@@ -160,7 +160,7 @@ export function NavUser({
                 onSelect={() => handleWorkspaceSelect(organization.id)}
                 className="gap-3 py-2"
               >
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-[10px] font-semibold tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent text-xs font-semibold tracking-wide text-accent-foreground">
                   {switchingTo === organization.id ? <Loader2 className="size-3.5 animate-spin" /> : organizationInitials(organization.name)}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{organization.name}</span>

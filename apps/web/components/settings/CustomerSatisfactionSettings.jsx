@@ -25,8 +25,8 @@ const DEFAULTS = {
 function SectionHeading({ eyebrow, title, description }) {
   return (
     <div>
-      {eyebrow ? <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p> : null}
-      <h3 className="mt-1 text-base font-semibold tracking-tight">{title}</h3>
+      {eyebrow ? <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p> : null}
+      <h3 className="mt-1 text-section-heading font-semibold tracking-tight">{title}</h3>
       {description ? <p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">{description}</p> : null}
     </div>
   );
@@ -37,21 +37,21 @@ function EmailTemplateSummary({ template }) {
   const published = template?.published;
   const status = published?.id ? "Published" : draft?.id ? "Draft" : "Starter template";
   const statusClass = published?.id
-    ? "bg-emerald-50 text-emerald-700"
+    ? "bg-success text-success-foreground"
     : draft?.id
-      ? "bg-amber-50 text-amber-700"
-      : "bg-violet-50 text-violet-700";
+      ? "bg-warning text-warning-foreground"
+      : "bg-accent text-accent-foreground";
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
       <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+        <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
           <Mail className="size-4" />
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">CSAT survey email</h3>
-            <Badge className={cn("rounded-full border-0 px-2 py-0 text-[10px]", statusClass)}>{status}</Badge>
+            <h3 className="text-section-heading font-semibold">CSAT survey email</h3>
+            <Badge className={cn("rounded-full border-0 px-2 py-0 text-xs", statusClass)}>{status}</Badge>
           </div>
           <p className="mt-1 truncate text-sm text-muted-foreground">{draft?.subject || "How was your support experience?"}</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -64,7 +64,7 @@ function EmailTemplateSummary({ template }) {
           <div className="mx-auto h-1.5 w-20 rounded-full bg-foreground/80" />
           <div className="mx-auto mt-2 h-1.5 w-32 rounded-full bg-muted-foreground/30" />
           <div className="mt-4 flex justify-center gap-1.5">
-            {[1, 2, 3, 4, 5].map((score) => <span key={score} className="flex size-6 items-center justify-center rounded-full border border-border text-[9px] text-muted-foreground">{score}</span>)}
+            {[1, 2, 3, 4, 5].map((score) => <span key={score} className="flex size-6 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">{score}</span>)}
           </div>
           <div className="mx-auto mt-4 h-1.5 w-28 rounded-full bg-muted-foreground/20" />
         </div>
@@ -176,8 +176,8 @@ export function CustomerSatisfactionSettings() {
     <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5 pb-24">
       <header className="flex flex-col gap-4 border-b border-border/60 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Customer experience</p><Badge variant="outline" className="rounded-full px-2 py-0 text-[10px]">CSAT</Badge></div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Customer satisfaction</h2>
+          <div className="flex items-center gap-2"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Customer experience</p><Badge variant="outline" className="rounded-full px-2 py-0 text-xs">CSAT</Badge></div>
+          <h2 className="mt-2 text-section-heading font-semibold tracking-tight text-foreground">Customer satisfaction</h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Choose when surveys are sent, then build the customer-facing email in one focused workspace.</p>
         </div>
         <Button asChild size="sm" className="gap-1.5 rounded-lg self-start sm:self-auto"><Link href="/settings/csat/email">Open email builder <ArrowRight className="size-3.5" /></Link></Button>
@@ -187,8 +187,8 @@ export function CustomerSatisfactionSettings() {
 
       <main className="flex min-w-0 flex-col gap-4">
         <Card className="rounded-xl border-border/70 bg-background shadow-sm">
-          <CardHeader className="gap-1 border-b border-border/60 pb-4"><CardTitle className="text-base tracking-tight">Survey status</CardTitle><CardDescription className="text-sm">Control whether newly resolved conversations receive a CSAT request.</CardDescription></CardHeader>
-          <CardContent className="p-5"><div className={cn("flex flex-col gap-4 rounded-lg border p-4 transition-colors duration-150 sm:flex-row sm:items-center sm:justify-between", settings.enabled ? "border-primary/25 bg-primary/[0.025]" : "border-border/70 bg-muted/20")}><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">Send CSAT surveys</h3><Badge variant={settings.enabled ? "secondary" : "outline"} className="rounded-full px-2 py-0 text-[10px]">{settings.enabled ? "Active" : "Paused"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{settings.enabled ? "One survey per ticket, sent after the final resolution." : "Surveys are paused. Your setup remains editable and ready to resume."}</p></div><Switch checked={settings.enabled} onCheckedChange={(value) => update("enabled", value)} aria-label="Send CSAT surveys" /></div></CardContent>
+          <CardHeader className="gap-1 border-b border-border/60 pb-4"><CardTitle className="text-section-heading tracking-tight">Survey status</CardTitle><CardDescription className="text-sm">Control whether newly resolved conversations receive a CSAT request.</CardDescription></CardHeader>
+          <CardContent className="p-5"><div className={cn("flex flex-col gap-4 rounded-lg border p-4 transition-colors duration-150 sm:flex-row sm:items-center sm:justify-between", settings.enabled ? "border-primary/25 bg-primary/[0.025]" : "border-border/70 bg-muted/20")}><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-section-heading font-semibold">Send CSAT surveys</h3><Badge variant={settings.enabled ? "secondary" : "outline"} className="rounded-full px-2 py-0 text-xs">{settings.enabled ? "Active" : "Paused"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{settings.enabled ? "One survey per ticket, sent after the final resolution." : "Surveys are paused. Your setup remains editable and ready to resume."}</p></div><Switch checked={settings.enabled} onCheckedChange={(value) => update("enabled", value)} aria-label="Send CSAT surveys" /></div></CardContent>
         </Card>
 
         <Card className="rounded-xl border-border/70 bg-background shadow-sm">

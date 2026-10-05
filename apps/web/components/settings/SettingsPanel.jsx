@@ -309,7 +309,7 @@ function StoreTeamRow({ icon: Icon, label, description, value, editing, children
       {editing ? (
         <div className="w-56 shrink-0">{children}</div>
       ) : (
-        <span className="shrink-0 text-sm font-medium text-slate-500">{value}</span>
+        <span className="shrink-0 text-sm font-medium text-muted-foreground">{value}</span>
       )}
     </div>
   );
@@ -382,7 +382,7 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Example:\nWe are [brand], a Danish webshop selling [products]. Our tone is friendly and direct — we get to the point fast. Replies should be max 4 sentences. We always write in the customer's language.`}
             rows={8}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-input md:text-sm leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
             autoFocus
           />
           <DialogFooter>
@@ -422,14 +422,14 @@ function GeneralTab({
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">General</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">General</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage workspace details and ticket lifecycle defaults.</p>
       </div>
 
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="px-6 pb-2 pt-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Workspace details</h3>
+            <h3 className="text-section-heading font-semibold text-foreground">Workspace details</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">Your connected store and shared workspace preferences.</p>
           </div>
         </div>
@@ -452,7 +452,7 @@ function GeneralTab({
               value={teamName}
               onChange={(e) => onTeamNameChange(e.target.value)}
               placeholder="Team name"
-              className="h-9 text-sm"
+              className="h-9 text-input md:text-sm"
             />
           </StoreTeamRow>
           <StoreTeamRow
@@ -480,7 +480,7 @@ function GeneralTab({
 
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="px-6 pb-2 pt-5">
-          <h3 className="text-base font-semibold text-foreground">Ticket lifecycle</h3>
+          <h3 className="text-section-heading font-semibold text-foreground">Ticket lifecycle</h3>
           <p className="mt-0.5 text-sm text-muted-foreground">Choose when inactive tickets should move forward automatically.</p>
         </div>
         <div className="px-6 pb-2">
@@ -498,13 +498,13 @@ function GeneralTab({
               disabled={!hasWorkspaceScope}
               className={cn(
                 "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
-                autoCloseMode === "auto" ? "bg-primary/80" : "bg-slate-300",
+                autoCloseMode === "auto" ? "bg-primary/80" : "bg-input",
                 !hasWorkspaceScope && "cursor-not-allowed opacity-70"
               )}
             >
               <span
                 className={cn(
-                  "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                  "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                   autoCloseMode === "auto" ? "translate-x-6" : "translate-x-1"
                 )}
               />
@@ -529,7 +529,7 @@ function GeneralTab({
               value={needsAttentionStaleDays}
               onChange={(e) => onNeedsAttentionStaleDaysChange(e.target.value)}
               placeholder="7"
-              className="h-9 text-sm"
+              className="h-9 text-input md:text-sm"
               disabled={!hasWorkspaceScope}
             />
           </StoreTeamRow>
@@ -539,7 +539,7 @@ function GeneralTab({
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="flex items-center justify-between px-6 py-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Test Mode</h3>
+            <h3 className="text-section-heading font-semibold text-foreground">Test Mode</h3>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Simulate actions without writing to Shopify, shipping providers, or other integrations.
             </p>
@@ -552,13 +552,13 @@ function GeneralTab({
             disabled={!hasWorkspaceScope}
             className={cn(
               "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
-              testMode ? "bg-primary/80" : "bg-slate-300",
+              testMode ? "bg-primary/80" : "bg-input",
               !hasWorkspaceScope && "cursor-not-allowed opacity-70"
             )}
           >
             <span
               className={cn(
-                "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                 testMode ? "translate-x-6" : "translate-x-1"
               )}
             />
@@ -566,7 +566,7 @@ function GeneralTab({
         </div>
 
         <div className="border-t border-border px-6 py-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4 lg:flex-nowrap">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
               <Mail className="h-4 w-4 text-primary" />
             </div>
@@ -579,13 +579,13 @@ function GeneralTab({
               value={testEmail}
               onChange={(e) => onTestEmailChange(e.target.value)}
               placeholder="qa@company.com"
-              className="h-11 w-full max-w-[520px] shrink-0 text-sm"
+              className="h-11 w-full max-w-[520px] shrink-0 lg:w-1/2 text-input md:text-sm"
               disabled={!hasWorkspaceScope}
             />
           </div>
         </div>
         {!hasWorkspaceScope && (
-          <p className="px-6 pb-4 text-xs text-amber-700">Test Mode settings require an organization workspace.</p>
+          <p className="px-6 pb-4 text-xs text-warning-foreground">Test Mode settings require an organization workspace.</p>
         )}
       </div>
 
@@ -603,7 +603,7 @@ function AiInstructionsTab({ value, onChange, onSave, saving }) {
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">AI instructions</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">AI instructions</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Define the shared brand context and tone Sona uses when drafting replies.
         </p>
@@ -918,17 +918,17 @@ function MembersTab({
     <>
       <section className="w-full space-y-5">
         <div className="mb-6">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">TEAM</p>
-          <div className="mt-1 flex items-center justify-between gap-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-primary">TEAM</p>
+          <div className="mt-1 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">Team Members</h2>
+              <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Team Members</h2>
               <p className="mt-1 text-sm text-muted-foreground">Manage who has access to your workspace.</p>
             </div>
             <Button
               type="button"
               onClick={() => setInviteOpen(true)}
               disabled={!canManageRoles}
-              className="h-10 gap-2 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.97] transition-transform duration-100"
+              className="h-10 gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-transform duration-100"
             >
               <Users2 className="h-4 w-4" />
               Invite Member
@@ -936,8 +936,8 @@ function MembersTab({
           </div>
         </div>
 
-        <div className="w-full overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        <div className="w-full overflow-x-auto rounded-2xl border border-border bg-card">
+          <div className="grid min-w-[748px] grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             <p>Member</p>
             <p>Role</p>
             <p>Signature</p>
@@ -957,8 +957,8 @@ function MembersTab({
               const rawRole = String(member?.workspace_role || "").toLowerCase();
               const isAdminLikeRole = rawRole.includes("admin") || rawRole.includes("owner");
               const rolePillClassName = isAdminLikeRole
-                ? "bg-violet-100 text-violet-600"
-                : "bg-blue-100 text-blue-600";
+                ? "bg-accent text-accent-foreground"
+                : "bg-info text-info-foreground";
               const isOwner = rawRole.includes("owner");
               const memberUserId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
               const isSelf =
@@ -981,7 +981,7 @@ function MembersTab({
               return (
                 <div
                   key={member.user_id || member.clerk_user_id || member.email}
-                  className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-4 last:border-b-0 hover:bg-slate-50/60 transition-colors duration-150"
+                  className="grid min-w-[748px] grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-4 last:border-b-0 hover:bg-muted/60 transition-colors duration-150"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     {member.image_url && !isInvited ? (
@@ -992,7 +992,7 @@ function MembersTab({
                         className="h-9 w-9 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/80 text-xs font-semibold text-slate-600">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/80 text-xs font-semibold text-muted-foreground">
                         {initials || "U"}
                       </div>
                     )}
@@ -1009,7 +1009,7 @@ function MembersTab({
                     <Badge
                       variant="secondary"
                       className={cn(
-                        "h-7 rounded-md border-0 px-3 text-[13px] font-semibold",
+                        "h-7 rounded-md border-0 px-3 text-sm font-semibold",
                         rolePillClassName
                       )}
                     >
@@ -1022,7 +1022,7 @@ function MembersTab({
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        className="h-10 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
                         onClick={() => handleResendInvite(member)}
                       >
                         <Mail className="mr-2 h-[14px] w-[14px]" />
@@ -1032,7 +1032,7 @@ function MembersTab({
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-10 rounded-lg px-4 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                        className="h-10 rounded-lg px-4 text-sm font-semibold text-foreground hover:bg-muted"
                         onClick={() => handleOpenSignatureModal(member)}
                         disabled={!canEditSignature}
                         title={
@@ -1056,7 +1056,7 @@ function MembersTab({
                           type="button"
                           size="icon"
                           variant="ghost"
-                          className="h-10 w-10 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                          className="h-10 w-10 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                           disabled={!canManageRoles && !isInvited}
                           title={
                             canManageRoles || isInvited
@@ -1075,7 +1075,7 @@ function MembersTab({
                               Resend invite
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              className="text-red-600 focus:text-red-600"
+                              className="text-danger-foreground focus:text-danger-foreground"
                               onSelect={() => handleRemoveMember(member)}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -1097,7 +1097,7 @@ function MembersTab({
                               {rawRole.includes("admin") ? "Make member" : "Make admin"}
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              className="text-red-600 focus:text-red-600"
+                              className="text-danger-foreground focus:text-danger-foreground"
                               disabled={!canRemoveMember}
                               onSelect={() => handleRemoveMember(member)}
                             >
@@ -1139,7 +1139,7 @@ function MembersTab({
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <label htmlFor="invite-email" className="text-sm font-medium text-slate-700">
+              <label htmlFor="invite-email" className="text-sm font-medium text-foreground">
                 Email
               </label>
               <Input
@@ -1152,7 +1152,7 @@ function MembersTab({
               />
             </div>
             <div className="space-y-1">
-              <label htmlFor="invite-role" className="text-sm font-medium text-slate-700">
+              <label htmlFor="invite-role" className="text-sm font-medium text-foreground">
                 Role
               </label>
               <select
@@ -1185,14 +1185,14 @@ function BillingTab() {
   return (
     <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Billing</h2>
+        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Billing</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage your subscription and plan.</p>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-foreground">Current plan</span>
-          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+          <Badge className="bg-success text-success-foreground hover:bg-success">
             Free Beta
           </Badge>
         </div>
@@ -1735,7 +1735,7 @@ function EmailSettings({
     <section className="w-full space-y-5">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Email</h2>
+          <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Email</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Configure customer-facing messages, routing and sender controls.
           </p>
@@ -1831,13 +1831,13 @@ function EmailSettings({
                 disabled={confirmationControlsDisabled}
                 className={cn(
                   "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                  enabled ? "bg-emerald-500" : "bg-slate-200",
+                  enabled ? "bg-success-foreground" : "bg-muted",
                   confirmationControlsDisabled && "cursor-not-allowed opacity-70"
                 )}
               >
                 <span
                   className={cn(
-                    "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                    "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                     enabled ? "translate-x-6" : "translate-x-1"
                   )}
                 />
@@ -1863,12 +1863,12 @@ function EmailSettings({
                 disabled={confirmationControlsDisabled}
                 className={cn(
                   "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                  includeTicketNumber ? "bg-emerald-500" : "bg-slate-200",
+                  includeTicketNumber ? "bg-success-foreground" : "bg-muted",
                   confirmationControlsDisabled && "cursor-not-allowed opacity-70"
                 )}
               >
                 <span className={cn(
-                  "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                  "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                   includeTicketNumber ? "translate-x-6" : "translate-x-1"
                 )} />
               </button>
@@ -1889,7 +1889,7 @@ function EmailSettings({
                 <Button
                   type="button"
                   variant="outline"
-                  className="border border-gray-200 bg-white"
+                  className="border border-border bg-card"
                   onClick={() => setMessageModalOpen(true)}
                   disabled={confirmationControlsDisabled}
                 >
@@ -1910,7 +1910,7 @@ function EmailSettings({
                       </p>
                     ))
                   ) : (
-                    <p className="text-slate-400">No message set yet.</p>
+                    <p className="text-muted-foreground">No message set yet.</p>
                   )}
                 </div>
                 {includeTicketNumber ? (
@@ -1953,7 +1953,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Category</span>
                     <span>Forward to</span>
                     <span>Mode</span>
@@ -1978,7 +1978,7 @@ function EmailSettings({
                           forward_to_email: event.target.value,
                         })
                       }
-                      className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                      className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                       disabled={savingRouting}
                     />
                     <Select
@@ -1991,7 +1991,7 @@ function EmailSettings({
                       }
                       disabled={savingRouting}
                     >
-                      <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                      <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                         <SelectValue placeholder="Mode" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2013,13 +2013,13 @@ function EmailSettings({
                         disabled={savingRouting}
                         className={cn(
                           "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                          row.is_active ? "bg-emerald-500" : "bg-slate-200",
+                          row.is_active ? "bg-success-foreground" : "bg-muted",
                           savingRouting && "cursor-not-allowed opacity-70"
                         )}
                       >
                         <span
                           className={cn(
-                            "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                            "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                             row.is_active ? "translate-x-6" : "translate-x-1"
                           )}
                         />
@@ -2029,7 +2029,7 @@ function EmailSettings({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="text-slate-500 hover:text-red-600"
+                      className="text-muted-foreground hover:text-danger-foreground"
                       disabled={savingRouting}
                       onClick={() => onDeleteRoutingCategory?.(row)}
                       title="Delete category"
@@ -2071,7 +2071,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Destination</span>
@@ -2116,7 +2116,7 @@ function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2134,7 +2134,7 @@ function EmailSettings({
                             matcher_value: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <Select
@@ -2157,7 +2157,7 @@ function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Destination" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2182,13 +2182,13 @@ function EmailSettings({
                           disabled={savingRouting}
                           className={cn(
                             "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                            row.is_active ? "bg-emerald-500" : "bg-slate-200",
+                            row.is_active ? "bg-success-foreground" : "bg-muted",
                             savingRouting && "cursor-not-allowed opacity-70"
                           )}
                         >
                           <span
                             className={cn(
-                              "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                              "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                               row.is_active ? "translate-x-6" : "translate-x-1"
                             )}
                           />
@@ -2198,7 +2198,7 @@ function EmailSettings({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="text-slate-500 hover:text-red-600"
+                        className="text-muted-foreground hover:text-danger-foreground"
                         disabled={savingRouting}
                         onClick={() => onDeleteSenderRule?.(row)}
                         title="Delete sender rule"
@@ -2247,7 +2247,7 @@ function EmailSettings({
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Note</span>
@@ -2269,7 +2269,7 @@ function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2287,7 +2287,7 @@ function EmailSettings({
                             matcher_value: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <Input
@@ -2300,7 +2300,7 @@ function EmailSettings({
                             note: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <div className="flex justify-end">
@@ -2317,13 +2317,13 @@ function EmailSettings({
                           disabled={savingRouting}
                           className={cn(
                             "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                            row.is_active ? "bg-emerald-500" : "bg-slate-200",
+                            row.is_active ? "bg-success-foreground" : "bg-muted",
                             savingRouting && "cursor-not-allowed opacity-70"
                           )}
                         >
                           <span
                             className={cn(
-                              "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                              "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
                               row.is_active ? "translate-x-6" : "translate-x-1"
                             )}
                           />
@@ -2333,7 +2333,7 @@ function EmailSettings({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="text-slate-500 hover:text-red-600"
+                        className="text-muted-foreground hover:text-danger-foreground"
                         disabled={savingRouting}
                         onClick={() => onDeleteBlocklistRow?.(row)}
                         title="Delete blocked sender"
@@ -2377,7 +2377,7 @@ function EmailSettings({
                   saving && "cursor-not-allowed opacity-60"
                 )}
               >
-                <span className={cn("inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-150", signatureIsActive ? "translate-x-6" : "translate-x-1")} />
+                <span className={cn("inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-150", signatureIsActive ? "translate-x-6" : "translate-x-1")} />
               </button>
             </div>
 
@@ -2394,7 +2394,7 @@ function EmailSettings({
                     {sendingSignatureTest ? "Sending…" : "Send test"}
                   </Button>
                   {String(signatureTemplateHtml || "").trim() ? (
-                    <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-red-600" onClick={handleClearSignatureTemplate}>
+                    <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-danger-foreground" onClick={handleClearSignatureTemplate}>
                       Clear
                     </Button>
                   ) : null}
@@ -2441,7 +2441,7 @@ function EmailSettings({
                   <Input value={signatureDraft.accentColor || ""} onChange={(event) => handleSignatureDraftField("accentColor", event.target.value)} placeholder="#6d5dfc" />
                 </div>
               </label>
-              {signatureLogoUploadError ? <p className="text-sm text-red-600 sm:col-span-2">{signatureLogoUploadError}</p> : null}
+              {signatureLogoUploadError ? <p className="text-sm text-danger-foreground sm:col-span-2">{signatureLogoUploadError}</p> : null}
             </div>
             <div className="overflow-hidden rounded-xl border border-border bg-background">
               <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">Preview</div>
@@ -2469,7 +2469,7 @@ function EmailSettings({
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Subject</label>
+              <label className="text-sm font-medium text-foreground">Subject</label>
               <Input
                 value={draftSubject}
                 onChange={(event) => setDraftSubject(event.target.value)}
@@ -2479,8 +2479,8 @@ function EmailSettings({
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-slate-700">Message</label>
-                <span className="text-xs text-slate-500">
+                <label className="text-sm font-medium text-foreground">Message</label>
+                <span className="text-xs text-muted-foreground">
                   {draftBody.length} / 2000 characters
                 </span>
               </div>
@@ -2488,14 +2488,14 @@ function EmailSettings({
                 value={draftBody}
                 onChange={(event) => setDraftBody(event.target.value.slice(0, 2000))}
                 rows={8}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-border px-3 py-2 text-input md:text-sm"
               />
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-slate-800">Email Preview</h4>
-              <div className="rounded-md border border-slate-200">
-                <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+              <h4 className="text-sm font-medium text-foreground">Email Preview</h4>
+              <div className="rounded-md border border-border">
+                <div className="border-b border-border bg-muted px-4 py-2 text-sm text-muted-foreground">
                   <div>From: [sender]</div>
                   <div>To: [recipient]</div>
                   <div>
@@ -2504,7 +2504,7 @@ function EmailSettings({
                   </div>
                 </div>
                 <div
-                  className="p-4 text-sm text-slate-900"
+                  className="p-4 text-sm text-foreground"
                   dangerouslySetInnerHTML={{
                     __html: `<div style="white-space:pre-wrap;">${String(draftBody || "")
                       .replace(/</g, "&lt;")
@@ -2512,7 +2512,7 @@ function EmailSettings({
                   }}
                 />
                 {includeTicketNumber ? (
-                  <div className="px-4 pb-4 text-xs text-slate-500">Ticket reference: T-50001</div>
+                  <div className="px-4 pb-4 text-xs text-muted-foreground">Ticket reference: T-50001</div>
                 ) : null}
               </div>
             </div>
@@ -2576,7 +2576,7 @@ function EmailSettings({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">Category name</label>
+            <label className="text-sm font-medium text-foreground">Category name</label>
             <Input
               value={newCategoryLabel}
               onChange={(event) => setNewCategoryLabel(event.target.value)}
@@ -2625,7 +2625,7 @@ function EmailSettings({
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Type</label>
+              <label className="text-sm font-medium text-foreground">Type</label>
               <Select value={newSenderMatcherType} onValueChange={setNewSenderMatcherType}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
@@ -2637,7 +2637,7 @@ function EmailSettings({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Match value</label>
+              <label className="text-sm font-medium text-foreground">Match value</label>
               <Input
                 value={newSenderMatcherValue}
                 onChange={(event) => setNewSenderMatcherValue(event.target.value)}
@@ -2646,7 +2646,7 @@ function EmailSettings({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Destination</label>
+              <label className="text-sm font-medium text-foreground">Destination</label>
               <Select value={newSenderDestination} onValueChange={setNewSenderDestination}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select destination" />
@@ -2707,7 +2707,7 @@ function EmailSettings({
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Type</label>
+              <label className="text-sm font-medium text-foreground">Type</label>
               <Select value={newBlockMatcherType} onValueChange={setNewBlockMatcherType}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
@@ -2719,7 +2719,7 @@ function EmailSettings({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Match value</label>
+              <label className="text-sm font-medium text-foreground">Match value</label>
               <Input
                 value={newBlockMatcherValue}
                 onChange={(event) => setNewBlockMatcherValue(event.target.value)}
@@ -2728,7 +2728,7 @@ function EmailSettings({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Note</label>
+              <label className="text-sm font-medium text-foreground">Note</label>
               <Input
                 value={newBlockNote}
                 onChange={(event) => setNewBlockNote(event.target.value.slice(0, 300))}
@@ -2920,10 +2920,10 @@ function ProfileTab({ user, isLoaded }) {
 
   if (!isLoaded) {
     return (
-      <section className="max-w-2xl rounded-lg bg-white p-6">
-        <div className="h-8 w-44 animate-pulse rounded bg-slate-200" />
-        <div className="mt-2 h-4 w-64 animate-pulse rounded bg-slate-100" />
-        <div className="mt-8 h-20 w-20 animate-pulse rounded-full bg-slate-200" />
+      <section className="max-w-2xl rounded-lg bg-card p-6">
+        <div className="h-8 w-44 animate-pulse rounded bg-muted" />
+        <div className="mt-2 h-4 w-64 animate-pulse rounded bg-muted" />
+        <div className="mt-8 h-20 w-20 animate-pulse rounded-full bg-muted" />
       </section>
     );
   }
@@ -2932,8 +2932,8 @@ function ProfileTab({ user, isLoaded }) {
     <>
       <section className="w-full space-y-5">
         <div className="mb-6">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">PROFILE</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Personal Profile</h2>
+          <p className="text-xs font-bold uppercase tracking-wider text-primary">PROFILE</p>
+          <h2 className="mt-1 text-page-heading font-semibold tracking-tight text-foreground">Personal Profile</h2>
           <p className="mt-1 text-sm text-muted-foreground">Manage your account details and preferences.</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6">
@@ -2943,10 +2943,10 @@ function ProfileTab({ user, isLoaded }) {
             <img
               src={user.imageUrl}
               alt={user.fullName || "Profile avatar"}
-              className="h-20 w-20 rounded-full object-cover ring-1 ring-slate-200"
+              className="h-20 w-20 rounded-full object-cover ring-1 ring-border"
             />
           ) : (
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-2xl font-semibold text-muted-foreground">
               {`${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U"}
             </div>
           )}
@@ -2966,7 +2966,7 @@ function ProfileTab({ user, isLoaded }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-5">
             <div className="space-y-2">
-              <label htmlFor="profile-first-name" className="text-sm font-medium text-slate-700">
+              <label htmlFor="profile-first-name" className="text-sm font-medium text-foreground">
                 First Name
               </label>
               <Input
@@ -2979,7 +2979,7 @@ function ProfileTab({ user, isLoaded }) {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="profile-last-name" className="text-sm font-medium text-slate-700">
+              <label htmlFor="profile-last-name" className="text-sm font-medium text-foreground">
                 Last Name
               </label>
               <Input
@@ -2992,25 +2992,25 @@ function ProfileTab({ user, isLoaded }) {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="profile-email" className="text-sm font-medium text-slate-700">
+              <label htmlFor="profile-email" className="text-sm font-medium text-foreground">
                 Email Address
               </label>
               <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="profile-email"
                   value={email}
                   disabled
                   readOnly
-                  className="h-11 bg-slate-100 pl-9 text-slate-600"
+                  className="h-11 bg-muted pl-9 text-muted-foreground"
                 />
               </div>
-              <p className="text-xs text-slate-500">This is your login email and cannot be changed.</p>
+              <p className="text-xs text-muted-foreground">This is your login email and cannot be changed.</p>
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="text-sm font-medium text-slate-700">Theme</label>
+            <label className="text-sm font-medium text-foreground">Theme</label>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {THEME_OPTIONS.map((option) => {
                 const selected = themePreference === option.id;
@@ -3028,7 +3028,7 @@ function ProfileTab({ user, isLoaded }) {
                     }}
                     className={cn(
                       "rounded-xl border p-3 text-left transition-colors",
-                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-slate-50",
+                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-muted",
                       themeLoading || savingProfile ? "cursor-not-allowed opacity-60" : ""
                     )}
                   >
@@ -3051,7 +3051,7 @@ function ProfileTab({ user, isLoaded }) {
                 );
               })}
             </div>
-            <p className="text-xs text-slate-500">Applies to the logged-in app only.</p>
+            <p className="text-xs text-muted-foreground">Applies to the logged-in app only.</p>
           </div>
         </div>
 
@@ -4612,7 +4612,7 @@ export function SettingsPanel() {
           aria-label="Settings section"
           value={activeTab}
           onChange={(event) => handleSelectTab(event.target.value)}
-          className="ml-auto h-9 min-w-0 max-w-[220px] rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+          className="ml-auto h-9 min-w-0 max-w-[220px] rounded-md border border-input bg-background px-3 text-input md:text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
           {MENU_SECTIONS.map((section) => (
             <optgroup key={section.label} label={section.label}>
@@ -4623,13 +4623,13 @@ export function SettingsPanel() {
       </div>
       <aside className="hidden h-full w-[224px] shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="px-5 pb-5 pt-8">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">Settings</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Settings</h1>
         </div>
         <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
           {MENU_SECTIONS.map((section) => (
             <div key={section.label}>
               {section.label ? (
-                <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                   {section.label}
                 </p>
               ) : null}
@@ -4643,9 +4643,9 @@ export function SettingsPanel() {
                       onClick={() => handleSelectTab(item.key)}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
+                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-muted font-semibold text-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
+                          ? "bg-accent font-semibold text-accent-foreground"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -4665,7 +4665,7 @@ export function SettingsPanel() {
         </nav>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
           <div className="min-w-0">
             {renderContent()}

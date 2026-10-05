@@ -101,7 +101,7 @@ function SettingsSection({
         <div className="flex flex-wrap items-start justify-between gap-4 md:gap-6">
           <div className="max-w-3xl space-y-1.5">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
+              <h2 className="text-section-heading font-semibold text-slate-900">{title}</h2>
               {titleBadge}
             </div>
             <p className="text-sm leading-relaxed text-slate-600">{description}</p>
@@ -548,7 +548,7 @@ export function AutomationPanel({ children = null }) {
               <div className="space-y-6">
                 <div className="space-y-6">
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Return eligibility</h3>
+                    <h3 className="text-section-heading font-semibold text-slate-900">Return eligibility</h3>
                     <div className="space-y-1.5">
                       <label className="sr-only">Return window (days)</label>
                       <Input
@@ -568,7 +568,7 @@ export function AutomationPanel({ children = null }) {
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Return shipping</h3>
+                    <h3 className="text-section-heading font-semibold text-slate-900">Return shipping</h3>
                     <div className="space-y-1.5">
                       <label className="sr-only">Return shipping mode</label>
                       <Select
@@ -592,7 +592,7 @@ export function AutomationPanel({ children = null }) {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="text-sm font-semibold text-slate-900">Return address</h3>
+                  <h3 className="text-section-heading font-semibold text-slate-900">Return address</h3>
                   <label className="sr-only">Return address</label>
                   <Textarea
                     ref={returnAddressTextareaRef}
@@ -625,7 +625,7 @@ export function AutomationPanel({ children = null }) {
               <div className="space-y-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-0.5">
-                    <h3 className="text-sm font-semibold text-slate-900">
+                    <h3 className="text-section-heading font-semibold text-slate-900">
                       Require photos for defect claims
                     </h3>
                     <p className="text-xs text-slate-500">
@@ -644,7 +644,7 @@ export function AutomationPanel({ children = null }) {
                 <Separator />
 
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-900">Spare parts</h3>
+                  <h3 className="text-section-heading font-semibold text-slate-900">Spare parts</h3>
                   <p className="text-xs text-slate-500">
                     How should Sona handle requests for replacement parts (cables, ear pads, accessories)?
                   </p>
@@ -669,7 +669,7 @@ export function AutomationPanel({ children = null }) {
                 <Separator />
 
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-900">Exchange requests</h3>
+                  <h3 className="text-section-heading font-semibold text-slate-900">Exchange requests</h3>
                   <p className="text-xs text-slate-500">
                     How should Sona handle product exchange requests (not spare parts)?
                   </p>

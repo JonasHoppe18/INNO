@@ -122,11 +122,11 @@ function SectionHeading({ title, description, count }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
-        {description ? <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p> : null}
+        <h3 className="text-section-heading font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
+        {description ? <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p> : null}
       </div>
       {count !== undefined ? (
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
           {count}
         </span>
       ) : null}
@@ -153,14 +153,14 @@ function PreviousTicketCard({ ticket, onOpenTicket }) {
       <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
       <div className="min-w-0 flex-1">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
-          <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{subject}</div>
-          <span className="shrink-0 text-right text-[10px] text-muted-foreground/70">{timestamp || "—"}</span>
+          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{subject}</div>
+          <span className="shrink-0 text-right text-xs text-muted-foreground/70">{timestamp || "—"}</span>
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${status.className}`}>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}>
             {status.label}
           </span>
-          <span className="truncate text-[10px] font-mono tracking-[0.04em] text-muted-foreground/70">
+          <span className="truncate text-xs font-mono tracking-[0.04em] text-muted-foreground/70">
             {ticketRef}
           </span>
         </div>
@@ -203,7 +203,7 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
         <div className="space-y-3">
           {groups.map((group) => (
             <div key={group.label} className="space-y-1.5">
-              <div className="px-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
+              <div className="px-1 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
                 {group.label}
               </div>
               <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
@@ -224,7 +224,7 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
             <button
               type="button"
               onClick={() => setVisibleCount((count) => Math.min(count + 5, tickets.length))}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
             >
               <span>Load more conversations</span>
               <span className="tabular-nums text-muted-foreground/70">{tickets.length - visibleCount} remaining</span>
@@ -232,7 +232,7 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
           ) : null}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-[12px] text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-xs text-muted-foreground">
           No previous tickets found.
         </div>
       )}
@@ -257,7 +257,7 @@ function OrderCard({ order, shopDomain }) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 text-[13px] font-semibold text-foreground">
+            <div className="min-w-0 text-sm font-semibold text-foreground">
               {orderUrl ? (
                 <a
                   href={orderUrl}
@@ -274,7 +274,7 @@ function OrderCard({ order, shopDomain }) {
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-1">
               {order?.financialStatus ? (
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                   order.financialStatus === "paid"
                     ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
                     : "bg-muted text-muted-foreground"
@@ -283,7 +283,7 @@ function OrderCard({ order, shopDomain }) {
                 </span>
               ) : null}
               {order?.fulfillmentStatus ? (
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                   order.fulfillmentStatus === "fulfilled"
                     ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
                     : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
@@ -293,12 +293,12 @@ function OrderCard({ order, shopDomain }) {
               ) : null}
             </div>
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">{total}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{total}</div>
         </div>
       </div>
 
       {visibleItems.length ? (
-        <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
           <span className="truncate">
             {visibleItems.join(" · ")}
@@ -308,7 +308,7 @@ function OrderCard({ order, shopDomain }) {
       ) : null}
 
       {order?.tracking?.url && order?.tracking?.number ? (
-        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Truck className="size-3.5 shrink-0" />
           <a href={order.tracking.url} target="_blank" rel="noreferrer" className="truncate hover:text-foreground hover:underline">
             Tracking {order.tracking.number}
@@ -341,8 +341,8 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
       <div className="space-y-5 px-0.5" aria-label="Loading customer history">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
           </div>
           <Button variant="outline" size="sm" disabled>Refresh</Button>
         </div>
@@ -359,12 +359,12 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
     return (
       <div className="space-y-5 px-0.5">
         <div>
-          <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+          <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
         </div>
         <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5">
-          <p className="text-[13px] font-medium text-foreground">Couldn’t load customer history</p>
-          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          <p className="text-sm font-medium text-foreground">Couldn’t load customer history</p>
+          <p className="mt-1 text-xs leading-4 text-muted-foreground">
             {error.message || "Something went wrong while loading this customer."}
           </p>
           <Button variant="outline" size="sm" className="mt-3" onClick={onRefresh}>Try again</Button>
@@ -378,14 +378,14 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
       <div className="space-y-5 px-0.5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
           </div>
           <Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>
         </div>
         <div className="rounded-xl border border-dashed border-border bg-background/40 p-4">
-          <p className="text-[13px] font-medium text-foreground">No customer profile found</p>
-          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          <p className="text-sm font-medium text-foreground">No customer profile found</p>
+          <p className="mt-1 text-xs leading-4 text-muted-foreground">
             We couldn’t match this ticket to a customer or order.
           </p>
         </div>
@@ -399,8 +399,8 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
       <section className="border-b border-border/70 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Orders and previous conversations.</p>
+            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
           </div>
           <button
             type="button"
@@ -414,31 +414,31 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
         </div>
         <div className="mt-4 flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-            <span className="text-[13px] font-semibold">{initials}</span>
+            <span className="text-sm font-semibold">{initials}</span>
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-foreground">
+            <div className="truncate text-sm font-semibold text-foreground">
               {customerDisplayName}
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">{customer?.email || "No email available"}</div>
+            <div className="truncate text-xs text-muted-foreground">{customer?.email || "No email available"}</div>
           </div>
         </div>
       </section>
 
       <section className="grid grid-cols-[1.35fr_0.825fr_0.825fr] gap-2">
         <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
-          <div className="mt-1 whitespace-nowrap text-[12px] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
+          <div className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
+          <div className="mt-1 whitespace-nowrap text-xs font-semibold tabular-nums tracking-[-0.01em] text-foreground">
             {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
           </div>
         </div>
         <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Orders</div>
-          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{orders.length}</div>
+          <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Orders</div>
+          <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{orders.length}</div>
         </div>
         <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Tickets</div>
-          <div className="mt-1 text-[13px] font-semibold tabular-nums text-foreground">{previousTickets.length}</div>
+          <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Tickets</div>
+          <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{previousTickets.length}</div>
         </div>
       </section>
 
@@ -451,7 +451,7 @@ function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket })
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-[12px] text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-xs text-muted-foreground">
             No orders found.
           </div>
         )}

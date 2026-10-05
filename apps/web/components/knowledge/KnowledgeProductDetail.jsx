@@ -36,7 +36,7 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
       </nav>
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-tight">{productTitle || "Product"}</h1>
+          <h1 className="text-page-heading font-semibold leading-tight">{productTitle || "Product"}</h1>
           <p className="text-sm text-muted-foreground">
             Maintain this product&apos;s support document.
           </p>

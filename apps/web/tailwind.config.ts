@@ -10,6 +10,22 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        input: ['1rem', { lineHeight: '1.25rem' }],
+        xs: ['var(--text-caption-size, 0.75rem)', { lineHeight: 'var(--text-caption-leading, 1rem)' }],
+        sm: ['var(--text-ui-size, 0.875rem)', { lineHeight: 'var(--text-ui-leading, 1.25rem)' }],
+        base: ['var(--text-body-size, 1rem)', { lineHeight: 'var(--text-body-leading, 1.5rem)' }],
+        'page-heading': ['var(--text-page-heading-size, 1rem)', { lineHeight: 'var(--text-page-heading-leading, 1.5rem)', fontWeight: '650', letterSpacing: '-0.0125em' }],
+        'section-heading': ['var(--text-section-heading-size, 0.875rem)', { lineHeight: 'var(--text-section-heading-leading, 1.25rem)', fontWeight: '650' }],
+      },
+      fontWeight: {
+        normal: 'var(--weight-regular, 400)',
+        medium: 'var(--weight-medium, 500)',
+        semibold: 'var(--weight-semibold, 600)',
+      },
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
@@ -17,6 +33,7 @@ const config: Config = {
   		},
   		colors: {
   			background: 'hsl(var(--background))',
+        conversation: 'hsl(var(--conversation))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
   				DEFAULT: 'hsl(var(--card))',
@@ -46,7 +63,27 @@ const config: Config = {
   				DEFAULT: 'hsl(var(--destructive))',
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
-  			border: 'hsl(var(--border))',
+      success: {
+        DEFAULT: 'hsl(var(--success))',
+        foreground: 'hsl(var(--success-foreground))',
+        border: 'hsl(var(--success-border))'
+      },
+      warning: {
+        DEFAULT: 'hsl(var(--warning))',
+        foreground: 'hsl(var(--warning-foreground))',
+        border: 'hsl(var(--warning-border))'
+      },
+      info: {
+        DEFAULT: 'hsl(var(--info))',
+        foreground: 'hsl(var(--info-foreground))',
+        border: 'hsl(var(--info-border))'
+      },
+      danger: {
+        DEFAULT: 'hsl(var(--danger))',
+        foreground: 'hsl(var(--danger-foreground))',
+        border: 'hsl(var(--danger-border))'
+      },
+			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
   			chart: {

@@ -93,7 +93,7 @@ export function MailboxesSettingsTab() {
     <div className="w-full space-y-5">
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Channels</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Channels</h1>
           <p className="text-sm leading-6 text-muted-foreground">
             Manage where customer conversations enter Sona. Email is the first supported channel.
           </p>
@@ -109,7 +109,7 @@ export function MailboxesSettingsTab() {
 
       <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
         <div className="px-6 pb-2 pt-5">
-          <h2 className="text-base font-semibold text-foreground">Email</h2>
+          <h2 className="text-section-heading font-semibold text-foreground">Email</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Your support inbox, forwarding address and sender identity.
           </p>
@@ -167,7 +167,7 @@ export function MailboxesSettingsTab() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                 <Mail className="h-5 w-5" />
               </div>
-              <h3 className="mt-4 text-base font-semibold text-foreground">Connect your support email</h3>
+              <h3 className="mt-4 text-section-heading font-semibold text-foreground">Connect your support email</h3>
               <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground">
                 Forward your existing support inbox to Sona to receive conversations and generate replies.
               </p>

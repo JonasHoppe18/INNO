@@ -11,7 +11,7 @@ export function LearningCard({ exampleCount = 0 }) {
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-indigo-300" />
             <div className="text-sm font-semibold text-white">AI Self Learning</div>
-            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-200 border border-emerald-400/30">
+            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-200 border border-emerald-400/30">
               Active
             </span>
           </div>

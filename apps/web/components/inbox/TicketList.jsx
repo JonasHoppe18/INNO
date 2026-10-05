@@ -10,6 +10,8 @@ import {
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 import { ArrowDownUp, Inbox, Search, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
+import { useThreadPreviewMessages } from "@/hooks/useInboxData";
+import { customerPreviewsByThread } from "@/components/inbox/message-preview";
 
 const SORT_OPTIONS = [
   { value: "unread_first", label: "Unread" },
@@ -21,7 +23,8 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 68;
+const TICKET_ROW_GAP_PX = 4;
+const VIRTUAL_ROW_HEIGHT_PX = 76 + TICKET_ROW_GAP_PX;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 
 export function TicketListToolbar({
@@ -35,7 +38,7 @@ export function TicketListToolbar({
       ?.label || "Newest";
 
   return (
-    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-3 ${className}`}>
+    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-4 ${className}`}>
       <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
         <Input
@@ -49,7 +52,7 @@ export function TicketListToolbar({
           }}
           aria-label="Search tickets"
           placeholder="Search..."
-          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-[12px] shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
+          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-input md:text-xs shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
         />
         {hasActiveSearch ? (
           <button
@@ -68,7 +71,7 @@ export function TicketListToolbar({
           <button
             type="button"
             aria-label={`Sort tickets: ${selectedSortLabel}`}
-            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-[12px] text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-xs text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
             title={`Sort: ${selectedSortLabel}`}
           >
             <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />
@@ -79,6 +82,7 @@ export function TicketListToolbar({
           {SORT_OPTIONS.map((option) => (
             <DropdownMenuItem
               key={option.value}
+              className="text-xs"
               onClick={() => onFiltersChange({ sortBy: option.value })}
             >
               {option.label}
@@ -96,6 +100,8 @@ export function TicketList({
   className = "",
   ticketStateByThread,
   customerByThread,
+  mailboxEmails,
+  isInternalSender,
   onSelectThread,
   filters,
   onFiltersChange,
@@ -382,8 +388,16 @@ export function TicketList({
     };
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
+  const previewThreadIds = virtualWindow.rows.filter(({ thread }) => !thread.is_local && /^[a-f0-9-]{36}$/i.test(String(thread.id))).map(({ thread }) => thread.id);
+  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
+    enabled: previewThreadIds.length > 0,
+    includeBodies: true,
+    refreshKey: virtualWindow.rows.map(({ thread }) => thread.last_message_at || "").join("|"),
+  });
+  const previews = useMemo(() => customerPreviewsByThread(previewMessages, mailboxEmails, isInternalSender), [previewMessages, mailboxEmails, isInternalSender]);
+
   return (
-    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-background lg:border-l lg:border-border/90 lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:flex-none ${className}`}>
+    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-conversation lg:border-l lg:border-border/90 lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none ${className}`}>
       <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background lg:hidden">
         <TicketListToolbar
           filters={filters}
@@ -396,7 +410,7 @@ export function TicketList({
         onScroll={updateVirtualViewport}
       >
         {renderedThreads.length ? (
-          <div className="divide-y divide-border/50">
+          <div className="p-[4px]">
             {virtualWindow.before ? (
               <div style={{ height: virtualWindow.before }} aria-hidden="true" />
             ) : null}
@@ -427,9 +441,9 @@ export function TicketList({
               // small quiet text-buttons instead of relying on selection.
               const isApproveCloseRow = approveCloseThreadIds.has(String(thread.id));
               return (
-                <div key={thread.id}>
+                <div key={thread.id} className="mb-[4px] last:mb-0">
                   {groupHeaderLabel ? (
-                    <div className="px-3.5 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <div className="px-3.5 pb-1 pt-2.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                       {groupHeaderLabel}
                     </div>
                   ) : null}
@@ -439,6 +453,7 @@ export function TicketList({
                       isActive={thread.id === selectedThreadId}
                       status={uiState?.status || "New"}
                       customerLabel={customer}
+                      previewText={previews[thread.id] || ""}
                       timestamp={timestamp}
                       unreadCount={unreadCount}
                       assignee={uiState?.assignee}
@@ -478,7 +493,7 @@ export function TicketList({
               );
             })}
             {virtualWindow.after ? (
-              <div style={{ height: virtualWindow.after }} aria-hidden="true" />
+              <div style={{ height: Math.max(0, virtualWindow.after - TICKET_ROW_GAP_PX) }} aria-hidden="true" />
             ) : null}
           </div>
         ) : isNeedsAttentionRoute && !hasActiveListFilters ? (
@@ -488,8 +503,8 @@ export function TicketList({
           <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 px-4 py-8 text-center">
             <Inbox className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
             <div className="space-y-1">
-              <p className="text-[13px] font-medium text-foreground">Inbox zero</p>
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-sm font-medium text-foreground">Inbox zero</p>
+              <p className="text-sm text-muted-foreground">
                 Nothing needs your attention right now.
               </p>
             </div>
@@ -499,10 +514,10 @@ export function TicketList({
             <span className="flex size-10 items-center justify-center rounded-2xl bg-muted/70 text-muted-foreground/70">
               {hasActiveListFilters ? <SearchX className="size-4" /> : <Inbox className="size-4" />}
             </span>
-            <p className="mt-3 text-[13px] font-medium text-foreground">
+            <p className="mt-3 text-sm font-medium text-foreground">
               {hasActiveListFilters ? "No matching tickets" : "No tickets in this inbox"}
             </p>
-            <p className="mt-1 max-w-[220px] text-[12px] leading-5 text-muted-foreground">
+            <p className="mt-1 max-w-[220px] text-xs leading-5 text-muted-foreground">
               {hasActiveListFilters
                 ? "Try a different search or clear the active filters."
                 : "New conversations will appear here when they arrive."}
@@ -511,7 +526,7 @@ export function TicketList({
               <button
                 type="button"
                 onClick={() => onFiltersChange({ query: "", statuses: [], status: "All", unreadsOnly: false })}
-                className="mt-4 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                className="mt-4 rounded-lg px-2.5 py-1.5 text-xs font-medium text-violet-700 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:text-violet-300 dark:hover:bg-violet-500/10"
               >
                 Clear search and filters
               </button>

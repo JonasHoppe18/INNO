@@ -476,7 +476,7 @@ export default async function Page({ searchParams }) {
         <header className="flex flex-col gap-5 border-b border-border/70 pb-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Workspace overview</p>
-            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Support overview</h1>
+            <h1 className="mt-1.5 text-page-heading font-semibold tracking-tight text-page-heading">Support overview</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
               A clear view of your team&apos;s workload, response speed, and latest activity.
             </p>
@@ -498,11 +498,11 @@ export default async function Page({ searchParams }) {
                     <ActivityIcon className="size-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">Recent activity</CardTitle>
+                    <CardTitle>Recent activity</CardTitle>
                     <CardDescription className="mt-1">Replies, drafts, and approved actions.</CardDescription>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
+                <Button variant="ghost" size="sm" className="rounded-lg px-2" asChild>
                   <Link href="/inbox">
                     View inbox
                     <ChevronRightIcon className="ml-1 size-4" />
@@ -540,7 +540,7 @@ export default async function Page({ searchParams }) {
                       <div className="min-w-0 flex-1 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-150 group-hover:border-border/70 group-hover:bg-muted/30">
                         <div className="flex min-w-0 items-center gap-2">
                           <p className="truncate text-sm font-medium">{event.label}</p>
-                          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                             {formatTime(event.time)}
                           </span>
                         </div>
@@ -550,7 +550,7 @@ export default async function Page({ searchParams }) {
                       </div>
                       <Badge
                         variant="outline"
-                        className={`shrink-0 rounded-md text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
+                        className={`self-center shrink-0 rounded-md text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
                       >
                         {ACTIVITY_BADGE_LABEL[event.badge]}
                       </Badge>

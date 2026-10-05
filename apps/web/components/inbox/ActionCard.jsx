@@ -898,7 +898,7 @@ export function ActionCard({
 
         {normalizedAction === "forward_email" ? (
           <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
-            <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-[13px] text-foreground/80">
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-sm text-foreground/80">
               <span>{forwardSentence.lead}</span>
               <DropdownMenu>
                 {isCustomForwardTarget ? (
@@ -912,7 +912,7 @@ export function ActionCard({
                       placeholder="name@company.com"
                       aria-label="Forwarding email address"
                       aria-invalid={Boolean(selectedForwardEmail && !hasValidForwardEmail)}
-                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-[13px] shadow-none focus-visible:ring-0"
+                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-sm shadow-none focus-visible:ring-0"
                     />
                     <DropdownMenuTrigger asChild>
                       <button
@@ -928,7 +928,7 @@ export function ActionCard({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
+                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
                     >
                       <span className="truncate">{forwardTargetEmail || "Choose recipient"}</span>
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -977,7 +977,7 @@ export function ActionCard({
           </div>
         ) : (
           <div className="mt-2.5 rounded-md border border-violet-200/70 bg-muted/40 p-2 dark:border-violet-500/20">
-            <div className="space-y-0.5 text-[13px] text-foreground/80">
+            <div className="space-y-0.5 text-sm text-foreground/80">
               {impactSummaryLines.map((line, index) => (
                 <div key={`impact-line-${index}`}>{line}</div>
               ))}
@@ -997,7 +997,7 @@ export function ActionCard({
       <div className="flex items-center justify-end gap-1.5 border-t border-violet-200/70 px-2.5 py-1.5 dark:border-violet-500/20">
         <button
           type="button"
-          className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => setShowDeclineDialog(true)}
           disabled={loading}
         >
@@ -1005,7 +1005,7 @@ export function ActionCard({
         </button>
         <button
           type="button"
-          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => {
             if (normalizedAction === "forward_email") {
               setShowForwardApprovalDialog(true);

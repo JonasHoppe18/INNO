@@ -122,7 +122,7 @@ function AnalyticsHeader({ period, range, report, refreshing, onPeriod, onRange,
     <header className="bg-background">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pb-4 pt-6 md:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-7">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+          <h1 className="text-page-heading font-semibold tracking-tight">Analytics</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">Support performance, business impact and Sona value.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +176,7 @@ function ReportIntro({ report }) {
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{copy[0]}</p>
-      <h2 className="mt-1.5 text-xl font-semibold tracking-tight">{copy[1]}</h2>
+      <h2 className="mt-1.5 text-section-heading font-semibold tracking-tight">{copy[1]}</h2>
       <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{copy[2]}</p>
     </div>
   );
@@ -207,8 +207,8 @@ function TimeDistribution({ rows = [], onSelect, title }) {
     <div className="flex flex-col gap-3">
       {rows.map((row) => (
         <button key={row.key} type="button" onClick={() => onSelect?.(row.key === "no_reply" ? "slow_first_replies" : "support_tickets", row.label)} className="analytics-pressable grid grid-cols-[76px_1fr_40px_42px] items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <span className={cn("text-right text-xs", row.key === "no_reply" ? "font-medium text-amber-700" : "text-muted-foreground")}>{row.label}</span>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("analytics-bar h-full rounded-full", row.key === "no_reply" ? "bg-amber-500" : "bg-primary/75")} style={{ width: `${Math.max(row.count ? 3 : 0, (row.count / max) * 100)}%` }} /></div>
+          <span className={cn("text-right text-xs", row.key === "no_reply" ? "font-medium text-warning-foreground" : "text-muted-foreground")}>{row.label}</span>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("analytics-bar h-full rounded-full", row.key === "no_reply" ? "bg-warning-foreground" : "bg-primary/75")} style={{ width: `${Math.max(row.count ? 3 : 0, (row.count / max) * 100)}%` }} /></div>
           <span className="text-right text-xs font-medium tabular-nums">{formatPercent(row.pct)}</span>
           <span className="text-right text-xs tabular-nums text-muted-foreground">{formatNumber(row.count)}</span>
         </button>
@@ -219,10 +219,10 @@ function TimeDistribution({ rows = [], onSelect, title }) {
 
 function QualityBreakdown({ breakdown = {} }) {
   const rows = [
-    ["Sent as-is", breakdown.sentAsIs, "bg-emerald-500"],
+    ["Sent as-is", breakdown.sentAsIs, "bg-success-foreground"],
     ["Minor edits", breakdown.minorEdits, "bg-primary"],
-    ["Major edits", breakdown.majorEdits, "bg-amber-500"],
-    ["Rejected", breakdown.rejected, "bg-rose-500"],
+    ["Major edits", breakdown.majorEdits, "bg-warning-foreground"],
+    ["Rejected", breakdown.rejected, "bg-danger-foreground"],
   ];
   if (!breakdown.total) return <EmptyState icon={Sparkles} title="Draft quality is collecting" description="Send and review more Sona drafts to unlock the quality distribution." />;
   return (
@@ -264,11 +264,11 @@ function OverviewReport({ data, onDrilldown }) {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card className="rounded-xl shadow-sm">
-          <CardHeader><CardTitle className="text-base">Customer friction</CardTitle><CardDescription>The reasons and products driving customer contact.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-section-heading">Customer friction</CardTitle><CardDescription>The reasons and products driving customer contact.</CardDescription></CardHeader>
           <CardContent><HorizontalBars items={friction.slice(0, 5)} onSelect={onDrilldown} emptyTitle="No friction patterns yet" emptyDescription="Tag tickets and connect products to identify recurring customer problems." /></CardContent>
         </Card>
         <Card className="rounded-xl shadow-sm">
-          <CardHeader><CardTitle className="text-base">Sona impact</CardTitle><CardDescription>Assistance and quality tied to real support work.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-section-heading">Sona impact</CardTitle><CardDescription>Assistance and quality tied to real support work.</CardDescription></CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             {[
               ["Sent as-is", impact.draftQualityTotal ? formatNumber(impact.sentAsIs) : "Collecting"],
@@ -305,16 +305,16 @@ function SupportReport({ data, onDrilldown }) {
       </AnalyticsChartCard>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">First reply distribution</CardTitle><CardDescription>How long customers waited for the first teammate response.</CardDescription></CardHeader><CardContent><TimeDistribution rows={kpis.firstReplyBrackets || []} title="First reply" onSelect={onDrilldown} /></CardContent></Card>
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Resolution distribution</CardTitle><CardDescription>Time from ticket creation until the first recorded resolution.</CardDescription></CardHeader><CardContent><TimeDistribution rows={kpis.resolutionBrackets || []} title="Resolution" onSelect={onDrilldown} /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">First reply distribution</CardTitle><CardDescription>How long customers waited for the first teammate response.</CardDescription></CardHeader><CardContent><TimeDistribution rows={kpis.firstReplyBrackets || []} title="First reply" onSelect={onDrilldown} /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Resolution distribution</CardTitle><CardDescription>Time from ticket creation until the first recorded resolution.</CardDescription></CardHeader><CardContent><TimeDistribution rows={kpis.resolutionBrackets || []} title="Resolution" onSelect={onDrilldown} /></CardContent></Card>
       </div>
 
       <Card className="rounded-xl shadow-sm">
-        <CardHeader><CardTitle className="text-base">Customer satisfaction</CardTitle><CardDescription>Direct feedback collected after support conversations.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-section-heading">Customer satisfaction</CardTitle><CardDescription>Direct feedback collected after support conversations.</CardDescription></CardHeader>
         <CardContent>
           {outcomes.csatAvailable ? (
             <div className="grid gap-5 sm:grid-cols-[220px_1fr] sm:items-center">
-              <div><p className="text-4xl font-semibold tracking-tight tabular-nums">{outcomes.csatAverage} / 5</p><div className="mt-3 flex gap-1" aria-label={`${outcomes.csatAverage} out of 5 stars`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={cn("size-4", index < csatStars ? "fill-amber-400 text-amber-400" : "text-muted")} />)}</div><p className="mt-2 text-xs text-muted-foreground">{formatNumber(outcomes.csatResponses)} responses</p></div>
+              <div><p className="text-4xl font-semibold tracking-tight tabular-nums">{outcomes.csatAverage} / 5</p><div className="mt-3 flex gap-1" aria-label={`${outcomes.csatAverage} out of 5 stars`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={cn("size-4", index < csatStars ? "fill-amber-400 text-warning-foreground" : "text-muted")} />)}</div><p className="mt-2 text-xs text-muted-foreground">{formatNumber(outcomes.csatResponses)} responses</p></div>
               <div className="rounded-lg bg-muted/35 p-4"><p className="text-xs text-muted-foreground">Positive CSAT</p><p className="mt-2 text-2xl font-semibold tabular-nums">{formatPercent(outcomes.csatPositiveRate)}</p><p className="mt-1 text-xs text-muted-foreground">Scores of 4 or 5</p></div>
             </div>
           ) : <EmptyState icon={Star} title="No CSAT responses yet" description="Customer satisfaction appears after feedback is submitted for support conversations." />}
@@ -342,13 +342,13 @@ function BusinessReport({ data, onDrilldown }) {
       </AnalyticsChartCard>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Contact reasons</CardTitle><CardDescription>What customers most often need help with.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.requestTypes || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No contact reasons yet" emptyDescription="Classify or tag tickets to identify recurring support demand." /></CardContent></Card>
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Return reasons</CardTitle><CardDescription>{commerce.returnReasonsSource === "shopify" ? "Reasons recorded on Shopify returns." : "Operational reasons recorded on return cases."}</CardDescription></CardHeader><CardContent><HorizontalBars items={commerce.returnReasons || []} emptyTitle="No return reasons yet" emptyDescription={commerce.returnReasonsSource === null ? "Reasons appear after Shopify returns are synced or a Sona return case is created." : "No return reason was recorded for the selected period."} /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Contact reasons</CardTitle><CardDescription>What customers most often need help with.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.requestTypes || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No contact reasons yet" emptyDescription="Classify or tag tickets to identify recurring support demand." /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Return reasons</CardTitle><CardDescription>{commerce.returnReasonsSource === "shopify" ? "Reasons recorded on Shopify returns." : "Operational reasons recorded on return cases."}</CardDescription></CardHeader><CardContent><HorizontalBars items={commerce.returnReasons || []} emptyTitle="No return reasons yet" emptyDescription={commerce.returnReasonsSource === null ? "Reasons appear after Shopify returns are synced or a Sona return case is created." : "No return reason was recorded for the selected period."} /></CardContent></Card>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Products driving support</CardTitle><CardDescription>Products associated with the highest ticket volume.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.products || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No product links yet" emptyDescription="Detected products appear after tickets are classified." /></CardContent></Card>
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Products with refunded value</CardTitle><CardDescription>Values remain separated by currency.</CardDescription></CardHeader><CardContent>{(commerce.refundProducts || []).length ? <div className="flex flex-col gap-1">{commerce.refundProducts.map((row) => <div key={`${row.productId}-${row.currency}`} className="flex items-center justify-between gap-4 rounded-lg px-3 py-3 odd:bg-muted/35"><div className="min-w-0"><p className="truncate text-sm font-medium">{row.productName || `Product #${row.productId}`}</p><p className="mt-0.5 text-xs text-muted-foreground">{formatNumber(row.quantity)} units</p></div><p className="shrink-0 text-sm font-semibold tabular-nums">{row.currency ? formatMoney(row.amount, row.currency) : formatNumber(row.amount)}</p></div>)}</div> : <EmptyState icon={PackageSearch} title="No refunded products yet" description="Product-level value appears after Shopify refund line items are received." />}</CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Products driving support</CardTitle><CardDescription>Products associated with the highest ticket volume.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.products || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No product links yet" emptyDescription="Detected products appear after tickets are classified." /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Products with refunded value</CardTitle><CardDescription>Values remain separated by currency.</CardDescription></CardHeader><CardContent>{(commerce.refundProducts || []).length ? <div className="flex flex-col gap-1">{commerce.refundProducts.map((row) => <div key={`${row.productId}-${row.currency}`} className="flex items-center justify-between gap-4 rounded-lg px-3 py-3 odd:bg-muted/35"><div className="min-w-0"><p className="truncate text-sm font-medium">{row.productName || `Product #${row.productId}`}</p><p className="mt-0.5 text-xs text-muted-foreground">{formatNumber(row.quantity)} units</p></div><p className="shrink-0 text-sm font-semibold tabular-nums">{row.currency ? formatMoney(row.amount, row.currency) : formatNumber(row.amount)}</p></div>)}</div> : <EmptyState icon={PackageSearch} title="No refunded products yet" description="Product-level value appears after Shopify refund line items are received." />}</CardContent></Card>
       </div>
     </div>
   );
@@ -378,8 +378,8 @@ function SonaReport({ data, onDrilldown }) {
       </AnalyticsChartCard>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Draft quality</CardTitle><CardDescription>How much teammate editing Sona drafts required before sending.</CardDescription></CardHeader><CardContent><QualityBreakdown breakdown={impact.draftQualityBreakdown || {}} /></CardContent></Card>
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-base">Automation opportunities</CardTitle><CardDescription>Start with repeatable work where quality is measurable.</CardDescription></CardHeader><CardContent className="flex flex-col gap-4">{candidateGroups.map(([label, rows, variant]) => <section key={label}><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><Badge variant={variant}>{formatNumber(rows.length)}</Badge></div>{rows.length ? <div className="flex flex-col gap-1">{rows.slice(0, 4).map((candidate) => <button key={candidate.key} type="button" onClick={() => onDrilldown(candidate.key, candidate.label)} className="analytics-pressable group flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted/45"><div className="min-w-0"><p className="truncate text-sm font-medium">{candidate.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{candidate.reason}</p></div><ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" /></button>)}</div> : <p className="text-xs text-muted-foreground">No workflows in this group.</p>}</section>)}</CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Draft quality</CardTitle><CardDescription>How much teammate editing Sona drafts required before sending.</CardDescription></CardHeader><CardContent><QualityBreakdown breakdown={impact.draftQualityBreakdown || {}} /></CardContent></Card>
+        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Automation opportunities</CardTitle><CardDescription>Start with repeatable work where quality is measurable.</CardDescription></CardHeader><CardContent className="flex flex-col gap-4">{candidateGroups.map(([label, rows, variant]) => <section key={label}><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><Badge variant={variant}>{formatNumber(rows.length)}</Badge></div>{rows.length ? <div className="flex flex-col gap-1">{rows.slice(0, 4).map((candidate) => <button key={candidate.key} type="button" onClick={() => onDrilldown(candidate.key, candidate.label)} className="analytics-pressable group flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted/45"><div className="min-w-0"><p className="truncate text-sm font-medium">{candidate.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{candidate.reason}</p></div><ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" /></button>)}</div> : <p className="text-xs text-muted-foreground">No workflows in this group.</p>}</section>)}</CardContent></Card>
       </div>
     </div>
   );
@@ -427,7 +427,7 @@ function TicketDrilldown({ data, metricKey, title, onBack }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Breadcrumb><BreadcrumbList><BreadcrumbItem><button type="button" onClick={onBack} className="transition-colors hover:text-foreground">Analytics</button></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>Tickets</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
-          <h2 className="mt-3 text-xl font-semibold tracking-tight">{title}</h2>
+          <h2 className="mt-3 text-section-heading font-semibold tracking-tight">{title}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{formatNumber(filtered.length)} of {formatNumber(tickets.length)} tickets</p>
         </div>
         <Button variant="ghost" onClick={onBack}><ArrowLeft data-icon="inline-start" />Back to report</Button>

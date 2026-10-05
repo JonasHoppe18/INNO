@@ -75,9 +75,9 @@ function formatDate(value) {
 }
 
 function statusClass(status) {
-  if (status === "published") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "archived") return "border-gray-200 bg-gray-100 text-gray-500";
-  return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "published") return "border-success-border bg-success text-success-foreground";
+  if (status === "archived") return "border-border bg-muted text-muted-foreground";
+  return "border-warning-border bg-warning text-warning-foreground";
 }
 
 function sourceKindLabel(source) {
@@ -178,17 +178,17 @@ function ProcedureBlockEditor({ blocks, onChange, disabled }) {
         if (isInstruction) instructionNumber += 1;
         const blockLabel = isInstruction ? `Step ${instructionNumber}` : PROCEDURE_BLOCK_OPTIONS.find(([value]) => value === block.kind)?.[1] || "Guidance";
         return (
-          <div key={`${index}-${block.kind}`} className="rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+          <div key={`${index}-${block.kind}`} className="rounded-xl border border-border bg-muted/60 p-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-800">{blockLabel}</span>
+              <span className="text-xs font-semibold text-foreground">{blockLabel}</span>
               {!isInstruction ? <Badge variant="secondary" className="font-normal">Optional guidance</Badge> : null}
               <div className="ml-auto flex items-center gap-0.5">
                 <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => move(index, -1)} disabled={disabled || index === 0} aria-label="Move step up"><ArrowUp className="size-3.5" /></Button>
                 <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => move(index, 1)} disabled={disabled || index === blocks.length - 1} aria-label="Move step down"><ArrowDown className="size-3.5" /></Button>
-                <Button type="button" variant="ghost" size="icon" className="size-7 text-gray-400 hover:text-red-600" onClick={() => onChange(blocks.filter((_, itemIndex) => itemIndex !== index))} disabled={disabled || blocks.length <= 1} aria-label="Remove step"><Trash2 className="size-3.5" /></Button>
+                <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-danger-foreground" onClick={() => onChange(blocks.filter((_, itemIndex) => itemIndex !== index))} disabled={disabled || blocks.length <= 1} aria-label="Remove step"><Trash2 className="size-3.5" /></Button>
               </div>
             </div>
-            <Textarea value={block.text} onChange={(event) => update(index, { text: event.target.value })} disabled={disabled} placeholder={isInstruction ? "e.g. Turn the device off before reconnecting it." : "Add the extra guidance Sona should follow."} className="mt-2 min-h-16 resize-y bg-white text-sm leading-5" />
+            <Textarea value={block.text} onChange={(event) => update(index, { text: event.target.value })} disabled={disabled} placeholder={isInstruction ? "e.g. Turn the device off before reconnecting it." : "Add the extra guidance Sona should follow."} className="mt-2 min-h-16 resize-y bg-card text-input md:text-sm leading-5" />
           </div>
         );
       })}
@@ -201,7 +201,7 @@ function ProcedureBlockEditor({ blocks, onChange, disabled }) {
 }
 
 function ErrorMessage({ children }) {
-  return <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{children}</p>;
+  return <p className="rounded-lg border border-danger-border bg-danger px-3 py-2 text-xs leading-5 text-danger-foreground">{children}</p>;
 }
 
 function SourceIcon({ source }) {
@@ -230,9 +230,9 @@ function ProductChooser({ products, value, onChange, disabled }) {
             key={product.id}
             disabled={disabled}
             onClick={() => onChange(checked ? value.filter((id) => id !== product.id) : [...value, product.id])}
-            className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors duration-150 hover:bg-muted/60", checked && "bg-indigo-50 text-indigo-800")}
+            className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors duration-150 hover:bg-muted/60", checked && "bg-accent text-accent-foreground")}
           >
-            <span className={cn("flex size-4 items-center justify-center rounded border", checked ? "border-indigo-500 bg-indigo-500 text-white" : "border-gray-300")}>{checked ? <Check className="size-3" /> : null}</span>
+            <span className={cn("flex size-4 items-center justify-center rounded border", checked ? "border-primary/30 bg-primary text-primary-foreground" : "border-input")}>{checked ? <Check className="size-3" /> : null}</span>
             <span className="min-w-0 flex-1 truncate">{product.title}</span>
           </button>
         );
@@ -266,25 +266,25 @@ function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopi
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-semibold text-gray-900">Sources</h2>
-        <p className="mt-1 text-xs leading-5 text-gray-500">See where Sona&apos;s knowledge comes from and which records each source created.</p>
+        <h2 className="text-section-heading font-semibold text-foreground">Sources</h2>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">See where Sona&apos;s knowledge comes from and which records each source created.</p>
       </div>
-      <div className="flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white p-4 shadow-sm shadow-gray-100/70 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-sm shadow-foreground/5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Package className="size-4" /></span>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground"><Package className="size-4" /></span>
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-gray-800">Shopify</span><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700">{shopifySource?.connected === false ? "Not connected" : "Connected"}</Badge></div>
-            <p className="mt-1 text-xs leading-5 text-gray-500">Import policies and product information as drafts for review. Shopify remains the source of truth.</p>
-            {shopifySource?.source ? <p className="mt-1 text-[11px] text-gray-400">{shopifySource.source.counts.total} item{shopifySource.source.counts.total === 1 ? "" : "s"} · {shopifySource.source.counts.published} published · {shopifySource.source.counts.draft} draft</p> : null}
+            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-foreground">Shopify</span><Badge variant="outline" className="border-success-border bg-success text-xs font-medium text-success-foreground">{shopifySource?.connected === false ? "Not connected" : "Connected"}</Badge></div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">Import policies and product information as drafts for review. Shopify remains the source of truth.</p>
+            {shopifySource?.source ? <p className="mt-1 text-xs text-muted-foreground">{shopifySource.source.counts.total} item{shopifySource.source.counts.total === 1 ? "" : "s"} · {shopifySource.source.counts.published} published · {shopifySource.source.counts.draft} draft</p> : null}
           </div>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onSyncShopify} disabled={shopifyLoading || shopifySource?.connected === false} className="shrink-0"><RefreshCw className={cn("size-4", shopifyLoading && "animate-spin")} />{shopifyLoading ? "Syncing…" : "Sync from Shopify"}</Button>
       </div>
       {!sources.length ? (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-gray-200 px-6 py-16 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-500"><FileText className="size-5" /></span>
-          <h2 className="mt-4 text-sm font-semibold text-gray-800">No other sources yet</h2>
-          <p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">Add a document or create knowledge manually to see where Sona learns from.</p>
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-16 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><FileText className="size-5" /></span>
+          <h2 className="mt-4 text-section-heading font-semibold text-foreground">No other sources yet</h2>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">Add a document or create knowledge manually to see where Sona learns from.</p>
           <Button size="sm" className="mt-5" onClick={onAddSource}><FileText className="size-4" /> Add a source</Button>
         </div>
       ) : null}
@@ -293,19 +293,19 @@ function SourcesView({ records, onAddSource, onSyncShopify, shopifySource, shopi
           const published = source.records.filter((record) => record.status === "published").length;
           const drafts = source.records.filter((record) => record.status === "draft").length;
           return (
-            <details key={source.key} className="group rounded-xl border border-gray-200/80 bg-white shadow-sm shadow-gray-100/70">
+            <details key={source.key} className="group rounded-xl border border-border/80 bg-card shadow-sm shadow-foreground/5">
               <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600"><SourceIcon source={source.kind} /></span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><SourceIcon source={source.kind} /></span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-gray-800">{source.title}</span>
-                  <span className="mt-1 block text-xs text-gray-500">{source.kind} · {source.records.length} knowledge item{source.records.length === 1 ? "" : "s"}</span>
+                  <span className="block truncate text-sm font-semibold text-foreground">{source.title}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{source.kind} · {source.records.length} knowledge item{source.records.length === 1 ? "" : "s"}</span>
                 </span>
-                <span className="shrink-0 text-right text-[11px] text-gray-400">Updated {formatDate(source.latest)}</span>
+                <span className="shrink-0 text-right text-xs text-muted-foreground">Updated {formatDate(source.latest)}</span>
               </summary>
-              <div className="border-t border-gray-100 px-4 py-3">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500"><span>{published} published</span><span>{drafts} draft{drafts === 1 ? "" : "s"}</span></div>
+              <div className="border-t border-border px-4 py-3">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{published} published</span><span>{drafts} draft{drafts === 1 ? "" : "s"}</span></div>
                 <div className="mt-3 flex flex-col gap-2">
-                  {source.records.map((record) => <div key={record.id} className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate text-gray-700">{record.title}</span><Badge variant="outline" className={cn("shrink-0 text-[10px] font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></div>)}
+                  {source.records.map((record) => <div key={record.id} className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate text-foreground">{record.title}</span><Badge variant="outline" className={cn("shrink-0 text-xs font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></div>)}
                 </div>
               </div>
             </details>
@@ -520,11 +520,11 @@ export function GreenfieldKnowledgePageClient() {
     <div className="mx-auto w-full max-w-[1240px]">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-medium text-indigo-600"><BookOpen className="size-3.5" /> Knowledge</div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Knowledge</h1>
-          <p className="mt-1 max-w-xl text-sm leading-6 text-gray-500">Manage the policies, product guidance and procedures Sona uses when helping customers.</p>
+          <div className="flex items-center gap-2 text-xs font-medium text-primary"><BookOpen className="size-3.5" /> Knowledge</div>
+          <h1 className="mt-2 text-page-heading font-semibold tracking-tight text-foreground">Knowledge</h1>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">Manage the policies, product guidance and procedures Sona uses when helping customers.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline" size="sm"><Link href="/playground"><TestTube2 className="size-4" /> Test Sona</Link></Button>
           <Button variant="outline" size="sm" onClick={() => setSourceSheetOpen(true)}><FileText className="size-4" /> Add source</Button>
           <Button size="sm" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button>
@@ -532,18 +532,18 @@ export function GreenfieldKnowledgePageClient() {
       </div>
 
       <Tabs value={activeView} onValueChange={setActiveView} className="mt-8">
-        <TabsList className="h-10 rounded-none border-b border-gray-200 bg-transparent p-0">
-          <TabsTrigger value="knowledge" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Knowledge</TabsTrigger>
-          <TabsTrigger value="sources" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Sources</TabsTrigger>
-          <TabsTrigger value="suggested" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-gray-500 shadow-none data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none">Suggested</TabsTrigger>
+        <TabsList className="h-10 rounded-none border-b border-border bg-transparent p-0">
+          <TabsTrigger value="knowledge" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-muted-foreground shadow-none data-[state=active]:border-primary/30 data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none">Knowledge</TabsTrigger>
+          <TabsTrigger value="sources" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-muted-foreground shadow-none data-[state=active]:border-primary/30 data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none">Sources</TabsTrigger>
+          <TabsTrigger value="suggested" className="h-10 rounded-none border-b-2 border-transparent px-1.5 text-xs text-muted-foreground shadow-none data-[state=active]:border-primary/30 data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none">Suggested</TabsTrigger>
         </TabsList>
 
         <div className="mt-6">
           {activeView === "knowledge" ? <>
-            <div className="flex flex-col gap-3 rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm shadow-gray-100/70 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card p-3 shadow-sm shadow-foreground/5 sm:flex-row sm:items-center">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
-                <Input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Search knowledge" className="h-9 border-0 bg-gray-50 pl-9 shadow-none focus-visible:ring-1" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Search knowledge" className="h-9 border-0 bg-muted pl-9 shadow-none focus-visible:ring-1" />
               </div>
               <Select value={filters.type} onValueChange={(value) => setFilters((current) => ({ ...current, type: value }))}>
                 <SelectTrigger className="h-9 w-full sm:w-48"><SelectValue placeholder="All types" /></SelectTrigger>
@@ -556,25 +556,25 @@ export function GreenfieldKnowledgePageClient() {
             </div>
 
             {error ? <div className="mt-4"><ErrorMessage>{error}</ErrorMessage></div> : null}
-            <div className="mt-4 overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm shadow-gray-100/70">
-              <div className="hidden grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] gap-4 border-b border-gray-100 bg-gray-50/70 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 md:grid">
+            <div className="mt-4 overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm shadow-foreground/5">
+              <div className="hidden grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] gap-4 border-b border-border bg-muted/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground md:grid">
                 <span>Knowledge</span><span>Type</span><span>Applies to</span><span>Source</span><span>Status</span>
               </div>
-              {loading ? <div className="flex flex-col gap-3 p-5"><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /><div className="h-14 animate-pulse rounded-lg bg-gray-100" /></div> : null}
+              {loading ? <div className="flex flex-col gap-3 p-5"><div className="h-14 animate-pulse rounded-lg bg-muted" /><div className="h-14 animate-pulse rounded-lg bg-muted" /><div className="h-14 animate-pulse rounded-lg bg-muted" /></div> : null}
               {!loading && visibleRecords.length ? visibleRecords.map((record) => {
                 const RowIcon = TYPE_ICON[record.type] || FileText;
                 const appliesTo = record.applies_to?.kind === "products" ? `${record.applies_to.product_ids.length} product${record.applies_to.product_ids.length === 1 ? "" : "s"}` : "All products";
                 return (
-                  <button type="button" key={record.id} onClick={() => openRecord(record)} className="group grid w-full gap-3 border-b border-gray-100 px-5 py-4 text-left transition-colors duration-150 last:border-b-0 hover:bg-gray-50/70 md:grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] md:items-center md:gap-4">
-                    <span className="flex min-w-0 items-center gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><RowIcon className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium text-gray-800">{record.title}</span><span className="mt-0.5 block truncate text-xs text-gray-400">Updated {formatDate(record.updated_at)}</span></span><ChevronRight className="ml-auto size-4 shrink-0 text-gray-300 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-gray-500 md:hidden" /></span>
-                    <span className="text-xs text-gray-600 md:block"><span className="mr-2 text-gray-400 md:hidden">Type</span>{record.type_label}</span>
-                    <span className="text-xs text-gray-600 md:block"><span className="mr-2 text-gray-400 md:hidden">Applies to</span>{appliesTo}</span>
-                    <span className="flex items-center gap-1.5 text-xs text-gray-600"><SourceIcon source={record.source} />{displaySourceLabel(record.source)}</span>
+                  <button type="button" key={record.id} onClick={() => openRecord(record)} className="group grid w-full gap-3 border-b border-border px-5 py-4 text-left transition-colors duration-150 last:border-b-0 hover:bg-muted/70 md:grid-cols-[minmax(0,1.8fr)_1fr_1fr_1fr_110px] md:items-center md:gap-4">
+                    <span className="flex min-w-0 items-center gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-primary"><RowIcon className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium text-foreground">{record.title}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">Updated {formatDate(record.updated_at)}</span></span><ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground md:hidden" /></span>
+                    <span className="text-xs text-muted-foreground md:block"><span className="mr-2 text-muted-foreground md:hidden">Type</span>{record.type_label}</span>
+                    <span className="text-xs text-muted-foreground md:block"><span className="mr-2 text-muted-foreground md:hidden">Applies to</span>{appliesTo}</span>
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><SourceIcon source={record.source} />{displaySourceLabel(record.source)}</span>
                     <span><Badge variant="outline" className={cn("font-medium", statusClass(record.status))}>{STATUS_LABELS[record.status] || "Published"}</Badge></span>
                   </button>
                 );
               }) : null}
-              {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="size-5" /></span><h2 className="mt-4 text-sm font-semibold text-gray-800">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-gray-500">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
+              {!loading && !visibleRecords.length ? <div className="flex flex-col items-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-accent text-primary"><Sparkles className="size-5" /></span><h2 className="mt-4 text-section-heading font-semibold text-foreground">{records.length ? "No knowledge matches those filters" : "Give Sona the knowledge it needs"}</h2><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{records.length ? "Try a different search or filter." : "Add policies, product guidance and troubleshooting procedures Sona should use when helping customers."}</p>{!records.length ? <Button size="sm" className="mt-5" onClick={openCreate}><Plus className="size-4" /> Add knowledge</Button> : null}</div> : null}
             </div>
           </> : activeView === "sources" ? <SourcesView records={records} onAddSource={() => setSourceSheetOpen(true)} onSyncShopify={syncShopify} shopifySource={shopifySource} shopifyLoading={shopifyLoading} /> : <SuggestedProceduresView suggestions={suggestions} loading={suggestionsLoading} error={suggestionsError} onRefresh={loadSuggestions} onPublished={loadRecords} />}
         </div>
@@ -582,38 +582,38 @@ export function GreenfieldKnowledgePageClient() {
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
-          <SheetHeader className="border-b border-gray-100 px-6 py-5 text-left">
-            <div className="flex items-center gap-2 text-indigo-600"><Icon className="size-4" /><span className="text-xs font-medium">{selected ? selected.type_label : "New knowledge"}</span></div>
+          <SheetHeader className="border-b border-border px-6 py-5 text-left">
+            <div className="flex items-center gap-2 text-primary"><Icon className="size-4" /><span className="text-xs font-medium">{selected ? selected.type_label : "New knowledge"}</span></div>
             <SheetTitle className="mt-1">{selected ? (isEditable ? "Edit knowledge" : "Knowledge details") : "Add knowledge"}</SheetTitle>
             <SheetDescription>{selected && !isEditable ? "Imported content is read-only. Review it here and publish it when it is ready." : "Write the guidance Sona should use. You can publish it when it is ready."}</SheetDescription>
           </SheetHeader>
           <div className="flex flex-1 flex-col gap-5 px-6 py-5">
-            {selected && !isEditable ? <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs leading-5 text-blue-800"><FileText className="size-4 shrink-0" />This source is imported from {selected.source?.label || "an external source"}. Create a merchant entry if you need to add a correction.</div> : null}
+            {selected && !isEditable ? <div className="flex items-center gap-2 rounded-lg border border-info-border bg-info/60 px-3 py-2.5 text-xs leading-5 text-info-foreground"><FileText className="size-4 shrink-0" />This source is imported from {selected.source?.label || "an external source"}. Create a merchant entry if you need to add a correction.</div> : null}
             <div className="grid gap-2"><Label htmlFor="greenfield-title">Title</Label><Input id="greenfield-title" value={form.title} onChange={(event) => updateForm("title", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. Return policy" maxLength={180} /></div>
             <div className="grid gap-2"><Label htmlFor="greenfield-type">Knowledge type</Label><Select value={form.type} onValueChange={updateType} disabled={!isEditable || saving}><SelectTrigger id="greenfield-type"><SelectValue /></SelectTrigger><SelectContent>{TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
             {form.type === "brand" ? null : form.type === "product" ? <div className="grid gap-2"><Label>Products</Label><ProductChooser products={products} value={form.applies_to.product_ids} onChange={(product_ids) => updateForm("applies_to", { kind: "products", product_ids })} disabled={!isEditable || saving} /><p className="text-xs leading-5 text-muted-foreground">Choose one or more Shopify products this information belongs to.</p></div> : <div className="grid gap-2"><Label htmlFor="greenfield-applies">Applies to</Label><Select value={form.applies_to.kind} onValueChange={(value) => updateForm("applies_to", { kind: value, product_ids: value === "all" ? [] : form.applies_to.product_ids })} disabled={!isEditable || saving}><SelectTrigger id="greenfield-applies"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All products</SelectItem>{products.available ? <SelectItem value="products">Specific products</SelectItem> : null}</SelectContent></Select>{form.applies_to.kind === "products" ? <ProductChooser products={products} value={form.applies_to.product_ids} onChange={(product_ids) => updateForm("applies_to", { kind: "products", product_ids })} disabled={!isEditable || saving} /> : <p className="text-xs text-muted-foreground">This guidance can be used for any product in the store.</p>}</div>}
             {form.type === "procedure" ? <>
               <div className="grid gap-2"><Label htmlFor="greenfield-task">What problem does this solve?</Label><Input id="greenfield-task" value={form.task_key} onChange={(event) => updateForm("task_key", event.target.value)} disabled={!isEditable || saving} placeholder="e.g. Microphone is not working" /></div>
-              <div className="grid gap-2"><Label htmlFor="greenfield-aliases">How customers might describe it <span className="font-normal text-gray-400">(optional)</span></Label><Input id="greenfield-aliases" value={form.customer_aliases.join(", ")} onChange={(event) => updateForm("customer_aliases", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))} disabled={!isEditable || saving} placeholder="mic not working, nobody can hear me" /></div>
+              <div className="grid gap-2"><Label htmlFor="greenfield-aliases">How customers might describe it <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="greenfield-aliases" value={form.customer_aliases.join(", ")} onChange={(event) => updateForm("customer_aliases", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))} disabled={!isEditable || saving} placeholder="mic not working, nobody can hear me" /></div>
               <div className="grid gap-2"><Label>Instructions</Label><ProcedureBlockEditor blocks={form.procedure_blocks} onChange={updateProcedureBlocks} disabled={!isEditable || saving} /></div>
-            </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">{form.type === "policy" ? "Policy content" : form.type === "product" ? "Product information" : "Brand information"}</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder={form.type === "policy" ? "Explain the policy in plain language..." : form.type === "product" ? "Describe the product information Sona should use..." : "Describe the brand guidance Sona should follow..."} className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-[11px] text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
+            </> : <div className="grid gap-2"><Label htmlFor="greenfield-content">{form.type === "policy" ? "Policy content" : form.type === "product" ? "Product information" : "Brand information"}</Label><Textarea id="greenfield-content" value={form.content} onChange={(event) => updateForm("content", event.target.value)} disabled={!isEditable || saving} placeholder={form.type === "policy" ? "Explain the policy in plain language..." : form.type === "product" ? "Describe the product information Sona should use..." : "Describe the brand guidance Sona should follow..."} className="min-h-64 resize-y leading-6" maxLength={50_000} /><p className="text-right text-xs text-muted-foreground">{form.content.length.toLocaleString()} / 50,000</p></div>}
             <div className="grid gap-2"><Label htmlFor="greenfield-status">Status</Label><Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={saving}><SelectTrigger id="greenfield-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="unpublished">Unpublished</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">{statusHelp}</p></div>
-            {selected ? <div className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-3 text-xs text-gray-500"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-gray-700"><SourceIcon source={selected.source} />{displaySourceLabel(selected.source)}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-gray-700">{formatDate(selected.updated_at)}</span></div></div> : null}
+            {selected ? <div className="rounded-lg border border-border bg-muted/70 px-3 py-3 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>Source</span><span className="flex items-center gap-1.5 font-medium text-foreground"><SourceIcon source={selected.source} />{displaySourceLabel(selected.source)}</span></div><div className="mt-2 flex items-center justify-between"><span>Last updated</span><span className="font-medium text-foreground">{formatDate(selected.updated_at)}</span></div></div> : null}
           </div>
-          {isEditable || selected ? <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-gray-500 hover:text-red-600"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" variant="outline" size="sm" onClick={() => save(form.status)} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}{saveLabel}</Button><Button type="button" size="sm" onClick={() => save("published")} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}Publish</Button></div></SheetFooter> : <SheetFooter className="border-t border-gray-100 px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
+          {isEditable || selected ? <SheetFooter className="border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><div>{selected ? <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => save("archived")} className="text-muted-foreground hover:text-danger-foreground"><Archive className="size-4" /> Archive</Button> : null}</div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button><Button type="button" variant="outline" size="sm" onClick={() => save(form.status)} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}{saveLabel}</Button><Button type="button" size="sm" onClick={() => save("published")} disabled={saving || !canSave}>{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}Publish</Button></div></SheetFooter> : <SheetFooter className="border-t border-border px-6 py-4"><Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(false)}><X className="size-4" /> Close</Button></SheetFooter>}
         </SheetContent>
       </Sheet>
 
       <Sheet open={sourceSheetOpen} onOpenChange={setSourceSheetOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-xl">
-          <SheetHeader className="border-b border-gray-100 px-6 py-5 text-left"><div className="flex items-center gap-2 text-indigo-600"><FileText className="size-4" /><span className="text-xs font-medium">Source</span></div><SheetTitle>Add a source</SheetTitle><SheetDescription>Paste a document or manual and Sona will turn its sections into draft knowledge for review.</SheetDescription></SheetHeader>
+          <SheetHeader className="border-b border-border px-6 py-5 text-left"><div className="flex items-center gap-2 text-primary"><FileText className="size-4" /><span className="text-xs font-medium">Source</span></div><SheetTitle>Add a source</SheetTitle><SheetDescription>Paste a document or manual and Sona will turn its sections into draft knowledge for review.</SheetDescription></SheetHeader>
           <div className="flex flex-1 flex-col gap-5 px-6 py-5">
             <div className="grid gap-2"><Label htmlFor="greenfield-source-title">Source name</Label><Input id="greenfield-source-title" value={sourceForm.title} onChange={(event) => setSourceForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. AceZone FAQ" disabled={sourceSaving} /></div>
             <div className="grid gap-2"><Label>What should Sona learn?</Label><Select value={sourceForm.knowledge_type} onValueChange={(knowledge_type) => setSourceForm((current) => ({ ...current, knowledge_type }))} disabled={sourceSaving}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="procedural">Troubleshooting / Procedure</SelectItem><SelectItem value="product">Product information</SelectItem><SelectItem value="policy">Policy</SelectItem><SelectItem value="brand">Brand / Company</SelectItem></SelectContent></Select></div>
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 text-xs leading-5 text-indigo-800">Use headings (`## Reset`, `## Pairing`, …) to split the source. The resulting entries start as drafts so you can review them before publishing.</div>
+            <div className="rounded-lg border border-primary/30 bg-accent/50 px-3 py-2.5 text-xs leading-5 text-accent-foreground">Use headings (`## Reset`, `## Pairing`, …) to split the source. The resulting entries start as drafts so you can review them before publishing.</div>
             <div className="grid gap-2"><Label htmlFor="greenfield-source-content">Document content</Label><Textarea id="greenfield-source-content" value={sourceForm.content} onChange={(event) => setSourceForm((current) => ({ ...current, content: event.target.value }))} disabled={sourceSaving} placeholder={'## Reset\n\n1. Turn the device off.\n2. Hold the power button for 15 seconds.\n\n## Pairing\n\n1. ...'} className="min-h-[360px] resize-y leading-5" /></div>
           </div>
-          <SheetFooter className="border-t border-gray-100 px-6 py-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => setSourceSheetOpen(false)} disabled={sourceSaving}>Cancel</Button><Button type="button" onClick={ingestSource} disabled={sourceSaving || !sourceForm.title.trim() || !sourceForm.content.trim()}>{sourceSaving ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Create drafts</Button></SheetFooter>
+          <SheetFooter className="border-t border-border px-6 py-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => setSourceSheetOpen(false)} disabled={sourceSaving}>Cancel</Button><Button type="button" onClick={ingestSource} disabled={sourceSaving || !sourceForm.title.trim() || !sourceForm.content.trim()}>{sourceSaving ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Create drafts</Button></SheetFooter>
         </SheetContent>
       </Sheet>
     </div>

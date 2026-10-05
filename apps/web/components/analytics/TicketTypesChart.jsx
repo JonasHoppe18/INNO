@@ -39,7 +39,7 @@ export function TicketTypesChart({ data = [] }) {
             </span>
             <div className="h-6 overflow-hidden rounded bg-muted">
               <div
-                className="flex h-full min-w-8 items-center justify-end rounded px-2 text-[10px] font-semibold text-white transition-[width] duration-500"
+                className="flex h-full min-w-8 items-center justify-end rounded px-2 text-xs font-semibold text-white transition-[width] duration-500"
                 style={{
                   width: `${Math.max(5, ((row.count || 0) / max) * 100)}%`,
                   backgroundColor: color,

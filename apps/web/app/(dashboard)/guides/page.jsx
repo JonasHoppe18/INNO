@@ -57,7 +57,7 @@ export default async function GuidesPage() {
   return (
     <DashboardPageShell className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">Sona Academy</h1>
+        <h1 className="text-page-heading font-semibold">Sona Academy</h1>
         <p className="text-sm text-muted-foreground">
           Short videos and step-by-step docs for common setup tasks.
         </p>
@@ -92,7 +92,7 @@ export default async function GuidesPage() {
               href={`/guide/${guide.slug}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-auto inline-flex items-center justify-center gap-1.5 self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
+              className="mt-auto inline-flex items-center justify-center gap-1.5 self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
             >
               Read Guide
               <ExternalLink className="h-3 w-3 text-slate-400" />

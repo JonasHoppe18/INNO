@@ -30,6 +30,8 @@ const nextConfig = {
     ],
   },
   webpack(config) {
+    // Local design review can run without the large, regenerable disk cache.
+    if (process.env.SONA_DESIGN_DISABLE_WEBPACK_CACHE === "1") config.cache = false;
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       // Templatical's local editor dynamically references optional Cloud/media

@@ -48,7 +48,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   return (
     <span
       className={cn(
-        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-medium leading-none tabular-nums transition-[background-color,color,opacity] duration-150",
+        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-medium leading-none tabular-nums transition-[background-color,color,opacity] duration-150",
         muted ? "bg-muted/55 text-muted-foreground" : "bg-muted text-foreground",
         fadeOnHover && "group-hover/inbox:opacity-0"
       )}
@@ -68,7 +68,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
           "relative cursor-pointer justify-start text-foreground transition-[background-color,color,box-shadow] duration-150",
           pl,
           active &&
-            "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+            "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-muted hover:text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
           isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
           isDropPulse && "animate-inbox-drop"
         )}
@@ -222,9 +222,9 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    "group/inbox relative flex items-center rounded-md text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-muted hover:text-sidebar-foreground",
                     activeView === "" &&
-                      "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+                      "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                     dragOverKey === "inbox" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "inbox" && "animate-inbox-drop"
@@ -336,7 +336,7 @@ export function NavQueue({
 
       <SidebarGroup className="relative pt-2">
         <div className="mb-1.5 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
             INBOXES
           </span>
           <button
@@ -366,9 +366,9 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-muted hover:text-sidebar-foreground",
                         active &&
-                          "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+                          "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                         dragOverKey === dropKey &&
                           "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                         justDroppedKey === dropKey && "animate-inbox-drop"
@@ -429,9 +429,9 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground transition-[background-color,color,box-shadow] duration-150 hover:bg-muted hover:text-sidebar-foreground",
                     isViewActive("automated") &&
-                      "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+                      "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
                     dragOverKey === "spam" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "spam" && "animate-inbox-drop"

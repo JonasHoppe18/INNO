@@ -57,11 +57,11 @@ export function ProductKnowledgeCard() {
     : `${count} product${count === 1 ? "" : "s"} synced`;
 
   return (
-    <Card className="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <Card className="rounded-xl border border-border bg-card shadow-sm">
       <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 lg:p-5">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <div className="flex items-center gap-2 font-medium text-foreground">
-            <Database className="h-4 w-4 text-slate-500" />
+            <Database className="h-4 w-4 text-muted-foreground" />
             <span>Product Catalog</span>
           </div>
           <span className="text-sm text-muted-foreground">{statusText}</span>

@@ -270,13 +270,13 @@ export function TrackingCard({
           <CarrierLogo carrier={carrier} className={compact ? "h-5 w-5" : "h-6 w-6"} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className={`font-semibold text-foreground ${compact ? "text-[12px] leading-4" : "text-[13px] leading-5"}`}>{title}</div>
-          <div className={`mt-0.5 flex min-w-0 items-center gap-1 text-muted-foreground ${compact ? "text-[10px]" : "text-[11px]"}`}>
+          <div className={`font-semibold text-foreground ${compact ? "text-xs leading-4" : "text-sm leading-5"}`}>{title}</div>
+          <div className={`mt-0.5 flex min-w-0 items-center gap-1 text-muted-foreground ${compact ? "text-xs" : "text-xs"}`}>
             <span>{carrier}</span>
             <span className="mx-0.5 text-muted-foreground/45">·</span>
             <span className={`truncate font-medium ${getStatusTextColor(statusLabel)}`}>{statusLabel.split(" · ")[0]}</span>
           </div>
-          <div className={`mt-0.5 truncate font-mono text-muted-foreground/70 ${compact ? "text-[9px]" : "text-[10px]"}`}>
+          <div className={`mt-0.5 truncate font-mono text-muted-foreground/70 ${compact ? "text-xs" : "text-xs"}`}>
             {trackingNumber || "No tracking number"}
           </div>
         </div>
@@ -310,13 +310,13 @@ export function TrackingCard({
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Tracking #</div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tracking #</div>
                 <div className="mt-1 font-mono text-sm font-medium text-slate-800 break-all">
                   {trackingNumber || "–"}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Order</div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Order</div>
                 <div className="mt-1 text-sm font-medium text-slate-800">
                   {orderLabel ? `#${orderLabel}` : "–"}
                 </div>
@@ -327,7 +327,7 @@ export function TrackingCard({
           {/* Pickup point */}
           {pickupPoint && (
             <div className="rounded-lg border border-purple-100 bg-purple-50 px-4 py-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-purple-400 mb-1">Pickup point</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-purple-400 mb-1">Pickup point</div>
               <div className="text-sm font-semibold text-slate-900">{pickupPoint.name}</div>
               {pickupPoint.address && (
                 <div className="text-xs text-slate-500 mt-0.5">{pickupPoint.address}</div>
@@ -340,7 +340,7 @@ export function TrackingCard({
 
           {/* Timeline */}
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Timeline</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Timeline</div>
             {loading ? (
               <div className="flex items-center gap-2 py-4 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />

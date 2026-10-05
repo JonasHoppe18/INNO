@@ -111,7 +111,7 @@ export function ThinkingCard({ steps = [], onClick, loading = false }) {
   if (loading && !normalizedSteps.length) {
     return (
       <div
-        className="flex items-center gap-2 rounded-lg px-1 py-1 text-[12px] text-muted-foreground"
+        className="flex items-center gap-2 rounded-lg px-1 py-1 text-xs text-muted-foreground"
         aria-live="polite"
       >
         <SonaLogo size={17} speed="working" />
@@ -136,7 +136,7 @@ export function ThinkingCard({ steps = [], onClick, loading = false }) {
         <SonaLogo size={17} speed="idle" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-[12px] font-semibold leading-4 text-indigo-950">
+        <span className="flex items-center gap-1.5 text-xs font-semibold leading-4 text-indigo-950">
           <span>Sona</span>
           <span className="font-normal text-indigo-900/55">Built this draft</span>
         </span>
@@ -144,7 +144,7 @@ export function ThinkingCard({ steps = [], onClick, loading = false }) {
           {visibleSteps.map((step) => (
             <span
               key={step.id}
-              className="max-w-full truncate rounded-md border border-indigo-100/80 bg-white/70 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-indigo-900/75"
+              className="max-w-full truncate rounded-md border border-indigo-100/80 bg-white/70 px-1.5 py-0.5 text-xs font-medium leading-4 text-indigo-900/75"
               title={step.detail ? `${step.title} · ${step.detail}` : step.title}
             >
               {step.title}
@@ -152,13 +152,13 @@ export function ThinkingCard({ steps = [], onClick, loading = false }) {
             </span>
           ))}
           {remainingCount > 0 ? (
-            <span className="rounded-md px-1 py-0.5 text-[11px] font-medium leading-4 text-indigo-900/55">
+            <span className="rounded-md px-1 py-0.5 text-xs font-medium leading-4 text-indigo-900/55">
               +{remainingCount} more
             </span>
           ) : null}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-indigo-700/65 transition-colors group-hover:text-indigo-800">
+      <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-indigo-700/65 transition-colors group-hover:text-indigo-800">
         <span className="hidden sm:inline">Details</span>
         <ChevronRight className="size-3.5" />
       </span>

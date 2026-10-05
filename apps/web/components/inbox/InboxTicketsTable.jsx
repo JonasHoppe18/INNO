@@ -277,7 +277,7 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                   {FILTERS.map((filter) => (
                     <TabsTrigger key={filter.value} value={filter.value} className="gap-2">
                       {filter.label}
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                         {filterCounts[filter.value]}
                       </span>
                     </TabsTrigger>
@@ -357,11 +357,11 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                       aria-label="Select visible tickets"
                     />
                   </TableHead>
-                  <TableHead className="w-[47%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Conversation</TableHead>
-                  <TableHead className="w-[11%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Status</TableHead>
-                  <TableHead className="w-[15%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Type</TableHead>
-                  <TableHead className="w-[15%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Owner</TableHead>
-                  <TableHead className="w-[12%] px-4 py-2 text-[11px] uppercase tracking-[0.08em] sm:px-5">Last activity</TableHead>
+                  <TableHead className="w-[47%] px-4 py-2 text-xs uppercase tracking-[0.08em] sm:px-5">Conversation</TableHead>
+                  <TableHead className="w-[11%] px-4 py-2 text-xs uppercase tracking-[0.08em] sm:px-5">Status</TableHead>
+                  <TableHead className="w-[15%] px-4 py-2 text-xs uppercase tracking-[0.08em] sm:px-5">Type</TableHead>
+                  <TableHead className="w-[15%] px-4 py-2 text-xs uppercase tracking-[0.08em] sm:px-5">Owner</TableHead>
+                  <TableHead className="w-[12%] px-4 py-2 text-xs uppercase tracking-[0.08em] sm:px-5">Last activity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -396,7 +396,7 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                               </div>
                               {row.ticketRef !== "No ticket ID" ? (
                                 <span
-                                  className="shrink-0 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
+                                  className="shrink-0 font-mono text-xs font-medium tracking-[0.02em] text-muted-foreground"
                                   title={`Ticket ID ${row.ticketRef}`}
                                 >
                                   #{row.ticketRef.replace(/^T-/, "")}
@@ -448,7 +448,7 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                               <span className="truncate">{row.tags[0].name}</span>
                             </span>
                             {row.tags.length > 1 ? (
-                              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+                              <span className="shrink-0 text-xs font-medium text-muted-foreground">
                                 +{row.tags.length - 1}
                               </span>
                             ) : null}
@@ -461,7 +461,7 @@ export function InboxTicketsTable({ threads = [], members = [], threadTags = [] 
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span
                             className={cn(
-                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
                               row.assigneeLabel === "Unassigned"
                                 ? "bg-orange-500/10 text-orange-700"
                                 : "bg-muted text-muted-foreground"

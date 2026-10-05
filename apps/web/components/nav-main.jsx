@@ -74,7 +74,7 @@ export function NavMain({ items }) {
                   className={cn(
                     "group/entry justify-start text-foreground",
                     isActive &&
-                      "bg-accent text-foreground hover:bg-accent hover:text-foreground"
+                      "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   )}
                   onClick={
                     hasChildren

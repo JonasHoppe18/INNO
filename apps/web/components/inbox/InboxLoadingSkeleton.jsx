@@ -83,7 +83,7 @@ export function InboxLoadingSkeleton() {
   return (
     <div className="inbox-theme flex min-h-0 flex-1 overflow-hidden bg-background">
       <div className="flex min-h-0 flex-1 overflow-hidden bg-muted/20">
-        <aside className="flex min-h-0 w-[clamp(14.5rem,16vw,19rem)] shrink-0 flex-col border-r border-border/60 bg-background">
+        <aside className="flex min-h-0 w-[--ticket-list-width] shrink-0 flex-col border-r border-border/60 bg-background">
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/55 px-3">
             <div className="relative min-w-0 flex-1">
               <Skeleton className="h-8 w-full rounded-md bg-primary/[0.07]" />

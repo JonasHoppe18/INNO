@@ -6,7 +6,7 @@ import { Plus, Sparkles } from "lucide-react";
 function TagBadge({ tag, onRemove }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-white select-none"
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white select-none"
       style={{ backgroundColor: tag.color }}
       title={tag.source === "ai" ? "Sat af AI" : "Sat manuelt"}
     >
@@ -132,7 +132,7 @@ export function ThreadTagsBar({ threadId, refreshTrigger }) {
           <button
             type="button"
             onClick={() => setDropdownOpen((v) => !v)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-slate-400 border border-dashed border-slate-200 hover:border-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-slate-400 border border-dashed border-slate-200 hover:border-slate-400 hover:text-slate-600 transition-colors"
             aria-label="Tilføj tag"
           >
             <Plus className="w-3 h-3" />

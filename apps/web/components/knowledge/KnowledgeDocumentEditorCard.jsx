@@ -356,10 +356,10 @@ export function KnowledgeDocumentEditorCard({
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold">{title}</h2>
+                    <h2 className="text-section-heading font-semibold">{title}</h2>
                     <span
                       aria-live="polite"
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground  "
                     >
                       {currentStatus}
                     </span>
@@ -418,20 +418,20 @@ export function KnowledgeDocumentEditorCard({
             <div className="px-6 py-5">
               <p className="mb-3 text-xs text-muted-foreground">{helperText}</p>
               {error && (
-                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                <div className="mb-3 rounded-md border border-danger-border bg-danger px-3 py-2 text-xs text-danger-foreground   ">
                   {error}
                 </div>
               )}
               {indexingWarning && (
                 <div
                   role="status"
-                  className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                  className="mb-3 rounded-md border border-warning-border bg-warning px-3 py-2 text-xs text-warning-foreground   "
                 >
                   {indexingWarning}
                 </div>
               )}
               {previewError && (
-                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                <div className="mb-3 rounded-md border border-warning-border bg-warning px-3 py-2 text-xs text-warning-foreground   ">
                   {previewError}
                 </div>
               )}
