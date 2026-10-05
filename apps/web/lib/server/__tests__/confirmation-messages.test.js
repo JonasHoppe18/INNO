@@ -15,7 +15,30 @@ function fixture(events, error = null) {
     },
     then: (resolve) => Promise.resolve({ data: events, error }).then(resolve),
   };
-  return { client: { from: vi.fn(() => query) }, filters };
+  return {
+    client: {
+      from: vi.fn((table) =>
+        table === "agent_logs"
+          ? {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              or() {
+                return this;
+              },
+              like() {
+                return this;
+              },
+              limit: async () => ({ data: [], error: null }),
+            }
+          : query,
+      ),
+    },
+    filters,
+  };
 }
 const scope = {
   workspaceId: "workspace-a",
@@ -82,5 +105,73 @@ describe("confirmation sent markers", () => {
         workspaceId: null,
       }),
     ).toEqual([message]);
+  });
+});
+
+describe("legacy confirmation delivery logs", () => {
+  it("collapses only a successful sender log matching the authorized thread and provider ID", async () => {
+    const log = {
+      workspace_id: null,
+      created_at: event.sent_at,
+      step_detail: JSON.stringify({
+        threadId: message.thread_id,
+        sentMessageId: message.provider_message_id,
+      }),
+    };
+    const filters = [];
+    const logQuery = {
+      select() {
+        return this;
+      },
+      eq(key, value) {
+        filters.push([key, value]);
+        return this;
+      },
+      or(value) {
+        filters.push(["or", value]);
+        return this;
+      },
+      like(key, value) {
+        filters.push([key, value]);
+        return this;
+      },
+      limit: async () => ({ data: [log], error: null }),
+    };
+    const { client } = fixture([]);
+    const original = client.from;
+    client.from = (table) =>
+      table === "agent_logs" ? logQuery : original(table);
+    expect(
+      (await markConfirmationMessages(client, [message], scope))[0]
+        .confirmation_sent_at,
+    ).toBe(event.sent_at);
+    expect(filters).toContainEqual([
+      "step_name",
+      "postmark_inbound_auto_reply_sent",
+    ]);
+    expect(filters).toContainEqual(["status", "success"]);
+    expect(filters).toContainEqual(["step_detail", '%"threadId":"thread-a"%']);
+    for (const change of [
+      { workspace_id: "foreign" },
+      { step_detail: "invalid" },
+      {
+        step_detail: JSON.stringify({
+          threadId: "foreign",
+          sentMessageId: message.provider_message_id,
+        }),
+      },
+      {
+        step_detail: JSON.stringify({
+          threadId: message.thread_id,
+          sentMessageId: "other",
+        }),
+      },
+    ]) {
+      const modified = { ...log, ...change };
+      logQuery.limit = async () => ({ data: [modified], error: null });
+      expect(await markConfirmationMessages(client, [message], scope)).toEqual([
+        message,
+      ]);
+    }
   });
 });

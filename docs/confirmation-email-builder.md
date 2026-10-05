@@ -46,7 +46,12 @@ the same workspace, mailbox and thread. Enabling confirmations alone does not
 create a sent marker. Drafts and ordinary replies retain their normal bubbles.
 Click or Enter expands the existing message renderer, including its View email
 control. If event metadata cannot be read, the normal message remains visible.
-Historical confirmations with no matching event stay as ordinary bubbles.
+If the dedicated event is missing, the reader checks the sender's successful
+`postmark_inbound_auto_reply_sent` log for the same authorized thread and exact
+provider message ID. Legacy logs may have a null workspace; the thread and
+message still come from the authorized mailbox scope. Logs from another
+workspace or thread cannot mark the message. Confirmations without either form
+of delivery evidence keep their ordinary bubbles.
 
 Sent CSAT surveys use a matching workspace/thread record in
 `csat_survey_requests` with a non-null `sent_at` and status `sent` or `responded`.

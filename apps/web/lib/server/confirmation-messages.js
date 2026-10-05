@@ -21,7 +21,7 @@ export async function markConfirmationMessages(
     );
   // Keep the conversation readable if optional confirmation metadata is unavailable.
   if (error) return messages;
-  return messages.map((message) => {
+  const marked = messages.map((message) => {
     if (!message.from_me || message.is_draft) return message;
     const event = (data || []).find(
       (row) =>
@@ -34,4 +34,55 @@ export async function markConfirmationMessages(
       ? { ...message, confirmation_sent_at: event.sent_at }
       : message;
   });
+  const unmatched = marked.filter(
+    (message) =>
+      message.from_me &&
+      !message.is_draft &&
+      message.provider_message_id &&
+      !message.confirmation_sent_at &&
+      message.thread_id === threadId &&
+      mailboxIds.includes(message.mailbox_id),
+  );
+  if (!unmatched.length) return marked;
+  // Older senders log successful delivery even when the dedicated event insert
+  // fails. The authorized thread and exact provider ID bind that evidence.
+  const { data: logs, error: logError } = await client
+    .from("agent_logs")
+    .select("workspace_id, step_detail, created_at")
+    .eq("step_name", "postmark_inbound_auto_reply_sent")
+    .eq("status", "success")
+    .or(`workspace_id.eq.${workspaceId},workspace_id.is.null`)
+    .like("step_detail", `%"threadId":"${threadId}"%`)
+    .limit(100);
+  if (logError) return marked;
+  const sentByProviderId = new Map();
+  for (const log of logs || []) {
+    if (log.workspace_id && log.workspace_id !== workspaceId) continue;
+    try {
+      const detail =
+        typeof log.step_detail === "string"
+          ? JSON.parse(log.step_detail)
+          : log.step_detail;
+      if (
+        detail?.threadId === threadId &&
+        detail.sentMessageId &&
+        Number.isFinite(Date.parse(log.created_at))
+      ) {
+        sentByProviderId.set(detail.sentMessageId, log.created_at);
+      }
+    } catch {
+      /* Invalid legacy log entries are not delivery evidence. */
+    }
+  }
+  return marked.map((message) =>
+    unmatched.includes(message) &&
+    sentByProviderId.has(message.provider_message_id)
+      ? {
+          ...message,
+          confirmation_sent_at:
+            message.sent_at ||
+            sentByProviderId.get(message.provider_message_id),
+        }
+      : message,
+  );
 }
