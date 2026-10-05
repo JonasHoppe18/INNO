@@ -6,7 +6,7 @@ import { DashboardThemeProvider } from "@/components/theme/dashboard-theme-provi
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { loadDashboardShellData } from "@/lib/server/dashboard-shell-data";
 import { cookies } from "next/headers";
 import { isGreenfieldPlaygroundEnabled } from "@/lib/server/greenfield-playground";
 
@@ -41,49 +41,16 @@ export default async function DashboardLayout({ children }) {
     redirect("/sign-in?redirect_url=/dashboard");
   }
 
-  const serviceClient = createServiceClient();
-  if (serviceClient) {
-    try {
-      const scope = await resolveAuthScope(serviceClient, { clerkUserId: userId, orgId });
-
-      // First-time heuristic: no Shopify + no mailbox yet => start onboarding flow.
-      let hasShop = false;
-      let hasMailbox = false;
-
-      const shopCountQuery = applyScope(
-        serviceClient.from("shops").select("id", { count: "exact", head: true }).is("uninstalled_at", null),
-        scope,
-        { workspaceColumn: "workspace_id", userColumn: "owner_user_id" }
-      );
-      const mailboxCountQuery = applyScope(
-        serviceClient.from("mail_accounts").select("id", { count: "exact", head: true }),
-        scope
-      );
-
-      const [{ count: shopCount }, { count: mailboxCount }] = await Promise.all([
-        shopCountQuery,
-        mailboxCountQuery,
-      ]);
-
-      hasShop = Number(shopCount || 0) > 0;
-      hasMailbox = Number(mailboxCount || 0) > 0;
-
-      if (!hasShop && !hasMailbox) {
-        redirect("/onboarding");
-      }
-    } catch (_error) {
-      // fail open: if onboarding check fails, keep user in dashboard
-    }
-  }
-
-  let sidebarUser = null;
-  try {
-    const client = await clerkClient();
-    const user = await client.users.getUser(userId);
-    sidebarUser = mapClerkUser(user);
-  } catch (_err) {
-    // fail open — sidebar renders without user info
-  }
+  const shell = await loadDashboardShellData(
+    createServiceClient(),
+    { clerkUserId: userId, orgId },
+    async () => {
+      const client = await clerkClient();
+      return mapClerkUser(await client.users.getUser(userId));
+    },
+  );
+  if (shell.needsOnboarding) redirect("/onboarding");
+  const sidebarUser = shell.user;
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
   const defaultSidebarOpen = sidebarCookie === "true";

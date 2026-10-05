@@ -448,7 +448,6 @@ export default async function Page({ searchParams }) {
   if (serviceClient) {
     try {
       const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-      const shopId = await resolveShopId(serviceClient, scope);
 
       const [
         returnTrackingResult,
@@ -456,7 +455,9 @@ export default async function Page({ searchParams }) {
         supportAnalyticsResult,
       ] = await Promise.all([
         listReturnTrackingShipments(serviceClient, scope).catch(() => []),
-        loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod),
+        resolveShopId(serviceClient, scope).then((shopId) =>
+          loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod)
+        ),
         loadDashboardSupportAnalytics(serviceClient, scope, dashboardPeriod),
       ]);
 
