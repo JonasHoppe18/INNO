@@ -150,7 +150,7 @@ function SidebarWorkspaceRail({
                   tooltipAlways
                   className="size-8 justify-center px-0"
                 >
-                  <Link href={item.url} aria-label={item.title}>
+                  <Link prefetch href={item.url} aria-label={item.title}>
                     {Icon ? <Icon className="h-4 w-4" /> : null}
                     <span className="sr-only">{item.title}</span>
                   </Link>

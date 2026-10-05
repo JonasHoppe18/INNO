@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -13,7 +13,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
 
 export function createInboxServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 async function loadMailboxes(serviceClient, scope) {
@@ -281,32 +281,41 @@ export async function loadInboxData({
   const mailboxIds = mailboxes.map((mailbox) => mailbox.id).filter(Boolean);
   if (!mailboxIds.length) return result;
 
-  const threads = await loadThreads(serviceClient, scope, mailboxIds);
-  result.threads = threads;
-
-  if (includeTags) {
-    result.threadTags = await loadThreadTags(
-      serviceClient,
-      threads.map((thread) => thread?.id).filter(Boolean),
-    );
-  }
-
-  if (includeMessages) {
-    const messages = await loadMessages(serviceClient, scope, mailboxIds, {
-      query,
-      unreadOnly,
-    });
-    result.messages = messages;
-
-    if (includeAttachments) {
-      const messageIds = messages.map((message) => message.id).filter(Boolean);
-      result.attachments = await loadAttachments(serviceClient, scope, mailboxIds, messageIds);
-    }
-  }
-
-  if (includeMembers) {
-    result.members = await loadWorkspaceMembers(serviceClient, scope);
-  }
+  // Only tags depend on threads, and attachments depend on messages. Run the
+  // three branches together after resolving the authorized mailbox IDs.
+  await Promise.all([
+    (async () => {
+      const threads = await loadThreads(serviceClient, scope, mailboxIds);
+      result.threads = threads;
+      if (includeTags) {
+        result.threadTags = await loadThreadTags(
+          serviceClient,
+          threads.map((thread) => thread?.id).filter(Boolean),
+        );
+      }
+    })(),
+    (async () => {
+      if (!includeMessages) return;
+      const messages = await loadMessages(serviceClient, scope, mailboxIds, {
+        query,
+        unreadOnly,
+      });
+      result.messages = messages;
+      if (includeAttachments) {
+        result.attachments = await loadAttachments(
+          serviceClient,
+          scope,
+          mailboxIds,
+          messages.map((message) => message.id).filter(Boolean),
+        );
+      }
+    })(),
+    (async () => {
+      if (includeMembers) {
+        result.members = await loadWorkspaceMembers(serviceClient, scope);
+      }
+    })(),
+  ]);
 
   return result;
 }

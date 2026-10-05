@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { resolveAuthScope, resolveClerkOrgId, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL = (
@@ -17,7 +17,7 @@ const SUPABASE_SERVICE_KEY =
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 function isInternalAudience(value: unknown) {
@@ -51,27 +51,17 @@ export async function GET() {
     return NextResponse.json({ products: [] });
   }
 
-  // Fetch products for shop, ordered by title
-  const { data: products, error } = await supabase
-    .from("shop_products")
-    .select("id, external_id, title, price")
-    .eq("shop_ref_id", shop.id)
-    .order("title", { ascending: true })
-    .limit(200);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  // Count product-specific knowledge snippets per product
-  const { data: knowledgeRows } = await (supabase as any)
-    .from("agent_knowledge")
-    .select("metadata")
-    .eq("shop_id", shop.id)
-    .eq("source_provider", "manual_text")
-    .eq("metadata->>category" as any, "product-questions")
-    .not("metadata->>product_id" as any, "is", null)
-    .eq("metadata->>chunk_index" as any, "0");
+  const [productsResult, knowledgeResult] = await Promise.all([
+    supabase.from("shop_products").select("id, external_id, title, price")
+      .eq("shop_ref_id", shop.id).order("title", { ascending: true }).limit(200),
+    (supabase as any).from("agent_knowledge").select("metadata")
+      .eq("shop_id", shop.id).eq("source_provider", "manual_text")
+      .eq("metadata->>category", "product-questions")
+      .not("metadata->>product_id", "is", null).eq("metadata->>chunk_index", "0"),
+  ]);
+  const { data: products, error } = productsResult;
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const knowledgeRows = knowledgeResult.data;
 
   const countByProductId: Record<string, number> = {};
   for (const row of knowledgeRows || []) {

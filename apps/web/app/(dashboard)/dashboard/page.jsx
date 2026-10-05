@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import {
   ActivityIcon,
   ArrowUpRightIcon,
@@ -39,7 +39,7 @@ const SUPPORT_CLASSIFICATION_KEY = "support";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 function formatTime(value) {
@@ -448,7 +448,6 @@ export default async function Page({ searchParams }) {
   if (serviceClient) {
     try {
       const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-      const shopId = await resolveShopId(serviceClient, scope);
 
       const [
         returnTrackingResult,
@@ -456,7 +455,9 @@ export default async function Page({ searchParams }) {
         supportAnalyticsResult,
       ] = await Promise.all([
         listReturnTrackingShipments(serviceClient, scope).catch(() => []),
-        loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod),
+        resolveShopId(serviceClient, scope).then((shopId) =>
+          loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod)
+        ),
         loadDashboardSupportAnalytics(serviceClient, scope, dashboardPeriod),
       ]);
 

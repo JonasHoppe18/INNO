@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Bot,
@@ -33,6 +33,7 @@ import { TagsSettings } from "@/components/settings/TagsSettings";
 import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
+import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   normalizeSignatureImageUrl,
@@ -3068,8 +3069,8 @@ function ProfileTab({ user, isLoaded }) {
 }
 
 export function SettingsPanel() {
+  const { ready: readsReady, readResponse } = useScopedReadResource();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
@@ -3161,7 +3162,10 @@ export function SettingsPanel() {
       setEmailSection(requestedSection);
     }
   }, [searchParams]);
+  const settingsLoadRef = useRef(0);
   const loadData = useCallback(async () => {
+    const loadToken = ++settingsLoadRef.current;
+    if (!readsReady) return;
     if (!supabase) {
       setLoading(false);
       return;
@@ -3170,19 +3174,30 @@ export function SettingsPanel() {
     setLoading(true);
     try {
       const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
+      const bootstrapResponse = await readResponse("/api/settings/bootstrap", fetchOptions).catch(() => null);
+      const bootstrap = bootstrapResponse?.ok ? await bootstrapResponse.json() : null;
+      if (loadToken !== settingsLoadRef.current) return;
+      const fetchSetting = (url, options) => {
+        const entry = bootstrap?.resources?.[url];
+        return entry ? Promise.resolve({ ...entry, json: async () => entry.payload }) : readResponse(url, options);
+      };
       let serverMembersResponse = null;
       let serverMembersPayload = {};
       if (user?.id) {
-        const response = await fetch("/api/settings/members", fetchOptions).catch(() => null);
+        const response = await fetchSetting("/api/settings/members", fetchOptions).catch(() => null);
+        if (response && [401, 403, 404].includes(response.status)) {
+          throw new Error("Workspace settings are not available for this session.");
+        }
         if (response?.ok) {
           serverMembersResponse = response;
           serverMembersPayload = await response.json().catch(() => ({}));
         }
       }
 
-      let supabaseUserId = null;
+      if (loadToken !== settingsLoadRef.current) return;
+      let supabaseUserId = serverMembersPayload?.supabase_user_id || null;
       const metadataUuid = user?.publicMetadata?.supabase_uuid;
-      if (typeof metadataUuid === "string" && UUID_REGEX.test(metadataUuid)) {
+      if (!supabaseUserId && typeof metadataUuid === "string" && UUID_REGEX.test(metadataUuid)) {
         supabaseUserId = metadataUuid;
       }
 
@@ -3192,13 +3207,18 @@ export function SettingsPanel() {
           .select("user_id")
           .eq("clerk_user_id", user.id)
           .maybeSingle();
+        if (loadToken !== settingsLoadRef.current) return;
         if (profileError) throw profileError;
         supabaseUserId = profile?.user_id ?? null;
       }
 
-      let workspaceId = null;
-      let workspaceName = null;
-      if (orgId) {
+      let workspaceId = serverMembersPayload?.workspace_id || null;
+      let workspaceName = serverMembersPayload?.workspace_name || null;
+      if (workspaceId) {
+        setSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+        setInitialSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
+      }
+      if (orgId && !workspaceId) {
         let workspaceLookup = await supabase
           .from("workspaces")
           .select("id, name, support_language")
@@ -3211,6 +3231,7 @@ export function SettingsPanel() {
             .eq("clerk_org_id", orgId)
             .maybeSingle();
         }
+        if (loadToken !== settingsLoadRef.current) return;
         const workspaceRow = workspaceLookup.data;
         const workspaceError = workspaceLookup.error;
         if (workspaceError) throw workspaceError;
@@ -3219,7 +3240,7 @@ export function SettingsPanel() {
         setSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
         setInitialSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
       }
-      if (!workspaceId && user?.id) {
+      if (!workspaceId && !orgId && user?.id) {
         const { data: membership, error: membershipError } = await supabase
           .from("workspace_members")
           .select("workspace_id")
@@ -3243,7 +3264,8 @@ export function SettingsPanel() {
               .eq("id", workspaceId)
               .maybeSingle();
           }
-          const workspaceRow = workspaceLookup.data;
+          if (loadToken !== settingsLoadRef.current) return;
+        const workspaceRow = workspaceLookup.data;
           const workspaceError = workspaceLookup.error;
           if (!workspaceError) {
             workspaceName = workspaceRow?.name ?? null;
@@ -3269,7 +3291,7 @@ export function SettingsPanel() {
       let shopRow = serverMembersPayload?.shop || null;
       let shopError = null;
       let latestShop = null;
-      if (!shopRow && workspaceId) {
+      if (!serverMembersResponse && !shopRow && workspaceId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3280,7 +3302,7 @@ export function SettingsPanel() {
           .maybeSingle();
         shopRow = latestShop?.data ?? null;
         shopError = latestShop?.error ?? null;
-      } else if (!shopRow && supabaseUserId) {
+      } else if (!serverMembersResponse && !shopRow && supabaseUserId) {
         latestShop = await supabase
           .from("shops")
           .select("id, owner_user_id, shop_domain")
@@ -3296,6 +3318,7 @@ export function SettingsPanel() {
         shopError = null;
       }
 
+      if (loadToken !== settingsLoadRef.current) return;
       if (shopError) throw shopError;
 
       if (!workspaceId && !supabaseUserId) {
@@ -3369,15 +3392,15 @@ export function SettingsPanel() {
         inboxesResponse,
         profileRowsResult,
       ] = await Promise.all([
-        serverMembersResponse || (workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null)),
-        workspaceId ? fetch("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
-        workspaceId ? fetch("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
-        fetch("/api/settings/auto-reply", fetchOptions).catch(() => null),
-        fetch("/api/settings/email-signature", fetchOptions).catch(() => null),
-        fetch("/api/settings/email-routing", fetchOptions).catch(() => null),
-        fetch("/api/settings/email-sender-rules", fetchOptions).catch(() => null),
-        fetch("/api/settings/email-blocklist", fetchOptions).catch(() => null),
-        fetch("/api/inboxes", fetchOptions).catch(() => null),
+        serverMembersResponse || (workspaceId ? fetchSetting("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null)),
+        workspaceId ? fetchSetting("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
+        workspaceId ? fetchSetting("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
+        fetchSetting("/api/settings/auto-reply", fetchOptions).catch(() => null),
+        fetchSetting("/api/settings/email-signature", fetchOptions).catch(() => null),
+        fetchSetting("/api/settings/email-routing", fetchOptions).catch(() => null),
+        fetchSetting("/api/settings/email-sender-rules", fetchOptions).catch(() => null),
+        fetchSetting("/api/settings/email-blocklist", fetchOptions).catch(() => null),
+        fetchSetting("/api/inboxes", fetchOptions).catch(() => null),
         !workspaceId && memberOwnerId
           ? supabase
               .from("profiles")
@@ -3413,6 +3436,8 @@ export function SettingsPanel() {
         emailBlocklistResponse?.ok ? emailBlocklistResponse.json().catch(() => ({})) : Promise.resolve({}),
         inboxesResponse?.ok ? inboxesResponse.json().catch(() => ({})) : Promise.resolve({}),
       ]);
+
+      if (loadToken !== settingsLoadRef.current) return;
 
       // Apply members state
       if (workspaceId) {
@@ -3547,15 +3572,17 @@ export function SettingsPanel() {
       }
 
     } catch (error) {
+      if (loadToken !== settingsLoadRef.current) return;
       console.error("Settings load failed:", error);
       toast.error("Could not load settings.");
     } finally {
-      setLoading(false);
+      if (loadToken === settingsLoadRef.current) setLoading(false);
     }
-  }, [orgId, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
+  }, [readsReady, readResponse, orgId, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
 
   useEffect(() => {
     loadData().catch(() => null);
+    return () => { settingsLoadRef.current += 1; };
   }, [loadData]);
 
   const canSave = useMemo(
@@ -4428,9 +4455,9 @@ export function SettingsPanel() {
       } else {
         params.delete("section");
       }
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      window.history.pushState(null, "", `${pathname}?${params.toString()}`);
     },
-    [emailSection, pathname, router, searchParams]
+    [emailSection, pathname, searchParams]
   );
 
   const handleSelectTab = useCallback(

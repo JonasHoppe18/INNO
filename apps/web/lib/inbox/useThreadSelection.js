@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useThreadDetailRead } from "@/hooks/useThreadDetailRead";
+
 const TAB_STATE_STORAGE_PREFIX = "inbox-open-tabs";
 const MAX_PREFETCH_IN_FLIGHT = 2;
 
@@ -22,6 +24,9 @@ export function useThreadSelection({
   markThreadReadInstantly,
   setLocalNewThread,
 }) {
+  const { scopeKey, ready: readsReady, readDetail } = useThreadDetailRead();
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
   const derivedThreads = threads;
   const filteredThreads = sortedThreads;
 
@@ -34,6 +39,12 @@ export function useThreadSelection({
   const messagesCacheRef = useRef(new Map());
   const prefetchingRef = useRef(new Set());
   const draftCacheRef = useRef(new Map());
+
+  useEffect(() => {
+    messagesCacheRef.current.clear();
+    draftCacheRef.current.clear();
+    prefetchingRef.current.clear();
+  }, [scopeKey]);
 
   const requestedThreadId = String(searchParams?.get("thread") || "").trim();
 
@@ -311,20 +322,16 @@ export function useThreadSelection({
   // `cacheInvalidatedAt` timestamp to prevent stale-cache resurrections.
   // — 2026-05-26
   const handlePrefetchThread = useCallback((threadId) => {
-    if (!threadId || isLocalThreadId(threadId)) return;
+    if (!readsReady || !threadId || isLocalThreadId(threadId)) return;
     if (String(threadId) === String(selectedThreadIdRef.current || "")) return;
 
     // Prefetch the same detail payload used by the selected thread view.
     if (!messagesCacheRef.current.has(threadId) && !prefetchingRef.current.has(threadId)) {
       if (prefetchingRef.current.size >= MAX_PREFETCH_IN_FLIGHT) return;
       prefetchingRef.current.add(threadId);
-      fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/detail`, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      })
-        .then((res) => (res.ok ? res.json() : null))
+      readDetail(threadId)
         .then((payload) => {
+          if (activeScopeRef.current !== scopeKey) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           if (rows.length) {
             messagesCacheRef.current.set(threadId, rows);
@@ -341,7 +348,7 @@ export function useThreadSelection({
 
     // Draft loading is intentionally left to actual selection. Hovering through
     // the list used to start draft requests for many tickets the user never opened.
-  }, [isLocalThreadId]);
+  }, [isLocalThreadId, readsReady, scopeKey, readDetail]);
 
   // Inert until Task 10 (send-to-next). Selects and returns the next thread
   // after the currently selected one in sortedThreads order.

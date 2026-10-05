@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   AUTOPILOT_READINESS_POLICY,
@@ -20,7 +20,7 @@ const GENERATION_LOOKBACK_GRACE_DAYS = 7;
 
 function createServiceClient() {
   if (!SUPABASE_BASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
+  return createStatelessServiceClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 type ServiceClient = NonNullable<ReturnType<typeof createServiceClient>>;

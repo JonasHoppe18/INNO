@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { getMessageTimestamp } from "@/components/inbox/inbox-utils";
 import { reportClientEvent } from "@/lib/client-events";
+import { resolveClientInboxScope } from "@/lib/client/resolve-inbox-scope";
+import { scopedReadCache } from "@/lib/client/scoped-read-cache";
+import { useThreadDetailRead } from "@/hooks/useThreadDetailRead";
+import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 
 const EMPTY_LIST = [];
 
@@ -64,7 +68,7 @@ const PREVIEW_MESSAGES_PER_THREAD = 3;
 const PREVIEW_MESSAGE_MIN_LIMIT = 30;
 const PREVIEW_MESSAGE_MAX_LIMIT = 80;
 
-const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
+const resolveScope = async ({ supabase, user, getToken, logLabel, orgId = null }) => {
   const metadataUuid = user?.publicMetadata?.supabase_uuid;
   let supabaseUserId = isValidUuid(metadataUuid) ? metadataUuid : null;
 
@@ -91,37 +95,13 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
     }
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", user.id)
-    .maybeSingle();
-  if (profileError) throw profileError;
-
-  if (!supabaseUserId) {
-    const candidate = profile?.user_id;
-    if (isValidUuid(candidate)) {
-      supabaseUserId = candidate;
-    }
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("clerk_user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) throw membershipError;
-
-  if (!supabaseUserId) {
+  const scope = await resolveClientInboxScope({
+    supabase, clerkUserId: user.id, orgId, fallbackUserId: supabaseUserId,
+  });
+  if (!scope.supabaseUserId) {
     console.warn(`${logLabel}: supabase user id not ready, continuing with workspace scope only`);
   }
-
-  return {
-    supabaseUserId,
-    workspaceId: membership?.workspace_id ?? null,
-  };
+  return scope;
 };
 
 const applyClientScope = (
@@ -185,7 +165,7 @@ export function useThreads(options = {}) {
     enabled = false,
   } = options;
   const supabase = useClerkSupabase();
-  const { getToken } = useAuth();
+  const { getToken, orgId } = useAuth();
   const { user } = useUser();
 
   const seededData = useMemo(() => {
@@ -209,6 +189,7 @@ export function useThreads(options = {}) {
         supabase,
         user,
         getToken,
+        orgId,
         logLabel: "useThreads",
       });
       let request = supabase
@@ -255,7 +236,7 @@ export function useThreads(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, supabase, user]);
+  }, [getToken, orgId, supabase, user]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -275,8 +256,9 @@ export function useThreads(options = {}) {
 export function useThreadMessages(threadId, options = {}) {
   const { initialData = EMPTY_LIST, enabled = false } = options;
   const supabase = useClerkSupabase();
-  const { getToken } = useAuth();
+  const { getToken, orgId } = useAuth();
   const { user } = useUser();
+  const { ready: detailReady, readDetail } = useThreadDetailRead();
 
   const seeded = useMemo(() => {
     if (!threadId) return [];
@@ -289,6 +271,7 @@ export function useThreadMessages(threadId, options = {}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [bodyFetchedThreadId, setBodyFetchedThreadId] = useState(threadId || null);
   const [fetchedThreadId, setFetchedThreadId] = useState(threadId || null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
@@ -302,7 +285,7 @@ export function useThreadMessages(threadId, options = {}) {
   }, [threadId]);
 
   const fetchMessages = useCallback(async () => {
-    if (!supabase || !threadId) return;
+    if (!supabase || !threadId || !detailReady) return;
     const requestThreadId = threadId;
     const requestToken = fetchTokenRef.current + 1;
     fetchTokenRef.current = requestToken;
@@ -321,14 +304,18 @@ export function useThreadMessages(threadId, options = {}) {
       // Prefer server-side scoped fetch for thread bodies.
       // This avoids client-side scope/RLS mismatches on older rows.
       try {
-        const response = await fetch(`/api/inbox/threads/${threadId}/detail`, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-          signal: abortController.signal,
-        });
-        if (response.ok) {
-          const payload = await response.json().catch(() => null);
+        // Show message bodies while fresh drafts/actions/attachments finish.
+        const fullRead = readDetail(threadId);
+        let fullApplied = false;
+        readDetail(threadId, true).then((payload) => {
+          if (isStale() || fullApplied) return;
+          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+          setData(rows);
+          setBodyFetchedThreadId(requestThreadId);
+        }).catch(() => {});
+        const payload = await fullRead;
+        fullApplied = true;
+        if (payload) {
           if (isStale()) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
@@ -338,6 +325,7 @@ export function useThreadMessages(threadId, options = {}) {
           }
           setData(rows);
           setAttachments(attachmentRows);
+          setBodyFetchedThreadId(requestThreadId);
           setFetchedThreadId(requestThreadId);
           reportClientEvent({
             event: "thread_detail_loaded",
@@ -356,6 +344,7 @@ export function useThreadMessages(threadId, options = {}) {
         supabase,
         user,
         getToken,
+        orgId,
         logLabel: "useThreadMessages",
       });
       if (isStale()) return;
@@ -451,7 +440,8 @@ export function useThreadMessages(threadId, options = {}) {
       const normalizedRows = Array.isArray(rows) ? rows : [];
       setData(normalizedRows);
       setDetail(null);
-      setFetchedThreadId(requestThreadId);
+      setBodyFetchedThreadId(requestThreadId);
+          setFetchedThreadId(requestThreadId);
       reportClientEvent({
         event: "thread_detail_loaded",
         threadId: requestThreadId,
@@ -498,7 +488,7 @@ export function useThreadMessages(threadId, options = {}) {
       if (isStale()) return;
       setLoading(false);
     }
-  }, [getToken, supabase, threadId, user]);
+  }, [getToken, orgId, supabase, threadId, user, detailReady, readDetail]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -535,14 +525,15 @@ export function useThreadMessages(threadId, options = {}) {
     setDetail(null);
   }, [seeded, seededKey, threadId]);
 
-  return { data, attachments, detail, loading, error, refresh: fetchMessages, fetchedThreadId };
+  return { data, attachments, detail, loading, error, refresh: fetchMessages, fetchedThreadId, bodyFetchedThreadId };
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {
   const { enabled = false, includeBodies = false, refreshKey = "" } = options;
   const supabase = useClerkSupabase();
-  const { getToken } = useAuth();
+  const { getToken, orgId } = useAuth();
   const { user } = useUser();
+  const { scopeKey, ready } = useScopedReadResource();
 
   const threadKey = useMemo(
     () =>
@@ -555,12 +546,14 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     [threadKey]
   );
 
-  const [data, setData] = useState([]);
+  const [previewState, setPreviewState] = useState(null);
+  const data = previewState?.scopeKey === scopeKey ? previewState.rows : EMPTY_LIST;
+  const setData = useCallback((rows) => setPreviewState({ scopeKey, rows }), [scopeKey]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const fetchTokenRef = useRef(0);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (force = true) => {
     const requestToken = fetchTokenRef.current + 1;
     fetchTokenRef.current = requestToken;
     const isStale = () => fetchTokenRef.current !== requestToken;
@@ -574,37 +567,40 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const scope = await resolveScope({
-        supabase,
-        user,
-        getToken,
-        logLabel: "useThreadPreviewMessages",
-      });
-      if (isStale()) return;
-      const allRows = [];
-      for (let index = 0; index < requestThreadIds.length; index += PREVIEW_MESSAGE_CHUNK_SIZE) {
-        const chunk = requestThreadIds.slice(index, index + PREVIEW_MESSAGE_CHUNK_SIZE);
-        const limit = Math.min(
-          Math.max(chunk.length * PREVIEW_MESSAGES_PER_THREAD, PREVIEW_MESSAGE_MIN_LIMIT),
-          PREVIEW_MESSAGE_MAX_LIMIT
-        );
-        let request = supabase
-          .from("mail_messages")
-          .select(
-            "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at" +
-              (includeBodies ? ", clean_body_text, body_text, body_html, snippet, is_draft" : "")
-          )
-          .in("thread_id", chunk)
-          .order("received_at", { ascending: false, nullsLast: true })
-          .limit(limit);
-        request = applyClientScope(request, scope);
-        const { data: rows, error: queryError } = await request;
-        if (isStale()) return;
-        if (queryError) throw queryError;
-        if (Array.isArray(rows) && rows.length) {
-          allRows.push(...rows);
+      const resource = `inbox-preview:${includeBodies ? "body" : "identity"}:${threadKey}:${refreshKey}`;
+      const allRows = await scopedReadCache.load(scopeKey, resource, async () => {
+        const scope = await resolveScope({
+          supabase,
+          user,
+          getToken,
+          orgId,
+          logLabel: "useThreadPreviewMessages",
+        });
+        const allRows = [];
+        for (let index = 0; index < requestThreadIds.length; index += PREVIEW_MESSAGE_CHUNK_SIZE) {
+          const chunk = requestThreadIds.slice(index, index + PREVIEW_MESSAGE_CHUNK_SIZE);
+          const limit = Math.min(
+            Math.max(chunk.length * PREVIEW_MESSAGES_PER_THREAD, PREVIEW_MESSAGE_MIN_LIMIT),
+            PREVIEW_MESSAGE_MAX_LIMIT
+          );
+          let request = supabase
+            .from("mail_messages")
+            .select(
+              "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at" +
+                (includeBodies ? ", clean_body_text, body_text, body_html, snippet, is_draft" : "")
+            )
+            .in("thread_id", chunk)
+            .order("received_at", { ascending: false, nullsLast: true })
+            .limit(limit);
+          request = applyClientScope(request, scope);
+          const { data: rows, error: queryError } = await request;
+          if (queryError) throw queryError;
+          if (Array.isArray(rows) && rows.length) {
+            allRows.push(...rows);
+          }
         }
-      }
+        return allRows;
+      }, { force });
       if (isStale()) return;
       setData(allRows);
     } catch (err) {
@@ -614,17 +610,17 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     } finally {
       if (!isStale()) setLoading(false);
     }
-  }, [getToken, includeBodies, supabase, threadKey, user]);
+  }, [getToken, orgId, includeBodies, supabase, threadKey, user, scopeKey, refreshKey, setData]);
 
   useEffect(() => {
-    if (!enabled) return;
-    fetchMessages();
-  }, [enabled, fetchMessages, refreshKey, threadKey]);
+    if (!enabled || !ready) return;
+    fetchMessages(false);
+  }, [enabled, fetchMessages, refreshKey, threadKey, ready]);
 
   useEffect(() => {
     if (normalizedThreadIds.length) return;
     setData([]);
-  }, [normalizedThreadIds.length]);
+  }, [normalizedThreadIds.length, setData]);
 
   return { data, loading, error, refresh: fetchMessages };
 }
@@ -632,7 +628,7 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
 export function useThreadAttachments(messageIds = [], options = {}) {
   const { initialData = EMPTY_LIST, enabled = false } = options;
   const supabase = useClerkSupabase();
-  const { getToken } = useAuth();
+  const { getToken, orgId } = useAuth();
   const { user } = useUser();
 
   const messageKey = useMemo(
@@ -669,6 +665,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
         supabase,
         user,
         getToken,
+        orgId,
         logLabel: "useThreadAttachments",
       });
       const mailboxIds = await resolveScopedMailboxIds(supabase, scope);
@@ -692,7 +689,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, messageKey, supabase, user]);
+  }, [getToken, orgId, messageKey, supabase, user]);
 
   useEffect(() => {
     if (!enabled) return;

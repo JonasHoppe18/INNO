@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { buildAnalyticsTrendSeries, buildPrioritySignals, calculateFirstContactResolution } from "@/lib/server/analytics-series";
 
@@ -24,7 +24,7 @@ const SUPPORT_CLASSIFICATION_KEY = "support";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 function startOfUtcMonth(date = new Date()) {
@@ -538,21 +538,36 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     if (thread.provider_thread_id) threadIdByDraftKey[String(thread.provider_thread_id)] = thread.id;
   }
 
-  let messages = [];
-  if (threadIds.length > 0) {
-    const { data, error } = await serviceClient
-      .from("mail_messages")
-      .select("id, thread_id, from_me, sent_at, received_at, created_at")
-      .in("thread_id", threadIds)
-      .order("created_at", { ascending: true });
-    if (error) throw new Error(error.message);
-    messages = data ?? [];
+  const refundIds = refunds.map((row) => row.id).filter(Boolean);
+  const shopifyReturnIds = (shopifyReturns || []).map((row) => row.id).filter(Boolean);
+  const [messagesResult, tagAssignments, productMap, refundItemsResult, returnItemsResult] = await Promise.all([
+    threadIds.length
+      ? serviceClient.from("mail_messages").select("id, thread_id, from_me, sent_at, received_at, created_at")
+          .in("thread_id", threadIds).order("created_at", { ascending: true })
+      : { data: [], error: null },
+    fetchTagRows(serviceClient, threadIds),
+    fetchProductMap(serviceClient, threadRows.map((thread) => thread.detected_product_id)),
+    refundIds.length
+      ? serviceClient.from("commerce_refund_items").select("refund_id, external_product_id, quantity, amount")
+          .in("refund_id", refundIds)
+      : { data: [], error: null },
+    shopifyReturnIds.length
+      ? serviceClient.from("commerce_return_items").select("return_id, external_line_item_id, quantity, reason_handle, reason")
+          .in("return_id", shopifyReturnIds)
+      : { data: [], error: null },
+  ]);
+  if (messagesResult.error) throw new Error(messagesResult.error.message);
+  if (refundItemsResult.error) throw new Error(refundItemsResult.error.message);
+  if (returnItemsResult.error && !["42P01", "PGRST205"].includes(returnItemsResult.error.code)) {
+    throw new Error(returnItemsResult.error.message);
   }
-
-  const tagAssignments = await fetchTagRows(serviceClient, threadIds);
-  const productMap = await fetchProductMap(
+  const messages = messagesResult.data ?? [];
+  const refundItems = refundItemsResult.data ?? [];
+  const shopifyReturnItems = returnItemsResult.data ?? [];
+  const refundProductMap = await fetchExternalProductMap(
     serviceClient,
-    threadRows.map((thread) => thread.detected_product_id),
+    refundItems.map((item) => item.external_product_id),
+    refunds.map((row) => row.shop_id),
   );
 
   const tagsByThreadId = {};
@@ -596,34 +611,6 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     if (!actionsByThreadId[action.thread_id]) actionsByThreadId[action.thread_id] = [];
     actionsByThreadId[action.thread_id].push(action);
   }
-
-  let refundItems = [];
-  const refundIds = refunds.map((row) => row.id).filter(Boolean);
-  if (refundIds.length) {
-    const { data, error } = await serviceClient
-      .from("commerce_refund_items")
-      .select("refund_id, external_product_id, quantity, amount")
-      .in("refund_id", refundIds);
-    if (error) throw new Error(error.message);
-    refundItems = data ?? [];
-  }
-
-  let shopifyReturnItems = [];
-  const shopifyReturnIds = (shopifyReturns || []).map((row) => row.id).filter(Boolean);
-  if (shopifyReturnIds.length) {
-    const { data, error } = await serviceClient
-      .from("commerce_return_items")
-      .select("return_id, external_line_item_id, quantity, reason_handle, reason")
-      .in("return_id", shopifyReturnIds);
-    if (error && !["42P01", "PGRST205"].includes(error.code)) throw new Error(error.message);
-    shopifyReturnItems = data ?? [];
-  }
-
-  const refundProductMap = await fetchExternalProductMap(
-    serviceClient,
-    refundItems.map((item) => item.external_product_id),
-    refunds.map((row) => row.shop_id),
-  );
 
   const grouping = groupKeyForRange(since, until);
   const volumeMap = {};

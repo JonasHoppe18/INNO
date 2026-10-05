@@ -14,7 +14,7 @@ const STATUS_DOT_STYLES = {
   Solved: "bg-muted-foreground/60",
 };
 
-const PREFETCH_HOVER_DELAY_MS = 700;
+const PREFETCH_HOVER_DELAY_MS = 150;
 
 function TicketListItemComponent({
   thread,

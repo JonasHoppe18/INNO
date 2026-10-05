@@ -1,0 +1,6069 @@
+{
+  "base": "9621dfc7",
+  "candidate": "295d12de; settings and persona rechecked at 5255cba9",
+  "date": "2026-10-05",
+  "before": [
+    {
+      "path": "/analytics",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 698,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 563,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 492,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/automation",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 796,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 514,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 513,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/customers",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1317,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 1158,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 1113,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/dashboard",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1167,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 468,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 303,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/documents",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 222,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/eval",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 362,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 307,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 524,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/feedback",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 489,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 403,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 292,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 232,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 233,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 217,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1186,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 992,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 626,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox/tickets",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 421,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 275,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 268,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations/zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 441,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 376,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 639,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 724,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 623,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 386,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge-hub",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 412,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 383,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 394,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/all",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 331,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 305,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 300,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/internal-rules",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 311,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 289,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 296,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/new",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 353,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 334,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 302,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/simulate",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 373,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 388,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 640,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 255,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 241,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes/other",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 231,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/persona",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1044,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 968,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 972,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/playground",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 986,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 935,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 937,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/email",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 521,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 230,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 222,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/thank-you",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 285,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 232,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 220,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/tags",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 322,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 247,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 342,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/returns",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 846,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 609,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 631,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/shipping",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 340,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 315,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 305,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 708,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 623,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 628,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 733,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 569,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 532,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-mail",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 342,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 301,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 288,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-shopify",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 303,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 297,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 286,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-webshipper",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 298,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 315,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 312,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-gls",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 321,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 284,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 327,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 300,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 280,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/:productId",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 439,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 473,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 381,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "path": "/analytics",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 433,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 253,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 277,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/automation",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 966,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 551,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 495,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/customers",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1381,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 267,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/dashboard",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 339,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 305,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 378,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/documents",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 288,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 279,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/eval",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1014,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 358,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 327,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/feedback",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 670,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 553,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 336,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 245,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 300,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 762,
+          "reads": 16,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 408,
+          "reads": 6,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 462,
+          "reads": 6,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox/tickets",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 223,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 350,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 301,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 530,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 294,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 403,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations/zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 537,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 375,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 424,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 321,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 262,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 238,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge-hub",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 389,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 303,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 316,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/all",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 621,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 312,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 310,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/internal-rules",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 607,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 296,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 304,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/new",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 631,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 333,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 298,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/simulate",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 271,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 219,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 632,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 260,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 234,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes/other",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 253,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 228,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 319,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/playground",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/email",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 690,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 264,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 271,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/thank-you",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 582,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 247,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 256,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/tags",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 542,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 226,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 547,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/returns",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 950,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 708,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 593,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/shipping",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 613,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 303,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 284,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1439,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 625,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 646,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-mail",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 307,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 331,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-shopify",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 329,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 726,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-webshipper",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 302,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 294,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 274,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-gls",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 291,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 493,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 273,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 317,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 292,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 285,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/:productId",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 760,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 398,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 366,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1005,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 538,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 537,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/persona",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 892,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 668,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 558,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    }
+  ],
+  "navigation": [
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 1089,
+      "headingMs": 1089,
+      "dataMs": 1089,
+      "status": null,
+      "ttfbMs": 1038
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 402,
+      "headingMs": 402,
+      "dataMs": 402,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 55,
+      "headingMs": 55,
+      "dataMs": 352,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 59,
+      "headingMs": 59,
+      "dataMs": 638,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 344,
+      "headingMs": 659,
+      "dataMs": 659,
+      "status": null,
+      "ttfbMs": 335
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 31,
+      "headingMs": 31,
+      "dataMs": 341,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 29,
+      "headingMs": 29,
+      "dataMs": 399,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 273,
+      "headingMs": 325,
+      "dataMs": 325,
+      "status": null,
+      "ttfbMs": 232
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 18,
+      "headingMs": 18,
+      "dataMs": 18,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 318,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 20,
+      "headingMs": 20,
+      "dataMs": 412,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 686,
+      "headingMs": 686,
+      "dataMs": 686,
+      "status": null,
+      "ttfbMs": 621
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 389,
+      "headingMs": 389,
+      "dataMs": 389,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 56,
+      "headingMs": 56,
+      "dataMs": 353,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 49,
+      "headingMs": 49,
+      "dataMs": 596,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 451,
+      "headingMs": 451,
+      "dataMs": 451,
+      "status": null,
+      "ttfbMs": 420
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 414,
+      "headingMs": 414,
+      "dataMs": 414,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 49,
+      "headingMs": 49,
+      "dataMs": 346,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 45,
+      "headingMs": 45,
+      "dataMs": 603,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 345,
+      "headingMs": 661,
+      "dataMs": 661,
+      "status": null,
+      "ttfbMs": 332
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 21,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 28,
+      "headingMs": 28,
+      "dataMs": 358,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 28,
+      "headingMs": 28,
+      "dataMs": 448,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 236,
+      "headingMs": 301,
+      "dataMs": 301,
+      "status": null,
+      "ttfbMs": 222
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 332,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 490,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 1477,
+      "headingMs": 1477,
+      "dataMs": 1477,
+      "status": null,
+      "ttfbMs": 1443
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 401,
+      "headingMs": 401,
+      "dataMs": 401,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 53,
+      "headingMs": 53,
+      "dataMs": 359,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 50,
+      "headingMs": 50,
+      "dataMs": 639,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 509,
+      "headingMs": 509,
+      "dataMs": 509,
+      "status": null,
+      "ttfbMs": 475
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 418,
+      "headingMs": 418,
+      "dataMs": 418,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 65,
+      "headingMs": 65,
+      "dataMs": 373,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 45,
+      "headingMs": 45,
+      "dataMs": 1513,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 412,
+      "headingMs": 476,
+      "dataMs": 476,
+      "status": null,
+      "ttfbMs": 395
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 29,
+      "headingMs": 29,
+      "dataMs": 313,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 388,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 237,
+      "headingMs": 313,
+      "dataMs": 313,
+      "status": null,
+      "ttfbMs": 224
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 21,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 307,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 397,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 663,
+      "headingMs": 663,
+      "dataMs": 663,
+      "status": null,
+      "ttfbMs": 630
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 381,
+      "headingMs": 381,
+      "dataMs": 381,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 41,
+      "headingMs": 41,
+      "dataMs": 318,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 181,
+      "headingMs": 181,
+      "dataMs": 701,
+      "status": 200,
+      "ttfbMs": null
+    }
+  ],
+  "inbox": [
+    {
+      "version": "before",
+      "scenario": "cold_click",
+      "samples": [
+        {
+          "dataMs": 831,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 799,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1506,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "scenario": "hover_prefetch",
+      "samples": [
+        {
+          "dataMs": 1468,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1436,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1474,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "scenario": "queue_navigation",
+      "queueRscReads": 1,
+      "historyWorks": true,
+      "blockedWrites": 30
+    },
+    {
+      "version": "after",
+      "scenario": "cold_click",
+      "samples": [
+        {
+          "dataMs": 514,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 562,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 520,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "scenario": "hover_prefetch",
+      "samples": [
+        {
+          "dataMs": 664,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 733,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 651,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "scenario": "queue_navigation",
+      "queueRscReads": 0,
+      "historyWorks": true,
+      "blockedWrites": 30
+    }
+  ],
+  "settingsAssertions": [
+    {
+      "version": "after",
+      "statuses": {
+        "/api/settings/members": 200,
+        "/api/settings/test-mode": 200,
+        "/api/persona": 200,
+        "/api/settings/auto-reply": 200,
+        "/api/settings/email-signature": 200,
+        "/api/settings/email-routing": 200,
+        "/api/settings/email-sender-rules": 200,
+        "/api/settings/email-blocklist": 200,
+        "/api/inboxes": 200
+      },
+      "unsavedPreserved": true,
+      "historyWorks": true,
+      "tabRscReads": 0,
+      "blockedWrites": 0
+    }
+  ],
+  "conversationFollowup": {
+    "baseline": "3b343089",
+    "candidate": "ca9e36ea",
+    "before": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 654,
+            "dataMs": 660,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 540,
+            "dataMs": 543,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 495,
+            "dataMs": 497,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 15
+      }
+    ],
+    "after": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 695,
+            "cachedVisibleMs": 35,
+            "dataMs": 849,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 396,
+            "cachedVisibleMs": 36,
+            "dataMs": 513,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 409,
+            "cachedVisibleMs": 42,
+            "dataMs": 511,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "hover_click_reuse",
+        "fullRequests": 1,
+        "sendBlockedBeforeDetails": true
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 67
+      }
+    ],
+    "earlierAfterProbes": [
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 429,
+              "dataMs": 526,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 434,
+              "dataMs": 617,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 384,
+              "dataMs": 526,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 18
+        }
+      ],
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 365,
+              "cachedVisibleMs": 41,
+              "dataMs": 495,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 356,
+              "cachedVisibleMs": 41,
+              "dataMs": 502,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 383,
+              "cachedVisibleMs": 25,
+              "dataMs": 495,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "hover_click_reuse",
+          "fullRequests": 1
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 67
+        }
+      ],
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 373,
+              "cachedVisibleMs": 47,
+              "dataMs": 585,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 354,
+              "cachedVisibleMs": 29,
+              "dataMs": 497,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 359,
+              "cachedVisibleMs": 37,
+              "dataMs": 543,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "hover_click_reuse",
+          "fullRequests": 1,
+          "sendBlockedBeforeDetails": true
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 67
+        }
+      ]
+    ]
+  },
+  "globalFollowup": {
+    "beforeCommit": "833ced00",
+    "afterCommit": "ac119cdf",
+    "before": [
+      {
+        "version": "after",
+        "path": "/analytics",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1639,
+            "lastReadMs": 458,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 275,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1433,
+            "lastReadMs": 254,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/automation",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2244,
+            "lastReadMs": 1096,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1647,
+            "lastReadMs": 526,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1635,
+            "lastReadMs": 480,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/customers",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2454,
+            "lastReadMs": 1301,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1435,
+            "lastReadMs": 235,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 255,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/dashboard",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 320,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 305,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1945,
+            "lastReadMs": 742,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/documents",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 268,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1435,
+            "lastReadMs": 254,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 231,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/eval",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1845,
+            "lastReadMs": 673,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1442,
+            "lastReadMs": 323,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1430,
+            "lastReadMs": 314,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/feedback",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1840,
+            "lastReadMs": 641,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 321,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 327,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 245,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 230,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1482,
+            "lastReadMs": 295,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1938,
+            "lastReadMs": 815,
+            "reads": 16,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1528,
+            "lastReadMs": 405,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1522,
+            "lastReadMs": 367,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox/tickets",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1428,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 261,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 248,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1636,
+            "lastReadMs": 496,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 308,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1426,
+            "lastReadMs": 301,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations/zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1635,
+            "lastReadMs": 442,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1532,
+            "lastReadMs": 359,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1530,
+            "lastReadMs": 409,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1434,
+            "lastReadMs": 312,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1441,
+            "lastReadMs": 226,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1432,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge-hub",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1532,
+            "lastReadMs": 352,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1842,
+            "lastReadMs": 642,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 276,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/all",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1742,
+            "lastReadMs": 620,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 320,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1449,
+            "lastReadMs": 311,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/internal-rules",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1751,
+            "lastReadMs": 636,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 296,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 301,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/new",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1125,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1130,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1134,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1836,
+            "lastReadMs": 640,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1424,
+            "lastReadMs": 281,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1473,
+            "lastReadMs": 322,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/simulate",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 293,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1334,
+            "lastReadMs": 219,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1847,
+            "lastReadMs": 666,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1433,
+            "lastReadMs": 259,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1426,
+            "lastReadMs": 241,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes/other",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1432,
+            "lastReadMs": 225,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1331,
+            "lastReadMs": 215,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 216,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/persona",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1988,
+            "lastReadMs": 834,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 3188,
+            "lastReadMs": 1985,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 385,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/playground",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1128,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1127,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1936,
+            "lastReadMs": 751,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1532,
+            "lastReadMs": 409,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1526,
+            "lastReadMs": 402,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/email",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1838,
+            "lastReadMs": 675,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1431,
+            "lastReadMs": 244,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1431,
+            "lastReadMs": 245,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/thank-you",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1732,
+            "lastReadMs": 560,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1530,
+            "lastReadMs": 403,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1349,
+            "lastReadMs": 242,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/tags",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 552,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 237,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 241,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/returns",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2143,
+            "lastReadMs": 949,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1936,
+            "lastReadMs": 779,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1738,
+            "lastReadMs": 605,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/shipping",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1738,
+            "lastReadMs": 615,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1427,
+            "lastReadMs": 315,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 313,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2147,
+            "lastReadMs": 1000,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1843,
+            "lastReadMs": 662,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1837,
+            "lastReadMs": 659,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-mail",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1460,
+            "lastReadMs": 314,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 295,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1460,
+            "lastReadMs": 297,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-shopify",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1464,
+            "lastReadMs": 302,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1478,
+            "lastReadMs": 288,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1458,
+            "lastReadMs": 299,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-webshipper",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1453,
+            "lastReadMs": 291,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1474,
+            "lastReadMs": 292,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1497,
+            "lastReadMs": 298,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-gls",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 308,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 287,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 279,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1531,
+            "lastReadMs": 348,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 284,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 263,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/:productId",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2237,
+            "lastReadMs": 1127,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1537,
+            "lastReadMs": 352,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 368,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      }
+    ],
+    "after": [
+      {
+        "version": "after",
+        "path": "/analytics",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1528,
+            "lastReadMs": 422,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1645,
+            "lastReadMs": 517,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1367,
+            "lastReadMs": 221,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/automation",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2255,
+            "lastReadMs": 1106,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1538,
+            "lastReadMs": 400,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1533,
+            "lastReadMs": 367,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/customers",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2254,
+            "lastReadMs": 1112,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1341,
+            "lastReadMs": 176,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1346,
+            "lastReadMs": 180,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/dashboard",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1450,
+            "lastReadMs": 255,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1430,
+            "lastReadMs": 267,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 240,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/documents",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1324,
+            "lastReadMs": 187,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1668,
+            "lastReadMs": 458,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1329,
+            "lastReadMs": 159,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/eval",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1736,
+            "lastReadMs": 595,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1425,
+            "lastReadMs": 234,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 253,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/feedback",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 570,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 249,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1449,
+            "lastReadMs": 242,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1333,
+            "lastReadMs": 166,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1334,
+            "lastReadMs": 169,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 176,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1837,
+            "lastReadMs": 690,
+            "reads": 14,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1544,
+            "lastReadMs": 395,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1532,
+            "lastReadMs": 374,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox/tickets",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1334,
+            "lastReadMs": 151,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 231,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1332,
+            "lastReadMs": 209,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1531,
+            "lastReadMs": 395,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1425,
+            "lastReadMs": 246,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1533,
+            "lastReadMs": 367,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations/zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1530,
+            "lastReadMs": 421,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1531,
+            "lastReadMs": 324,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1536,
+            "lastReadMs": 333,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1427,
+            "lastReadMs": 232,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1329,
+            "lastReadMs": 167,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1328,
+            "lastReadMs": 164,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge-hub",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 248,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 247,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1433,
+            "lastReadMs": 227,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/all",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1738,
+            "lastReadMs": 548,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 232,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 223,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/internal-rules",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1775,
+            "lastReadMs": 571,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1436,
+            "lastReadMs": 232,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1435,
+            "lastReadMs": 262,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/new",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1127,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1123,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1745,
+            "lastReadMs": 562,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1322,
+            "lastReadMs": 217,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1440,
+            "lastReadMs": 233,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/simulate",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1331,
+            "lastReadMs": 189,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1336,
+            "lastReadMs": 170,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 144,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 611,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1325,
+            "lastReadMs": 189,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1330,
+            "lastReadMs": 214,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes/other",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1338,
+            "lastReadMs": 186,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1329,
+            "lastReadMs": 166,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 192,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/persona",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1935,
+            "lastReadMs": 732,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1843,
+            "lastReadMs": 735,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1437,
+            "lastReadMs": 326,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/playground",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1124,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1125,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1839,
+            "lastReadMs": 694,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1445,
+            "lastReadMs": 330,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1527,
+            "lastReadMs": 350,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/email",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1837,
+            "lastReadMs": 665,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1328,
+            "lastReadMs": 180,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 174,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/thank-you",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1633,
+            "lastReadMs": 484,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1325,
+            "lastReadMs": 179,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 177,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/tags",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1634,
+            "lastReadMs": 506,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1347,
+            "lastReadMs": 152,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1335,
+            "lastReadMs": 176,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/returns",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1938,
+            "lastReadMs": 829,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1632,
+            "lastReadMs": 448,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1631,
+            "lastReadMs": 493,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/shipping",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1743,
+            "lastReadMs": 572,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1342,
+            "lastReadMs": 225,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1432,
+            "lastReadMs": 251,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2043,
+            "lastReadMs": 861,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1732,
+            "lastReadMs": 555,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1630,
+            "lastReadMs": 512,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-mail",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1346,
+            "lastReadMs": 243,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1439,
+            "lastReadMs": 247,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1424,
+            "lastReadMs": 243,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-shopify",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1380,
+            "lastReadMs": 252,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1383,
+            "lastReadMs": 204,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1402,
+            "lastReadMs": 228,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-webshipper",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1460,
+            "lastReadMs": 251,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1467,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1400,
+            "lastReadMs": 224,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-gls",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1425,
+            "lastReadMs": 239,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1422,
+            "lastReadMs": 225,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1428,
+            "lastReadMs": 226,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1423,
+            "lastReadMs": 224,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 222,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/:productId",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1834,
+            "lastReadMs": 636,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1528,
+            "lastReadMs": 327,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 321,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      }
+    ],
+    "initialScopeQueryProbe": [
+      {
+        "round": 0,
+        "version": "separate",
+        "ms": 224,
+        "sameWorkspace": true
+      },
+      {
+        "round": 0,
+        "version": "joined",
+        "ms": 99,
+        "sameWorkspace": true
+      },
+      {
+        "round": 1,
+        "version": "joined",
+        "ms": 84,
+        "sameWorkspace": true
+      },
+      {
+        "round": 1,
+        "version": "separate",
+        "ms": 129,
+        "sameWorkspace": true
+      },
+      {
+        "round": 2,
+        "version": "separate",
+        "ms": 126,
+        "sameWorkspace": true
+      },
+      {
+        "round": 2,
+        "version": "joined",
+        "ms": 102,
+        "sameWorkspace": true
+      },
+      {
+        "round": 3,
+        "version": "joined",
+        "ms": 191,
+        "sameWorkspace": true
+      },
+      {
+        "round": 3,
+        "version": "separate",
+        "ms": 399,
+        "sameWorkspace": true
+      },
+      {
+        "round": 4,
+        "version": "separate",
+        "ms": 239,
+        "sameWorkspace": true
+      },
+      {
+        "round": 4,
+        "version": "joined",
+        "ms": 76,
+        "sameWorkspace": true
+      },
+      {
+        "round": 5,
+        "version": "joined",
+        "ms": 72,
+        "sameWorkspace": true
+      },
+      {
+        "round": 5,
+        "version": "separate",
+        "ms": 350,
+        "sameWorkspace": true
+      }
+    ],
+    "finalScopeQueryProbe": {
+      "unknownOrganizationDenied": true,
+      "results": [
+        {
+          "round": 0,
+          "version": "separate",
+          "ms": 188,
+          "sameWorkspace": true
+        },
+        {
+          "round": 0,
+          "version": "joined",
+          "ms": 69,
+          "sameWorkspace": true
+        },
+        {
+          "round": 1,
+          "version": "joined",
+          "ms": 71,
+          "sameWorkspace": true
+        },
+        {
+          "round": 1,
+          "version": "separate",
+          "ms": 141,
+          "sameWorkspace": true
+        },
+        {
+          "round": 2,
+          "version": "separate",
+          "ms": 136,
+          "sameWorkspace": true
+        },
+        {
+          "round": 2,
+          "version": "joined",
+          "ms": 74,
+          "sameWorkspace": true
+        },
+        {
+          "round": 3,
+          "version": "joined",
+          "ms": 70,
+          "sameWorkspace": true
+        },
+        {
+          "round": 3,
+          "version": "separate",
+          "ms": 130,
+          "sameWorkspace": true
+        },
+        {
+          "round": 4,
+          "version": "separate",
+          "ms": 137,
+          "sameWorkspace": true
+        },
+        {
+          "round": 4,
+          "version": "joined",
+          "ms": 70,
+          "sameWorkspace": true
+        },
+        {
+          "round": 5,
+          "version": "joined",
+          "ms": 134,
+          "sameWorkspace": true
+        },
+        {
+          "round": 5,
+          "version": "separate",
+          "ms": 344,
+          "sameWorkspace": true
+        }
+      ]
+    },
+    "settingsAssertions": [
+      {
+        "version": "after",
+        "statuses": {
+          "/api/settings/members": 200,
+          "/api/settings/test-mode": 200,
+          "/api/persona": 200,
+          "/api/settings/auto-reply": 200,
+          "/api/settings/email-signature": 200,
+          "/api/settings/email-routing": 200,
+          "/api/settings/email-sender-rules": 200,
+          "/api/settings/email-blocklist": 200,
+          "/api/inboxes": 200
+        },
+        "unsavedPreserved": true,
+        "historyWorks": true,
+        "tabRscReads": 0,
+        "blockedWrites": 0
+      }
+    ],
+    "conversationAssertions": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 339,
+            "cachedVisibleMs": 38,
+            "dataMs": 507,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 301,
+            "cachedVisibleMs": 41,
+            "dataMs": 427,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 301,
+            "cachedVisibleMs": 35,
+            "dataMs": 479,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "hover_click_reuse",
+        "fullRequests": 1,
+        "sendBlockedBeforeDetails": true
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 67
+      }
+    ]
+  }
+}
