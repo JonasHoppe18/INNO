@@ -2964,5 +2964,3106 @@
         }
       ]
     ]
+  },
+  "globalFollowup": {
+    "beforeCommit": "833ced00",
+    "afterCommit": "ac119cdf",
+    "before": [
+      {
+        "version": "after",
+        "path": "/analytics",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1639,
+            "lastReadMs": 458,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 275,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1433,
+            "lastReadMs": 254,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/automation",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2244,
+            "lastReadMs": 1096,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1647,
+            "lastReadMs": 526,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1635,
+            "lastReadMs": 480,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/customers",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2454,
+            "lastReadMs": 1301,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1435,
+            "lastReadMs": 235,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 255,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/dashboard",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 320,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 305,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1945,
+            "lastReadMs": 742,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/documents",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 268,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1435,
+            "lastReadMs": 254,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 231,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/eval",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1845,
+            "lastReadMs": 673,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1442,
+            "lastReadMs": 323,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1430,
+            "lastReadMs": 314,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/feedback",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1840,
+            "lastReadMs": 641,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 321,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 327,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 245,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 230,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1482,
+            "lastReadMs": 295,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1938,
+            "lastReadMs": 815,
+            "reads": 16,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1528,
+            "lastReadMs": 405,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1522,
+            "lastReadMs": 367,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox/tickets",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1428,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 261,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 248,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1636,
+            "lastReadMs": 496,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 308,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1426,
+            "lastReadMs": 301,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations/zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1635,
+            "lastReadMs": 442,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1532,
+            "lastReadMs": 359,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1530,
+            "lastReadMs": 409,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1434,
+            "lastReadMs": 312,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1441,
+            "lastReadMs": 226,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1432,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge-hub",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1532,
+            "lastReadMs": 352,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1842,
+            "lastReadMs": 642,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 276,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/all",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1742,
+            "lastReadMs": 620,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 320,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1449,
+            "lastReadMs": 311,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/internal-rules",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1751,
+            "lastReadMs": 636,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 296,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 301,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/new",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1125,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1130,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1134,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1836,
+            "lastReadMs": 640,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1424,
+            "lastReadMs": 281,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1473,
+            "lastReadMs": 322,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/simulate",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 293,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1334,
+            "lastReadMs": 219,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1847,
+            "lastReadMs": 666,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1433,
+            "lastReadMs": 259,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1426,
+            "lastReadMs": 241,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes/other",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1432,
+            "lastReadMs": 225,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1331,
+            "lastReadMs": 215,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 216,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/persona",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1988,
+            "lastReadMs": 834,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 3188,
+            "lastReadMs": 1985,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 385,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/playground",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1128,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1127,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1936,
+            "lastReadMs": 751,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1532,
+            "lastReadMs": 409,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1526,
+            "lastReadMs": 402,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/email",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1838,
+            "lastReadMs": 675,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1431,
+            "lastReadMs": 244,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1431,
+            "lastReadMs": 245,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/thank-you",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1732,
+            "lastReadMs": 560,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1530,
+            "lastReadMs": 403,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1349,
+            "lastReadMs": 242,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/tags",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 552,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 237,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 241,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/returns",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2143,
+            "lastReadMs": 949,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1936,
+            "lastReadMs": 779,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1738,
+            "lastReadMs": 605,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/shipping",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1738,
+            "lastReadMs": 615,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1427,
+            "lastReadMs": 315,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 313,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2147,
+            "lastReadMs": 1000,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1843,
+            "lastReadMs": 662,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1837,
+            "lastReadMs": 659,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-mail",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1460,
+            "lastReadMs": 314,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 295,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1460,
+            "lastReadMs": 297,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-shopify",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1464,
+            "lastReadMs": 302,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1478,
+            "lastReadMs": 288,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1458,
+            "lastReadMs": 299,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-webshipper",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1453,
+            "lastReadMs": 291,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1474,
+            "lastReadMs": 292,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1497,
+            "lastReadMs": 298,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-gls",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1433,
+            "lastReadMs": 308,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 287,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 279,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1531,
+            "lastReadMs": 348,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 284,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 263,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/:productId",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2237,
+            "lastReadMs": 1127,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1537,
+            "lastReadMs": 352,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1531,
+            "lastReadMs": 368,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      }
+    ],
+    "after": [
+      {
+        "version": "after",
+        "path": "/analytics",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1528,
+            "lastReadMs": 422,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1645,
+            "lastReadMs": 517,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1367,
+            "lastReadMs": 221,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/analytics",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/automation",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2255,
+            "lastReadMs": 1106,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1538,
+            "lastReadMs": 400,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1533,
+            "lastReadMs": 367,
+            "reads": 7,
+            "pending": 0,
+            "finalPath": "/automation",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/customers",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2254,
+            "lastReadMs": 1112,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1341,
+            "lastReadMs": 176,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1346,
+            "lastReadMs": 180,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/customers",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/dashboard",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1450,
+            "lastReadMs": 255,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1430,
+            "lastReadMs": 267,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 240,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/dashboard",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/documents",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1324,
+            "lastReadMs": 187,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1668,
+            "lastReadMs": 458,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1329,
+            "lastReadMs": 159,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/documents",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/eval",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1736,
+            "lastReadMs": 595,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1425,
+            "lastReadMs": 234,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1428,
+            "lastReadMs": 253,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/eval",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/feedback",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 570,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 249,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1449,
+            "lastReadMs": 242,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/feedback",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1333,
+            "lastReadMs": 166,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1334,
+            "lastReadMs": 169,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 176,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guides",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1837,
+            "lastReadMs": 690,
+            "reads": 14,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1544,
+            "lastReadMs": 395,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1532,
+            "lastReadMs": 374,
+            "reads": 6,
+            "pending": 0,
+            "finalPath": "/inbox",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/inbox/tickets",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1334,
+            "lastReadMs": 151,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1428,
+            "lastReadMs": 231,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1332,
+            "lastReadMs": 209,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/inbox/tickets",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1531,
+            "lastReadMs": 395,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1425,
+            "lastReadMs": 246,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1533,
+            "lastReadMs": 367,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/integrations",
+            "hasHeading": true,
+            "skeletons": 1,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/integrations/zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1530,
+            "lastReadMs": 421,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1531,
+            "lastReadMs": 324,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1536,
+            "lastReadMs": 333,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/integrations/zendesk",
+            "hasHeading": false,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1427,
+            "lastReadMs": 232,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1329,
+            "lastReadMs": 167,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1328,
+            "lastReadMs": 164,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge-hub",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1430,
+            "lastReadMs": 248,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1429,
+            "lastReadMs": 247,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1433,
+            "lastReadMs": 227,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/all",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1738,
+            "lastReadMs": 548,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1434,
+            "lastReadMs": 232,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1429,
+            "lastReadMs": 223,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/all",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/internal-rules",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1775,
+            "lastReadMs": 571,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1436,
+            "lastReadMs": 232,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1435,
+            "lastReadMs": 262,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/internal-rules",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/new",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1127,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1123,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/knowledge/new",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1745,
+            "lastReadMs": 562,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1322,
+            "lastReadMs": 217,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1440,
+            "lastReadMs": 233,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/simulate",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1331,
+            "lastReadMs": 189,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1336,
+            "lastReadMs": 170,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 144,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/knowledge/simulate",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1739,
+            "lastReadMs": 611,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1325,
+            "lastReadMs": 189,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1330,
+            "lastReadMs": 214,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/mailboxes",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/mailboxes/other",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1338,
+            "lastReadMs": 186,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1329,
+            "lastReadMs": 166,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 192,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/mailboxes/other",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/persona",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1935,
+            "lastReadMs": 732,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1843,
+            "lastReadMs": 735,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1437,
+            "lastReadMs": 326,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/playground",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1124,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1126,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1125,
+            "lastReadMs": 0,
+            "reads": 0,
+            "pending": 0,
+            "finalPath": "/playground",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1839,
+            "lastReadMs": 694,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1445,
+            "lastReadMs": 330,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1527,
+            "lastReadMs": 350,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/email",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1837,
+            "lastReadMs": 665,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1328,
+            "lastReadMs": 180,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1326,
+            "lastReadMs": 174,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/email",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/settings/csat/thank-you",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1633,
+            "lastReadMs": 484,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1325,
+            "lastReadMs": 179,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1325,
+            "lastReadMs": 177,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/settings/csat/thank-you",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/tags",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1634,
+            "lastReadMs": 506,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1347,
+            "lastReadMs": 152,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1335,
+            "lastReadMs": 176,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/tags",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/returns",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1938,
+            "lastReadMs": 829,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1632,
+            "lastReadMs": 448,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1631,
+            "lastReadMs": 493,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/returns",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/shipping",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1743,
+            "lastReadMs": 572,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1342,
+            "lastReadMs": 225,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1432,
+            "lastReadMs": 251,
+            "reads": 3,
+            "pending": 0,
+            "finalPath": "/knowledge/shipping",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/general",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 2043,
+            "lastReadMs": 861,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1732,
+            "lastReadMs": 555,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1630,
+            "lastReadMs": 512,
+            "reads": 4,
+            "pending": 0,
+            "finalPath": "/knowledge/general",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-mail",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1346,
+            "lastReadMs": 243,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1439,
+            "lastReadMs": 247,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1424,
+            "lastReadMs": 243,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-mail",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-shopify",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1380,
+            "lastReadMs": 252,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1383,
+            "lastReadMs": 204,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1402,
+            "lastReadMs": 228,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-shopify",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-webshipper",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1460,
+            "lastReadMs": 251,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1467,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1400,
+            "lastReadMs": 224,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-webshipper",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-gls",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1425,
+            "lastReadMs": 239,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1432,
+            "lastReadMs": 232,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1422,
+            "lastReadMs": 225,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-gls",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/guides/connect-zendesk",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1428,
+            "lastReadMs": 226,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1423,
+            "lastReadMs": 224,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1427,
+            "lastReadMs": 222,
+            "reads": 1,
+            "pending": 0,
+            "finalPath": "/guide/connect-zendesk",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      },
+      {
+        "version": "after",
+        "path": "/knowledge/product-questions/:productId",
+        "samples": [
+          {
+            "round": 0,
+            "elapsedMs": 1834,
+            "lastReadMs": 636,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 1,
+            "elapsedMs": 1528,
+            "lastReadMs": 327,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          },
+          {
+            "round": 2,
+            "elapsedMs": 1434,
+            "lastReadMs": 321,
+            "reads": 2,
+            "pending": 0,
+            "finalPath": "/knowledge/product-questions/:productId",
+            "hasHeading": true,
+            "skeletons": 0,
+            "errors": []
+          }
+        ],
+        "blockedWrites": 0
+      }
+    ],
+    "initialScopeQueryProbe": [
+      {
+        "round": 0,
+        "version": "separate",
+        "ms": 224,
+        "sameWorkspace": true
+      },
+      {
+        "round": 0,
+        "version": "joined",
+        "ms": 99,
+        "sameWorkspace": true
+      },
+      {
+        "round": 1,
+        "version": "joined",
+        "ms": 84,
+        "sameWorkspace": true
+      },
+      {
+        "round": 1,
+        "version": "separate",
+        "ms": 129,
+        "sameWorkspace": true
+      },
+      {
+        "round": 2,
+        "version": "separate",
+        "ms": 126,
+        "sameWorkspace": true
+      },
+      {
+        "round": 2,
+        "version": "joined",
+        "ms": 102,
+        "sameWorkspace": true
+      },
+      {
+        "round": 3,
+        "version": "joined",
+        "ms": 191,
+        "sameWorkspace": true
+      },
+      {
+        "round": 3,
+        "version": "separate",
+        "ms": 399,
+        "sameWorkspace": true
+      },
+      {
+        "round": 4,
+        "version": "separate",
+        "ms": 239,
+        "sameWorkspace": true
+      },
+      {
+        "round": 4,
+        "version": "joined",
+        "ms": 76,
+        "sameWorkspace": true
+      },
+      {
+        "round": 5,
+        "version": "joined",
+        "ms": 72,
+        "sameWorkspace": true
+      },
+      {
+        "round": 5,
+        "version": "separate",
+        "ms": 350,
+        "sameWorkspace": true
+      }
+    ],
+    "finalScopeQueryProbe": {
+      "unknownOrganizationDenied": true,
+      "results": [
+        {
+          "round": 0,
+          "version": "separate",
+          "ms": 188,
+          "sameWorkspace": true
+        },
+        {
+          "round": 0,
+          "version": "joined",
+          "ms": 69,
+          "sameWorkspace": true
+        },
+        {
+          "round": 1,
+          "version": "joined",
+          "ms": 71,
+          "sameWorkspace": true
+        },
+        {
+          "round": 1,
+          "version": "separate",
+          "ms": 141,
+          "sameWorkspace": true
+        },
+        {
+          "round": 2,
+          "version": "separate",
+          "ms": 136,
+          "sameWorkspace": true
+        },
+        {
+          "round": 2,
+          "version": "joined",
+          "ms": 74,
+          "sameWorkspace": true
+        },
+        {
+          "round": 3,
+          "version": "joined",
+          "ms": 70,
+          "sameWorkspace": true
+        },
+        {
+          "round": 3,
+          "version": "separate",
+          "ms": 130,
+          "sameWorkspace": true
+        },
+        {
+          "round": 4,
+          "version": "separate",
+          "ms": 137,
+          "sameWorkspace": true
+        },
+        {
+          "round": 4,
+          "version": "joined",
+          "ms": 70,
+          "sameWorkspace": true
+        },
+        {
+          "round": 5,
+          "version": "joined",
+          "ms": 134,
+          "sameWorkspace": true
+        },
+        {
+          "round": 5,
+          "version": "separate",
+          "ms": 344,
+          "sameWorkspace": true
+        }
+      ]
+    },
+    "settingsAssertions": [
+      {
+        "version": "after",
+        "statuses": {
+          "/api/settings/members": 200,
+          "/api/settings/test-mode": 200,
+          "/api/persona": 200,
+          "/api/settings/auto-reply": 200,
+          "/api/settings/email-signature": 200,
+          "/api/settings/email-routing": 200,
+          "/api/settings/email-sender-rules": 200,
+          "/api/settings/email-blocklist": 200,
+          "/api/inboxes": 200
+        },
+        "unsavedPreserved": true,
+        "historyWorks": true,
+        "tabRscReads": 0,
+        "blockedWrites": 0
+      }
+    ],
+    "conversationAssertions": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 339,
+            "cachedVisibleMs": 38,
+            "dataMs": 507,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 301,
+            "cachedVisibleMs": 41,
+            "dataMs": 427,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 301,
+            "cachedVisibleMs": 35,
+            "dataMs": 479,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "hover_click_reuse",
+        "fullRequests": 1,
+        "sendBlockedBeforeDetails": true
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 67
+      }
+    ]
   }
 }

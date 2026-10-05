@@ -90,7 +90,7 @@ The Settings browser probe checks all nine bootstrap resource statuses, verifies
 
 ## Validation and evidence
 
-Production build passed with lint/type checks and 162 pages. Existing MJML/vendor and edge-runtime warnings remain. Full Vitest run: 776 passed, 8 skipped, 3 failed. The three failures were reproduced on the base source earlier: two landing pricing expectations and a real Knowledge evaluation without required environment variables. The 31 tests added in the expanded pass and eight earlier scheduling tests pass, including scope isolation, cache expiry/force/invalidation, authorization coalescing, parallel reads and protected Settings aggregation.
+Production build passed with lint/type checks and 162 pages. Existing MJML/vendor and edge-runtime warnings remain. Full Vitest run: 777 passed, 8 skipped, 3 failed. The three failures were reproduced on the base source earlier: two landing pricing expectations and a real Knowledge evaluation without required environment variables. The 31 tests added in the expanded pass and eight earlier scheduling tests pass, including scope isolation, cache expiry/force/invalidation, authorization coalescing, parallel reads and protected Settings aggregation.
 
 A fixed-delay scheduling test keeps the same seven enriched inbox reads and result while reducing 450 ms to 200 ms. It is not a browser/database measurement. An earlier dev database count-versus-existence probe did not demonstrate a latency improvement; bounded existence checks reduce work as tables grow.
 
@@ -115,6 +115,61 @@ The browser verifies matching selected-thread data, one full request for hover f
 A cold selection can make two HTTP requests. Concurrent server reads share work, but requests arriving after a query settles can repeat it. Fresh metadata still has network latency; this change does not claim sub-100-ms cold data loading. Local validation used the final production build. No inbox screenshots or customer data were uploaded.
 
 Repeat with `PERF_AFTER_URL=http://localhost:3107 PERF_OUTPUT_FILE=/tmp/sona-visible.json node scripts/performance/conversation-visible.cjs`. The script tests the current app and does not launch a comparison revision automatically. A matching old build or recorded baseline is required for a before/after comparison.
+
+## Global follow-up
+
+This pass compares `833ced00` with `ac119cdf`. The common authorization helper is imported by 134 API route modules. For active organizations, profile lookup and a joined workspace-membership read now run together. The join filters both Clerk user ID and the requested Clerk organization with `workspaces!inner(clerk_org_id)`. This removes one sequential database round trip and one query. Personal-session ambiguity checks remain unchanged. Missing membership, unknown organization and join errors fail closed; settled authorization is never cached.
+
+The relationship already exists in `supabase/schema/workspaces_org_foundation.sql` and was verified read-only against dev. No migration was needed. Six alternating direct query runs returned the identical workspace. Separate lookup timings were 224, 129, 126, 399, 239, 350 ms; joined timings were 99, 84, 102, 191, 76, 72 ms. Medians were 232 and 92 ms. This measures database authorization reads for one active organization, not total page latency. A separate probe confirmed that an unknown organization returns no membership. The join syntax follows [Supabase's documented inner-join filtering](https://supabase.com/docs/guides/database/joins-and-nesting).
+
+Client inbox scope uses the same joined membership check. Customers, Knowledge shop-policy and action-config now use the stateless service transport, allowing overlapping scope reads to share running work. Automation starts independent user/workspace lookups together; modes and save behavior are unchanged. Editable forms still read fresh data.
+
+The same 36 route destinations were revisited before and after this pass. Metrics below retain the existing route-probe definition: navigation to last initial API/Supabase GET body completion, including background reads, excluding RSC/scripts/Clerk/rendering. First visit is one sample; revisit is the median of two within the existing cache lifetime. Version order was sequential and server warm-up differed. Network variation remains; the table includes regressions. These are incremental results against the already optimized PR, not the original main branch. Two disabled routes are excluded from latency claims.
+
+| Route | First before/after, ms | Revisit before/after, ms |
+| --- | ---: | ---: |
+| `/analytics` | 458 / 422 | 265 / 369 |
+| `/automation` | 1096 / 1106 | 503 / 384 |
+| `/customers` | 1301 / 1112 | 245 / 178 |
+| `/dashboard` | 320 / 255 | 524 / 254 |
+| `/documents` | 268 / 187 | 243 / 309 |
+| `/eval` | 673 / 595 | 319 / 244 |
+| `/feedback` | 641 / 570 | 324 / 246 |
+| `/guides` | 245 / 166 | 263 / 173 |
+| `/guides/connect-gls` | 308 / 239 | 283 / 229 |
+| `/guides/connect-mail` | 314 / 243 | 296 / 245 |
+| `/guides/connect-shopify` | 302 / 252 | 294 / 216 |
+| `/guides/connect-webshipper` | 291 / 251 | 295 / 228 |
+| `/guides/connect-zendesk` | 348 / 226 | 274 / 223 |
+| `/inbox` | 815 / 690 | 386 / 385 |
+| `/inbox/tickets` | 232 / 151 | 255 / 220 |
+| `/integrations` | 496 / 395 | 305 / 307 |
+| `/integrations/zendesk` | 442 / 421 | 384 / 329 |
+| `/knowledge` | 312 / 232 | 229 / 166 |
+| `/knowledge-hub` | 352 / 248 | 459 / 237 |
+| `/knowledge/all` | 620 / 548 | 316 / 228 |
+| `/knowledge/general` | 1000 / 861 | 661 / 534 |
+| `/knowledge/internal-rules` | 636 / 571 | 299 / 247 |
+| `/knowledge/new` | Disabled | Excluded |
+| `/knowledge/product-questions/:productId` | 1127 / 636 | 360 / 324 |
+| `/knowledge/product-questions/general` | 640 / 562 | 302 / 225 |
+| `/knowledge/returns` | 949 / 829 | 692 / 471 |
+| `/knowledge/shipping` | 615 / 572 | 314 / 238 |
+| `/knowledge/simulate` | 293 / 189 | 226 / 157 |
+| `/mailboxes` | 666 / 611 | 250 / 202 |
+| `/mailboxes/other` | 225 / 186 | 216 / 179 |
+| `/persona` | 834 / 732 | 1185 / 531 |
+| `/playground` | Disabled | Excluded |
+| `/settings` | 751 / 694 | 406 / 340 |
+| `/settings/csat/email` | 675 / 665 | 245 / 177 |
+| `/settings/csat/thank-you` | 560 / 484 | 323 / 178 |
+| `/tags` | 552 / 506 | 239 / 164 |
+
+All recorded GETs completed without HTTP errors or pending reads. Some routes show little improvement or regressions, including Analytics revisits; no uniform speedup is claimed. The changes reduce work in the shared request path without extending form or authorization cache lifetimes. Existing cached-list improvements are still present in both comparison revisions.
+
+Final production build passes with lint/type checks and 162 pages. Full suite: 777 passed, 8 skipped, the same 3 baseline failures. Scope tests cover exact user/org filters, revoked membership, missing organizations, relation errors and personal ambiguity. Settings returned HTTP 200 for all nine resources, preserved rejected-discard edits, and passed history/zero-RSC checks. Inbox again passed selected-thread, shared hover/click, delayed-detail Send gating and history assertions. Its final cold-visible samples were 339, 301, 301 ms; cached samples were 38, 41, 35 ms. Those Inbox results are additional validation, not the main claim of this pass.
+
+Repeat the direct dev scope probe with `node scripts/performance/scope-join.cjs`. It reads local dev credentials, uses only database reads, and prints timings/booleans without identities or bodies. Run timing probes sequentially. Raw results are retained in `performance-results.json`. Production, schema and V2 functions remain untouched.
 
 ## Repeat the probes
 
