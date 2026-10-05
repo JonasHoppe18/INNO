@@ -1042,7 +1042,7 @@ function TicketDetailComponent({
                   </div>
                 ) : null}
                 <MessageRenderBoundary messageId={messageId || message?.id}>
-                  <ConfirmationSent message={message} enabled={Boolean(message.confirmation_sent_at && direction === "outbound" && !isDraft)}>
+                  <ConfirmationSent enabled={Boolean(message.confirmation_sent_at && direction === "outbound" && !isDraft)}>
                     <MessageBubble
                       message={message}
                       direction={direction}

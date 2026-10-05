@@ -674,7 +674,9 @@ function MessageBubbleComponent({
                 `overflow-hidden ${bubbleRadiusClass} border text-xs`,
                 isInternalNote
                   ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
-                  : isOutbound && !neutral
+                  : neutral
+                  ? "border-primary/20 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
+                  : isOutbound
                   ? "border-violet-200/80 bg-violet-50/70 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
                   : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
               )}
