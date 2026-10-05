@@ -286,8 +286,7 @@ export function useThreadActions({
     if (!selectedThreadId) return;
     if (isLocalThreadId(selectedThreadId)) return;
     if (
-      selectedThreadMessagesLoading &&
-      messagesFetchedForThreadId !== selectedThreadId
+      selectedThreadMessagesLoading
     )
       return;
     if (

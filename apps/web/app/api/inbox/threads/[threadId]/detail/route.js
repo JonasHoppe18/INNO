@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
+import { shareInFlightRead } from "@/lib/server/in-flight-read";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   composeEmailBodyWithSignature,
@@ -65,7 +66,7 @@ function isProposalOnlyDraftMeta(meta) {
   return Boolean(kind) && kind !== "final_customer_reply";
 }
 
-async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId) {
+async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId, scope, messagesOnly = false) {
   // Strict single-thread scope: we never query siblings here. Provider thread
   // IDs (Gmail in particular) can collide across unrelated customer
   // conversations when subjects look alike, which previously caused drafts
@@ -78,24 +79,29 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId) {
       .eq("thread_id", threadId)
       .order("received_at", { ascending: true, nullsLast: true });
 
-  let { data: rows, error } = await buildMessagesQuery(
-    "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text",
-  );
-  if (
-    error &&
-    /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
-      error.message || "",
-    )
-  ) {
-    const lean = await buildMessagesQuery(
-      "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at",
-    );
-    rows = lean.data;
-    error = lean.error;
-  }
-  if (error) throw new Error(error.message);
+  const messages = await shareInFlightRead(serviceClient,
+    JSON.stringify(["thread-messages", scope.workspaceId, scope.supabaseUserId, mailboxId, threadId]),
+    async () => {
+      let { data: rows, error } = await buildMessagesQuery(
+        "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text",
+      );
+      if (
+        error &&
+        /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
+          error.message || "",
+        )
+      ) {
+        const lean = await buildMessagesQuery(
+          "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at",
+        );
+        rows = lean.data;
+        error = lean.error;
+      }
+      if (error) throw new Error(error.message);
 
-  const messages = Array.isArray(rows) ? rows : [];
+      return Array.isArray(rows) ? rows : [];
+    });
+  if (messagesOnly) return { messages };
   const messageIds = messages.map((row) => String(row?.id || "").trim()).filter(Boolean);
   if (!messageIds.length) return { messages, attachments: [] };
 
@@ -281,7 +287,7 @@ async function loadOrderUpdate(serviceClient, scope, thread) {
   };
 }
 
-export async function GET(_request, context) {
+export async function GET(request, context) {
   try {
     const threadId = String(context?.params?.threadId || "").trim();
     if (!threadId) {
@@ -303,20 +309,27 @@ export async function GET(_request, context) {
       return NextResponse.json({ error: "Auth scope not found." }, { status: 401 });
     }
 
-    const { data: thread, error: threadError } = await applyScope(
+    const { data: thread, error: threadError } = await shareInFlightRead(serviceClient,
+      JSON.stringify(["thread-access", scope.workspaceId, scope.supabaseUserId, threadId]),
+      () => applyScope(
       serviceClient
         .from("mail_threads")
         .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject")
         .eq("id", threadId)
         .maybeSingle(),
       scope,
-    );
+    ));
     if (threadError || !thread?.id) {
       return NextResponse.json({ error: "Thread not found." }, { status: 404 });
     }
 
+    if (request && new URL(request.url).searchParams.get("view") === "messages") {
+      const payload = await loadMessagesAndAttachments(serviceClient, threadId, thread.mailbox_id, scope, true);
+      return NextResponse.json(payload, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
     const [messagePayload, draftPayload, draftStats, orderUpdate] = await Promise.all([
-      loadMessagesAndAttachments(serviceClient, threadId, thread.mailbox_id),
+      loadMessagesAndAttachments(serviceClient, threadId, thread.mailbox_id, scope),
       loadDraft(serviceClient, scope, thread).catch((error) => ({
         error: error.message,
         signature: "",

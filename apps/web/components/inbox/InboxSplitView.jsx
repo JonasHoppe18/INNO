@@ -2430,7 +2430,8 @@ export function InboxSplitView({
     !isLocalThreadId(selectedThreadId) &&
     (selectedThreadMessagesLoading ||
       messagesFetchedForThreadId !== selectedThreadId) &&
-    !hasSelectedThreadMessageCache,
+    !hasSelectedThreadMessageCache &&
+    !(messagesFetchedForThreadId === selectedThreadId && selectedThreadMessagesFromDb.length),
   );
 
   useEffect(() => {
@@ -3766,6 +3767,7 @@ export function InboxSplitView({
             Boolean(systemDraftUneditedByThread[selectedThreadId])
           }
           canSend={
+            !selectedThreadMessagesLoading &&
             Boolean(selectedThreadId) &&
             (!isLocalThreadId(selectedThreadId) ||
               (Boolean(newTicketMailboxId) && Boolean(newTicketSubject.trim())))

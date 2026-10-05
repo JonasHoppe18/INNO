@@ -5,6 +5,7 @@ import { getMessageTimestamp } from "@/components/inbox/inbox-utils";
 import { reportClientEvent } from "@/lib/client-events";
 import { resolveClientInboxScope } from "@/lib/client/resolve-inbox-scope";
 import { scopedReadCache } from "@/lib/client/scoped-read-cache";
+import { useThreadDetailRead } from "@/hooks/useThreadDetailRead";
 import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 
 const EMPTY_LIST = [];
@@ -257,6 +258,7 @@ export function useThreadMessages(threadId, options = {}) {
   const supabase = useClerkSupabase();
   const { getToken, orgId } = useAuth();
   const { user } = useUser();
+  const { ready: detailReady, readDetail } = useThreadDetailRead();
 
   const seeded = useMemo(() => {
     if (!threadId) return [];
@@ -282,7 +284,7 @@ export function useThreadMessages(threadId, options = {}) {
   }, [threadId]);
 
   const fetchMessages = useCallback(async () => {
-    if (!supabase || !threadId) return;
+    if (!supabase || !threadId || !detailReady) return;
     const requestThreadId = threadId;
     const requestToken = fetchTokenRef.current + 1;
     fetchTokenRef.current = requestToken;
@@ -301,14 +303,18 @@ export function useThreadMessages(threadId, options = {}) {
       // Prefer server-side scoped fetch for thread bodies.
       // This avoids client-side scope/RLS mismatches on older rows.
       try {
-        const response = await fetch(`/api/inbox/threads/${threadId}/detail`, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-          signal: abortController.signal,
-        });
-        if (response.ok) {
-          const payload = await response.json().catch(() => null);
+        // Show message bodies while fresh drafts/actions/attachments finish.
+        const fullRead = readDetail(threadId);
+        let fullApplied = false;
+        readDetail(threadId, true).then((payload) => {
+          if (isStale() || fullApplied) return;
+          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+          setData(rows);
+          setFetchedThreadId(requestThreadId);
+        }).catch(() => {});
+        const payload = await fullRead;
+        fullApplied = true;
+        if (payload) {
           if (isStale()) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
@@ -479,7 +485,7 @@ export function useThreadMessages(threadId, options = {}) {
       if (isStale()) return;
       setLoading(false);
     }
-  }, [getToken, orgId, supabase, threadId, user]);
+  }, [getToken, orgId, supabase, threadId, user, detailReady, readDetail]);
 
   useEffect(() => {
     if (!enabled) return;

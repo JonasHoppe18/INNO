@@ -36,11 +36,11 @@ vi.mock("@supabase/supabase-js", () => ({
   }}),
 }));
 afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();});
-async function run({proposal=false,saved=null,authorized=true}={}){
+async function run({proposal=false,saved=null,authorized=true,messagesOnly=false}={}){
   vi.resetModules();fixture.calls=[];Object.assign(fixture,{proposal,saved,authorized});
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","https://example.supabase.co");vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","test-key");
   vi.useFakeTimers();const {GET}=await import("../threads/[threadId]/detail/route.js");
-  const start=Date.now();const pending=GET(null,{params:{threadId:"thread-a"}});await vi.runAllTimersAsync();
+  const start=Date.now();const pending=GET(messagesOnly ? new Request("https://app.test/api/inbox/threads/thread-a/detail?view=messages") : null,{params:{threadId:"thread-a"}});await vi.runAllTimersAsync();
   const response=await pending;return {status:response.status,payload:await response.json(),duration:Date.now()-start};
 }
 describe("thread detail read scheduling",()=>{
@@ -50,7 +50,28 @@ describe("thread detail read scheduling",()=>{
     expect(result.payload.draft.draft.rendered_body_text).toBe("Generated reply");
     expect(result.duration).toBe(60);
     expect(fixture.calls.find(c=>c.table==="mail_threads").filters).toContainEqual(["workspace_id","workspace-a"]);
-    expect(fixture.calls.find(c=>c.table==="mail_messages").filters).toContainEqual(["mailbox_id","mail-a"]);
+    expect(fixture.calls.find(c=>c.table==="mail_messages"&&c.fields.includes("provider_message_id")).filters).toContainEqual(["mailbox_id","mail-a"]);
+  });
+  it("returns only authorized messages before draft and attachment work",async()=>{
+    const result=await run({messagesOnly:true});
+    expect(result.duration).toBe(40);
+    expect(Object.keys(result.payload)).toEqual(["messages"]);
+    expect(fixture.calls.map(c=>c.table)).toEqual(["mail_threads","mail_messages"]);
+    expect(fixture.calls[1].filters).toContainEqual(["mailbox_id","mail-a"]);
+    const denied=await run({messagesOnly:true,authorized:false});
+    expect(denied.status).toBe(404);expect(fixture.calls.map(c=>c.table)).toEqual(["mail_threads"]);
+  });
+  it("shares pending thread/body reads between the early and complete response",async()=>{
+    vi.resetModules();fixture.calls=[];Object.assign(fixture,{proposal:false,saved:null,authorized:true});
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","https://example.supabase.co");vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","test-key");vi.useFakeTimers();
+    const {GET}=await import("../threads/[threadId]/detail/route.js");
+    const context={params:{threadId:"thread-a"}};
+    const full=GET(null,context);
+    const early=GET(new Request("https://app.test/api/inbox/threads/thread-a/detail?view=messages"),context);
+    await vi.runAllTimersAsync();
+    expect((await full).status).toBe(200);expect((await early).status).toBe(200);
+    expect(fixture.calls.filter(c=>c.table==="mail_threads")).toHaveLength(1);
+    expect(fixture.calls.filter(c=>c.table==="mail_messages"&&c.fields.includes("provider_message_id"))).toHaveLength(1);
   });
   it("does not use an AI reply for a pending action proposal",async()=>{
     const result=await run({proposal:true});expect(result.payload.draft.proposal_only).toBe(true);

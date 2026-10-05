@@ -462,8 +462,7 @@ export function useComposerState({
     };
     const timerId = setTimeout(() => {
       if (
-        selectedThreadMessagesLoading &&
-        messagesFetchedForThreadId !== selectedThreadId
+        selectedThreadMessagesLoading
       )
         return;
       if (
