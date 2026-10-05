@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GET as members } from "../members/route";
 import { GET as testMode } from "../test-mode/route";
@@ -28,7 +28,7 @@ export async function GET(request) {
   // Existing handlers keep their own authorization, defaults, and error handling.
   const entries = await Promise.all(Object.entries(resources).map(async ([path, handler]) => {
     try {
-      const response = await handler(new Request(new URL(path, request.url), {
+      const response = await handler(new NextRequest(new URL(path, request.url), {
         headers: request.headers,
       }));
       return [path, { ok: response.ok, status: response.status, payload: await response.json() }];

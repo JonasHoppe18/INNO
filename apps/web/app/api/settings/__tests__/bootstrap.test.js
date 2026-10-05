@@ -4,7 +4,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: async () => ({ userId: state.user
 const handler = async (request) => {
   state.calls.push({ path: new URL(request.url).pathname, authorization: request.headers.get("authorization") });
   await new Promise(resolve => { state.release.push(resolve); });
-  const path = new URL(request.url).pathname;
+  const path = request.nextUrl.pathname;
   if (path.endsWith("email-routing")) throw new Error("Unavailable");
   return Response.json({ path }, { status: path.endsWith("email-blocklist") ? 403 : 200 });
 };
