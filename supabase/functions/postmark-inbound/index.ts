@@ -934,6 +934,7 @@ async function createPendingForwardAction(options: {
   if (existing?.id) return;
 
   const payload = {
+    recipients: [options.targetEmail],
     target_email: options.targetEmail,
     subject: options.subject || "",
     original_message_id: options.messageDbId,
@@ -981,6 +982,7 @@ async function runAutoForwardAction(options: {
   const actionKey = buildForwardActionKey(options.messageDbId, options.targetEmail);
   const nowIso = new Date().toISOString();
   const actionPayload = {
+    recipients: [options.targetEmail],
     target_email: options.targetEmail,
     subject: options.subject || "",
     original_message_id: options.messageDbId,
