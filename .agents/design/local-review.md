@@ -1,5 +1,7 @@
 # Lokalt designreview
 
+Aktuel status den 5. oktober 2026: kortvarianten er valgt og push er godkendt. Fuld produktionsbuild af kortvarianten er bestået. Tidligere afsnit nedenfor beskriver historiske gennemløb og begrænsninger på daværende tidspunkt.
+
 Branch: codex/sona-design-local-1002b. Dette gennemløb fortsætter fra 951b9548 i worktreet sona-design-local-1002b. Ingen push eller ny PR.
 
 ## Ændringer
@@ -80,3 +82,16 @@ Lint af alle ændrede JSX-filer og separat tsc --noEmit --incremental false er b
 Brugeren har bedt om at pushe den nuværende version først og derefter prøve kort med luft lokalt. Snapshot-listen prioriterer emne, dato, afsender og kundepreview; 76 px rækkehøjde og bredde clamp(16rem, 18vw, 21rem). Ingen avatarer eller ventetidslabels.
 
 Lint, tre preview-tests og separat TypeScript-check er bestået før snapshot. De tilføjede preview-kolonner er kontrolleret mod dev med en forespørgsel, som returnerede nul rækker. Ingen kundedata blev udskrevet. Preview-hentning bruger eksisterende workspace-scope og kun det virtuelle listevindue. Fuld produktionsbuild af den seneste revision mangler fortsat. PR80-filerne er ikke ændret. Ingen PR, merge eller deploy er godkendt.
+
+## Valgt kortvariant og designguide, 5. oktober 2026
+
+Ticketlisten bruger nu hvide kort på samme varme conversation-baggrund som samtalen, med 4 px mellemrum, svag kant og ingen skygge. Rækkehøjde 76 px, stride 80 px. Sidste virtuelle spacer udelader det afsluttende mellemrum. Brugerens lokale screenshots og review ligger til grund for valget. Der er ikke uploadet mails eller billeder.
+
+Design.md er omskrevet til den valgte reference, design-system.md indeholder regler til nye sider, og README peger på guiden. Den gamle sammenhængende liste er pushet som snapshot b46e9ced. Kortvarianten er efterfølgende godkendt til push på samme designbranch. PR, merge og deploy er fortsat separate skridt.
+
+- Fuld npm --workspace apps/web run build: bestået, inklusive lint/typecheck og 161 statiske sider. De eksisterende dynamiske-import-warnings fra MJML/cosmiconfig er stadig til stede.
+- Tre preview-tests: bestået før snapshot; preview-udvælgelsen er uændret i kortvarianten.
+- git diff --check: bestået.
+- Alle sider og samtlige legacy-overrides er ikke gennemgået visuelt på denne revision. PR80-filerne og 200 % zoom kræver fortsat afstemning/kontrol.
+
+Ingen mails sendt, actions eksekveret eller database-/V2-logik ændret.

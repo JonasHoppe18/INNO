@@ -23,7 +23,8 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 77; // 76px row plus its separator.
+const TICKET_ROW_GAP_PX = 4;
+const VIRTUAL_ROW_HEIGHT_PX = 76 + TICKET_ROW_GAP_PX;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 
 export function TicketListToolbar({
@@ -396,7 +397,7 @@ export function TicketList({
   const previews = useMemo(() => customerPreviewsByThread(previewMessages, mailboxEmails, isInternalSender), [previewMessages, mailboxEmails, isInternalSender]);
 
   return (
-    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-background lg:border-l lg:border-border/90 lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none ${className}`}>
+    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-conversation lg:border-l lg:border-border/90 lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none ${className}`}>
       <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background lg:hidden">
         <TicketListToolbar
           filters={filters}
@@ -409,7 +410,7 @@ export function TicketList({
         onScroll={updateVirtualViewport}
       >
         {renderedThreads.length ? (
-          <div className="divide-y divide-border/50">
+          <div className="p-[4px]">
             {virtualWindow.before ? (
               <div style={{ height: virtualWindow.before }} aria-hidden="true" />
             ) : null}
@@ -440,7 +441,7 @@ export function TicketList({
               // small quiet text-buttons instead of relying on selection.
               const isApproveCloseRow = approveCloseThreadIds.has(String(thread.id));
               return (
-                <div key={thread.id}>
+                <div key={thread.id} className="mb-[4px] last:mb-0">
                   {groupHeaderLabel ? (
                     <div className="px-3.5 pb-1 pt-2.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                       {groupHeaderLabel}
@@ -492,7 +493,7 @@ export function TicketList({
               );
             })}
             {virtualWindow.after ? (
-              <div style={{ height: virtualWindow.after }} aria-hidden="true" />
+              <div style={{ height: Math.max(0, virtualWindow.after - TICKET_ROW_GAP_PX) }} aria-hidden="true" />
             ) : null}
           </div>
         ) : isNeedsAttentionRoute && !hasActiveListFilters ? (

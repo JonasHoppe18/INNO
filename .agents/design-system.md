@@ -1,6 +1,6 @@
 # UI-designsystem
 
-Denne branch indeholder et lokalt designforsøg, som ikke er godkendt til merge. Retningen og kilderne står i [design.md](design.md). Arbejdet bevarer Sonas eksisterende layout og afprøver fælles farver og komponentregler.
+Dette dokument er implementeringsreglerne for Sonas valgte design. Læs [design.md](design.md) for retning og fælles mønstre. Brugeren har valgt kortvarianten og godkendt push den 5. oktober 2026. Brug reglerne til nye sider og komponenter på designbranchen; PR og merge er ikke godkendt.
 
 Kilder til implementerede værdier på branchen er `apps/web/app/globals.css`, `apps/web/tailwind.config.ts` og `apps/web/components/ui/`. Dokumentet beskriver denne branch, ikke den nuværende prod-UI.
 
@@ -19,7 +19,7 @@ Fonten er Inter, samme familie som Shopifys publicerede Polaris-tokens. Den tidl
 | --- | --- | --- | --- |
 | Navigation, controls, tabeller | `text-sm` | 12 / 18 px | 450; labels 550 |
 | Metadata og hjælpetekst | `text-xs` | 12 / 16 px | 450 |
-| Længere tekst | `text-base` | 14 / 20 px | 450 |
+| Længere læsetekst | `text-base` | 0.875rem / 1.25rem; 12.6 / 18 px på kompakt desktop | 450 |
 | Samtalebeskeder og composer-tekst | `text-sm leading-[1.5]` | 12 / 18 px | 450 |
 | Redigerbare felter | `text-input md:text-sm` | 16 / 20 px mobil; 12 / 18 px desktop | 450 |
 | Sidetitel | `text-page-heading` | 16 / 24 px | 650 |
@@ -69,9 +69,9 @@ Labels skal altid følge farven. Godkendt, godkendt i testtilstand og udført er
 
 ## Controls
 
-- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: 28 px høj, 12 px tekst med arvet Inter-font, almindelig vægt 450 og foreground-tekst. Controls er flade uden kant, baggrund eller skygge; hover bruger muted og keyboard-fokus bruger den fælles ring. Ikoner er 14 px med stroke 1.75; radius er 6 px. Ticketnummeret i headeren bruger samme Inter og almindelige vægt med tabular nums, ikke monospace. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
+- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: h-7 høj (28 px ved normal tæthed, 25.2 px på desktop), 12 px tekst med arvet Inter-font, almindelig vægt 450 og foreground-tekst. Controls er flade uden kant, baggrund eller skygge; hover bruger muted og keyboard-fokus bruger den fælles ring. Ikoner bruger size-3.5 (14 px ved normal tæthed, 12.6 px på desktop) med stroke 1.75; controls bruger rounded-md. Ticketnummeret i headeren bruger samme Inter og almindelige vægt med tabular nums, ikke monospace. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
 - Ticketlisten, dens toolbar og loading-skeleton deler --ticket-list-width: clamp(16rem, 18vw, 21rem), så bredderne flugter.
-- Ticketlistens afsender, emne og metadata bruger 12 px. Søgning på desktop og sortering bruger også 12 px; mobilens søgefelt beholder 16 px for at undgå zoom. Trelinje-layout uden avatar: emne og dato øverst, afsender i normal vægt på anden linje, kundens seneste besked i grå med status og ticketnummer til højre nederst. Preview er ren tekst, afkortet til én linje, og udelukker egne svar, interne afsendere og kladder. Beskedtekst hentes kun for det virtuelle vindue med eksisterende workspace-scope. Emnet bruger vægt 550, ulæst emne 650; afsender, preview og metadata bruger vægt 450. Ticketnumre bruger Inter med tabular nums. Fast rækkehøjde 76 px, px-4 pt-3 pb-2 og gap-1. Metadata har mt-auto og ligger i bunden med padding. Ventetidslabels som 37d vises ikke; køernes sorteringslogik bevares. Virtualiseringens estimat er 77 px inklusive skillelinjen. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
+- Ticketlistens afsender, emne og metadata bruger 12 px. Søgning på desktop og sortering bruger også 12 px; mobilens søgefelt beholder 16 px for at undgå zoom. Trelinje-layout uden avatar: emne og dato øverst, afsender i normal vægt på anden linje, kundens seneste besked i grå med status og ticketnummer til højre nederst. Preview er ren tekst, afkortet til én linje, og udelukker egne svar, interne afsendere og kladder. Beskedtekst hentes kun for det virtuelle vindue med eksisterende workspace-scope. Emnet bruger vægt 550, ulæst emne 650; afsender, preview og metadata bruger vægt 450. Ticketnumre bruger Inter med tabular nums. Fast rækkehøjde 76 px, px-4 pt-3 pb-2 og gap-1. Metadata har mt-auto og ligger i bunden med padding. Ventetidslabels som 37d vises ikke; køernes sorteringslogik bevares. Valgt kortvariant: 4 px mellem rækkerne, bg-card, svag kant og ingen skygge, på bg-conversation. Virtualiseringens estimat er 80 px inklusive mellemrum; sidste spacer trækker sidste mellemrum fra. Snapshot b46e9ced bevarer den tidligere sammenhængende liste som reference. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
 - Composer har centreret max-bredde på 56 rem. Tomt svar har 140 px minimumshøjde ved normal tæthed, 126 px i kompakt desktop-inbox; højden vokser med teksten. Composerens skygge er 4/16 px ved 4 % og 1/3 px ved 3 %. Sekundære controls og beskedhandlinger bruger regular vægt.
 - Standardknapper og felter deler h-9; kompakte knapper og inbox-toolbar deler h-7. Navigation bruger fælles sidebar-components. Brug størrelsesvarianter frem for lokale højde- og tekst-overrides.
 - `Button` ejer farver, hover, fokus og disabled. Brug variants; `className` bruges til lokal størrelse og placering. Den runde send-knap beholder sin størrelse og form, men arver primary.
@@ -87,7 +87,7 @@ Behold eksisterende kurve `cubic-bezier(0.23, 1, 0.32, 1)` og korte UI-overgange
 
 Lokal review foregår i appen og på `/design-lab`. Design-lab er kun tilgængelig under `next dev`, bruger fiktive data og har ingen backend-write-handlinger. Behold normal authentication.
 
-Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må ikke uploades til offentlige hosts. Ingen push eller PR før brugeren har godkendt forsøget.
+Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må ikke uploades til offentlige hosts. Push af den valgte designbranch er godkendt. Opret eller merge ikke PR uden separat instruks.
 
 ## Sidekontrol før review
 
@@ -95,3 +95,16 @@ Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må i
 - Kontroller light/dark, keyboard-fokus, dropdowns og fejltekst i faktisk renderede controls.
 - På mobil har sider uden inboxens SiteHeader en fælles navigationstrigger. Felter bruger text-input; brede tabeller får lokal overflow-x-auto.
 - Bevar desktop-layoutet og undgå horisontal overflow på hele siden. Se [local-review.md](design/local-review.md) for gennemførte checks og begrænsninger.
+
+## Nye sider
+
+1. Genbrug DashboardPageShell og den eksisterende dashboard-navigation. Tilføj ikke en ny font eller et parallelt sæt tokens.
+2. Brug text-page-heading til sidetitlen, text-section-heading til sektioner og text-sm til almindelig tekst. Behold større nøgletal, når deres rolle kræver det.
+3. Brug Button, Input, Textarea, Select, Tabs, Table og Card fra components/ui. Vælg default, outline eller ghost efter handlingens rolle.
+4. Brug bg-background på almindelige sider, bg-card på kort og bg-conversation på inboxens arbejdsflader. Tætte opgavelister kan genbruge ticketkort-mønstret; tabeller beholder tabel-layoutet.
+5. Standard-controls deler h-9: 36 px normalt og 32.4 px på kompakt desktop. Kompakte controls deler h-7: 28 px normalt og 25.2 px på desktop. Størrelsen må følge rollen, men samme rolle skal have samme størrelse på tværs af sider.
+6. Labels og status skal være læsbare uden kun at stole på farve. Behold keyboard-fokus og fejlbeskeder. Ingen lokale farve- eller tekst-overrides uden en dokumenteret grund.
+7. Kontroller light/dark, mobilnavigation, loading, tomt indhold og lange labels. Skeleton skal følge det endelige layouts bredde og placering. Undgå en ekstra synlig loading-label, når skeleton allerede kommunikerer indlæsning.
+8. Ved ændring af rækkehøjde eller afstand i virtualiserede lister: opdater både rendering og spacer-beregning. Inboxkort er 76 px med 4 px mellemrum, altså 80 px stride.
+
+UI må genbruge eksisterende workspace-scopede læseflows til nødvendig visning som previews. Designarbejde ændrer ikke afsendelse, statuslogik, actions eller automation.

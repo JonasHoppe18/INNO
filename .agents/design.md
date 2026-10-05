@@ -1,67 +1,64 @@
-# Sona — designretning på den lokale branch
+# Sona design
 
-Retningen til lokal review er hvid baggrund, svag violet selection, neutral toolbar og Inter. Brugeren har valgt den hvide inbox-retning og den 5. oktober 2026 godkendt push af den nuværende liste som et snapshot. Kortvarianten afprøves derefter lokalt. PR og merge er ikke godkendt.
+Dette er den valgte designretning til nye sider og ændringer i Sona. Brugeren har valgt kortvarianten af ticketlisten og godkendt push den 5. oktober 2026. Designet ligger på `codex/sona-design-local-1002b`; PR og merge er separate skridt.
 
-Implementationen ligger i worktreet `.worktrees/sona-design-local-1002b` på `codex/sona-design-local-1002b`. Den ældre `sona-design-1002a` er det oprindelige forslag.
+Læs [design-system.md](design-system.md) for komponentregler, mål og kontrol af nye sider. Implementerede tokens i `apps/web/app/globals.css`, `apps/web/tailwind.config.ts` og `apps/web/components/ui/` er kilden til værdierne.
 
-## Regler for nye og ændrede sider
+## Udtryk
 
-Læs [design-system.md](design-system.md) før UI-arbejde. Værdierne i globals.css og tailwind.config.ts er kilden; komponenterne i components/ui ejer control-styling.
+Sona skal føles rolig, kompakt og let at scanne. Navigation og almindelige sider er hvide. Samtale og ticketliste bruger en meget svag varm grå arbejdsflade med hvide kort. Violet markerer valg, primære handlinger og AI. Status har egne semantiske farver og tydelige labels.
 
-- Bevar eksisterende desktop-layout, panelbredder og workflows.
-- Brug semantiske tokens i begge temaer. Tilføj ikke lokale grå, blå eller lilla paletter.
-- Brug samme tekstrolle til samme formål på alle sider.
-- Primær handling bruger Button default. Sekundær handling bruger outline eller ghost.
-- Neutral hover må ikke ligne lilla selection.
-- Behold synligt keyboard-fokus, labels og fejltekst. Fjern ikke fokus på et felt uden at dets gruppe viser fokus.
-- Overlays skal arve tema og typografi fra appen.
-- Mobilnavigation skal være tilgængelig. Brede tabeller må scrolles i deres egen beholder; felter og handlinger må ikke klippes.
-- Ingen backend-, status-, automation- eller V2-ændringer som del af designarbejdet.
+Bevar eksisterende workflows og panelrækkefølge. Et dashboard må have mere luft end en ticketliste; font, farver og controls følger samme regler.
 
 ## Palette
 
-| Rolle | Light | Dark |
+| Rolle | Token | Light | Dark |
+| --- | --- | --- | --- |
+| Canvas | background | #FFFFFF | #15151A |
+| Sidebar | sidebar | #FFFFFF | #18181E |
+| Arbejdsflade i inbox | conversation | #F8F7F5 | Følger background |
+| Kort og overlays | card / popover | #FFFFFF | #1E1E25 |
+| Tekst | foreground | #25252D | #F4F4F5 |
+| Primær handling og fokus | primary / ring | #6C4DE6 | #B5A3FF |
+| Selection | accent | #EEE9FF | #302841 |
+| Selection-tekst | accent-foreground | #5838BC | #D8CCFF |
+| Neutral hover | muted | #F5F5F5 | #282830 |
+| Skillelinjer | border | #E5E5E5 | #393942 |
+
+Brug tokens frem for lokale hex-værdier eller gray/blue/violet-paletter. Status bruger success, warning, info og danger med foreground/border. Hover og selection skal kunne skelnes.
+
+## Typografi og tæthed
+
+Inter 4.1 indlæses lokalt med normal og italic. Almindelig vægt er 450, medium 550 og semibold 650.
+
+| Rolle | Klasse | Størrelse / linjehøjde |
 | --- | --- | --- |
-| Canvas og sidebar | #FFFFFF | #15151A / #18181E |
-| Card og popover | #FFFFFF | #1E1E25 |
-| Foreground | #25252D | #F4F4F5 |
-| Primary og fokus | #6C4DE6 | #B5A3FF |
-| Selection | #EEE9FF | #302841 |
-| Selection-tekst | #5838BC | #D8CCFF |
-| Neutral hover | #F5F5F5 | #282830 |
-| Skillelinjer | #E5E5E5 | #393942 |
-
-Status bruger success, warning, info og danger med foreground/border. Behold labels. Inboxens status-trigger er neutral ligesom assignee, More og View details; øvrige status-badges bruger de semantiske varianter.
-
-## Typografi
-
-Inter 4.1 indlæses lokalt, inklusive italic. Root-rem er normalt 16 px. Alle dashboard-sider og design-lab bruger samme 90 % desktop-tæthed fra 1024 px. UI-tekst og metadata holdes på faste 12 px. Mobil og marketing beholder normal tæthed.
-
-| Rolle | Token / klasse | Desktop |
-| --- | --- | --- |
-| UI, tabeller og navigation | text-sm | 12 / 18 px |
+| Almindelig UI, tabeller, navigation og controls | text-sm | 12 / 18 px |
 | Metadata og hjælpetekst | text-xs | 12 / 16 px |
-| Længere læsetekst | text-base | 14 / 20 px |
+| Samtale og composer | text-sm leading-[1.5] | 12 / 18 px |
 | Sidetitel | text-page-heading | 16 / 24 px |
 | Sektionstitel | text-section-heading | 14 / 20 px |
-| Redigerbare felter | text-input md:text-sm | 16 px mobil, 12 px desktop |
+| Redigerbare felter | text-input md:text-sm | 16 / 20 px mobil; 12 / 18 px desktop |
 
-Almindelig dashboard-tekst bruger vægt 450; medium 550 og semibold 650. Dashboardets almindelige UI-tekst, inklusive inboxens toolbar, ticketliste, samtalebeskeder og composer, bruger 12 px, arvet Inter-font og almindelig vægt 450. Teksttokens bruger faste px, så kompakt spacing ikke reducerer teksten yderligere. Svar-editoren følger samtalebeskederne med linjehøjde 1.5.
+Nøgletal må bruge større tekstroller. text-base er en undtagelse til længere læsetekst: 0.875rem / 1.25rem, altså 12.6 / 18 px ved kompakt desktop og 14 / 20 px ved normal tæthed. Brug text-sm til almindelig UI-copy.
 
-Skalaen er inspireret af [Shopifys publicerede designregler](https://shopify.dev/docs/apps/design/visual-design#typography) og [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts). Den er ikke en fuld kopi af Shopifys nyeste admin. Sonas 16 px sidetitler er en lokal beslutning.
+Fra 1024 px deler dashboard og design-lab en root-størrelse på 90 % og --app-density: 0.9. Det skalerer rem-baseret spacing, navigation og controls. UI-tekst og headings bruger faste px og bliver ikke mindre af skaleringen. Mobil og marketing beholder normal root-størrelse.
 
-## Begrundede undtagelser
+## Valgte mønstre
 
-- Tredjepartslogoer og chart-serier beholder deres egne farver.
-- Tagfarver, signaturer og formateret mail/knowledge-indhold er brugerindhold.
-- Light/dark-miniaturer i theme-picker viser begge temaer uafhængigt af aktivt tema.
-- Marketing beholder sin eksisterende skala.
-- PR80 ændrer KnowledgeCategoriesClient og SonaActivityContent. Deres lokale overrides afventer afklaring af overlap; resten af designarbejdet er isoleret fra PR80.
+- Nye almindelige sider bruger DashboardPageShell, en sidetitel, evt. hjælpetekst og handlinger i headeren. Brug eksisterende Card-, Table-, Tabs- og form-komponenter efter indholdets rolle.
+- Standardknapper og felter følger shared components. Kompakte controls bruger den kompakte variant. Primær handling er Button default; sekundær er outline eller ghost.
+- Settings markerer det valgte menupunkt med accentbaggrund og tekst, uden lodret streg.
+- Inbox-toolbar er flad: status, assignee, More og View details deler neutral styling og synligt fokus.
+- Ticketlisten har hvide kort på conversation-baggrund, 4 px luft mellem kortene, svag kant og ingen skygge. Valgt kort har accentbaggrund og svag primary-kant. Ingen avatarer eller ventetidslabels som 37d.
+- Ticketkort prioriterer emne og dato øverst, afsender på anden linje og kundens seneste besked i grå nederst med status og ticketnummer til højre. Alt er 12 px. Emne er 550, ulæst emne 650; øvrig tekst 450.
+- Composer er centreret, lidt smallere end samtaleområdet og lavere, når den er tom. Den vokser med teksten.
+- Overlays arver font og tema. Behold keyboard-fokus, labels, fejltekst, disabled- og loading-states. Brede tabeller scrolles i deres egen beholder på mobil.
 
-Den oprindelige [SVG](design/sona-direction.svg) viser en tidligere varm grå retning og er historisk reference. Den aktuelle lokale app er reviewgrundlaget.
+## Afgrænsning og reference
 
-## Review og evidens
+Logoer, chart-serier, brugerens tagfarver, signaturer og formateret indhold kan beholde deres egne farver. Theme-picker-miniaturer viser begge temaer. PR80-filerne KnowledgeCategoriesClient og SonaActivityContent har stadig lokale overrides, der afventer afstemning.
 
-Åbn [lokal inbox](http://localhost:3106/inbox) eller [design-lab](http://localhost:3106/design-lab). Design-lab findes kun under next dev og bruger fiktive data.
+Shopifys [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts) var reference for Inter og vægte; Sonas 12 px UI er et lokalt valg. Mail-opdelingen er valgt gennem review af brugerens Outlook-, Apple Mail- og konkurrent-screenshots. Den oprindelige [SVG](design/sona-direction.svg) er historik og beskriver ikke det færdige design.
 
-Se [local-review.md](design/local-review.md) for konkrete checks og begrænsninger. Kundenavne, mails og shop-data uploades ikke til offentlige hosts. Der oprettes først PR efter brugerens godkendelse.
+Se [local-review.md](design/local-review.md) for checks og begrænsninger. Implementationen ligger i `.worktrees/sona-design-local-1002b`; `.worktrees/sona-design-1002a` er det oprindelige forslag. [Localhost](http://localhost:3106/inbox) og den dev-only [design-lab](http://localhost:3106/design-lab) er reviewflader. Kunde-mails, PII og shop-data uploades ikke til offentlige hosts.

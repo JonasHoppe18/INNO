@@ -132,13 +132,13 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex h-[76px] min-h-[76px] w-full flex-col gap-1 rounded-none px-4 pb-2 pt-3 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex h-[76px] min-h-[76px] w-full flex-col gap-1 rounded-md border border-border/60 bg-card px-4 pb-2 pt-3 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
         // active ticket is the current location, so it alone gets the calm
         // accent surface.
-        isActive && "bg-accent hover:bg-accent",
+        isActive && "border-primary/20 bg-accent hover:bg-accent",
         isExiting && "pointer-events-none"
       )}
       style={{
