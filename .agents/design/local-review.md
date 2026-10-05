@@ -74,3 +74,9 @@ Dashboard, Settings, Customers, Analytics, Integrations, Knowledge og design-lab
 | Activity-badges blev strakt til hele rækkens højde | self-center | Almindelig badge-højde |
 
 Lint af alle ændrede JSX-filer og separat tsc --noEmit --incremental false er bestået. git diff --check er bestået. Den nye fælles tæthed er endnu ikke visuelt kontrolleret på alle sider, og tidligere mål i tabellen ovenfor er historiske. Produktionsbuild af den seneste revision mangler fortsat. PR80-filerne er stadig undtaget fra lokale overrides. Ingen push, PR eller deploy.
+
+## Snapshot før kortvarianten, 5. oktober 2026
+
+Brugeren har bedt om at pushe den nuværende version først og derefter prøve kort med luft lokalt. Snapshot-listen prioriterer emne, dato, afsender og kundepreview; 76 px rækkehøjde og bredde clamp(16rem, 18vw, 21rem). Ingen avatarer eller ventetidslabels.
+
+Lint, tre preview-tests og separat TypeScript-check er bestået før snapshot. De tilføjede preview-kolonner er kontrolleret mod dev med en forespørgsel, som returnerede nul rækker. Ingen kundedata blev udskrevet. Preview-hentning bruger eksisterende workspace-scope og kun det virtuelle listevindue. Fuld produktionsbuild af den seneste revision mangler fortsat. PR80-filerne er ikke ændret. Ingen PR, merge eller deploy er godkendt.

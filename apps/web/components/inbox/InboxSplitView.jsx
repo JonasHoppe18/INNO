@@ -2983,7 +2983,7 @@ export function InboxSplitView({
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
         <div className="flex h-full min-w-0 flex-1 items-center">
-          <div className="hidden h-10 shrink-0 items-center bg-background lg:flex lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:border-l lg:border-border/90">
+          <div className="hidden h-10 shrink-0 items-center bg-background lg:flex lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:border-l lg:border-border/90">
             <TicketListToolbar
               filters={filters}
               onFiltersChange={handleFiltersChange}
@@ -3685,6 +3685,8 @@ export function InboxSplitView({
         className={selectedThreadId ? "hidden lg:flex" : "flex"}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
+        mailboxEmails={mailboxEmails}
+        isInternalSender={isLikelyInternalSender}
         onSelectThread={handleSelectThreadInWorkspace}
         onPrefetchThread={handlePrefetchThread}
         filters={filters}

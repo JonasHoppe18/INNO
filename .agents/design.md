@@ -1,6 +1,6 @@
 # Sona — designretning på den lokale branch
 
-Retningen til lokal review er hvid baggrund, svag violet selection, neutral toolbar og Inter. Brugeren har valgt den hvide inbox-retning; det er ikke en godkendelse til push, PR eller merge.
+Retningen til lokal review er hvid baggrund, svag violet selection, neutral toolbar og Inter. Brugeren har valgt den hvide inbox-retning og den 5. oktober 2026 godkendt push af den nuværende liste som et snapshot. Kortvarianten afprøves derefter lokalt. PR og merge er ikke godkendt.
 
 Implementationen ligger i worktreet `.worktrees/sona-design-local-1002b` på `codex/sona-design-local-1002b`. Den ældre `sona-design-1002a` er det oprindelige forslag.
 

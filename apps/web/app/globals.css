@@ -293,6 +293,7 @@
    Marketing retains its existing type scale; dashboard portals inherit these
    variables from html through :has(), including Radix overlays in body. */
 html:has(.dashboard-theme), html:has(.design-typography) {
+  --ticket-list-width: clamp(16rem, 18vw, 21rem);
   --text-caption-size: 12px;
   --text-caption-leading: 16px;
   --text-ui-size: 12px;

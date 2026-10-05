@@ -10,6 +10,8 @@ import {
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 import { ArrowDownUp, Inbox, Search, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
+import { useThreadPreviewMessages } from "@/hooks/useInboxData";
+import { customerPreviewsByThread } from "@/components/inbox/message-preview";
 
 const SORT_OPTIONS = [
   { value: "unread_first", label: "Unread" },
@@ -21,7 +23,7 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
-const VIRTUAL_ROW_HEIGHT_PX = 68;
+const VIRTUAL_ROW_HEIGHT_PX = 77; // 76px row plus its separator.
 const VIRTUAL_OVERSCAN_ROWS = 6;
 
 export function TicketListToolbar({
@@ -35,7 +37,7 @@ export function TicketListToolbar({
       ?.label || "Newest";
 
   return (
-    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-3 ${className}`}>
+    <div className={`flex h-full w-full min-w-0 items-center gap-1 px-4 ${className}`}>
       <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
         <Input
@@ -97,6 +99,8 @@ export function TicketList({
   className = "",
   ticketStateByThread,
   customerByThread,
+  mailboxEmails,
+  isInternalSender,
   onSelectThread,
   filters,
   onFiltersChange,
@@ -383,8 +387,16 @@ export function TicketList({
     };
   }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
+  const previewThreadIds = virtualWindow.rows.filter(({ thread }) => !thread.is_local && /^[a-f0-9-]{36}$/i.test(String(thread.id))).map(({ thread }) => thread.id);
+  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
+    enabled: previewThreadIds.length > 0,
+    includeBodies: true,
+    refreshKey: virtualWindow.rows.map(({ thread }) => thread.last_message_at || "").join("|"),
+  });
+  const previews = useMemo(() => customerPreviewsByThread(previewMessages, mailboxEmails, isInternalSender), [previewMessages, mailboxEmails, isInternalSender]);
+
   return (
-    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-background lg:border-l lg:border-border/90 lg:w-[clamp(14.5rem,16vw,19rem)] lg:min-w-[clamp(14.5rem,16vw,19rem)] lg:max-w-[clamp(14.5rem,16vw,19rem)] lg:flex-none ${className}`}>
+    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-background lg:border-l lg:border-border/90 lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none ${className}`}>
       <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background lg:hidden">
         <TicketListToolbar
           filters={filters}
@@ -440,6 +452,7 @@ export function TicketList({
                       isActive={thread.id === selectedThreadId}
                       status={uiState?.status || "New"}
                       customerLabel={customer}
+                      previewText={previews[thread.id] || ""}
                       timestamp={timestamp}
                       unreadCount={unreadCount}
                       assignee={uiState?.assignee}

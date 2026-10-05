@@ -539,7 +539,7 @@ export function useThreadMessages(threadId, options = {}) {
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {
-  const { enabled = false } = options;
+  const { enabled = false, includeBodies = false, refreshKey = "" } = options;
   const supabase = useClerkSupabase();
   const { getToken } = useAuth();
   const { user } = useUser();
@@ -591,7 +591,8 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
         let request = supabase
           .from("mail_messages")
           .select(
-            "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at"
+            "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at" +
+              (includeBodies ? ", clean_body_text, body_text, body_html, snippet, is_draft" : "")
           )
           .in("thread_id", chunk)
           .order("received_at", { ascending: false, nullsLast: true })
@@ -613,12 +614,12 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     } finally {
       if (!isStale()) setLoading(false);
     }
-  }, [getToken, supabase, threadKey, user]);
+  }, [getToken, includeBodies, supabase, threadKey, user]);
 
   useEffect(() => {
     if (!enabled) return;
     fetchMessages();
-  }, [enabled, fetchMessages, threadKey]);
+  }, [enabled, fetchMessages, refreshKey, threadKey]);
 
   useEffect(() => {
     if (normalizedThreadIds.length) return;
