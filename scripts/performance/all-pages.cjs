@@ -28,7 +28,7 @@ let browser;
   if((req.url().startsWith(base+'/api/')||req.url().includes('zxaoycxzdjrbnzvbullk.supabase.co/rest/'))&&!['GET','HEAD','OPTIONS'].includes(req.method())){blockedWrites++;await route.fulfill({status:409,contentType:'application/json',body:'{"error":"Writes disabled during performance probe"}'});}
   else await route.continue();
  });
- const results=(process.env.PERF_ROUTES||process.env.PERF_EXTRA_ROUTES)&&fs.existsSync(output)?JSON.parse(fs.readFileSync(output)).filter(row=>!routes.includes(row.path)):[];
+ const results=(process.env.PERF_ROUTES||process.env.PERF_EXTRA_ROUTES)&&fs.existsSync(output)?JSON.parse(fs.readFileSync(output)).filter(row=>!routes.map(sanitizePath).includes(row.path)):[];
  for(const path of routes){
   const page=await context.newPage();
   const origin=path==='/integrations'?'/dashboard':'/integrations';

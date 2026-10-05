@@ -1,0 +1,2771 @@
+{
+  "base": "9621dfc7",
+  "candidate": "295d12de; settings and persona rechecked at 5255cba9",
+  "date": "2026-10-05",
+  "before": [
+    {
+      "path": "/analytics",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 698,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 563,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 492,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/automation",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 796,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 514,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 513,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/customers",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1317,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 1158,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 1113,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/dashboard",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1167,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 468,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 303,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/documents",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 222,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/eval",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 362,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 307,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 524,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/feedback",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 489,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 403,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 292,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 232,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 233,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 217,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1186,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 992,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 626,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox/tickets",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 421,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 275,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 268,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations/zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 441,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 376,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 639,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 724,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 623,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 386,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge-hub",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 412,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 383,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 394,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/all",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 331,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 305,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 300,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/internal-rules",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 311,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 289,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 296,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/new",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 353,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 334,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 302,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/simulate",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 373,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 388,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 640,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 255,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 241,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes/other",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 231,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/persona",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1044,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 968,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 972,
+          "reads": 13,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/playground",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 986,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 935,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 937,
+          "reads": 12,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/email",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 521,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 230,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 222,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/thank-you",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 285,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 232,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 220,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/tags",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 322,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 247,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 342,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/returns",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 846,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 609,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 631,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/shipping",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 340,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 315,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 305,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 708,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 623,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 628,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 733,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 569,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 532,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-mail",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 342,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 301,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 288,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-shopify",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 303,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 297,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 286,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-webshipper",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 298,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 315,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 312,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-gls",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 321,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 284,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 327,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 300,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 280,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/:productId",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 439,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 473,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 381,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "path": "/analytics",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 433,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 253,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 277,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/analytics",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/automation",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 966,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 551,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 495,
+          "reads": 7,
+          "pending": 0,
+          "finalPath": "/automation",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/customers",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1381,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 234,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 267,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/customers",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/dashboard",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 339,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 305,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 378,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/dashboard",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/documents",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 288,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 279,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 241,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/documents",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/eval",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1014,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 358,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 327,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/eval",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/feedback",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 670,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 553,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 336,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/feedback",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 245,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 300,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guides",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 762,
+          "reads": 16,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 408,
+          "reads": 6,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 462,
+          "reads": 6,
+          "pending": 0,
+          "finalPath": "/inbox",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/inbox/tickets",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 223,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 350,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 301,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/inbox/tickets",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 530,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 294,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 403,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/integrations",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/integrations/zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 537,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 375,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 424,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/integrations/zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 321,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 262,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 238,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge-hub",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 389,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 303,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 316,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/all",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 621,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 312,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 310,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/all",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/internal-rules",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 607,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 296,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 304,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/internal-rules",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/new",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/knowledge/new",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 631,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 333,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 298,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/simulate",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 255,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 271,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 219,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/knowledge/simulate",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 632,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 260,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 234,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/mailboxes",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/mailboxes/other",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 253,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 228,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 319,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/mailboxes/other",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/playground",
+      "disabledInProductionBuild": true,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 0,
+          "reads": 0,
+          "pending": 0,
+          "finalPath": "/playground",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/email",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 690,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 264,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 271,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/email",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings/csat/thank-you",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 582,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 247,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 256,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings/csat/thank-you",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/tags",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 542,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 226,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 547,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/tags",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/returns",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 950,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 708,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 593,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/returns",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/shipping",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 613,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 303,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 284,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/knowledge/shipping",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/general",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1439,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 625,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 646,
+          "reads": 4,
+          "pending": 0,
+          "finalPath": "/knowledge/general",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-mail",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 307,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 331,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-mail",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-shopify",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 329,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 726,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 283,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-shopify",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-webshipper",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 302,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 294,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 274,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-webshipper",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-gls",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 291,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 493,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 273,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-gls",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/guides/connect-zendesk",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 317,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 292,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 285,
+          "reads": 1,
+          "pending": 0,
+          "finalPath": "/guide/connect-zendesk",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/knowledge/product-questions/:productId",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 760,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 398,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 366,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/knowledge/product-questions/:productId",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/settings",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 1005,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 538,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 537,
+          "reads": 2,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    },
+    {
+      "path": "/persona",
+      "disabledInProductionBuild": false,
+      "samples": [
+        {
+          "round": 0,
+          "lastReadMs": 892,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 1,
+          "lastReadMs": 668,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        },
+        {
+          "round": 2,
+          "lastReadMs": 558,
+          "reads": 3,
+          "pending": 0,
+          "finalPath": "/settings",
+          "httpErrors": []
+        }
+      ]
+    }
+  ],
+  "navigation": [
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 1089,
+      "headingMs": 1089,
+      "dataMs": 1089,
+      "status": null,
+      "ttfbMs": 1038
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 402,
+      "headingMs": 402,
+      "dataMs": 402,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 55,
+      "headingMs": 55,
+      "dataMs": 352,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 59,
+      "headingMs": 59,
+      "dataMs": 638,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 344,
+      "headingMs": 659,
+      "dataMs": 659,
+      "status": null,
+      "ttfbMs": 335
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 31,
+      "headingMs": 31,
+      "dataMs": 341,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 0,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 29,
+      "headingMs": 29,
+      "dataMs": 399,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 273,
+      "headingMs": 325,
+      "dataMs": 325,
+      "status": null,
+      "ttfbMs": 232
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 18,
+      "headingMs": 18,
+      "dataMs": 18,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 318,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 20,
+      "headingMs": 20,
+      "dataMs": 412,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 686,
+      "headingMs": 686,
+      "dataMs": 686,
+      "status": null,
+      "ttfbMs": 621
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 389,
+      "headingMs": 389,
+      "dataMs": 389,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 56,
+      "headingMs": 56,
+      "dataMs": 353,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 49,
+      "headingMs": 49,
+      "dataMs": 596,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 451,
+      "headingMs": 451,
+      "dataMs": 451,
+      "status": null,
+      "ttfbMs": 420
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 414,
+      "headingMs": 414,
+      "dataMs": 414,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 49,
+      "headingMs": 49,
+      "dataMs": 346,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 45,
+      "headingMs": 45,
+      "dataMs": 603,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 345,
+      "headingMs": 661,
+      "dataMs": 661,
+      "status": null,
+      "ttfbMs": 332
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 21,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 28,
+      "headingMs": 28,
+      "dataMs": 358,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 28,
+      "headingMs": 28,
+      "dataMs": 448,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 236,
+      "headingMs": 301,
+      "dataMs": 301,
+      "status": null,
+      "ttfbMs": 222
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 332,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 490,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 1477,
+      "headingMs": 1477,
+      "dataMs": 1477,
+      "status": null,
+      "ttfbMs": 1443
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 401,
+      "headingMs": 401,
+      "dataMs": 401,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 53,
+      "headingMs": 53,
+      "dataMs": 359,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 50,
+      "headingMs": 50,
+      "dataMs": 639,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 509,
+      "headingMs": 509,
+      "dataMs": 509,
+      "status": null,
+      "ttfbMs": 475
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 418,
+      "headingMs": 418,
+      "dataMs": 418,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 65,
+      "headingMs": 65,
+      "dataMs": 373,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 45,
+      "headingMs": 45,
+      "dataMs": 1513,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 412,
+      "headingMs": 476,
+      "dataMs": 476,
+      "status": null,
+      "ttfbMs": 395
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 23,
+      "headingMs": 23,
+      "dataMs": 23,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 29,
+      "headingMs": 29,
+      "dataMs": 313,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 4,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 19,
+      "headingMs": 19,
+      "dataMs": 388,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 237,
+      "headingMs": 313,
+      "dataMs": 313,
+      "status": null,
+      "ttfbMs": 224
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 21,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "customers_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 307,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "after",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 21,
+      "headingMs": 21,
+      "dataMs": 397,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "dashboard_initial",
+      "feedbackMs": 663,
+      "headingMs": 663,
+      "dataMs": 663,
+      "status": null,
+      "ttfbMs": 630
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "dashboard_navigation",
+      "feedbackMs": 381,
+      "headingMs": 381,
+      "dataMs": 381,
+      "status": null,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "customers_navigation",
+      "feedbackMs": 41,
+      "headingMs": 41,
+      "dataMs": 318,
+      "status": 200,
+      "ttfbMs": null
+    },
+    {
+      "round": 5,
+      "version": "before",
+      "scenario": "analytics_navigation",
+      "feedbackMs": 181,
+      "headingMs": 181,
+      "dataMs": 701,
+      "status": 200,
+      "ttfbMs": null
+    }
+  ],
+  "inbox": [
+    {
+      "version": "before",
+      "scenario": "cold_click",
+      "samples": [
+        {
+          "dataMs": 831,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 799,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1506,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "scenario": "hover_prefetch",
+      "samples": [
+        {
+          "dataMs": 1468,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1436,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 1474,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "scenario": "queue_navigation",
+      "queueRscReads": 1,
+      "historyWorks": true,
+      "blockedWrites": 30
+    },
+    {
+      "version": "after",
+      "scenario": "cold_click",
+      "samples": [
+        {
+          "dataMs": 514,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 562,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 520,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "scenario": "hover_prefetch",
+      "samples": [
+        {
+          "dataMs": 664,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 733,
+          "status": 200,
+          "belongsToSelection": true
+        },
+        {
+          "dataMs": 651,
+          "status": 200,
+          "belongsToSelection": true
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "scenario": "queue_navigation",
+      "queueRscReads": 0,
+      "historyWorks": true,
+      "blockedWrites": 30
+    }
+  ],
+  "settingsAssertions": [
+    {
+      "version": "after",
+      "statuses": {
+        "/api/settings/members": 200,
+        "/api/settings/test-mode": 200,
+        "/api/persona": 200,
+        "/api/settings/auto-reply": 200,
+        "/api/settings/email-signature": 200,
+        "/api/settings/email-routing": 200,
+        "/api/settings/email-sender-rules": 200,
+        "/api/settings/email-blocklist": 200,
+        "/api/inboxes": 200
+      },
+      "unsavedPreserved": true,
+      "historyWorks": true,
+      "tabRscReads": 0,
+      "blockedWrites": 0
+    }
+  ]
+}
