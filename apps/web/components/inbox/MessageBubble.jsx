@@ -415,6 +415,7 @@ export class MessageRenderBoundary extends Component {
 function MessageBubbleComponent({
   message,
   direction = "inbound",
+  neutral = false,
   attachments = [],
   outboundSenderName,
   showMeta = true,
@@ -642,7 +643,7 @@ function MessageBubbleComponent({
                     "text-sm font-semibold leading-5",
                     isInternalNote
                       ? "text-amber-800 dark:text-amber-200"
-                      : isOutbound
+                      : isOutbound && !neutral
                         ? "text-violet-800 dark:text-violet-200"
                         : "text-foreground"
                   )}
@@ -673,7 +674,7 @@ function MessageBubbleComponent({
                 `overflow-hidden ${bubbleRadiusClass} border text-xs`,
                 isInternalNote
                   ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
-                  : isOutbound
+                  : isOutbound && !neutral
                   ? "border-violet-200/80 bg-violet-50/70 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
                   : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
               )}
@@ -929,6 +930,7 @@ const arePropsEqual = (prev, next) => {
     if ((prev.message?.ai_draft_text || "") !== (next.message?.ai_draft_text || "")) return false;
   }
   if (prev.direction !== next.direction) return false;
+  if (prev.neutral !== next.neutral) return false;
   if (prev.outboundSenderName !== next.outboundSenderName) return false;
   if (prev.showMeta !== next.showMeta) return false;
   if (prev.compactTimestamp !== next.compactTimestamp) return false;

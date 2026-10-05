@@ -1046,6 +1046,7 @@ function TicketDetailComponent({
                     <MessageBubble
                       message={message}
                       direction={direction}
+                      neutral={Boolean(message.confirmation_sent_at)}
                       attachments={messageAttachments}
                       outboundSenderName={currentUserName}
                       showMeta={!groupedWithPrevious}

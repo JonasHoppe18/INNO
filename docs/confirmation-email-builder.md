@@ -44,8 +44,10 @@ An outgoing message appears as a collapsed "Confirmation email sent" row only
 when its provider message ID matches a sent `mail_auto_reply_events` record in
 the same workspace, mailbox and thread. Enabling confirmations alone does not
 create a sent marker. Drafts and ordinary replies retain their normal bubbles.
-Click or Enter expands the existing message renderer, including its View email
-control. If event metadata cannot be read, the normal message remains visible.
+Preview text is capped at 60 characters. Click or Enter expands the existing
+message renderer, including its View email control. Expanded confirmations use
+neutral card/background and sender colors while ordinary replies retain their
+existing styling. The conversation text remains 12px. If event metadata cannot be read, the normal message remains visible.
 If the dedicated event is missing, the reader checks the sender's successful
 `postmark_inbound_auto_reply_sent` log for the same authorized thread and exact
 provider message ID. Legacy logs may have a null workspace; the thread and

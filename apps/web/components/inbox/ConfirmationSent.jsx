@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 export function ConfirmationSent({ message, children, enabled = true }) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
-  const preview = String(
+  const previewText = String(
     message.clean_body_text || message.body_text || message.snippet || "",
   )
     .replace(/\s+/g, " ")
     .trim();
+  const preview = previewText.length > 60 ? `${previewText.slice(0, 60).trimEnd()}…` : previewText;
   if (!enabled) return children;
   return (
     <div className="ml-auto w-full max-w-[620px]">
