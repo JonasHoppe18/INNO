@@ -7,7 +7,7 @@ function fixture({org="org-a", member=true, memberships=[{workspace_id:"workspac
     const filters=[];let single=false;
     const query={select(){return query;},eq(key,value){filters.push([key,value]);return query;},order(){return query;},limit(){return query;},maybeSingle(){single=true;return query;},then(done){
       calls.push({table,filters});
-      const data=table==="profiles"?{user_id:uuid}:table==="workspaces"?(org?{id:"workspace-a"}:null):single?(member?{workspace_id:"workspace-a"}:null):memberships;
+      const data=table==="profiles"?{user_id:uuid}:table==="workspaces"?(org?{id:"workspace-a"}:null):single?(org&&member?{workspace_id:"workspace-a"}:null):memberships;
       return Promise.resolve({data,error:null}).then(done);
     }};return query;
   }};return {db,calls};
@@ -17,8 +17,9 @@ describe("client inbox workspace selection",()=>{
     const {db,calls}=fixture();
     const scope=await resolveClientInboxScope({supabase:db,clerkUserId:"viewer",orgId:"org-a"});
     expect(scope).toEqual({supabaseUserId:uuid,workspaceId:"workspace-a"});
-    expect(calls.find(c=>c.table==="workspaces").filters).toContainEqual(["clerk_org_id","org-a"]);
-    expect(calls.find(c=>c.table==="workspace_members").filters).toContainEqual(["workspace_id","workspace-a"]);
+    expect(calls).toHaveLength(2);
+    expect(calls.find(c=>c.table==="workspace_members").filters).toContainEqual(["workspaces.clerk_org_id","org-a"]);
+    expect(calls.find(c=>c.table==="workspace_members").filters).toContainEqual(["clerk_user_id","viewer"]);
   });
   it("denies an unavailable organization or revoked membership without falling back",async()=>{
     await expect(resolveClientInboxScope({supabase:fixture({org:null}).db,clerkUserId:"viewer",orgId:"org-a"})).rejects.toThrow("not available");

@@ -47,42 +47,22 @@ async function loadAuthScope(serviceClient, clerkUserId, activeOrgId) {
   let supabaseUserId = null;
   let workspaceId = null;
   if (activeOrgId) {
-    // profiles and workspaces are independent — run in parallel
-    const [profileResult, workspaceResult] = await Promise.all([
-      serviceClient
-        .from("profiles")
-        .select("user_id")
+    // The inner join validates the requested organization and membership in
+    // one read. A missing membership/org must never select a fallback workspace.
+    const [profileResult, membershipResult] = await Promise.all([
+      serviceClient.from("profiles").select("user_id")
+        .eq("clerk_user_id", clerkUserId).maybeSingle(),
+      serviceClient.from("workspace_members")
+        .select("workspace_id, workspaces!inner(clerk_org_id)")
         .eq("clerk_user_id", clerkUserId)
-        .maybeSingle(),
-      serviceClient
-        .from("workspaces")
-        .select("id")
-        .eq("clerk_org_id", activeOrgId)
+        .eq("workspaces.clerk_org_id", activeOrgId)
         .maybeSingle(),
     ]);
     if (profileResult.error) throw new Error(profileResult.error.message);
-    if (workspaceResult.error) throw new Error(workspaceResult.error.message);
+    if (membershipResult.error) throw new Error(membershipResult.error.message);
     supabaseUserId = profileResult.data?.user_id ?? null;
-    workspaceId = workspaceResult.data?.id ?? null;
-
-    // A stale or mismatched Clerk org must never select another workspace as a
-    // fallback. The active Clerk organization is the authoritative scope.
-    if (workspaceId) {
-      const { data: orgMembership, error: orgMembershipError } = await serviceClient
-        .from("workspace_members")
-        .select("workspace_id")
-        .eq("workspace_id", workspaceId)
-        .eq("clerk_user_id", clerkUserId)
-        .maybeSingle();
-      if (orgMembershipError) throw new Error(orgMembershipError.message);
-      if (!orgMembership?.workspace_id) {
-        throw new Error("Active workspace is not available to this account.");
-      }
-    }
-
-    if (!workspaceId) {
-      throw new Error("Active workspace is not available to this account.");
-    }
+    workspaceId = membershipResult.data?.workspace_id ?? null;
+    if (!workspaceId) throw new Error("Active workspace is not available to this account.");
   } else {
     // Without an active Clerk organization, resolve only an unambiguous
     // membership. Never silently choose the latest workspace.

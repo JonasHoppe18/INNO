@@ -160,8 +160,10 @@ export function useAgentAutomation(options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const userId = await ensureUserId().catch(() => null);
-      const workspaceId = await ensureWorkspaceId();
+      const [userId, workspaceId] = await Promise.all([
+        ensureUserId().catch(() => null),
+        ensureWorkspaceId(),
+      ]);
       if (orgId && !workspaceId) {
         throw new Error("Active org has no mapped workspace.");
       }

@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { NextResponse } from "next/server";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
@@ -24,7 +24,7 @@ export async function GET(request) {
       { error: "Customer data is unavailable." },
       { status: 503 },
     );
-  const client = createClient(url, serviceKey);
+  const client = createStatelessServiceClient(url, serviceKey);
   let scope;
   try {
     scope = await resolveAuthScope(client, {
