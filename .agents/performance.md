@@ -90,11 +90,31 @@ The Settings browser probe checks all nine bootstrap resource statuses, verifies
 
 ## Validation and evidence
 
-Production build passed with lint/type checks and 162 pages. Existing MJML/vendor and edge-runtime warnings remain. Full Vitest run: 772 passed, 8 skipped, 3 failed. The three failures were reproduced on the base source earlier: two landing pricing expectations and a real Knowledge evaluation without required environment variables. The 31 tests added in the expanded pass and eight earlier scheduling tests pass, including scope isolation, cache expiry/force/invalidation, authorization coalescing, parallel reads and protected Settings aggregation.
+Production build passed with lint/type checks and 162 pages. Existing MJML/vendor and edge-runtime warnings remain. Full Vitest run: 776 passed, 8 skipped, 3 failed. The three failures were reproduced on the base source earlier: two landing pricing expectations and a real Knowledge evaluation without required environment variables. The 31 tests added in the expanded pass and eight earlier scheduling tests pass, including scope isolation, cache expiry/force/invalidation, authorization coalescing, parallel reads and protected Settings aggregation.
 
 A fixed-delay scheduling test keeps the same seven enriched inbox reads and result while reducing 450 ms to 200 ms. It is not a browser/database measurement. An earlier dev database count-versus-existence probe did not demonstrate a latency improvement; bounded existence checks reduce work as tables grow.
 
 Sanitized samples are committed in [performance-results.json](performance-results.json). Local logs remain in `/tmp/sona-performance-1005a/`. No customer emails, message bodies, identifiers or screenshots were uploaded. Production remains untouched. KnowledgeCategoriesClient overlaps PR #80; the owner explicitly approved the performance edit.
+
+## Conversation follow-up
+
+The follow-up compares PR revision `3b343089` with `ca9e36ea`, rather than repeating the original-main comparison. Conversation bodies now arrive through an authorized `view=messages` read while fresh draft, signature, action and attachment details continue loading. Their readiness is tracked separately, and Send stays disabled until the complete detail read finishes. Existing draft/action fallbacks retain their original readiness checks.
+
+Hover and selection share the same pending full-detail promise keyed by account/session/organization and URL. Settled details are not retained by that helper. The server shares simultaneously running authorized thread/message reads between the early and complete response; no settled authorization or detail cache was added. Late partial responses cannot overwrite an applied full response.
+
+| Visible conversation metric | Before this follow-up | Final follow-up |
+| --- | ---: | ---: |
+| Cold selection, median of 3 | 540 ms | 409 ms |
+| Revisited conversation, median of 3 | Not measured | 36 ms |
+| Complete fresh detail body, median of 3 | 543 ms | 513 ms |
+
+Before visible samples were 654, 540, 495 ms. Final visible samples were 695, 396, 409 ms; revisit samples were 35, 36, 42 ms. Earlier after probes had visible medians of 429, 365 and 359 ms. All samples are retained. These were sequential local production-browser runs against dev, without network throttling; service timing varies and the first final sample was slower. The main improvement is showing messages before the complete ticket payload, not making every complete read equally fast. Visible timing records a message bubble entering the DOM and is not a paint/LCP metric.
+
+The browser verifies matching selected-thread data, one full request for hover followed by click, and disabled Send while the complete response is deliberately delayed by 1.2 seconds. That artificial delay applies only to the behavioral assertion, not the cold/revisit timing samples. Back/forward and zero-RSC queue navigation still pass. App writes were blocked. Four additional regression tests cover the early authorized response, sharing pending database reads, client pending-read boundaries and retry/cleanup behavior. Full suite has the same three baseline failures.
+
+A cold selection can make two HTTP requests. Concurrent server reads share work, but requests arriving after a query settles can repeat it. Fresh metadata still has network latency; this change does not claim sub-100-ms cold data loading. Local validation used the final production build. No inbox screenshots or customer data were uploaded.
+
+Repeat with `PERF_AFTER_URL=http://localhost:3107 PERF_OUTPUT_FILE=/tmp/sona-visible.json node scripts/performance/conversation-visible.cjs`. The script tests the current app and does not launch a comparison revision automatically. A matching old build or recorded baseline is required for a before/after comparison.
 
 ## Repeat the probes
 

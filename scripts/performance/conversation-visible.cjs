@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const { createRequire } = require("node:module");
 createRequire(process.cwd() + "/package.json")("@next/env").loadEnvConfig(process.cwd() + "/apps/web");
 const { chromium } = require(process.env.PERF_PLAYWRIGHT_PATH || "/tmp/sona-performance-browser/node_modules/playwright");
-const output = process.env.PERF_OUTPUT_FILE || "/tmp/sona-inbox-measurements.json";
+const output = process.env.PERF_OUTPUT_FILE || "/tmp/sona-conversation-visible.json";
 let browser;
 (async () => {
   browser = await chromium.launch({ headless: true, executablePath: process.env.PERF_CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" });

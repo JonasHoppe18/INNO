@@ -2767,5 +2767,202 @@
       "tabRscReads": 0,
       "blockedWrites": 0
     }
-  ]
+  ],
+  "conversationFollowup": {
+    "baseline": "3b343089",
+    "candidate": "ca9e36ea",
+    "before": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 654,
+            "dataMs": 660,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 540,
+            "dataMs": 543,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 495,
+            "dataMs": 497,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 15
+      }
+    ],
+    "after": [
+      {
+        "version": "after",
+        "scenario": "cold_click",
+        "samples": [
+          {
+            "visibleMs": 695,
+            "cachedVisibleMs": 35,
+            "dataMs": 849,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 396,
+            "cachedVisibleMs": 36,
+            "dataMs": 513,
+            "status": 200,
+            "belongsToSelection": true
+          },
+          {
+            "visibleMs": 409,
+            "cachedVisibleMs": 42,
+            "dataMs": 511,
+            "status": 200,
+            "belongsToSelection": true
+          }
+        ]
+      },
+      {
+        "version": "after",
+        "scenario": "hover_click_reuse",
+        "fullRequests": 1,
+        "sendBlockedBeforeDetails": true
+      },
+      {
+        "version": "after",
+        "scenario": "queue_navigation",
+        "queueRscReads": 0,
+        "historyWorks": true,
+        "blockedWrites": 67
+      }
+    ],
+    "earlierAfterProbes": [
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 429,
+              "dataMs": 526,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 434,
+              "dataMs": 617,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 384,
+              "dataMs": 526,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 18
+        }
+      ],
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 365,
+              "cachedVisibleMs": 41,
+              "dataMs": 495,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 356,
+              "cachedVisibleMs": 41,
+              "dataMs": 502,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 383,
+              "cachedVisibleMs": 25,
+              "dataMs": 495,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "hover_click_reuse",
+          "fullRequests": 1
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 67
+        }
+      ],
+      [
+        {
+          "version": "after",
+          "scenario": "cold_click",
+          "samples": [
+            {
+              "visibleMs": 373,
+              "cachedVisibleMs": 47,
+              "dataMs": 585,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 354,
+              "cachedVisibleMs": 29,
+              "dataMs": 497,
+              "status": 200,
+              "belongsToSelection": true
+            },
+            {
+              "visibleMs": 359,
+              "cachedVisibleMs": 37,
+              "dataMs": 543,
+              "status": 200,
+              "belongsToSelection": true
+            }
+          ]
+        },
+        {
+          "version": "after",
+          "scenario": "hover_click_reuse",
+          "fullRequests": 1,
+          "sendBlockedBeforeDetails": true
+        },
+        {
+          "version": "after",
+          "scenario": "queue_navigation",
+          "queueRscReads": 0,
+          "historyWorks": true,
+          "blockedWrites": 67
+        }
+      ]
+    ]
+  }
 }
