@@ -1,3 +1,4 @@
+import { CsatSent } from "@/components/inbox/CsatSent";
 import { ConfirmationSent } from "@/components/inbox/ConfirmationSent";
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -1058,6 +1059,7 @@ function TicketDetailComponent({
                     />
                   </ConfirmationSent>
                 </MessageRenderBoundary>
+                <CsatSent event={message.csat_sent_event} />
               </div>
               </Fragment>
             );

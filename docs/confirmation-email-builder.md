@@ -48,6 +48,15 @@ Click or Enter expands the existing message renderer, including its View email
 control. If event metadata cannot be read, the normal message remains visible.
 Historical confirmations with no matching event stay as ordinary bubbles.
 
+Sent CSAT surveys use a matching workspace/thread record in
+`csat_survey_requests` with a non-null `sent_at` and status `sent` or `responded`.
+They appear as a quiet "CSAT email sent" line with the sending time in
+Europe/Copenhagen. Pending, sending, failed and skipped requests do not appear.
+The notice follows the last message before the survey was sent. It is display
+metadata on a real message, so it cannot become a customer reply target or
+change message counts. The send flow does not store the mail body; the notice
+therefore does not offer a fabricated email preview.
+
 ## Verification on 5 October 2026
 
 The migration was applied to dev `zxaoycxzdjrbnzvbullk`. A rolled-back SQL fixture
@@ -65,3 +74,10 @@ Local evidence is in `/tmp/sona-confirmation-1005a/`. Screenshots contain inbox
 context and must not be uploaded publicly. Build and lint passed. The full suite
 reported 788 passed, 8 skipped and 3 pre-existing failures: two landing pricing
 assertions and a knowledge evaluation lacking environment variables.
+
+The CSAT extension passed 44 targeted tests and browser checks for the sent
+notice alongside the existing confirmation control. A read-only check matched
+five real sent CSAT requests in dev to the notices returned by the authorized
+thread detail API. No survey was dispatched during these checks. CSAT evidence
+is in `csat-api-results.json`, `csat-ui-results.json` and `tests-csat.txt` in the
+same local evidence directory.

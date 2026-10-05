@@ -1,4 +1,4 @@
-import { markConfirmationMessages } from "@/lib/server/confirmation-messages";
+import { markSentEmailMessages } from "@/lib/server/sent-email-messages";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
@@ -100,7 +100,7 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId, sc
       }
       if (error) throw new Error(error.message);
 
-      return markConfirmationMessages(serviceClient, Array.isArray(rows) ? rows : [], {
+      return markSentEmailMessages(serviceClient, Array.isArray(rows) ? rows : [], {
         workspaceId: scope.workspaceId, threadId, mailboxIds: [mailboxId],
       });
     });
