@@ -401,7 +401,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-border px-5 py-3.5 ">
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+          <DialogTitle className="flex items-center gap-2 text-page-heading font-semibold">
             <Inbox className="h-4 w-4 text-primary" />
             Load a real ticket to simulate from
           </DialogTitle>

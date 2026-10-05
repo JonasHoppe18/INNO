@@ -289,15 +289,20 @@
   line-height: 1.5;
 }
 
-/* Application typography. Keep the root rem at 16px: spacing is unchanged.
+/* Shared application typography. Mobile and marketing retain their root size.
    Marketing retains its existing type scale; dashboard portals inherit these
    variables from html through :has(), including Radix overlays in body. */
 html:has(.dashboard-theme), html:has(.design-typography) {
-  --text-caption-size: 0.75rem;
-  --text-caption-leading: 1rem;
-  --text-ui-size: 0.8125rem;
+  --text-caption-size: 12px;
+  --text-caption-leading: 16px;
+  --text-ui-size: 12px;
+  --text-ui-leading: 18px;
   --text-body-size: 0.875rem;
   --text-body-leading: 1.25rem;
+  --text-page-heading-size: 16px;
+  --text-page-heading-leading: 24px;
+  --text-section-heading-size: 14px;
+  --text-section-heading-leading: 20px;
   --weight-regular: 450;
   --weight-medium: 550;
   --weight-semibold: 650;
@@ -307,13 +312,14 @@ html:has(.dashboard-theme) body, html:has(.design-typography) body,
 .dashboard-theme, .design-typography {
   font-size: var(--text-ui-size);
   font-weight: var(--weight-regular);
-  line-height: 1.25rem;
+  line-height: var(--text-ui-leading);
   font-optical-sizing: auto;
 }
 
 @layer base {
   :root {
     --background: 0 0% 100%;
+    --conversation: 40 17.65% 96.67%;
     --foreground: 240.00 9.76% 16.08%;
     --card: 0.00 0.00% 100.00%;
     --card-foreground: 240.00 9.76% 16.08%;
@@ -361,6 +367,7 @@ html:has(.dashboard-theme) body, html:has(.design-typography) body,
   }
   .dark {
     --background: 240.00 10.64% 9.22%;
+    --conversation: var(--background);
     --foreground: 240.00 4.76% 95.88%;
     --card: 240.00 10.45% 13.14%;
     --card-foreground: 240.00 4.76% 95.88%;
@@ -475,4 +482,12 @@ html:has(.dashboard-theme) body, html:has(.design-typography) body,
 .dark .dashboard-theme [class*="hover:text-gray-"],
 .dark .dashboard-theme [class*="hover:text-slate-"] {
   color: hsl(var(--foreground)) !important;
+}
+
+/* Shared desktop density keeps navigation and controls the same across routes. */
+@media (min-width: 1024px) {
+  html:has(.dashboard-theme), html:has(.design-typography) {
+    font-size: 90%;
+    --app-density: 0.9;
+  }
 }

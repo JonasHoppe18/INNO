@@ -4645,7 +4645,7 @@ export function SettingsPanel() {
                       className={cn(
                         "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-accent font-semibold text-accent-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]"
+                          ? "bg-accent font-semibold text-accent-foreground"
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >

@@ -498,11 +498,11 @@ export default async function Page({ searchParams }) {
                     <ActivityIcon className="size-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">Recent activity</CardTitle>
+                    <CardTitle>Recent activity</CardTitle>
                     <CardDescription className="mt-1">Replies, drafts, and approved actions.</CardDescription>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
+                <Button variant="ghost" size="sm" className="rounded-lg px-2" asChild>
                   <Link href="/inbox">
                     View inbox
                     <ChevronRightIcon className="ml-1 size-4" />
@@ -550,7 +550,7 @@ export default async function Page({ searchParams }) {
                       </div>
                       <Badge
                         variant="outline"
-                        className={`shrink-0 rounded-md text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
+                        className={`self-center shrink-0 rounded-md text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
                       >
                         {ACTIVITY_BADGE_LABEL[event.badge]}
                       </Badge>

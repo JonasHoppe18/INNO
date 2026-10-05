@@ -187,7 +187,7 @@ export function CustomerSatisfactionSettings() {
 
       <main className="flex min-w-0 flex-col gap-4">
         <Card className="rounded-xl border-border/70 bg-background shadow-sm">
-          <CardHeader className="gap-1 border-b border-border/60 pb-4"><CardTitle className="text-base tracking-tight">Survey status</CardTitle><CardDescription className="text-sm">Control whether newly resolved conversations receive a CSAT request.</CardDescription></CardHeader>
+          <CardHeader className="gap-1 border-b border-border/60 pb-4"><CardTitle className="text-section-heading tracking-tight">Survey status</CardTitle><CardDescription className="text-sm">Control whether newly resolved conversations receive a CSAT request.</CardDescription></CardHeader>
           <CardContent className="p-5"><div className={cn("flex flex-col gap-4 rounded-lg border p-4 transition-colors duration-150 sm:flex-row sm:items-center sm:justify-between", settings.enabled ? "border-primary/25 bg-primary/[0.025]" : "border-border/70 bg-muted/20")}><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-section-heading font-semibold">Send CSAT surveys</h3><Badge variant={settings.enabled ? "secondary" : "outline"} className="rounded-full px-2 py-0 text-xs">{settings.enabled ? "Active" : "Paused"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{settings.enabled ? "One survey per ticket, sent after the final resolution." : "Surveys are paused. Your setup remains editable and ready to resume."}</p></div><Switch checked={settings.enabled} onCheckedChange={(value) => update("enabled", value)} aria-label="Send CSAT surveys" /></div></CardContent>
         </Card>
 

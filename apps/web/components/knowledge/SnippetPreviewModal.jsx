@@ -367,7 +367,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[min(96vw,1100px)] max-w-none overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-border px-5 py-3.5 ">
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+          <DialogTitle className="flex items-center gap-2 text-page-heading font-semibold">
             {previewSource && (
               <button
                 type="button"

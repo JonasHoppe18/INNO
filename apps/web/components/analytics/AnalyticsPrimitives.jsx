@@ -76,7 +76,7 @@ export function AnalyticsChartCard({ title, description, meta, children, classNa
     <Card className={cn("rounded-xl shadow-sm", className)}>
       <CardHeader className="flex-row items-start justify-between gap-4 pb-2">
         <div className="flex flex-col gap-1">
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle>{title}</CardTitle>
           {description ? <CardDescription>{description}</CardDescription> : null}
         </div>
         {meta ? <Badge variant="secondary" className="shrink-0 font-normal">{meta}</Badge> : null}
@@ -92,7 +92,7 @@ export function FocusSignals({ signals = [], onSelect }) {
   return (
     <Card className="rounded-xl border-primary/10 bg-primary/[0.035] shadow-none">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Needs attention</CardTitle>
+        <CardTitle className="text-section-heading">Needs attention</CardTitle>
         <CardDescription>Changes and opportunities worth reviewing first.</CardDescription>
       </CardHeader>
       <CardContent>

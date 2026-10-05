@@ -35,18 +35,18 @@ Status bruger success, warning, info og danger med foreground/border. Behold lab
 
 ## Typografi
 
-Inter 4.1 indlæses lokalt, inklusive italic. Root-rem er 16 px, så spacing bevares.
+Inter 4.1 indlæses lokalt, inklusive italic. Root-rem er normalt 16 px. Alle dashboard-sider og design-lab bruger samme 90 % desktop-tæthed fra 1024 px. UI-tekst og metadata holdes på faste 12 px. Mobil og marketing beholder normal tæthed.
 
 | Rolle | Token / klasse | Desktop |
 | --- | --- | --- |
-| UI, tabeller og navigation | text-sm | 13 / 20 px |
+| UI, tabeller og navigation | text-sm | 12 / 18 px |
 | Metadata og hjælpetekst | text-xs | 12 / 16 px |
 | Længere læsetekst | text-base | 14 / 20 px |
 | Sidetitel | text-page-heading | 16 / 24 px |
 | Sektionstitel | text-section-heading | 14 / 20 px |
-| Redigerbare felter | text-input md:text-sm | 16 px mobil, 13 px desktop |
+| Redigerbare felter | text-input md:text-sm | 16 px mobil, 12 px desktop |
 
-Almindelig dashboard-tekst bruger vægt 450; medium 550 og semibold 650. Inbox-toolbar og dens ticketnummer bruger almindelig 400. Svar-editoren bruger 14 px med linjehøjde 1.5.
+Almindelig dashboard-tekst bruger vægt 450; medium 550 og semibold 650. Dashboardets almindelige UI-tekst, inklusive inboxens toolbar, ticketliste, samtalebeskeder og composer, bruger 12 px, arvet Inter-font og almindelig vægt 450. Teksttokens bruger faste px, så kompakt spacing ikke reducerer teksten yderligere. Svar-editoren følger samtalebeskederne med linjehøjde 1.5.
 
 Skalaen er inspireret af [Shopifys publicerede designregler](https://shopify.dev/docs/apps/design/visual-design#typography) og [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts). Den er ikke en fuld kopi af Shopifys nyeste admin. Sonas 16 px sidetitler er en lokal beslutning.
 

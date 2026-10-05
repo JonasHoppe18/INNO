@@ -16,10 +16,10 @@ const config: Config = {
       fontSize: {
         input: ['1rem', { lineHeight: '1.25rem' }],
         xs: ['var(--text-caption-size, 0.75rem)', { lineHeight: 'var(--text-caption-leading, 1rem)' }],
-        sm: ['var(--text-ui-size, 0.875rem)', { lineHeight: '1.25rem' }],
+        sm: ['var(--text-ui-size, 0.875rem)', { lineHeight: 'var(--text-ui-leading, 1.25rem)' }],
         base: ['var(--text-body-size, 1rem)', { lineHeight: 'var(--text-body-leading, 1.5rem)' }],
-        'page-heading': ['1rem', { lineHeight: '1.5rem', fontWeight: '650', letterSpacing: '-0.0125em' }],
-        'section-heading': ['0.875rem', { lineHeight: '1.25rem', fontWeight: '650' }],
+        'page-heading': ['var(--text-page-heading-size, 1rem)', { lineHeight: 'var(--text-page-heading-leading, 1.5rem)', fontWeight: '650', letterSpacing: '-0.0125em' }],
+        'section-heading': ['var(--text-section-heading-size, 0.875rem)', { lineHeight: 'var(--text-section-heading-leading, 1.25rem)', fontWeight: '650' }],
       },
       fontWeight: {
         normal: 'var(--weight-regular, 400)',
@@ -33,6 +33,7 @@ const config: Config = {
   		},
   		colors: {
   			background: 'hsl(var(--background))',
+        conversation: 'hsl(var(--conversation))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
   				DEFAULT: 'hsl(var(--card))',

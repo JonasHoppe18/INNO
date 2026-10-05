@@ -459,7 +459,7 @@ export function ZendeskDetailsPage() {
                 <TicketCheck />
               </div>
               <div className="flex flex-col gap-1">
-                <CardTitle className="text-base">Tickets</CardTitle>
+                <CardTitle className="text-section-heading">Tickets</CardTitle>
                 <CardDescription>
                   {job ? `Started ${formatDateTime(job.created_at)}` : "No full-history import has been started."}
                 </CardDescription>

@@ -1,6 +1,6 @@
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Loader2, Package, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronUp, Inbox, Package, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -814,8 +814,8 @@ function TicketDetailComponent({
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:min-w-0 lg:bg-muted/30">
-      <header className="flex min-h-[52px] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[56px] sm:px-3 lg:px-2.5">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-conversation lg:min-w-0 dark:lg:bg-muted/30">
+      <header className="flex min-h-[3.25rem] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[3.5rem] sm:px-3 lg:px-2.5">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           {onBackToInbox ? (
             <button
@@ -829,7 +829,7 @@ function TicketDetailComponent({
             </button>
           ) : null}
           <span
-            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 font-sans text-sm font-[400] not-italic tabular-nums tracking-normal ${
+            className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap px-0.5 [font-family:inherit] text-xs font-normal leading-5 not-italic tabular-nums tracking-normal ${
               hasTicketNumber
                 ? "text-muted-foreground"
                 : "text-muted-foreground/60"
@@ -874,12 +874,9 @@ function TicketDetailComponent({
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center"
+            className="sr-only"
           >
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
-              <Loader2 className="size-3 animate-spin text-violet-500" aria-hidden="true" />
-              Loading conversation
-            </span>
+            Loading conversation
           </div>
         ) : null}
         {showJumpToLatest ? (
@@ -901,7 +898,7 @@ function TicketDetailComponent({
             Jump to latest
           </Button>
         ) : null}
-        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[960px] space-y-3 px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4">
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[60rem] space-y-3 px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4">
           {isConversationLoading && !messages.length ? (
             <div className="space-y-3 pt-2" aria-label="Loading conversation">
               <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">

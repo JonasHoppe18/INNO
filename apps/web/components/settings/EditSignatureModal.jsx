@@ -605,7 +605,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex w-[96vw] max-w-2xl flex-col overflow-hidden border-border bg-card" style={{ maxHeight: "92vh" }}>
           <DialogHeader>
-            <DialogTitle className="text-base">Edit Email Signature</DialogTitle>
+            <DialogTitle className="text-page-heading">Edit Email Signature</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
               Update signature for {getDisplayName(member)}.
             </DialogDescription>
@@ -817,7 +817,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
       >
         <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] w-[95vw] max-w-6xl flex-col overflow-hidden p-0">
           <DialogHeader className="flex-shrink-0 border-b border-border px-6 py-5 pr-12">
-            <DialogTitle className="text-base">Signature Template Builder</DialogTitle>
+            <DialogTitle className="text-page-heading">Signature Template Builder</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
               Build a visual footer and apply it to this team member.
             </DialogDescription>

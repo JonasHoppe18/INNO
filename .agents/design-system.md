@@ -8,7 +8,7 @@ Kilder til implementerede værdier på branchen er `apps/web/app/globals.css`, `
 
 - Behold shadcn new-york, Radix, CVA, `cn` og Lucide. Nye controls bruger eksisterende `components/ui`.
 - Inter 4.1 indlæses lokalt via `next/font/local` (normal og italic, variabel vægt). Behold `--radius: 0.5rem`.
-- Behold inboxens rail, kønavigation, samtaleliste, tabs, beskeder og composer. Ingen ændring af panelbredder, placering eller funktioner i dette forsøg.
+- Behold inboxens rail, kønavigation, samtaleliste, tabs, beskeder og composer. Behold panelrækkefølge og funktioner. Alle dashboard-sider bruger samme kompakte desktop-tæthed valgt ved lokalt review.
 - Behold eksisterende spacing. Mobilnavigation og controls skal være tilgængelige uden klipning. Farvearbejde er ikke tilladelse til at redesigne siderne.
 
 ## Typografi
@@ -17,18 +17,19 @@ Fonten er Inter, samme familie som Shopifys publicerede Polaris-tokens. Den tidl
 
 | Rolle | Klasse | Størrelse / linjehøjde | Vægt |
 | --- | --- | --- | --- |
-| Navigation, controls, tabeller | `text-sm` | 13 / 20 px | 450; labels 550 |
+| Navigation, controls, tabeller | `text-sm` | 12 / 18 px | 450; labels 550 |
 | Metadata og hjælpetekst | `text-xs` | 12 / 16 px | 450 |
-| Længere tekst og svar-editor | `text-base` | 14 / 20 px (editor 1.5) | 450 |
-| Redigerbare felter | `text-input md:text-sm` | 16 / 20 px mobil; 13 / 20 px desktop | 450 |
+| Længere tekst | `text-base` | 14 / 20 px | 450 |
+| Samtalebeskeder og composer-tekst | `text-sm leading-[1.5]` | 12 / 18 px | 450 |
+| Redigerbare felter | `text-input md:text-sm` | 16 / 20 px mobil; 12 / 18 px desktop | 450 |
 | Sidetitel | `text-page-heading` | 16 / 24 px | 650 |
 | Sektionsoverskrift | `text-section-heading` | 14 / 20 px | 650 |
 
 Brug de fælles roller frem for nye `text-[Npx]`. Størrelser må variere efter rolle, men samme rolle skal have samme størrelse. `font-normal`, `font-medium` og `font-semibold` bruger 450, 550 og 650 i dashboardet, som de publicerede Polaris-fonttokens. Mobil-inputs beholder 16 px for at undgå automatisk zoom.
 
-Skalaen aktiveres på dashboard og design-lab via CSS-variabler; Radix-overlays i body følger samme tokens. Root-rem forbliver 16 px, så spacing ikke skaleres ned. Marketingens eksisterende skala bevares. Rich text med eksplicit formatering og kode/ID i monospace bevarer deres rolle.
+Skalaen aktiveres på dashboard og design-lab via CSS-variabler; Radix-overlays i body følger samme tokens. Root-rem er normalt 16 px. Alle dashboard-sider og design-lab bruger 90 % root-størrelse fra 1024 px, så navigation, controls og rem-baserede afstande har samme tæthed på tværs af sider. UI-tekst og metadata er faste 12 px; sidetitler 16 px og sektionstitler 14 px skaleres heller ikke ned. Nøgletal beholder deres større tekstroller. Mobil beholder 16 px root-størrelse og større inputtekst. Dashboard-kort må have mere luft end ticketlisten. Composerens automatiske højde og resize-minimum følger samme tæthed. Marketingens eksisterende skala bevares. Rich text med eksplicit formatering og kode/ID i monospace bevarer deres rolle.
 
-Shopifys offentlige [designregler](https://shopify.dev/docs/apps/design/visual-design#typography) angiver mindst 13 px til body/controls og 12 px til captions. [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts) dokumenterer Inter og vægtene. Sonas 16 px sidetitel er vores lokale fortolkning af den kompakte reference, ikke en verificeret måling af den nyeste Shopify-admin.
+Shopifys offentlige [designregler](https://shopify.dev/docs/apps/design/visual-design#typography) angiver mindst 13 px til body/controls og 12 px til captions. [Polaris-fonttokens](https://github.com/Shopify/polaris-react-archive/blob/main/polaris-tokens/src/themes/base/font.ts) dokumenterer Inter og vægtene. Sonas 12 px UI-tekst er valgt efter lokalt review og afviger fra Shopifys body-minimum. Sonas 16 px sidetitel er vores lokale fortolkning af den kompakte reference, ikke en verificeret måling af den nyeste Shopify-admin.
 
 `SonaActivityContent.jsx` og `KnowledgeCategoriesClient.jsx` ejes af den åbne PR80 og er ikke redigeret her. Deres standardklasser arver skalaen; deres egne pixelstørrelser og større headings kræver et senere gennemløb efter afklaring af PR80.
 
@@ -39,6 +40,7 @@ Brug semantiske Tailwind-klasser. Hex-værdier må kun stå i designreference el
 | Rolle | Klasser | Regel |
 | --- | --- | --- |
 | Appens canvas | `bg-background`, `text-foreground` | Hvid i light, flad mørk neutral i dark |
+| Samtaleområdet | `bg-conversation` | Varm grå #F8F7F5 i light, bag beskeder og composer. Dark følger eksisterende neutrale baggrund |
 | Kort, composer og overlays | `bg-card`, `bg-popover` | Hvidt i light, lidt lysere panel i dark |
 | Primær handling | `bg-primary`, `text-primary-foreground` | Samme violet i hele appen. Dark bruger lys violet med mørk tekst |
 | Valgt element | `bg-accent`, `text-accent-foreground` | Svag violet. Bruges til selection, ikke almindelig hover |
@@ -67,12 +69,14 @@ Labels skal altid følge farven. Godkendt, godkendt i testtilstand og udført er
 
 ## Controls
 
-- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: 28 px høj, 13 px tekst, almindelig vægt 400, foreground-tekst, neutral card-baggrund og ingen skygge. Ikoner er 14 px med stroke 1.75; radius er 6 px. Ticketnummeret i headeren bruger Inter Regular med tabular nums, ikke monospace. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
-- Ticketlisten bruger vægt 450 til læste afsendere og metadata, 650 til ulæste afsendere og 550 til ulæste emner. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
-- Composerens skygge er 4/16 px ved 4 % og 1/3 px ved 3 %. Sekundære controls og beskedhandlinger bruger regular vægt.
+- Inbox-toolbarens status, assignee, More og View details deler `ticketToolbarControlClass`: 28 px høj, 12 px tekst med arvet Inter-font, almindelig vægt 450 og foreground-tekst. Controls er flade uden kant, baggrund eller skygge; hover bruger muted og keyboard-fokus bruger den fælles ring. Ikoner er 14 px med stroke 1.75; radius er 6 px. Ticketnummeret i headeren bruger samme Inter og almindelige vægt med tabular nums, ikke monospace. Status vises med label og ikon; toolbaren bruger ikke farvede badges. Badge-farverne gælder fortsat andre statusvisninger.
+- Ticketlistens afsender, emne og metadata bruger 12 px. Søgning på desktop og sortering bruger også 12 px; mobilens søgefelt beholder 16 px for at undgå zoom. Ticketlisten bruger vægt 450 til læste afsendere og metadata, 650 til ulæste afsendere og 550 til ulæste emner. "Customer replied" vises kompakt som "Replied" med fuld label tilgængelig via title/aria-label. Emner har tooltip med hele teksten.
+- Composer har centreret max-bredde på 56 rem. Tomt svar har 140 px minimumshøjde ved normal tæthed, 126 px i kompakt desktop-inbox; højden vokser med teksten. Composerens skygge er 4/16 px ved 4 % og 1/3 px ved 3 %. Sekundære controls og beskedhandlinger bruger regular vægt.
+- Standardknapper og felter deler h-9; kompakte knapper og inbox-toolbar deler h-7. Navigation bruger fælles sidebar-components. Brug størrelsesvarianter frem for lokale højde- og tekst-overrides.
 - `Button` ejer farver, hover, fokus og disabled. Brug variants; `className` bruges til lokal størrelse og placering. Den runde send-knap beholder sin størrelse og form, men arver primary.
 - `Input`, `Select` og `Textarea` bruger card-baggrund, inputkant og samme fokusring. Behold labels og eksisterende validering. `aria-invalid` markerer kant og fokus med destructive; fejltekst forbindes med `aria-describedby`.
 - Sidebar og tabeller bruger neutral hover og svag violet selection. Aktive tabs bruger accenttekst eller primary-markering afhængigt af deres eksisterende mønster.
+- Settings-menuen markerer det valgte punkt med accentbaggrund og tekst. Ingen lodret streg eller inset-skygge.
 - Ændr fælles komponenter først. Et override på en enkelt side skal have en konkret funktionel grund.
 - Customers, Analytics, Integrations, Settings og de øvrige Knowledge-komponenter bruger nu fælles semantiske farver. PR80-filerne er fortsat undtaget. Logoer, chart-serier, brugerens tagfarver, formateret brugerindhold og theme-picker-miniaturer må beholde egne farver.
 

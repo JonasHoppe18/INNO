@@ -49,7 +49,7 @@ export function TicketListToolbar({
           }}
           aria-label="Search tickets"
           placeholder="Search..."
-          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-xs shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
+          className="h-8 min-w-0 rounded-md border-transparent bg-transparent pl-7 pr-7 text-input md:text-xs shadow-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border/60 hover:bg-muted/35 focus-visible:border-border/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/35"
         />
         {hasActiveSearch ? (
           <button
@@ -68,7 +68,7 @@ export function TicketListToolbar({
           <button
             type="button"
             aria-label={`Sort tickets: ${selectedSortLabel}`}
-            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-sm text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+            className="flex h-8 max-w-[120px] shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2 text-xs text-muted-foreground ring-offset-background transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
             title={`Sort: ${selectedSortLabel}`}
           >
             <ArrowDownUp className="h-3.5 w-3.5 shrink-0" />
@@ -79,6 +79,7 @@ export function TicketListToolbar({
           {SORT_OPTIONS.map((option) => (
             <DropdownMenuItem
               key={option.value}
+              className="text-xs"
               onClick={() => onFiltersChange({ sortBy: option.value })}
             >
               {option.label}

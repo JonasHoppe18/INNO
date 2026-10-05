@@ -1,4 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+const getComposerDensity = () => {
+  if (typeof window === "undefined") return 1;
+  return Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-density")) || 1;
+};
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
@@ -490,7 +495,7 @@ function ComposerComponent({
   // layout primitives so a draft is never rendered underneath the footer.
   const MIN_COMPOSER_HEIGHT_PX = isNote
     ? 224
-    : (isEmptyReply ? 164 : 140) + newTicketHeaderHeight;
+    : 140 + newTicketHeaderHeight;
 
   // Slash-command snippet picker state. The picker opens when the agent types
   // "/" — the slash and any text typed after it stays INLINE in the input
@@ -773,12 +778,12 @@ function ComposerComponent({
       window.removeEventListener("resize", update);
     };
   }, [refineSnippetsOpen]);
-  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[32px]" : "min-h-[60px]";
+  const replyEditorMinHeightClassName = isEmptyReply ? "min-h-[2rem]" : "min-h-[3.75rem]";
   const editorBodyMinHeightClassName = isNote
-    ? "min-h-[96px]"
+    ? "min-h-[6rem]"
     : isEmptyReply
-      ? "min-h-[36px]"
-      : "min-h-[80px]";
+      ? "min-h-[2rem]"
+      : "min-h-[5rem]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
     if (!toLabel) return [];
@@ -1585,12 +1590,14 @@ function ComposerComponent({
         (sum, line) => sum + Math.max(1, Math.ceil(String(line || "").length / 110)),
         0
       );
-      const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 96 : isEmptyReply ? 36 : 80;
-      const maxEditorHeight = 240;
+      const density = getComposerDensity();
+      const minimumHeight = MIN_COMPOSER_HEIGHT_PX * density;
+      const editorLineHeight = 23 * density;
+      const minEditorHeight = (isNote ? 96 : isEmptyReply ? 32 : 80) * density;
+      const maxEditorHeight = 240 * density;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
-        Math.max(minEditorHeight, estimatedLineCount * editorLineHeight + 20)
+        Math.max(minEditorHeight, estimatedLineCount * editorLineHeight + 20 * density)
       );
       const effectiveEditorHeight =
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
@@ -1599,12 +1606,12 @@ function ComposerComponent({
       // `chromeHeight` includes the resize handle (reply only), recipient
       // row, footer and the editor's 20px vertical padding.
       const chromeHeight =
-        (isNote ? 128 : isEmptyReply ? 128 : 138) + newTicketHeaderHeight;
+        ((isNote ? 128 : isEmptyReply ? 108 : 138) + newTicketHeaderHeight) * density;
       const maxHeight = Math.max(
-        MIN_COMPOSER_HEIGHT_PX,
+        minimumHeight,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
-      return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
+      return Math.min(maxHeight, Math.max(minimumHeight, chromeHeight + effectiveEditorHeight));
     },
     [
       MAX_COMPOSER_VIEWPORT_RATIO,
@@ -1631,11 +1638,12 @@ function ComposerComponent({
       const state = resizeStateRef.current;
       if (!state) return;
       const delta = Number(event?.clientY || 0) - state.startY;
+      const minimumHeight = MIN_COMPOSER_HEIGHT_PX * getComposerDensity();
       const maxHeight = Math.max(
-        MIN_COMPOSER_HEIGHT_PX,
+        minimumHeight,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
-      const next = Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, state.startHeight - delta));
+      const next = Math.min(maxHeight, Math.max(minimumHeight, state.startHeight - delta));
       setComposerHeightPx(next);
     },
     [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX]
@@ -1722,16 +1730,16 @@ function ComposerComponent({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden border shadow-[0_4px_16px_hsl(var(--foreground)/0.04),0_1px_3px_hsl(var(--foreground)/0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
+        className={`relative mx-auto flex w-full max-w-[56rem] flex-col overflow-hidden border shadow-[0_4px_16px_hsl(var(--foreground)/0.04),0_1px_3px_hsl(var(--foreground)/0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-150 ${
           isEmptyReply
-            ? "rounded-[22px] border-border/60 bg-card/95"
-            : "rounded-[22px] border-border/70 bg-card/95"
+            ? "rounded-[1.375rem] border-border/60 bg-card/95"
+            : "rounded-[1.375rem] border-border/70 bg-card/95"
         } ${
           isDragOver ? "border-primary shadow-primary/15" : ""
         } ${disabled ? "opacity-60" : ""}`}
         style={{
           height: `${composerHeightPx}px`,
-          minHeight: `${MIN_COMPOSER_HEIGHT_PX}px`,
+          minHeight: `calc(${MIN_COMPOSER_HEIGHT_PX}px * var(--app-density, 1))`,
           maxHeight: `${Math.round(MAX_COMPOSER_VIEWPORT_RATIO * 100)}vh`,
         }}
       >
@@ -2210,7 +2218,7 @@ function ComposerComponent({
                 placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
                 rows={2}
                 disabled={disabled}
-                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-base leading-[1.5] focus-visible:!ring-0 bg-yellow-50/40"
+                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-[1.5] focus-visible:!ring-0 bg-yellow-50/40"
               />
             ) : (
               <div className={`flex flex-col ${editorBodyMinHeightClassName}`}>
@@ -2219,7 +2227,7 @@ function ComposerComponent({
                   className={`relative flex flex-1 flex-col ${replyEditorMinHeightClassName}`}
                 >
                   {!showDraftLoadingState && !String(value || "").trim() ? (
-                    <div className="pointer-events-none absolute left-0 top-0 text-base text-muted-foreground/80">
+                    <div className="pointer-events-none absolute left-0 top-0 text-sm leading-[1.5] text-muted-foreground/80">
                       {disabled ? disabledPlaceholder : "Write your reply..."}
                     </div>
                   ) : null}
@@ -2283,7 +2291,7 @@ function ComposerComponent({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-base leading-[1.5] text-foreground outline-none selection:bg-accent selection:text-foreground [&_a]:cursor-pointer [&_a]:text-primary [&_a]:underline [&_a:hover]:text-primary/80 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-sm leading-[1.5] text-foreground outline-none selection:bg-accent selection:text-foreground [&_a]:cursor-pointer [&_a]:text-primary [&_a]:underline [&_a:hover]:text-primary/80 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">

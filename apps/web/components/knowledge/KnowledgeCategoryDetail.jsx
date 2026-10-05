@@ -883,7 +883,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       >
         <DialogContent className="max-h-[90vh] w-[min(96vw,900px)] max-w-none overflow-hidden p-0 sm:max-w-none">
           <DialogHeader className="border-b border-border px-5 py-3">
-            <DialogTitle className="text-base font-semibold">
+            <DialogTitle className="text-page-heading font-semibold">
               {editingSnippet ? "Edit snippet" : "New snippet"}
             </DialogTitle>
           </DialogHeader>

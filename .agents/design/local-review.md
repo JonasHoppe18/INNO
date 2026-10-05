@@ -60,3 +60,17 @@ Aktuelle lokale screenshots: /tmp/sona-design-local-1002b-evidence/01-mobile-err
 Der mangler fuldt produktionsbuild med mere diskplads, PR80-afstemning og komplet kontrol af alle legacy-underruter, integrationspaneler og 200 % zoom. Serveren er stoppet efter checks; kun dette worktrees genererede .next blev slettet for at gemme dokumentation sikkert.
 
 Ingen mails sendt, settings eller knowledge gemt, backend-logik ændret eller deploy udført.
+
+## Fælles skala efter lokalt review
+
+Dashboard, Settings, Customers, Analytics, Integrations, Knowledge og design-lab arver nu samme UI-token på 12/18 px og metadata på 12/16 px. Sidetitler bruger 16/24 px og sektionstitler 14/20 px. Nøgletal beholder deres større roller. Fra 1024 px bruger alle dashboard-sider samme 90 % rem-tæthed; fonttokens på UI og headings er faste px. Mobilfelter beholder 16 px.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Inbox var 12 px, øvrige sider 13 px | Fælles 12 px UI-token | Samme tekstrolle på tværs af sider |
+| Rem-tæthed kun i inbox | Fælles desktop-tæthed | Sidebar og controls skifter ikke størrelse ved navigation |
+| Dashboard-kort havde text-lg og Analytics text-base på titler | Fælles section-heading | Samme overskriftshierarki |
+| Dashboard-actions overskrev compact-knappens højde | Button size sm ejer h-7 | Samme kompakte control på flere sider |
+| Activity-badges blev strakt til hele rækkens højde | self-center | Almindelig badge-højde |
+
+Lint af alle ændrede JSX-filer og separat tsc --noEmit --incremental false er bestået. git diff --check er bestået. Den nye fælles tæthed er endnu ikke visuelt kontrolleret på alle sider, og tidligere mål i tabellen ovenfor er historiske. Produktionsbuild af den seneste revision mangler fortsat. PR80-filerne er stadig undtaget fra lokale overrides. Ingen push, PR eller deploy.

@@ -133,7 +133,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex min-h-[68px] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex min-h-[4.25rem] w-full flex-col justify-center gap-0.5 rounded-none px-3 py-2 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // State hierarchy: unread calls for attention with type + a dot; the
@@ -173,7 +173,7 @@ function TicketListItemComponent({
             className="size-2 shrink-0 rounded-full bg-primary ring-2 ring-accent"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-sm font-normal text-foreground", isUnread && "font-semibold")}>
+        <span className={cn("min-w-0 flex-1 truncate text-xs font-normal text-foreground", isUnread && "font-semibold")}>
           {customerLabel}
         </span>
         <span className="shrink-0 text-xs font-normal text-muted-foreground">
@@ -184,7 +184,7 @@ function TicketListItemComponent({
         className="flex min-w-0 items-center gap-2"
         title={metadataTitle || undefined}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
           <span
             title={thread.subject || "Untitled ticket"}
             className={cn("min-w-0 truncate font-normal", isUnread && "font-medium text-foreground")}>
