@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL = (
@@ -17,7 +17,7 @@ const SUPABASE_SERVICE_KEY =
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 const DEFAULT_CATEGORIES = [
@@ -89,7 +89,8 @@ export async function GET() {
 
   const shopIds = shops.map((s) => s.id).filter(Boolean);
 
-  let categoryRows: any[] = [];
+  const categoryRowsPromise = (async () => {
+    let categoryRows: any[] = [];
   try {
     let categoryQuery = (supabase as any)
       .from("knowledge_categories")
@@ -111,12 +112,14 @@ export async function GET() {
   } catch (err: any) {
     const missingTable = String(err?.message || "").includes("knowledge_categories");
     if (!missingTable) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+      throw err;
     }
   }
-
+    return categoryRows;
+  })();
   // Count manual_text snippets per category from metadata
-  let rows: any[] = [];
+  const rowsPromise = (async () => {
+    let rows: any[] = [];
   if (shopIds.length) {
     const { data } = await (supabase as any)
       .from("agent_knowledge")
@@ -125,6 +128,14 @@ export async function GET() {
       .eq("source_provider", "manual_text")
       .eq("chunk_index", 0);
     rows = Array.isArray(data) ? data : [];
+  }
+    return rows;
+  })();
+  let categoryRows: any[], rows: any[];
+  try {
+    [categoryRows, rows] = await Promise.all([categoryRowsPromise, rowsPromise]);
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
   const countsByCategory: Record<string, number> = {};

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { splitIntoSemanticChunks } from "@/lib/server/semantic-chunker";
 
@@ -23,7 +23,7 @@ const OPENAI_OCR_MODEL = process.env.OPENAI_OCR_MODEL || "gpt-4.1-mini";
 
 function createServiceClient() {
   if (!SUPABASE_BASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
+  return createStatelessServiceClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 function truncate(input: string, max = 4000) {

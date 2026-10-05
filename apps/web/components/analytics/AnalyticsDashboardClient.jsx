@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useScopedReadResource } from "@/hooks/useScopedReadResource";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -499,7 +500,6 @@ function AnalyticsShell({ children, ...headerProps }) {
 }
 
 export default function AnalyticsDashboardClient() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const reportParam = searchParams.get("report") || "overview";
@@ -509,7 +509,10 @@ export default function AnalyticsDashboardClient() {
   const metricKey = searchParams.get("metric") || "all";
   const fromReport = REPORTS.some((item) => item.id === searchParams.get("from")) ? searchParams.get("from") : "overview";
   const visibleReport = report === "tickets" ? fromReport : report;
-  const [data, setData] = useState(null);
+  const { scopeKey, ready, getCached, readJson } = useScopedReadResource();
+  const [dataState, setDataState] = useState(null);
+  const data = dataState?.scopeKey === scopeKey ? dataState.payload : null;
+  const setData = useCallback((payload) => setDataState({ scopeKey, payload }), [scopeKey]);
   const dataRef = useRef(null);
   const [refreshing, setRefreshing] = useState(true);
   const [initialError, setInitialError] = useState(null);
@@ -518,31 +521,36 @@ export default function AnalyticsDashboardClient() {
     const next = new URLSearchParams(searchParams.toString());
     edit(next);
     const query = next.toString();
-    router[method](`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
-  }, [pathname, router, searchParams]);
+    window.history[method === "replace" ? "replaceState" : "pushState"](null, "", `${pathname}${query ? `?${query}` : ""}`);
+  }, [pathname, searchParams]);
 
   useEffect(() => {
+    if (!ready) return;
     const controller = new AbortController();
     const params = new URLSearchParams();
     if (range.start && range.end) { params.set("start", range.start); params.set("end", range.end); }
     else params.set("period", period);
-    setRefreshing(true);
+    const url = `/api/analytics/overview?${params.toString()}`;
+    const cached = getCached(url);
+    dataRef.current = cached || null;
+    setData(cached || null);
+    setRefreshing(!cached);
     setInitialError(null);
-    fetch(`/api/analytics/overview?${params.toString()}`, { signal: controller.signal })
-      .then(async (response) => {
-        const json = await response.json();
-        if (!response.ok || json.error) throw new Error(json.error || "Analytics could not be loaded.");
-        return json;
+    readJson(url)
+      .then((json) => {
+        if (controller.signal.aborted) return;
+        if (json.error) throw new Error(json.error);
+        dataRef.current = json;
+        setData(json);
       })
-      .then((json) => { dataRef.current = json; setData(json); })
       .catch((error) => {
-        if (error.name === "AbortError") return;
+        if (controller.signal.aborted || error.name === "AbortError") return;
         if (dataRef.current) toast.error("Analytics could not be refreshed", { description: error.message });
         else setInitialError(error.message);
       })
       .finally(() => { if (!controller.signal.aborted) setRefreshing(false); });
     return () => controller.abort();
-  }, [period, range.start, range.end]);
+  }, [period, range.start, range.end, ready, getCached, readJson, setData]);
 
   const onPeriod = (value) => navigate((params) => { params.set("period", value); params.delete("start"); params.delete("end"); }, "replace");
   const onRange = (nextRange) => navigate((params) => {

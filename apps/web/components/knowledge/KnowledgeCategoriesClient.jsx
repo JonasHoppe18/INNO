@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 import {
   AlertTriangle,
   Bold as BoldIcon,
@@ -334,8 +335,15 @@ function CategoryCard({ category, onClick }) {
 }
 
 function SavedRepliesSection() {
-  const [replies, setReplies] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { scopeKey, ready, getCached, readJson, invalidate } = useScopedReadResource();
+  const [replyState, setReplyState] = useState(() => ({ scopeKey, rows: getCached("/api/settings/saved-replies")?.replies || [] }));
+  const replies = replyState?.scopeKey === scopeKey ? replyState.rows : [];
+  const setReplies = useCallback((rows) => setReplyState((prev) => ({
+    scopeKey,
+    rows: typeof rows === "function" ? rows(prev?.scopeKey === scopeKey ? prev.rows : []) : rows,
+  })), [scopeKey]);
+  const loadTokenRef = useRef(0);
+  const [loading, setLoading] = useState(() => !getCached("/api/settings/saved-replies"));
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = new, object = edit
   const [title, setTitle] = useState("");
@@ -363,20 +371,22 @@ function SavedRepliesSection() {
     }
   };
 
-  const loadReplies = useCallback(async () => {
-    setLoading(true);
+  const loadReplies = useCallback(async (force = true) => {
+    if (!ready) return;
+    const token = ++loadTokenRef.current;
+    setLoading(!getCached("/api/settings/saved-replies") || Boolean(force));
     try {
-      const res = await fetch("/api/settings/saved-replies", { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
-      setReplies(Array.isArray(data?.replies) ? data.replies : []);
+      const data = await readJson("/api/settings/saved-replies", { force });
+      if (token === loadTokenRef.current) setReplies(Array.isArray(data?.replies) ? data.replies : []);
     } catch {
-      setReplies([]);
+      if (token === loadTokenRef.current) setReplies([]);
     } finally {
-      setLoading(false);
+      if (token === loadTokenRef.current) setLoading(false);
     }
-  }, []);
+  }, [ready, getCached, readJson, setReplies]);
 
-  useEffect(() => { loadReplies(); }, [loadReplies]);
+  useEffect(() => { loadReplies(false); }, [loadReplies]);
+  useEffect(() => { setModalOpen(false); }, [scopeKey]);
 
   const openNew = () => {
     resetForm();
@@ -674,6 +684,7 @@ function SavedRepliesSection() {
       });
       if (!res.ok) throw new Error("Could not delete");
       toast.success("Deleted");
+      invalidate("/api/settings/saved-replies");
       setReplies((prev) => prev.filter((r) => r.id !== id));
     } catch (err) {
       toast.error(err.message);
@@ -1066,8 +1077,11 @@ function KnowledgeGapsSection({ onCreateCategory }) {
 
 export function KnowledgeCategoriesClient() {
   const router = useRouter();
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { scopeKey, ready, getCached, readJson } = useScopedReadResource();
+  const [categoryState, setCategoryState] = useState(() => ({ scopeKey, rows: getCached("/api/knowledge/categories")?.categories || [] }));
+  const categories = categoryState?.scopeKey === scopeKey ? categoryState.rows : [];
+  const loadTokenRef = useRef(0);
+  const [loading, setLoading] = useState(() => !getCached("/api/knowledge/categories"));
 
   const totalKnowledgeItems = categories.reduce((total, category) => {
     const count = Number(category?.count);
@@ -1075,22 +1089,21 @@ export function KnowledgeCategoriesClient() {
   }, 0);
   const hasKnowledge = totalKnowledgeItems > 0;
 
-  const fetchCategories = useCallback(async () => {
-    setLoading(true);
+  const fetchCategories = useCallback(async (force = true) => {
+    if (!ready) return;
+    const token = ++loadTokenRef.current;
+    setLoading(!getCached("/api/knowledge/categories") || Boolean(force));
     try {
-      const res = await fetch("/api/knowledge/categories", { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
-      setCategories(data?.categories ?? []);
+      const data = await readJson("/api/knowledge/categories", { force });
+      if (token === loadTokenRef.current) setCategoryState({ scopeKey, rows: data?.categories ?? [] });
     } catch {
-      /* ignore */
+      if (token === loadTokenRef.current) setCategoryState({ scopeKey, rows: [] });
     } finally {
-      setLoading(false);
+      if (token === loadTokenRef.current) setLoading(false);
     }
-  }, []);
+  }, [ready, scopeKey, getCached, readJson]);
 
-  useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
+  useEffect(() => { fetchCategories(false); }, [fetchCategories]);
 
   return (
     <div className="space-y-8">

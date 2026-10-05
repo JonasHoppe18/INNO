@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import Link from "next/link"
+import { InboxQueueLink as Link } from "@/components/inbox/InboxQueueLink"
 import {
   ChevronDown,
   ChevronRight,

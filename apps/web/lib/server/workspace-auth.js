@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { shareInFlightRead } from "./in-flight-read";
 
 function normalizedId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -18,8 +19,6 @@ export async function resolveAuthScope(
   { clerkUserId, orgId, sessionClaims = null },
   _options = {}
 ) {
-  let supabaseUserId = null;
-  let workspaceId = null;
   let activeOrgId = resolveClerkOrgId({ orgId, sessionClaims });
 
   // Older callers only pass auth().orgId. Clerk can expose the active
@@ -36,6 +35,17 @@ export async function resolveAuthScope(
     }
   }
 
+  const scope = await shareInFlightRead(
+    serviceClient,
+    JSON.stringify(["auth-scope", clerkUserId, activeOrgId]),
+    () => loadAuthScope(serviceClient, clerkUserId, activeOrgId),
+  );
+  return { ...scope };
+}
+
+async function loadAuthScope(serviceClient, clerkUserId, activeOrgId) {
+  let supabaseUserId = null;
+  let workspaceId = null;
   if (activeOrgId) {
     // profiles and workspaces are independent — run in parallel
     const [profileResult, workspaceResult] = await Promise.all([
@@ -103,6 +113,7 @@ export async function resolveAuthScope(
     workspaceId = rows[0]?.workspace_id ?? null;
   }
 
+  if (!supabaseUserId && !workspaceId) throw new Error("Workspace scope not found.");
   return { supabaseUserId, workspaceId };
 }
 

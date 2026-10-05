@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { scopedReadCache } from "@/lib/client/scoped-read-cache";
 import { usePathname } from "next/navigation";
 import { SidebarInset, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { SiteHeader } from "@/components/site-header";
@@ -10,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 export function DashboardShell({ children }) {
   const pathname = usePathname();
+  const { userId, sessionId, orgId } = useAuth();
+  useEffect(() => () => scopedReadCache.clear(), [userId, sessionId, orgId]);
   const { setOpenMobile } = useSidebar();
 
   useEffect(() => {

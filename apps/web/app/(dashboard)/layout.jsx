@@ -5,7 +5,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { DashboardThemeProvider } from "@/components/theme/dashboard-theme-provider";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { loadDashboardShellData } from "@/lib/server/dashboard-shell-data";
 import { cookies } from "next/headers";
 import { isGreenfieldPlaygroundEnabled } from "@/lib/server/greenfield-playground";
@@ -31,7 +31,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 // Dashboard-layout henter Clerk-bruger til sidebar/header og wrapper børnene i sidebar/provider

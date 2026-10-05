@@ -180,7 +180,7 @@ export function NavUser({
                 Billing
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/settings">
+                <Link prefetch href="/settings">
                   <SettingsIcon />
                   Settings
                 </Link>

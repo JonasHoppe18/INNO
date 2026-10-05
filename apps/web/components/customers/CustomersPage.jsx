@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrganization } from "@clerk/nextjs";
 import {
   ArrowDownUp,
@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatTicketReference } from "@/lib/tickets/reference";
+
+import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 
 const PAGE_SIZE = 25;
 const EMPTY_CUSTOMERS = [];
@@ -128,9 +130,12 @@ function OrderState({ result }) {
 export function CustomersPage() {
   const { organization, isLoaded } = useOrganization();
   const organizationId = organization?.id || "personal";
-  const [data, setData] = useState(null);
+  const { scopeKey, ready, getCached, readJson: readResource } = useScopedReadResource();
+  const [dataState, setDataState] = useState(() => ({ scopeKey, payload: getCached("/api/customers") || null }));
+  const data = dataState?.scopeKey === scopeKey ? dataState.payload : null;
+  const setData = useCallback((payload) => setDataState({ scopeKey, payload }), [scopeKey]);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCached("/api/customers"));
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -142,18 +147,18 @@ export function CustomersPage() {
   const [orderRefresh, setOrderRefresh] = useState(0);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !ready) return;
     const controller = new AbortController();
-    setLoading(true);
+    const cached = retryAttempt ? null : getCached("/api/customers");
+    setLoading(!cached);
     setError("");
-    setData(null);
+    setData(cached || null);
     setSelected(null);
     setOrderResults({});
     setOrderCounts({});
     setPage(1);
-    fetch("/api/customers", { cache: "no-store", signal: controller.signal })
-      .then(readJson)
-      .then(setData)
+    readResource("/api/customers", { force: retryAttempt > 0 })
+      .then((payload) => { if (!controller.signal.aborted) setData(payload); })
       .catch((err) => {
         if (!controller.signal.aborted) setError(err.message);
       })
@@ -161,7 +166,7 @@ export function CustomersPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [organizationId, isLoaded, retryAttempt]);
+  }, [organizationId, isLoaded, retryAttempt, ready, getCached, readResource, setData]);
 
   useEffect(() => {
     setPage(1);
@@ -227,16 +232,11 @@ export function CustomersPage() {
     const ids = JSON.parse(countIdsKey);
     if (!ids.length) return;
     const controller = new AbortController();
-    setOrderCounts(
-      Object.fromEntries(ids.map((id) => [id, { status: "loading" }])),
-    );
     const params = new URLSearchParams();
     ids.forEach((id) => params.append("count", id));
-    fetch(`/api/customers?${params}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(readJson)
+    const url = `/api/customers?${params}`;
+    setOrderCounts(getCached(url)?.counts || Object.fromEntries(ids.map((id) => [id, { status: "loading" }])));
+    readResource(url, { force: orderRefresh > 0 })
       .then((result) => {
         if (!controller.signal.aborted) setOrderCounts(result.counts);
       })
@@ -247,7 +247,7 @@ export function CustomersPage() {
           );
       });
     return () => controller.abort();
-  }, [countIdsKey, data, organizationId, orderRefresh]);
+  }, [countIdsKey, data, organizationId, orderRefresh, readResource, getCached]);
   const orderResult = selected ? orderResults[selected.id] : null;
 
   return (

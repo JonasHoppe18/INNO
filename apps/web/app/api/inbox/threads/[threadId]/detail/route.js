@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   composeEmailBodyWithSignature,
@@ -21,7 +21,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return createStatelessServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
@@ -141,46 +141,37 @@ async function loadLatestAiDraft(serviceClient, scope, thread) {
 }
 
 async function loadDraft(serviceClient, scope, thread) {
-  const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
-  const { data: mailbox } = await applyScope(
-    serviceClient
-      .from("mail_accounts")
-      .select("id, shop_id, workspace_id")
-      .eq("id", thread.mailbox_id)
-      .maybeSingle(),
-    scope,
-  );
-  const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
-    workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
-    shopId: mailbox?.shop_id || null,
-    userId: scope?.supabaseUserId || null,
-    legacySignature,
-  });
-  const latestPendingDraftMeta = await loadLatestPendingDraftMeta(
-    serviceClient,
-    scope,
-    thread.provider_thread_id || thread.id,
-  );
-  const { data: savedDraft, error } = await applyScope(
-    serviceClient
-      .from("mail_messages")
-      .select("id, body_text, body_html, subject, updated_at")
-      .eq("thread_id", thread.id)
-      .eq("from_me", true)
-      .eq("is_draft", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    scope,
-  );
+  const [legacySignature, mailboxResult, latestPendingDraftMeta, savedDraftResult] = await Promise.all([
+    loadLegacyUserSignature(serviceClient, scope.supabaseUserId),
+    scope.workspaceId ? { data: null } : applyScope(
+      serviceClient.from("mail_accounts").select("id, shop_id, workspace_id")
+        .eq("id", thread.mailbox_id).maybeSingle(),
+      scope,
+    ),
+    loadLatestPendingDraftMeta(serviceClient, scope, thread.provider_thread_id || thread.id),
+    applyScope(
+      serviceClient.from("mail_messages").select("id, body_text, body_html, subject, updated_at")
+        .eq("thread_id", thread.id).eq("from_me", true).eq("is_draft", true)
+        .order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+      scope,
+    ),
+  ]);
+  const mailbox = mailboxResult.data;
+  const { data: savedDraft, error } = savedDraftResult;
   if (error) throw new Error(error.message);
   // A generated reply is persisted on the latest inbound message. Treat it as
   // a draft when there is no agent-edited `is_draft` row, so the detail payload
   // alone can restore the composer after a ticket switch.
   const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
-  const draft =
-    savedDraft ||
-    (!proposalOnly ? await loadLatestAiDraft(serviceClient, scope, thread) : null);
+  const [signatureConfig, draft] = await Promise.all([
+    loadEmailSignatureConfig(serviceClient, {
+      workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
+      shopId: mailbox?.shop_id || null,
+      userId: scope?.supabaseUserId || null,
+      legacySignature,
+    }),
+    savedDraft || (!proposalOnly ? loadLatestAiDraft(serviceClient, scope, thread) : null),
+  ]);
   const rendered = draft
     ? composeEmailBodyWithSignature({
         bodyText: draft.body_text || "",
@@ -241,23 +232,18 @@ async function loadOrderUpdate(serviceClient, scope, thread) {
     .order("updated_at", { ascending: false })
     .limit(1);
   actionQuery = applyScope(actionQuery, scope);
-  const { data: latestAction, error } = await actionQuery.maybeSingle();
+  const [actionResult, returnCaseResult] = await Promise.all([
+    actionQuery.maybeSingle(),
+    scope?.workspaceId
+      ? serviceClient.from("return_cases")
+          .select("id, status, is_eligible, eligibility_reason, return_shipping_mode, reason, shopify_order_id, customer_email, created_at, updated_at")
+          .eq("thread_id", thread.id).eq("workspace_id", scope.workspaceId)
+          .order("updated_at", { ascending: false }).limit(1).maybeSingle()
+      : { data: null },
+  ]);
+  const { data: latestAction, error } = actionResult;
   if (error) throw new Error(error.message);
-
-  let latestReturnCase = null;
-  if (scope?.workspaceId) {
-    const { data } = await serviceClient
-      .from("return_cases")
-      .select(
-        "id, status, is_eligible, eligibility_reason, return_shipping_mode, reason, shopify_order_id, customer_email, created_at, updated_at",
-      )
-      .eq("thread_id", thread.id)
-      .eq("workspace_id", scope.workspaceId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    latestReturnCase = data || null;
-  }
+  const latestReturnCase = returnCaseResult.data || null;
   if (!latestAction) return { action: null, returnCase: latestReturnCase };
 
   const normalizedStatus = normalizeActionStatus(latestAction.status);
