@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MailCheck } from "lucide-react";
+import { ChevronRight, MailCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SentEmailTime } from "@/components/inbox/SentEmailTime";
@@ -59,6 +59,7 @@ export function CsatSent({ event, threadId }) {
         <MailCheck className="size-3.5 shrink-0" aria-hidden="true" />
         <span>CSAT email sent</span>
         <SentEmailTime sentAt={event.sent_at} />
+        <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex h-[min(760px,88vh)] w-[min(92vw,720px)] max-w-none flex-col gap-0 overflow-hidden border-border bg-card p-0">
