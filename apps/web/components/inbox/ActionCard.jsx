@@ -39,6 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ForwardRecipientResults } from "@/components/inbox/ForwardRecipientResults";
 import {
   Field,
   FieldDescription,
@@ -535,6 +536,10 @@ export function ActionCard({
   const isDeclined = status === "declined";
   const isFailed = status === "failed";
   const isResultState = isCompleted || isSimulated || isFailed;
+  const forwardRecipientResults =
+    normalizedAction === "forward_email" && Array.isArray(payload?.recipient_results)
+      ? payload.recipient_results
+      : [];
 
   const addressLines = useMemo(() => formatAddressLines(detail), [detail]);
   const canExpand = !isProposed && (addressLines.length > 0 || Boolean(detail));
@@ -753,6 +758,9 @@ export function ActionCard({
               <ChevronRight className="h-5 w-5" />
             </button>
           </div>
+          {normalizedAction === "forward_email" ? (
+            <ForwardRecipientResults results={forwardRecipientResults} />
+          ) : null}
         </div>
         <Dialog open={showApprovedDetail} onOpenChange={setShowApprovedDetail}>
           <DialogContent className="sm:max-w-[560px] [&>button]:hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 duration-200">
@@ -828,6 +836,29 @@ export function ActionCard({
   }
 
   if (isExecuting) {
+    const isRetryingForward =
+      normalizedAction === "forward_email" &&
+      forwardRecipientResults.some((result) => result?.state === "failed");
+
+    if (isRetryingForward) {
+      return (
+        <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-foreground">Forward email</div>
+                <div className="text-xs text-muted-foreground">Retrying failed recipients...</div>
+              </div>
+            </div>
+            <ForwardRecipientResults results={forwardRecipientResults} retrying />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="flex items-center gap-3 px-4 py-3">
@@ -881,6 +912,26 @@ export function ActionCard({
     const failedDetail = normalizeFailedDetail(
       error || detail || "Order is Fulfilled and cannot be changed"
     );
+
+    if (normalizedAction === "forward_email" && forwardRecipientResults.length) {
+      return (
+        <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-4 py-3">
+          <div className="flex items-center gap-3 text-left">
+            <XCircle className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
+            <span className="text-sm font-medium text-violet-900 dark:text-violet-200">
+              Forward email could not be completed.
+            </span>
+          </div>
+          <ForwardRecipientResults
+            results={forwardRecipientResults}
+            showSingleRecipient
+            onRetry={() => onApprove?.()}
+            retrying={loading}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 px-4">
         <div className="flex h-12 w-full items-center gap-3 text-left">

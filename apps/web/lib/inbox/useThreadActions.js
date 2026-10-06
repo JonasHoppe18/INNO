@@ -10,6 +10,16 @@ import { splitActionApprovalOptions } from "@/lib/inbox/action-approval";
 // Matches InboxSplitView.jsx's local `normalizeStatus` wrapper exactly.
 const normalizeStatus = (value) => toLegacyUiStatus(value);
 
+function getForwardRecipientResultsFromResponse(payload) {
+  if (!payload || payload.error_code === "send_in_progress") return null;
+  const results = Array.isArray(payload.recipient_results)
+    ? payload.recipient_results
+    : Array.isArray(payload.forwarded_recipients)
+      ? payload.forwarded_recipients
+      : null;
+  return results?.length ? results : null;
+}
+
 // Verbatim extraction from InboxSplitView.jsx (Task 5, Plan 2). Behavior-preserving —
 // see .superpowers/sdd/task-5-report.md for the mapping of what moved from where.
 //
@@ -778,7 +788,9 @@ export function useThreadActions({
         );
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(payload?.error || "Could not update action.");
+          const responseError = new Error(payload?.error || "Could not update action.");
+          responseError.forwardResponse = payload;
+          throw responseError;
         }
         if (
           normalized === "accepted" &&
@@ -891,6 +903,7 @@ export function useThreadActions({
           });
         } else {
           if (normalized === "accepted") {
+            const responseRecipientResults = getForwardRecipientResultsFromResponse(payload);
             setPendingOrderUpdateByThread((prev) => ({
               ...prev,
               [selectedThreadId]: {
@@ -900,6 +913,9 @@ export function useThreadActions({
                     ? "approved_test_mode"
                     : "applied",
                 detail: asString(payload?.detail) || pending.detail || "",
+                payload: responseRecipientResults
+                  ? { ...pending.payload, recipient_results: responseRecipientResults }
+                  : pending.payload,
                 updatedAt: payload?.approvedAt || nowIso,
                 approvedBy: currentUserName,
                 testMode: Boolean(payload?.testMode || payload?.simulated),
@@ -967,6 +983,27 @@ export function useThreadActions({
         return true;
       } catch (error) {
         const message = error?.message || "Could not update action.";
+        const responseRecipientResults = getForwardRecipientResultsFromResponse(
+          error?.forwardResponse,
+        );
+        if (responseRecipientResults) {
+          setPendingOrderUpdateByThread((prev) => {
+            const current = prev[selectedThreadId];
+            if (!current) return prev;
+            return {
+              ...prev,
+              [selectedThreadId]: {
+                ...current,
+                payload: {
+                  ...(current.payload && typeof current.payload === "object"
+                    ? current.payload
+                    : {}),
+                  recipient_results: responseRecipientResults,
+                },
+              },
+            };
+          });
+        }
         setOrderUpdateErrorByThread((prev) => ({
           ...prev,
           [selectedThreadId]: message,

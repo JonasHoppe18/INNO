@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildForwardRecipientResult,
+  getForwardRecipientDisplayModel,
   summarizeForwardRecipientResults,
 } from "../forward-recipient-results.js";
 
@@ -65,5 +66,59 @@ describe("forward recipient results", () => {
 
     expect(summary.kind).toBe("in_progress");
     expect(summary.detail).toContain("one@example.com");
+  });
+
+  it("builds an all-success recipient result view without retryable recipients", () => {
+    const model = getForwardRecipientDisplayModel([
+      recipient("one@example.com", "sent"),
+      recipient("two@example.com", "sent"),
+      recipient("three@example.com", "sent"),
+    ]);
+
+    expect(model).toMatchObject({
+      headline: "Forwarded to 3 recipients",
+      isMultiRecipient: true,
+      hasUnknown: false,
+      retryableRecipients: [],
+    });
+    expect(model.results.map((result) => result.email)).toEqual([
+      "one@example.com",
+      "two@example.com",
+      "three@example.com",
+    ]);
+  });
+
+  it("exposes only failed recipients as retryable in a partial result", () => {
+    const model = getForwardRecipientDisplayModel([
+      recipient("one@example.com", "sent"),
+      recipient("two@example.com", "failed", "recipient_rejected"),
+      recipient("three@example.com", "sent"),
+    ]);
+
+    expect(model.headline).toBe("Forwarded to 2 of 3 recipients");
+    expect(model.retryableRecipients).toEqual(["two@example.com"]);
+    expect(model.hasUnknown).toBe(false);
+  });
+
+  it("does not make unknown recipients retryable and preserves the warning state", () => {
+    const model = getForwardRecipientDisplayModel([
+      recipient("one@example.com", "sent"),
+      recipient("two@example.com", "unknown", "send_status_unknown"),
+      recipient("three@example.com", "failed", "recipient_rejected"),
+    ]);
+
+    expect(model.headline).toBe("Forwarded to 1 of 3 recipients");
+    expect(model.hasUnknown).toBe(true);
+    expect(model.retryableRecipients).toEqual(["three@example.com"]);
+  });
+
+  it("keeps a failed all-recipient result retryable", () => {
+    const model = getForwardRecipientDisplayModel([
+      recipient("one@example.com", "failed", "recipient_rejected"),
+      recipient("two@example.com", "failed", "recipient_suppressed"),
+    ]);
+
+    expect(model.headline).toBe("The forward could not be delivered");
+    expect(model.retryableRecipients).toEqual(["one@example.com", "two@example.com"]);
   });
 });

@@ -14,6 +14,30 @@ export function buildForwardRecipientResult({
   };
 }
 
+export function getForwardRecipientDisplayModel(results = []) {
+  const recipientResults = Array.isArray(results) ? results.filter(Boolean) : [];
+  const succeeded = recipientResults.filter((result) => result.state === "sent");
+  const unknown = recipientResults.filter((result) => result.state === "unknown");
+  const failed = recipientResults.filter((result) => result.state === "failed");
+
+  let headline = "";
+  if (succeeded.length === recipientResults.length && recipientResults.length) {
+    headline = `Forwarded to ${succeeded.length} recipient${succeeded.length === 1 ? "" : "s"}`;
+  } else if (succeeded.length) {
+    headline = `Forwarded to ${succeeded.length} of ${recipientResults.length} recipients`;
+  } else if (failed.length || unknown.length) {
+    headline = "The forward could not be delivered";
+  }
+
+  return {
+    results: recipientResults,
+    headline,
+    hasUnknown: unknown.length > 0,
+    retryableRecipients: failed.map((result) => result.email).filter(Boolean),
+    isMultiRecipient: recipientResults.length > 1,
+  };
+}
+
 function formatForwardRecipientFailure(result) {
   const reason =
     result.error_code === "recipient_suppressed" || result.error_code === "recipient_rejected"
