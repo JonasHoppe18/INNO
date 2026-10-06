@@ -159,4 +159,24 @@ describe("forward email", () => {
       isInline: false,
     });
   });
+
+  it("can materialize independent provider attachment payloads without consuming shared state", () => {
+    const attachment = materializeForwardAttachment(
+      {
+        filename: "invoice.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 9,
+        provider_attachment_id: null,
+        storage_path: `inline:application/pdf;base64,${pdfBase64}`,
+      },
+      0,
+    );
+
+    const firstRecipient = buildPostmarkAttachments([attachment]);
+    const secondRecipient = buildPostmarkAttachments([attachment]);
+
+    expect(secondRecipient).toEqual(firstRecipient);
+    expect(secondRecipient).not.toBe(firstRecipient);
+    expect(attachment.content_base64).toBe(pdfBase64);
+  });
 });

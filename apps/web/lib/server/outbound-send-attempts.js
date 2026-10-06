@@ -75,6 +75,25 @@ export function buildOutboundRequestFingerprint({
     .digest("hex");
 }
 
+// Forward actions use this stable UUID as the durable per-recipient handle.
+// It prevents a completed recipient from being sent again when a concurrent
+// approval arrives after the partial uniqueness window has closed. A changed
+// canonical request produces a different UUID.
+export function buildDeterministicOutboundAttemptId(requestFingerprint) {
+  const hex = crypto
+    .createHash("sha256")
+    .update(`sona-forward-recipient:${normalizedString(requestFingerprint)}`)
+    .digest("hex");
+  const variant = (8 + (Number.parseInt(hex[16], 16) % 4)).toString(16);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
+
 export function describeOutboundSendAttempt(row, requestFingerprint) {
   if (!row) return { state: "new" };
   if (String(row.request_fingerprint || "") !== String(requestFingerprint || "")) {
@@ -114,6 +133,29 @@ async function loadAttemptById(serviceClient, scope, attemptId) {
     .limit(1);
   query = applyScope(query, scope);
   const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
+async function retryFailedAttempt(serviceClient, scope, attempt) {
+  let query = serviceClient
+    .from("outbound_send_attempts")
+    .update({
+      state: OUTBOUND_SEND_ATTEMPT_STATES.RESERVED,
+      failure_class: null,
+      provider_message_id: null,
+      message_id: null,
+      provider_started_at: null,
+      completed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", attempt.id)
+    .eq("state", OUTBOUND_SEND_ATTEMPT_STATES.FAILED)
+    .eq("request_fingerprint", attempt.request_fingerprint);
+  query = applyScope(query, scope);
+  const { data, error } = await query
+    .select(OUTBOUND_ATTEMPT_SELECT)
+    .maybeSingle();
   if (error) throw new Error(error.message);
   return data || null;
 }
@@ -201,6 +243,7 @@ export async function claimOutboundSendAttempt({
   provider,
   attemptId,
   requestFingerprint,
+  allowFailedRetry = false,
 }) {
   for (let retry = 0; retry < 3; retry += 1) {
     const nowIso = new Date().toISOString();
@@ -230,6 +273,17 @@ export async function claimOutboundSendAttempt({
     const existingById = await loadAttemptById(serviceClient, scope, attemptId);
     if (existingById) {
       const resolution = describeAttemptResolution(existingById, requestFingerprint);
+      if (
+        allowFailedRetry &&
+        resolution.kind === "new_attempt_required" &&
+        existingById.state === OUTBOUND_SEND_ATTEMPT_STATES.FAILED &&
+        String(existingById.request_fingerprint || "") === String(requestFingerprint || "")
+      ) {
+        const retried = await retryFailedAttempt(serviceClient, scope, existingById);
+        if (retried) return { kind: "claimed", attempt: retried };
+        const current = await loadAttemptById(serviceClient, scope, attemptId);
+        if (current) return describeAttemptResolution(current, requestFingerprint);
+      }
       if (resolution.kind !== "in_progress") return resolution;
       const recovery = await recoverStaleOutboundSendAttempt({
         serviceClient,

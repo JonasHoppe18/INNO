@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
 import {
@@ -21,13 +20,17 @@ import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { normalizeCoreActionType, resolveActionMode } from "@/lib/action-modes";
 import {
   resolveForwardRecipients,
-  formatForwardRecipients,
 } from "@/lib/forward-recipients";
+import {
+  buildForwardRecipientResult,
+  summarizeForwardRecipientResults,
+} from "@/lib/forward-recipient-results";
 import {
   buildOutboundAttemptLog,
   classifyOutboundError,
 } from "@/lib/server/outbound-send-reliability";
 import {
+  buildDeterministicOutboundAttemptId,
   buildOutboundRequestFingerprint,
   claimOutboundSendAttempt,
   OUTBOUND_ATTEMPT_SELECT,
@@ -587,80 +590,95 @@ async function logForwardSendAttempt({
   });
 }
 
-function buildForwardUnknownResponse(attemptId) {
-  return NextResponse.json(
-    {
-      error:
-        "The forward status is unknown. The email provider may have accepted the message. Verify the thread before trying again.",
-      send_status: "unknown",
-      error_code: "send_status_unknown",
-      send_attempt_id: attemptId || null,
-    },
-    { status: 504 },
-  );
-}
-
-function buildForwardFailureResponse(error, failure, attemptId) {
-  if (failure.recipientSuppressed) {
-    return NextResponse.json(
-      {
-        error:
-          "This recipient cannot currently receive email because the address has been marked inactive by the email provider.",
-        send_status: "failed",
-        error_code: "recipient_suppressed",
-        send_attempt_id: attemptId || null,
-      },
-      { status: 422 },
-    );
+function buildForwardAggregateResponse(results) {
+  const summary = summarizeForwardRecipientResults(results);
+  const publicResults = publicForwardRecipientResults(results);
+  if (summary.kind === "all_succeeded") {
+    return {
+      response: NextResponse.json(
+        {
+          ok: true,
+          decision: "accepted",
+          action: "forward_email",
+          send_status: summary.kind,
+          forwarded_to: results.length === 1 ? results[0].email : results.map((result) => result.email),
+          forwarded_recipients: publicResults,
+          detail: summary.detail,
+        },
+        { status: 200 },
+      ),
+      summary,
+    };
   }
-  if (failure.outcome === "unknown") return buildForwardUnknownResponse(attemptId);
-  return NextResponse.json(
-    {
-      error: "Sona couldn't forward this message. The message was not sent. Please review the error and try again.",
-      send_status: "failed",
-      error_code: "forward_failed",
-      send_attempt_id: attemptId || null,
-    },
-    { status: 422 },
-  );
+  const status = summary.kind === "unknown_outcome" ? 504 : summary.kind === "in_progress" ? 409 : 422;
+  return {
+    response: NextResponse.json(
+      {
+        error: summary.error,
+        send_status: summary.kind,
+        error_code:
+          summary.kind === "unknown_outcome"
+            ? "send_status_unknown"
+            : summary.kind === "in_progress"
+              ? "send_in_progress"
+              : "forward_failed",
+        recipient_results: publicResults,
+        detail: summary.detail,
+      },
+      { status },
+    ),
+    summary,
+  };
 }
 
-async function persistForwardActionSuccess({
+function publicForwardRecipientResults(results) {
+  return results.map(({ email, state, error_code: errorCode }) => ({
+    email,
+    state,
+    error_code: errorCode,
+  }));
+}
+
+async function persistForwardActionOutcome({
   serviceClient,
   scope,
   actionRecord,
   actionKey,
   payloadForForward,
-  sentMessageId,
   recipients,
+  recipientResults,
   userId,
   thread,
   nowIso,
   clerkUserId,
   decisionReason,
 }) {
-  const recipientText = formatForwardRecipients(recipients);
+  const summary = summarizeForwardRecipientResults(recipientResults);
+  const allSucceeded = summary.kind === "all_succeeded";
   const appliedPayload = {
     ...payloadForForward,
     recipients,
     target_email: recipients.length === 1 ? recipients[0] : null,
-    sent_message_id: sentMessageId || null,
+    recipient_results: recipientResults,
+    outbound_send_attempt_ids: recipientResults
+      .map((result) => result.attempt_id)
+      .filter(Boolean),
   };
-  const appliedDetail = `Forwarded to ${recipientText}.`;
+  const actionPatch = {
+    status: allSucceeded ? "applied" : "failed",
+    detail: summary.detail,
+    payload: appliedPayload,
+    action_type: "forward_email",
+    action_key: actionKey,
+    decided_at: nowIso,
+    applied_at: allSucceeded ? nowIso : null,
+    updated_at: nowIso,
+    error: allSucceeded ? null : summary.error,
+  };
   if (actionRecord?.id) {
     const { error } = await serviceClient
       .from("thread_actions")
-      .update({
-        status: "applied",
-        detail: appliedDetail,
-        payload: appliedPayload,
-        action_type: "forward_email",
-        action_key: actionKey,
-        decided_at: nowIso,
-        applied_at: nowIso,
-        updated_at: nowIso,
-        error: null,
-      })
+      .update(actionPatch)
       .eq("id", actionRecord.id);
     if (error) throw new Error(error.message);
   } else {
@@ -670,42 +688,264 @@ async function persistForwardActionSuccess({
       thread_id: thread.id,
       action_type: "forward_email",
       action_key: actionKey,
-      status: "applied",
-      detail: appliedDetail,
+      status: actionPatch.status,
+      detail: actionPatch.detail,
       payload: appliedPayload,
       source: "manual_approval",
-      error: null,
+      error: actionPatch.error,
       decided_at: nowIso,
-      applied_at: nowIso,
+      applied_at: actionPatch.applied_at,
       created_at: nowIso,
       updated_at: nowIso,
     });
     if (error) throw new Error(error.message);
   }
 
-  await captureActionDecisionFeedback({
-    serviceClient,
-    threadId: thread.id,
-    actionType: "forward_email",
-    decision: "approved",
-    decidedBy: clerkUserId,
-    decisionReason,
-    sourceActionId: actionRecord?.id || null,
-    createdAt: nowIso,
-  }).catch((error) => {
-    console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
-  });
+  if (allSucceeded) {
+    await captureActionDecisionFeedback({
+      serviceClient,
+      threadId: thread.id,
+      actionType: "forward_email",
+      decision: "approved",
+      decidedBy: clerkUserId,
+      decisionReason,
+      sourceActionId: actionRecord?.id || null,
+      createdAt: nowIso,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+    });
+  }
 
   await serviceClient.from("agent_logs").insert({
     draft_id: null,
-    step_name: "forward_email_applied",
+    step_name: allSucceeded ? "forward_email_applied" : "forward_email_partial",
     step_detail: JSON.stringify({
       thread_id: thread.id,
       recipient_count: recipients.length,
-      provider_message_id: sentMessageId || null,
+      succeeded_count: recipientResults.filter((result) => result.state === "sent").length,
+      unknown_count: recipientResults.filter((result) => result.state === "unknown").length,
+      failed_count: recipientResults.filter((result) => result.state === "failed").length,
     }),
-    status: "success",
+    status: allSucceeded ? "success" : "warning",
     created_at: nowIso,
+  });
+}
+
+async function completeForwardActionAttempts({ serviceClient, scope, payload }) {
+  const attemptIds = [
+    ...(Array.isArray(payload?.recipient_results)
+      ? payload.recipient_results
+          .filter((result) => result?.state === "sent")
+          .map((result) => result?.attempt_id)
+      : []),
+    payload?.outbound_send_attempt_id,
+  ].filter(Boolean);
+  for (const attemptId of [...new Set(attemptIds)]) {
+    const completed = await completeForwardSendAttempt({
+      serviceClient,
+      scope,
+      attemptId,
+    });
+    if (!completed) throw new Error("Forward send attempt could not be finalized.");
+  }
+}
+
+async function executeForwardRecipient({
+  serviceClient,
+  scope,
+  userId,
+  workspaceId,
+  thread,
+  recipient,
+  subject,
+  textBody,
+  htmlBody,
+  attachments,
+  fromName,
+  fromEmail,
+}) {
+  const requestFingerprint = buildOutboundRequestFingerprint({
+    threadId: thread.id,
+    mailboxId: thread.mailbox_id,
+    provider: "smtp",
+    operationType: "forward",
+    sourceMessageId: attachments.sourceMessageId || "",
+    subject,
+    bodyText: textBody,
+    bodyHtml: htmlBody,
+    to: [recipient],
+    attachments: attachments.items,
+  });
+  const attemptId = buildDeterministicOutboundAttemptId(requestFingerprint);
+  const startedAt = Date.now();
+  let attemptResolution;
+  try {
+    attemptResolution = await claimOutboundSendAttempt({
+      serviceClient,
+      scope,
+      userId,
+      workspaceId,
+      mailboxId: thread.mailbox_id,
+      threadId: thread.id,
+      operationType: "forward",
+      provider: "smtp",
+      attemptId,
+      requestFingerprint,
+      allowFailedRetry: true,
+    });
+  } catch (error) {
+    await logForwardSendAttempt({
+      serviceClient,
+      sendAttemptId: attemptId,
+      provider: "smtp",
+      stage: "reserve",
+      outcome: "failed",
+      startedAt,
+      errorClass: "attempt_reservation",
+    }).catch(() => null);
+    return buildForwardRecipientResult({
+      recipient,
+      attemptId,
+      state: "failed",
+      errorCode: "forward_failed",
+    });
+  }
+
+  if (attemptResolution.kind === "unknown") {
+    return buildForwardRecipientResult({
+      recipient,
+      attemptId: attemptResolution.attempt?.id || attemptId,
+      state: "unknown",
+      providerMessageId: attemptResolution.attempt?.provider_message_id,
+      errorCode: "send_status_unknown",
+    });
+  }
+  if (attemptResolution.kind === "in_progress") {
+    return buildForwardRecipientResult({
+      recipient,
+      attemptId: attemptResolution.attempt?.id || attemptId,
+      state: "in_progress",
+      errorCode: "send_in_progress",
+    });
+  }
+  if (attemptResolution.kind === "new_attempt_required") {
+    return buildForwardRecipientResult({
+      recipient,
+      attemptId: attemptResolution.attempt?.id || attemptId,
+      state: "failed",
+      errorCode: "forward_failed",
+    });
+  }
+
+  const providerAlreadySent = attemptResolution.kind === "sent";
+  let providerMessageId = asString(attemptResolution.attempt?.provider_message_id || "") || null;
+  if (!providerAlreadySent) {
+    const startedAttempt = await updateForwardSendAttempt({
+      serviceClient,
+      scope,
+      attemptId,
+      expectedState: "reserved",
+      patch: { provider_started_at: new Date().toISOString() },
+    }).catch(() => null);
+    if (!startedAttempt) {
+      return buildForwardRecipientResult({
+        recipient,
+        attemptId,
+        state: "in_progress",
+        errorCode: "send_in_progress",
+      });
+    }
+  }
+
+  if (!providerAlreadySent) {
+    try {
+      const forwardResponse = await sendPostmarkEmail({
+        From: buildNamedFromAddress({ name: fromName, email: fromEmail }),
+        To: recipient,
+        Subject: subject,
+        TextBody: textBody,
+        HtmlBody: htmlBody,
+        ReplyTo: fromEmail,
+        Attachments: buildPostmarkAttachments(attachments.items),
+      });
+      providerMessageId = asString(forwardResponse?.MessageID || "") || null;
+    } catch (error) {
+      const failure = classifyOutboundError(error, {
+        provider: "smtp",
+        stage: "provider_send",
+        providerInvoked: true,
+      });
+      const nextState = failure.outcome === "unknown" ? "unknown" : "failed";
+      const persistedAttempt = await updateForwardSendAttempt({
+        serviceClient,
+        scope,
+        attemptId,
+        expectedState: "reserved",
+        patch: { state: nextState, failure_class: failure.errorClass },
+      }).catch(() => null);
+      await logForwardSendAttempt({
+        serviceClient,
+        sendAttemptId: attemptId,
+        provider: "smtp",
+        stage: failure.stage,
+        outcome: failure.outcome,
+        startedAt,
+        errorClass: failure.errorClass,
+        statusCode: failure.statusCode,
+      }).catch(() => null);
+      if (!persistedAttempt || failure.outcome === "unknown") {
+        return buildForwardRecipientResult({
+          recipient,
+          attemptId,
+          state: "unknown",
+          errorCode: "send_status_unknown",
+        });
+      }
+      return buildForwardRecipientResult({
+        recipient,
+        attemptId,
+        state: "failed",
+        errorCode: failure.recipientSuppressed ? "recipient_suppressed" : "recipient_rejected",
+      });
+    }
+
+    const sentAttempt = await updateForwardSendAttempt({
+      serviceClient,
+      scope,
+      attemptId,
+      expectedState: "reserved",
+      patch: { state: "sent", provider_message_id: providerMessageId },
+    }).catch(() => null);
+    if (!sentAttempt) {
+      await updateForwardSendAttempt({
+        serviceClient,
+        scope,
+        attemptId,
+        expectedState: "reserved",
+        patch: { state: "unknown", failure_class: "attempt_persistence_after_provider" },
+      }).catch(() => null);
+      return buildForwardRecipientResult({
+        recipient,
+        attemptId,
+        state: "unknown",
+        errorCode: "send_status_unknown",
+      });
+    }
+  }
+
+  await logForwardSendAttempt({
+    serviceClient,
+    sendAttemptId: attemptId,
+    provider: "smtp",
+    stage: providerAlreadySent ? "resume" : "provider_send",
+    outcome: "success",
+    startedAt,
+  }).catch(() => null);
+  return buildForwardRecipientResult({
+    recipient,
+    attemptId,
+    state: "sent",
+    providerMessageId,
   });
 }
 
@@ -2874,12 +3114,12 @@ export async function POST(request, { params }) {
   const normalizedActionType = actionType.trim();
   const normalizedExistingStatus = normalizeActionStatus(actionRecord?.status || "");
   if (normalizedExistingStatus === "applied") {
-    if (normalizedActionType === "forward_email" && actionRecord?.payload?.outbound_send_attempt_id) {
+    if (normalizedActionType === "forward_email") {
       try {
-        await completeForwardSendAttempt({
+        await completeForwardActionAttempts({
           serviceClient,
           scope,
-          attemptId: actionRecord.payload.outbound_send_attempt_id,
+          payload: actionRecord?.payload || {},
         });
       } catch (error) {
         return NextResponse.json(
@@ -3446,223 +3686,65 @@ export async function POST(request, { params }) {
       forwardContext.source?.subject || thread.subject,
     );
     const attachments = forwardContext.attachments || [];
-    const requestFingerprint = buildOutboundRequestFingerprint({
-      threadId: thread.id,
-      mailboxId: thread.mailbox_id,
-      provider: "smtp",
-      operationType: "forward",
-      sourceMessageId: forwardContext.source?.id || payloadForForward.original_message_id,
-      subject,
-      bodyText: textBody,
-      bodyHtml: htmlBody,
-      to: canonicalRecipients,
-      attachments,
-    });
-    const sendAttemptId = crypto.randomUUID();
-    const attemptStartedAt = Date.now();
-    let attemptResolution;
-    try {
-      attemptResolution = await claimOutboundSendAttempt({
-        serviceClient,
-        scope,
-        userId: supabaseUserId,
-        workspaceId: scope.workspaceId || null,
-        mailboxId: thread.mailbox_id,
-        threadId: thread.id,
-        operationType: "forward",
-        provider: "smtp",
-        attemptId: sendAttemptId,
-        requestFingerprint,
-      });
-    } catch (error) {
-      return NextResponse.json(
-        { error: "Could not reserve the forward safely. Please try again." },
-        { status: 500 },
-      );
-    }
-
-    if (attemptResolution.kind === "unknown") {
-      return buildForwardUnknownResponse(attemptResolution.attempt?.id || sendAttemptId);
-    }
-    if (attemptResolution.kind === "in_progress") {
-      return NextResponse.json(
-        {
-          error: "This forward is already in progress. Verify the thread before trying again.",
-          send_status: "in_progress",
-          send_attempt_id: attemptResolution.attempt?.id || sendAttemptId,
-        },
-        { status: 409 },
-      );
-    }
-    if (attemptResolution.kind === "new_attempt_required") {
-      return NextResponse.json(
-        {
-          error: "This forward changed after an earlier attempt. Review it before trying again.",
-          send_status: "new_attempt_required",
-          send_attempt_id: attemptResolution.attempt?.id || sendAttemptId,
-        },
-        { status: 409 },
-      );
-    }
-
-    let sentMessageId = asString(attemptResolution.attempt?.provider_message_id || "") || null;
-    const providerAlreadySent = attemptResolution.kind === "sent";
-    if (!providerAlreadySent) {
-      const startedAttempt = await updateForwardSendAttempt({
-        serviceClient,
-        scope,
-        attemptId: sendAttemptId,
-        expectedState: "reserved",
-        patch: { provider_started_at: new Date().toISOString() },
-      });
-      if (!startedAttempt) {
-        return NextResponse.json(
-          {
-            error: "This forward is already in progress. Verify the thread before trying again.",
-            send_status: "in_progress",
-            send_attempt_id: sendAttemptId,
-          },
-          { status: 409 },
-        );
-      }
-    }
-
-    if (!providerAlreadySent) {
-      try {
-        const forwardResponse = await sendPostmarkEmail({
-          From: buildNamedFromAddress({
-            name: forwardContext.fromName,
-            email: forwardContext.fromEmail,
-          }),
-          To: formatForwardRecipients(recipients),
-          Subject: subject,
-          TextBody: textBody,
-          HtmlBody: htmlBody,
-          ReplyTo: forwardContext.fromEmail,
-          Attachments: buildPostmarkAttachments(attachments),
-        });
-        sentMessageId = asString(forwardResponse?.MessageID || "") || null;
-      } catch (error) {
-        const failure = classifyOutboundError(error, {
-          provider: "smtp",
-          stage: "provider_send",
-          providerInvoked: true,
-        });
-        await updateForwardSendAttempt({
+    const recipientResults = await Promise.all(
+      recipients.map((recipient) =>
+        executeForwardRecipient({
           serviceClient,
           scope,
-          attemptId: sendAttemptId,
-          expectedState: "reserved",
-          patch: {
-            state: failure.outcome === "unknown" ? "unknown" : "failed",
-            failure_class: failure.errorClass,
+          userId: supabaseUserId,
+          workspaceId: scope.workspaceId || null,
+          thread,
+          recipient,
+          subject,
+          textBody,
+          htmlBody,
+          attachments: {
+            sourceMessageId: forwardContext.source?.id || payloadForForward.original_message_id,
+            items: attachments,
           },
-        }).catch(() => null);
-        await logForwardSendAttempt({
-          serviceClient,
-          sendAttemptId,
-          provider: "smtp",
-          stage: failure.stage,
-          outcome: failure.outcome,
-          startedAt: attemptStartedAt,
-          errorClass: failure.errorClass,
-          statusCode: failure.statusCode,
-        }).catch(() => null);
-        if (actionRecord?.id && failure.outcome !== "unknown") {
-          await serviceClient
-            .from("thread_actions")
-            .update({
-              status: "failed",
-              detail: `Forwarding to ${formatForwardRecipients(recipients)} failed.`,
-              payload: payloadForForward,
-              action_type: "forward_email",
-              action_key: actionKey,
-              decided_at: nowIso,
-              updated_at: nowIso,
-              error: failure.errorClass,
-            })
-            .eq("id", actionRecord.id);
-        }
-        return buildForwardFailureResponse(error, failure, sendAttemptId);
-      }
-
-      const sentAttempt = await updateForwardSendAttempt({
-        serviceClient,
-        scope,
-        attemptId: sendAttemptId,
-        expectedState: "reserved",
-        patch: {
-          state: "sent",
-          provider_message_id: sentMessageId,
-        },
-      }).catch(() => null);
-      if (!sentAttempt) {
-        await updateForwardSendAttempt({
-          serviceClient,
-          scope,
-          attemptId: sendAttemptId,
-          expectedState: "reserved",
-          patch: { state: "unknown", failure_class: "attempt_persistence_after_provider" },
-        }).catch(() => null);
-        return buildForwardUnknownResponse(sendAttemptId);
-      }
+          fromName: forwardContext.fromName,
+          fromEmail: forwardContext.fromEmail,
+        }),
+      ),
+    );
+    const aggregate = summarizeForwardRecipientResults(recipientResults);
+    if (aggregate.kind === "in_progress") {
+      return buildForwardAggregateResponse(recipientResults).response;
     }
 
     try {
-      await persistForwardActionSuccess({
+      await persistForwardActionOutcome({
         serviceClient,
         scope,
         actionRecord,
         actionKey,
-        payloadForForward: {
-          ...payloadForForward,
-          outbound_send_attempt_id: attemptResolution.attempt?.id || sendAttemptId,
-        },
-        sentMessageId,
+        payloadForForward,
         recipients,
+        recipientResults,
         userId: supabaseUserId,
         thread,
         nowIso,
         clerkUserId,
         decisionReason,
       });
-      await completeForwardSendAttempt({
+      await completeForwardActionAttempts({
         serviceClient,
         scope,
-        attemptId: attemptResolution.attempt?.id || sendAttemptId,
+        payload: { recipient_results: recipientResults },
       });
-      await logForwardSendAttempt({
-        serviceClient,
-        sendAttemptId: attemptResolution.attempt?.id || sendAttemptId,
-        provider: "smtp",
-        stage: "complete",
-        outcome: "success",
-        startedAt: attemptStartedAt,
-      }).catch(() => null);
     } catch (error) {
       return NextResponse.json(
         {
           error: "The forward was sent, but Sona could not finish recording it locally. Refresh before trying again.",
           send_status: "sent_local_finalization_pending",
           error_code: "local_finalization_pending",
-          send_attempt_id: attemptResolution.attempt?.id || sendAttemptId,
+          recipient_results: publicForwardRecipientResults(recipientResults),
         },
         { status: 500 },
       );
     }
 
-    return NextResponse.json(
-      {
-        ok: true,
-        decision: "accepted",
-        action: "forward_email",
-        forwarded_to: recipients.length === 1 ? recipients[0] : recipients,
-        forwarded_recipients: recipients,
-        provider_message_id: sentMessageId,
-        sourceStep: proposalStepName,
-      },
-      { status: 200 },
-    );
+    return buildForwardAggregateResponse(recipientResults).response;
   }
 
   const fallbackOrderNumber =

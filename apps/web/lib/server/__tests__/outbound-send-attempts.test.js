@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOutboundRequestFingerprint,
+  buildDeterministicOutboundAttemptId,
   claimOutboundSendAttempt,
   recoverStaleOutboundSendAttempt,
   OUTBOUND_SEND_ATTEMPT_STALE_AFTER_MS,
@@ -153,7 +154,7 @@ function scope(workspaceId) {
   return { workspaceId, supabaseUserId: "99999999-9999-4999-8999-999999999999" };
 }
 
-function claim(client, id, workspaceId, requestFingerprint) {
+function claim(client, id, workspaceId, requestFingerprint, options = {}) {
   return claimOutboundSendAttempt({
     serviceClient: client,
     scope: scope(workspaceId),
@@ -165,6 +166,7 @@ function claim(client, id, workspaceId, requestFingerprint) {
     provider: "smtp",
     attemptId: id,
     requestFingerprint,
+    ...options,
   });
 }
 
@@ -231,6 +233,55 @@ describe("outbound send attempt claiming", () => {
     expect(first.kind).toBe("claimed");
     expect(replacement.kind).toBe("claimed");
     expect(client.rows).toHaveLength(2);
+  });
+
+  it("reclaims a failed per-recipient attempt atomically for an intentional retry", async () => {
+    const client = createFakeServiceClient();
+    const requestFingerprint = fingerprint();
+    const first = await claim(client, attemptA, workspaceA, requestFingerprint);
+    client.rows[0].state = "failed";
+
+    const [retry, concurrentRetry] = await Promise.all([
+      claim(client, attemptA, workspaceA, requestFingerprint, { allowFailedRetry: true }),
+      claim(client, attemptA, workspaceA, requestFingerprint, { allowFailedRetry: true }),
+    ]);
+
+    expect(first.kind).toBe("claimed");
+    expect([retry.kind, concurrentRetry.kind].sort()).toEqual(["claimed", "in_progress"]);
+    expect(client.rows).toHaveLength(1);
+  });
+
+  it("derives a stable distinct UUID for each canonical recipient request", () => {
+    const first = buildDeterministicOutboundAttemptId(fingerprint());
+    const same = buildDeterministicOutboundAttemptId(fingerprint());
+    const changed = buildDeterministicOutboundAttemptId(fingerprint("Different recipient"));
+
+    expect(first).toBe(same);
+    expect(first).not.toBe(changed);
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("gives each recipient an independent canonical fingerprint", () => {
+    const base = {
+      threadId,
+      mailboxId,
+      provider: "smtp",
+      operationType: "forward",
+      sourceMessageId: "source-message-1",
+      subject: "Fwd: Original",
+      bodyText: "See below.",
+      attachments: [{
+        filename: "original.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 3,
+        content_base64: "YWJj",
+      }],
+    };
+
+    const first = buildOutboundRequestFingerprint({ ...base, to: ["one@example.com"] });
+    const second = buildOutboundRequestFingerprint({ ...base, to: ["two@example.com"] });
+
+    expect(first).not.toBe(second);
   });
 
   it("keeps forward attachment bytes in the immutable request fingerprint", async () => {
