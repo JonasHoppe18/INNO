@@ -56,6 +56,7 @@ function queryBuilder(data, error = null) {
     select: () => builder,
     eq: () => builder,
     is: () => builder,
+    not: () => builder,
     in: () => builder,
     limit: () => builder,
     order: () => builder,
@@ -685,6 +686,7 @@ describe("greenfield knowledge store", () => {
     const serviceClient = {
       from(table) {
         if (table === "shops") return queryBuilder({ id: "shop-a" });
+        if (table === "kn2_releases") return queryBuilder(null);
         if (table === "shop_products") return queryBuilder([{ id: "product-a", title: "Product A", handle: "product-a", external_id: "external-a" }]);
         if (table === "greenfield_knowledge_chunks") return queryBuilder(rows.map((row) => ({ id: row.chunk_id, record_id: row.id, chunk_index: 0, content: row.chunk_content })));
         throw new Error(`Unexpected table: ${table}`);
@@ -724,6 +726,7 @@ describe("greenfield knowledge store", () => {
     const serviceClient = {
       from(table) {
         if (table === "shops") return queryBuilder({ id: "shop-a" });
+        if (table === "kn2_releases") return queryBuilder(null);
         if (table === "shop_products") return queryBuilder([{ id: "product-a", title: "Product A", handle: "product-a" }]);
         if (table === "greenfield_knowledge_chunks") return queryBuilder([]);
         throw new Error(`Unexpected table: ${table}`);

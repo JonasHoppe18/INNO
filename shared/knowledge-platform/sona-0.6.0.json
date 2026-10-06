@@ -1,0 +1,3279 @@
+{
+  "format": "sona.knowledge-platform/v1",
+  "version": "sona-0.6.0",
+  "description": "Additive merchant support document semantics. Frozen slot and troubleshooting contracts remain unchanged.",
+  "purposes": [
+    "inform",
+    "proceed",
+    "commit"
+  ],
+  "establishment_methods": [
+    "system",
+    "integration",
+    "merchant_config",
+    "customer_assertion",
+    "agent_observation",
+    "human_verification",
+    "derived"
+  ],
+  "subjects": {
+    "interaction": {
+      "native_granularity": "interaction"
+    },
+    "customer": {
+      "native_granularity": "customer"
+    },
+    "order": {
+      "native_granularity": "order"
+    },
+    "line_item": {
+      "native_granularity": "line_item"
+    },
+    "outbound_fulfillment": {
+      "native_granularity": "fulfillment"
+    },
+    "return_subject": {
+      "native_granularity": "line_item_quantity",
+      "split_rule": "split_when_in_scope_condition_fact_diverges_within_quantity"
+    },
+    "return_request": {
+      "native_granularity": "return_request"
+    },
+    "return_shipment": {
+      "native_granularity": "return_shipment"
+    },
+    "product_unit": {
+      "native_granularity": "product_unit"
+    },
+    "symptom": {
+      "native_granularity": "symptom"
+    },
+    "purchase": {
+      "native_granularity": "purchase"
+    },
+    "warranty_claim": {
+      "native_granularity": "warranty_claim"
+    },
+    "product_support_handoff": {
+      "native_granularity": "product_support_handoff"
+    },
+    "tracking_shipment": {
+      "native_granularity": "tracking_shipment"
+    },
+    "order_status_claim": {
+      "native_granularity": "order_status_claim"
+    }
+  },
+  "enums": {
+    "unit_kind": [
+      "slot_rule",
+      "value",
+      "binding",
+      "expectation",
+      "notice",
+      "procedure",
+      "guidance",
+      "directive",
+      "coverage_state",
+      "media_asset"
+    ],
+    "audience": [
+      "customer",
+      "internal_agent",
+      "human_handler"
+    ],
+    "period_basis": [
+      "order_placed",
+      "delivered",
+      "request_time"
+    ],
+    "slot_state": [
+      "configured",
+      "explicitly_none",
+      "not_applicable"
+    ],
+    "coverage_state": [
+      "blocked"
+    ],
+    "coverage_reason": [
+      "statutory_conflict"
+    ],
+    "outcome_kind": [
+      "value",
+      "exclusion",
+      "human_decision",
+      "exit",
+      "branches"
+    ],
+    "resolution_outcome": [
+      "determined",
+      "branches",
+      "pending",
+      "human_decision",
+      "blocked",
+      "unresolved_conflict",
+      "not_applicable",
+      "no_rule",
+      "exit",
+      "exit_suppressed"
+    ],
+    "human_decision_kind": [
+      "policy_required",
+      "schema_gap"
+    ],
+    "schema_gap_subkind": [
+      "vocabulary_gap",
+      "establishment_gap"
+    ],
+    "requirement_stage": [
+      "to_initiate",
+      "to_approve",
+      "to_ship",
+      "to_refund"
+    ],
+    "requirement_status": [
+      "satisfied",
+      "missing",
+      "future_stage",
+      "unsatisfiable_here",
+      "not_applicable"
+    ],
+    "precedence_kind": [
+      "branch",
+      "specialization",
+      "exclusion",
+      "temporal",
+      "notice",
+      "coverage_block"
+    ],
+    "truth_value": [
+      "true",
+      "false",
+      "unknown"
+    ],
+    "mode": [
+      "evaluated",
+      "stated_general"
+    ],
+    "return_reason": [
+      "changed_mind",
+      "wrong_size",
+      "defective",
+      "damaged_in_transit",
+      "wrong_item_sent",
+      "not_as_described",
+      "other"
+    ],
+    "desired_resolution": [
+      "refund",
+      "exchange",
+      "store_credit"
+    ],
+    "rma_state": [
+      "none",
+      "requested",
+      "approved",
+      "rejected"
+    ],
+    "return_method": [
+      "contact_support",
+      "self_service_portal",
+      "rma_request",
+      "provider_portal",
+      "in_store"
+    ],
+    "approval": [
+      "none",
+      "rma_required",
+      "automatic"
+    ],
+    "payer": [
+      "customer",
+      "merchant"
+    ],
+    "payment_mechanism": [
+      "customer_arranges",
+      "prepaid_by_merchant",
+      "deducted_from_refund"
+    ],
+    "label": [
+      "none",
+      "prepaid_provided",
+      "provided_by_method"
+    ],
+    "destination_disclosure": [
+      "disclosed",
+      "after_stage",
+      "provided_via_method"
+    ],
+    "refund_form": [
+      "original_payment",
+      "store_credit",
+      "customer_choice",
+      "account_credit",
+      "credit_note"
+    ],
+    "governing_policy_owner": [
+      "merchant",
+      "external"
+    ],
+    "customer_segment": [
+      "b2c",
+      "b2b",
+      "employee"
+    ],
+    "exclusion_reason": [
+      "personalized",
+      "final_sale",
+      "hygiene",
+      "perishable",
+      "custom_configured",
+      "other_typed"
+    ],
+    "duration_unit": [
+      "calendar_day",
+      "business_day"
+    ],
+    "time_anchor": [
+      "line_item.delivered_at",
+      "order.placed_at",
+      "line_item.fulfilled_at",
+      "return_shipment.received_at",
+      "return_shipment.first_scan_at",
+      "return_request.rma_approved_at",
+      "return_shipment.inspection_completed_at"
+    ],
+    "scope_dimension": [
+      "geo",
+      "sales_channel",
+      "segment",
+      "membership",
+      "product"
+    ],
+    "geo_basis": [
+      "shipping_country",
+      "billing_country",
+      "market"
+    ],
+    "value_type": [
+      "postal_address",
+      "url",
+      "email",
+      "phone",
+      "timezone",
+      "calendar_override",
+      "external_owner_redirect",
+      "provider"
+    ],
+    "verbatim_mode": [
+      "must_reproduce",
+      "must_attach"
+    ],
+    "text_role": [
+      "explanation",
+      "steps",
+      "description",
+      "handler_note",
+      "verbatim",
+      "alt_text",
+      "caption"
+    ],
+    "media_usage": [
+      "illustration",
+      "troubleshooting_step",
+      "diagram",
+      "attachment"
+    ],
+    "media_inclusion": [
+      "optional",
+      "recommended",
+      "must_include"
+    ],
+    "media_placement": [
+      "inline",
+      "show_with_step",
+      "attach"
+    ],
+    "source_role": [
+      "supports",
+      "contradicts"
+    ],
+    "ps_model": [
+      "a_spire_wireless",
+      "a_blaze",
+      "a_spire",
+      "a_rise",
+      "a_live"
+    ],
+    "ps_problem": [
+      "dongle_connection_lost",
+      "mic_not_working",
+      "audio_while_charging",
+      "power_not_turning_on",
+      "firmware_update",
+      "wireless_interference",
+      "mobile_app_pairing"
+    ],
+    "ps_step_outcome": [
+      "not_attempted",
+      "attempted_unresolved",
+      "attempted_resolved"
+    ],
+    "ps_resolution_outcome": [
+      "steps_available",
+      "steps_exhausted",
+      "blocked_precondition",
+      "not_applicable_to_model",
+      "no_procedure",
+      "model_unknown"
+    ],
+    "ps_exit_domain": [
+      "complaints_warranty",
+      "returns",
+      "complaint"
+    ],
+    "ps_reason_code": [
+      "applicability.model_unknown",
+      "applicability.model_not_covered",
+      "procedure.none_published",
+      "procedure.precondition_unmet",
+      "procedure.all_steps_attempted",
+      "exit.suppressed_no_published_domain"
+    ],
+    "warranty_issue_type": [
+      "functional_fault",
+      "physical_damage_or_wear"
+    ],
+    "warranty_purchase_market": [
+      "eu",
+      "uk",
+      "australia",
+      "us",
+      "canada",
+      "new_zealand",
+      "other"
+    ],
+    "warranty_purchase_channel": [
+      "acezone_webshop",
+      "third_party_reseller"
+    ],
+    "warranty_condition_assessment": [
+      "manufacturing_defect",
+      "normal_wear",
+      "abuse_or_misuse",
+      "improper_use",
+      "water_damage",
+      "external_cause"
+    ],
+    "warranty_ps_exit_reason": [
+      "procedure.all_steps_attempted",
+      "procedure.precondition_unmet",
+      "applicability.model_not_covered",
+      "procedure.none_published"
+    ],
+    "warranty_resolution_outcome": [
+      "evidence_required",
+      "eligible_for_review",
+      "requires_human_review",
+      "not_covered"
+    ],
+    "warranty_exclusion_reason": [
+      "warranty.period_expired",
+      "warranty.non_transferable",
+      "condition.normal_wear",
+      "condition.abuse_or_misuse",
+      "condition.improper_use",
+      "condition.water_damage",
+      "condition.external_cause"
+    ],
+    "order_fulfillment_status": [
+      "fulfilled",
+      "unfulfilled",
+      "partial",
+      "partially_fulfilled",
+      "pending",
+      "restocked",
+      "unknown"
+    ],
+    "line_fulfillment_state": [
+      "fulfilled",
+      "partially_fulfilled",
+      "unfulfilled",
+      "unknown"
+    ],
+    "carrier_status": [
+      "info_received",
+      "in_transit",
+      "out_for_delivery",
+      "available_for_pickup",
+      "delivered",
+      "exception",
+      "unknown"
+    ],
+    "resolution_state": [
+      "order_not_fulfilled",
+      "partial_fulfillment",
+      "fulfilled_tracking_unconfirmed",
+      "in_transit",
+      "delivery_exception",
+      "delivered",
+      "requires_human_review"
+    ],
+    "wismo_resolution_outcome": [
+      "determined",
+      "human_decision",
+      "no_rule"
+    ],
+    "knowledge_gap": [
+      "order_not_fulfilled_guidance",
+      "carrier_no_scan_guidance",
+      "delivery_exception_guidance",
+      "partial_fulfillment_guidance",
+      "delivered_non_receipt_guidance"
+    ]
+  },
+  "facts": {
+    "interaction.channel": {
+      "subject": "interaction",
+      "type": "enum",
+      "values": [
+        "email",
+        "chat",
+        "contact_form"
+      ],
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "interaction.request_time": {
+      "subject": "interaction",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "interaction.language": {
+      "subject": "interaction",
+      "type": "language",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "customer.identity_verified": {
+      "subject": "customer",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "customer.name": {
+      "subject": "customer",
+      "type": "text",
+      "identifying": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "customer.segment": {
+      "subject": "customer",
+      "type": "enum",
+      "enum": "customer_segment",
+      "binding_required": true,
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "customer.membership": {
+      "subject": "customer",
+      "type": "membership",
+      "binding_required": true,
+      "scope_eligible": true,
+      "time_varying": true,
+      "as_of_bases": [
+        "request_time",
+        "order_placed"
+      ],
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "customer.company_contact_role": {
+      "subject": "customer",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.ref_resolution": {
+      "subject": "order",
+      "type": "enum",
+      "values": [
+        "resolved",
+        "not_found",
+        "ambiguous",
+        "ownership_unverified"
+      ],
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "order.placed_at": {
+      "subject": "order",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.shipping_country": {
+      "subject": "order",
+      "type": "country",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.billing_country": {
+      "subject": "order",
+      "type": "country",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.market": {
+      "subject": "order",
+      "type": "text",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.sales_channel": {
+      "subject": "order",
+      "type": "text",
+      "binding_required": true,
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.payment_status": {
+      "subject": "order",
+      "type": "text",
+      "provider_semantics": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      },
+      "discrepancy_policy": "prefer_method_order"
+    },
+    "line_item.product_ref": {
+      "subject": "line_item",
+      "type": "reference",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.variant_ref": {
+      "subject": "line_item",
+      "type": "reference",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.product_type": {
+      "subject": "line_item",
+      "type": "text",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.tags": {
+      "subject": "line_item",
+      "type": "text_set",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.vendor": {
+      "subject": "line_item",
+      "type": "text",
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.fulfillment_state": {
+      "subject": "line_item",
+      "type": "text",
+      "provider_semantics": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.fulfilled_at": {
+      "subject": "line_item",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.delivered_at": {
+      "subject": "line_item",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      },
+      "discrepancy_policy": "prefer_method_order"
+    },
+    "line_item.is_personalized": {
+      "subject": "line_item",
+      "type": "boolean",
+      "binding_required": true,
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.final_sale": {
+      "subject": "line_item",
+      "type": "boolean",
+      "binding_required": true,
+      "scope_eligible": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.price_paid": {
+      "subject": "line_item",
+      "type": "money",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_subject.quantity": {
+      "subject": "return_subject",
+      "type": "integer",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_subject.reason": {
+      "subject": "return_subject",
+      "type": "enum",
+      "enum": "return_reason",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.unused": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.original_packaging": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.opened": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.tags_attached": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.resaleable": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.defect_evidence_provided": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "agent_observation"
+          ],
+          "sufficient": "agent_observation"
+        },
+        "proceed": {
+          "methods": [
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "agent_observation"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_subject.defect_confirmed": {
+      "subject": "return_subject",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "human_verification"
+        }
+      },
+      "discrepancy_policy": "prefer_method_order"
+    },
+    "return_request.desired_resolution": {
+      "subject": "return_request",
+      "type": "enum",
+      "enum": "desired_resolution",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "customer_assertion",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        }
+      }
+    },
+    "return_request.rma_state": {
+      "subject": "return_request",
+      "type": "enum",
+      "enum": "rma_state",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_request.rma_approved_at": {
+      "subject": "return_request",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_request.total_quantity": {
+      "subject": "return_request",
+      "type": "integer",
+      "derived_from": [
+        "return_subject.quantity"
+      ],
+      "purposes": {
+        "inform": {
+          "methods": [
+            "derived"
+          ],
+          "sufficient": "derived"
+        },
+        "proceed": {
+          "methods": [
+            "derived"
+          ],
+          "sufficient": "derived"
+        },
+        "commit": {
+          "methods": [
+            "derived"
+          ],
+          "sufficient": "derived"
+        }
+      }
+    },
+    "return_shipment.first_scan_at": {
+      "subject": "return_shipment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_shipment.received_at": {
+      "subject": "return_shipment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "return_shipment.inspection_result": {
+      "subject": "return_shipment",
+      "type": "enum",
+      "values": [
+        "passed",
+        "failed"
+      ],
+      "purposes": {
+        "inform": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "return_shipment.inspection_completed_at": {
+      "subject": "return_shipment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "human_verification",
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "product_unit.model": {
+      "subject": "product_unit",
+      "type": "enum",
+      "enum": "model",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "customer_assertion",
+            "system"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "customer_assertion",
+            "system"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "system"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "symptom.key": {
+      "subject": "symptom",
+      "type": "enum",
+      "enum": "problem",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "derived"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "derived"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "symptom.steps_attempted": {
+      "subject": "symptom",
+      "type": "step_list",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "product_unit.powers_on_stably": {
+      "subject": "product_unit",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "product_unit.can_enter_pairing_mode": {
+      "subject": "product_unit",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "warranty_claim.issue_type": {
+      "subject": "warranty_claim",
+      "type": "enum",
+      "enum": "warranty_issue_type",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "derived",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "derived",
+            "human_verification"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "purchase.proof_valid": {
+      "subject": "purchase",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "purchase.placed_at": {
+      "subject": "purchase",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "purchase.market": {
+      "subject": "purchase",
+      "type": "enum",
+      "enum": "warranty_purchase_market",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "purchase.channel": {
+      "subject": "purchase",
+      "type": "enum",
+      "enum": "warranty_purchase_channel",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "purchase.original_purchaser": {
+      "subject": "purchase",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification",
+            "customer_assertion"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "integration",
+            "human_verification"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "warranty_claim.condition_assessment": {
+      "subject": "warranty_claim",
+      "type": "enum",
+      "enum": "warranty_condition_assessment",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation",
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "warranty_claim.media_refs": {
+      "subject": "warranty_claim",
+      "type": "reference_list",
+      "identifying": true,
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "integration",
+            "customer_assertion"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "product_support_handoff.exit_reason": {
+      "subject": "product_support_handoff",
+      "type": "enum",
+      "enum": "warranty_ps_exit_reason",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system",
+            "derived"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system",
+            "derived"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system",
+            "derived"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "interaction.occurred_at": {
+      "subject": "interaction",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "order.fulfillment_status": {
+      "subject": "order",
+      "type": "enum",
+      "enum": "order_fulfillment_status",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "system"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "system"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "system"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "order.line_items": {
+      "subject": "order",
+      "type": "reference_list",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.title": {
+      "subject": "line_item",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.ordered_quantity": {
+      "subject": "line_item",
+      "type": "integer",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.fulfilled_quantity": {
+      "subject": "line_item",
+      "type": "integer",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "line_item.fulfillment_ref": {
+      "subject": "line_item",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "fulfillment.tracking_number": {
+      "subject": "outbound_fulfillment",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "fulfillment.carrier": {
+      "subject": "outbound_fulfillment",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "fulfillment.fulfilled_at": {
+      "subject": "outbound_fulfillment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.scan_exists": {
+      "subject": "tracking_shipment",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.latest_checkpoint": {
+      "subject": "tracking_shipment",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.latest_event_at": {
+      "subject": "tracking_shipment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.status": {
+      "subject": "tracking_shipment",
+      "type": "enum",
+      "enum": "carrier_status",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.substatus": {
+      "subject": "tracking_shipment",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.delivery_exception": {
+      "subject": "tracking_shipment",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.delivered": {
+      "subject": "tracking_shipment",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "tracking.estimated_delivery": {
+      "subject": "tracking_shipment",
+      "type": "timestamp",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "proceed": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        },
+        "commit": {
+          "methods": [
+            "integration"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "customer.claim_non_receipt": {
+      "subject": "customer",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    }
+  },
+  "domains": {
+    "returns": {
+      "status": "implemented",
+      "core_families": [
+        "ELIG",
+        "PROC",
+        "LOG"
+      ],
+      "on_demand_families": [
+        "MONEY",
+        "EXCH"
+      ],
+      "topics": [
+        "return an item",
+        "return policy",
+        "send back",
+        "refund after return",
+        "return label",
+        "return address",
+        "exchange an item"
+      ],
+      "expansion_unit_ceiling": 200
+    },
+    "complaints_warranty": {
+      "status": "implemented",
+      "core_families": [
+        "WELIG"
+      ],
+      "on_demand_families": [
+        "WREMEDY"
+      ],
+      "topics": [
+        "warranty claim",
+        "defective product",
+        "physical damage",
+        "proof of purchase",
+        "repair eligibility"
+      ],
+      "expansion_unit_ceiling": 50
+    },
+    "cancellation": {
+      "status": "declared_not_implemented"
+    },
+    "product_support": {
+      "core_families": [
+        "DIAG"
+      ],
+      "families": [
+        "DIAG",
+        "ESC"
+      ]
+    },
+    "order_status": {
+      "status": "implemented",
+      "core_families": [
+        "WSTATUS"
+      ],
+      "on_demand_families": [
+        "WGUIDE"
+      ],
+      "topics": [
+        "where is my order",
+        "order status",
+        "tracking",
+        "delivery exception",
+        "partial shipment",
+        "delivered but not received"
+      ],
+      "expansion_unit_ceiling": 100
+    },
+    "general": {
+      "description": "Merchant support: general",
+      "families": []
+    },
+    "shipping": {
+      "description": "Merchant support: shipping",
+      "families": []
+    },
+    "delivery": {
+      "description": "Merchant support: delivery",
+      "families": []
+    },
+    "orders": {
+      "description": "Merchant support: orders",
+      "families": []
+    },
+    "warranty": {
+      "description": "Merchant support: warranty",
+      "families": []
+    },
+    "damaged_item": {
+      "description": "Merchant support: damaged_item",
+      "families": []
+    },
+    "product": {
+      "description": "Merchant support: product",
+      "families": []
+    },
+    "compatibility": {
+      "description": "Merchant support: compatibility",
+      "families": []
+    },
+    "care": {
+      "description": "Merchant support: care",
+      "families": []
+    },
+    "assembly": {
+      "description": "Merchant support: assembly",
+      "families": []
+    },
+    "troubleshooting": {
+      "description": "Merchant support: troubleshooting",
+      "families": []
+    }
+  },
+  "families": {
+    "ELIG": {
+      "domain": "returns"
+    },
+    "PROC": {
+      "domain": "returns"
+    },
+    "LOG": {
+      "domain": "returns"
+    },
+    "MONEY": {
+      "domain": "returns"
+    },
+    "EXCH": {
+      "domain": "returns"
+    },
+    "DIAG": {
+      "description": "Which published procedure applies, and what is left to try."
+    },
+    "ESC": {
+      "description": "When troubleshooting stops and who takes the case."
+    },
+    "WELIG": {
+      "domain": "complaints_warranty",
+      "description": "Whether the evidence and published warranty boundaries allow assessment."
+    },
+    "WREMEDY": {
+      "domain": "complaints_warranty",
+      "description": "Published repair and remedy boundaries without promising an outcome."
+    },
+    "WSTATUS": {
+      "domain": "order_status",
+      "description": "Typed live fulfillment and carrier state without inferred shipment or delivery claims."
+    },
+    "WGUIDE": {
+      "domain": "order_status",
+      "description": "Merchant-controlled WISMO guidance; absent guidance remains an explicit Knowledge gap."
+    }
+  },
+  "slots": {
+    "returns.ELIG.governing_policy_owner": {
+      "family": "ELIG",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "owner"
+        ],
+        "properties": {
+          "owner": {
+            "enum": "governing_policy_owner"
+          }
+        }
+      }
+    },
+    "returns.ELIG.accepted": {
+      "family": "ELIG",
+      "relevance": "expected",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "enum": "exclusion_reason"
+          }
+        }
+      }
+    },
+    "returns.ELIG.window": {
+      "family": "ELIG",
+      "relevance": "expected",
+      "value_schema": {
+        "type": "object",
+        "properties": {
+          "duration": {
+            "type": "object",
+            "required": [
+              "amount",
+              "unit"
+            ],
+            "properties": {
+              "amount": {
+                "type": "integer"
+              },
+              "unit": {
+                "enum": "duration_unit"
+              }
+            }
+          },
+          "anchor": {
+            "type": "object",
+            "required": [
+              "fact"
+            ],
+            "properties": {
+              "fact": {
+                "enum": "time_anchor"
+              },
+              "fallback": {
+                "type": "array"
+              }
+            }
+          },
+          "absolute_end": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.ELIG.item_conditions": {
+      "family": "ELIG",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "conditions"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "returns.PROC.method": {
+      "family": "PROC",
+      "relevance": "expected",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "enum": "return_method"
+          },
+          "ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.PROC.approval": {
+      "family": "PROC",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "approval"
+        ],
+        "properties": {
+          "approval": {
+            "enum": "approval"
+          }
+        }
+      }
+    },
+    "returns.PROC.ship_by": {
+      "family": "PROC",
+      "relevance": "conditional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "duration",
+          "anchor"
+        ],
+        "properties": {
+          "duration": {
+            "type": "object",
+            "required": [
+              "amount",
+              "unit"
+            ],
+            "properties": {
+              "amount": {
+                "type": "integer"
+              },
+              "unit": {
+                "enum": "duration_unit"
+              }
+            }
+          },
+          "anchor": {
+            "type": "object",
+            "required": [
+              "fact"
+            ],
+            "properties": {
+              "fact": {
+                "enum": "time_anchor"
+              }
+            }
+          }
+        }
+      }
+    },
+    "returns.LOG.payer": {
+      "family": "LOG",
+      "relevance": "expected",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "payer",
+          "mechanism"
+        ],
+        "properties": {
+          "payer": {
+            "enum": "payer"
+          },
+          "mechanism": {
+            "enum": "payment_mechanism"
+          },
+          "ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.LOG.label": {
+      "family": "LOG",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "enum": "label"
+          }
+        }
+      }
+    },
+    "returns.LOG.destination": {
+      "family": "LOG",
+      "relevance": "conditional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "disclosure"
+        ],
+        "properties": {
+          "disclosure": {
+            "enum": "destination_disclosure"
+          },
+          "after_stage": {
+            "enum": "requirement_stage"
+          },
+          "ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.MONEY.form": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "form"
+        ],
+        "properties": {
+          "form": {
+            "enum": "refund_form"
+          }
+        }
+      }
+    },
+    "returns.MONEY.restocking_fee": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "returns.MONEY.deductions": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.MONEY.store_credit_bonus": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "percent"
+        ],
+        "properties": {
+          "percent": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "returns.MONEY.original_shipping_refunded": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "refunded"
+        ],
+        "properties": {
+          "refunded": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "returns.MONEY.timing": {
+      "family": "MONEY",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "returns.EXCH.offered": {
+      "family": "EXCH",
+      "relevance": "optional",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "offered"
+        ],
+        "properties": {
+          "offered": {
+            "type": "boolean"
+          },
+          "ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "product_support.ESC.on_exhausted": {
+      "family": "ESC",
+      "relevance": "expected",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "exit_domain"
+        ],
+        "properties": {
+          "exit_domain": {
+            "enum": "ps_exit_domain"
+          }
+        }
+      }
+    }
+  },
+  "unit_kinds": {
+    "slot_rule": {
+      "requires_slot": true,
+      "decision_bearing": true
+    },
+    "value": {
+      "requires_slot": false,
+      "decision_bearing": true
+    },
+    "binding": {
+      "requires_slot": false,
+      "decision_bearing": true
+    },
+    "expectation": {
+      "requires_slot": false,
+      "decision_bearing": true
+    },
+    "notice": {
+      "requires_slot": false,
+      "decision_bearing": true
+    },
+    "procedure": {
+      "requires_slot": false,
+      "decision_bearing": true
+    },
+    "guidance": {
+      "requires_slot": false,
+      "decision_bearing": false
+    },
+    "directive": {
+      "requires_slot": false,
+      "decision_bearing": false,
+      "audience": [
+        "internal_agent"
+      ]
+    },
+    "coverage_state": {
+      "requires_slot": true,
+      "decision_bearing": true
+    },
+    "media_asset": {
+      "requires_slot": false,
+      "decision_bearing": false
+    }
+  },
+  "reference_paths": {
+    "_all": [
+      {
+        "path": "refs[*].unit",
+        "target": "unit"
+      },
+      {
+        "path": "precedence[*].overrides",
+        "target": "unit"
+      },
+      {
+        "path": "media[*].unit",
+        "target": "unit",
+        "target_kinds": [
+          "media_asset"
+        ]
+      },
+      {
+        "path": "provenance[*].source_id",
+        "target": "source"
+      }
+    ],
+    "slot_rule": [
+      {
+        "path": "value.ref",
+        "target": "unit"
+      },
+      {
+        "path": "outcome.ref",
+        "target": "unit"
+      },
+      {
+        "path": "branches[*].outcome.ref",
+        "target": "unit"
+      },
+      {
+        "path": "branches[*].outcome.value.ref",
+        "target": "unit"
+      },
+      {
+        "path": "exceptions[*].outcome.ref",
+        "target": "unit"
+      }
+    ],
+    "notice": [
+      {
+        "path": "modifies.unit",
+        "target": "unit"
+      }
+    ],
+    "procedure": [
+      {
+        "path": "exits[*].ref",
+        "target": "unit"
+      },
+      {
+        "path": "steps[*].media_ref",
+        "target": "unit",
+        "target_kinds": [
+          "media_asset"
+        ]
+      }
+    ],
+    "coverage_state": [
+      {
+        "path": "review_item_id",
+        "target": "review_item"
+      }
+    ]
+  },
+  "global_identifier_paths": [
+    "outcome.vocabulary_request",
+    "branches[*].outcome.vocabulary_request"
+  ],
+  "exits": {
+    "graph": [
+      [
+        "returns",
+        "complaints_warranty"
+      ],
+      [
+        "returns",
+        "cancellation"
+      ],
+      [
+        "product_support",
+        "complaints_warranty"
+      ],
+      [
+        "product_support",
+        "returns"
+      ],
+      [
+        "order_status",
+        "complaints_warranty"
+      ]
+    ],
+    "max_depth": 2
+  },
+  "scope": {
+    "scope_facts_require_methods": [
+      "integration",
+      "merchant_config",
+      "system"
+    ],
+    "product_selectors": [
+      "all",
+      "product",
+      "variant",
+      "product_type",
+      "vendor",
+      "tag",
+      "bound_line_item_fact"
+    ],
+    "unsupported_in_this_version": [
+      "collection"
+    ]
+  },
+  "jurisdiction_floors": {
+    "eu.consumer_withdrawal.window": {
+      "mode": "validation_only",
+      "segment": "b2c",
+      "countries": [
+        "AT",
+        "BE",
+        "BG",
+        "CY",
+        "CZ",
+        "DE",
+        "DK",
+        "EE",
+        "ES",
+        "FI",
+        "FR",
+        "GR",
+        "HR",
+        "HU",
+        "IE",
+        "IT",
+        "LT",
+        "LU",
+        "LV",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SE",
+        "SI",
+        "SK"
+      ],
+      "slot": "returns.ELIG.window",
+      "min_calendar_days_from_delivery": 14
+    },
+    "eu.consumer_withdrawal.exceptions": {
+      "mode": "validation_only",
+      "segment": "b2c",
+      "slot": "returns.ELIG.accepted",
+      "permitted_exclusion_reasons": [
+        "personalized",
+        "perishable",
+        "hygiene",
+        "custom_configured"
+      ]
+    }
+  },
+  "calendars": {
+    "model": "platform_jurisdiction_default + merchant_timezone + merchant_override",
+    "weekend_days": [
+      "SAT",
+      "SUN"
+    ],
+    "public_holidays": {
+      "DK": [
+        "2026-01-01",
+        "2026-04-02",
+        "2026-04-03",
+        "2026-04-05",
+        "2026-04-06",
+        "2026-05-14",
+        "2026-05-24",
+        "2026-05-25",
+        "2026-12-25",
+        "2026-12-26"
+      ]
+    },
+    "unknown_jurisdiction_policy": "conservative_and_flag"
+  },
+  "provider_semantics": {
+    "shopify.fulfillment_status.fulfilled": {
+      "neutral": "The merchant has marked these items as fulfilled."
+    },
+    "shopify.fulfillment_status.partial": {
+      "neutral": "The merchant has marked some items in the order as fulfilled."
+    },
+    "shopify.fulfillment_status.unfulfilled": {
+      "neutral": "The merchant has not yet marked these items as fulfilled."
+    },
+    "carrier.no_events": {
+      "neutral": "The carrier has not yet registered the parcel."
+    }
+  },
+  "composition_rules": [
+    "guidance_before_asking",
+    "typed_branches_only",
+    "ask_missing_current_stage_only",
+    "neutral_provider_semantics_without_binding",
+    "verbatim_must_reproduce",
+    "structured_claims_reference_brief_items",
+    "only_steps_not_yet_attempted",
+    "never_dump_whole_procedure",
+    "applicability_from_typed_models_only",
+    "escalate_when_published_procedure_says_so",
+    "media_never_sole_source_of_decision",
+    "ask_only_for_missing_evidence",
+    "customer_assertions_are_not_verified_conditions",
+    "media_references_are_not_condition_interpretations",
+    "eligible_for_review_is_not_approval",
+    "never_promise_repair_replacement_refund_or_approval",
+    "separate_fulfillment_from_carrier_movement",
+    "tracking_number_does_not_establish_carrier_possession",
+    "never_infer_eta_from_order_age",
+    "customer_delivery_claims_are_not_carrier_facts",
+    "partial_fulfillment_is_per_line_item",
+    "ownership_unverified_withholds_order_details",
+    "surface_missing_merchant_guidance_without_improvisation"
+  ],
+  "prose_lint": {
+    "forbidden_literal_patterns": [
+      "duration",
+      "money_amount",
+      "percentage",
+      "date",
+      "postal_address",
+      "url",
+      "email"
+    ],
+    "applies_to_text_roles": [
+      "explanation",
+      "steps",
+      "description",
+      "caption",
+      "alt_text"
+    ]
+  },
+  "reason_codes": [
+    "excluded_personalized",
+    "excluded_final_sale",
+    "excluded_hygiene",
+    "excluded_perishable",
+    "excluded_custom_configured",
+    "window_expired",
+    "condition_not_met",
+    "human_decision.policy_required",
+    "human_decision.schema_gap",
+    "blocked.statutory_conflict",
+    "conflict.unresolved_overlap",
+    "exit_suppressed.cycle",
+    "exit_depth_exceeded",
+    "no_rule.gap",
+    "no_rule.legal_rights_uncovered",
+    "fact.discrepancy",
+    "platform.hash_mismatch",
+    "replay.missing_fact",
+    "entity.not_found"
+  ],
+  "merchant_support_contract": {
+    "version": "merchant_support/v1",
+    "semantic_types": [
+      "FACT",
+      "POLICY",
+      "GUIDANCE",
+      "PROCEDURE"
+    ],
+    "domains": [
+      "general",
+      "shipping",
+      "delivery",
+      "returns",
+      "orders",
+      "warranty",
+      "damaged_item",
+      "product",
+      "compatibility",
+      "care",
+      "assembly",
+      "troubleshooting"
+    ]
+  }
+}

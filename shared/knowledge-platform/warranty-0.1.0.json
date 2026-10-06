@@ -1,0 +1,173 @@
+{
+  "format": "sona.knowledge-platform/v1",
+  "version": "warranty-0.1.0",
+  "description": "Warranty / Complaints v0.1. A deliberately small intake and assessment vocabulary: evidence completeness, published eligibility boundaries, and human-verified condition decisions. Customer statements and uploaded media are evidence only and never establish a manufacturing defect or exclusion.",
+  "purposes": ["inform", "proceed", "commit"],
+  "establishment_methods": ["system", "integration", "customer_assertion", "agent_observation", "human_verification", "derived"],
+  "subjects": {
+    "interaction": { "native_granularity": "interaction" },
+    "product_unit": { "native_granularity": "product_unit" },
+    "symptom": { "native_granularity": "symptom" },
+    "purchase": { "native_granularity": "purchase" },
+    "warranty_claim": { "native_granularity": "warranty_claim" },
+    "product_support_handoff": { "native_granularity": "product_support_handoff" }
+  },
+  "enums": {
+    "unit_kind": ["value"],
+    "audience": ["customer", "human_handler"],
+    "issue_type": ["functional_fault", "physical_damage_or_wear"],
+    "purchase_market": ["eu", "uk", "australia", "us", "canada", "new_zealand", "other"],
+    "purchase_channel": ["acezone_webshop", "third_party_reseller"],
+    "condition_assessment": [
+      "manufacturing_defect",
+      "normal_wear",
+      "abuse_or_misuse",
+      "improper_use",
+      "water_damage",
+      "external_cause"
+    ],
+    "ps_exit_reason": [
+      "procedure.all_steps_attempted",
+      "procedure.precondition_unmet",
+      "applicability.model_not_covered",
+      "procedure.none_published"
+    ],
+    "resolution_outcome": ["evidence_required", "eligible_for_review", "requires_human_review", "not_covered"],
+    "exclusion_reason": [
+      "warranty.period_expired",
+      "warranty.non_transferable",
+      "condition.normal_wear",
+      "condition.abuse_or_misuse",
+      "condition.improper_use",
+      "condition.water_damage",
+      "condition.external_cause"
+    ]
+  },
+  "facts": {
+    "warranty_claim.issue_type": {
+      "subject": "warranty_claim",
+      "type": "enum",
+      "enum": "issue_type",
+      "purposes": {
+        "inform": { "methods": ["customer_assertion", "derived", "human_verification"], "sufficient": "customer_assertion" },
+        "proceed": { "methods": ["customer_assertion", "derived", "human_verification"], "sufficient": "customer_assertion" },
+        "commit": { "methods": ["human_verification"], "sufficient": "human_verification" }
+      }
+    },
+    "purchase.proof_valid": {
+      "subject": "purchase",
+      "type": "boolean",
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "proceed": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "commit": { "methods": ["system", "integration", "human_verification"], "sufficient": "integration" }
+      }
+    },
+    "purchase.placed_at": {
+      "subject": "purchase",
+      "type": "timestamp",
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "proceed": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "commit": { "methods": ["system", "integration", "human_verification"], "sufficient": "integration" }
+      }
+    },
+    "purchase.market": {
+      "subject": "purchase",
+      "type": "enum",
+      "enum": "purchase_market",
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "proceed": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "commit": { "methods": ["system", "integration", "human_verification"], "sufficient": "integration" }
+      }
+    },
+    "purchase.channel": {
+      "subject": "purchase",
+      "type": "enum",
+      "enum": "purchase_channel",
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "proceed": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "commit": { "methods": ["system", "integration", "human_verification"], "sufficient": "integration" }
+      }
+    },
+    "purchase.original_purchaser": {
+      "subject": "purchase",
+      "type": "boolean",
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "proceed": { "methods": ["system", "integration", "human_verification", "customer_assertion"], "sufficient": "integration" },
+        "commit": { "methods": ["system", "integration", "human_verification"], "sufficient": "integration" }
+      }
+    },
+    "warranty_claim.condition_assessment": {
+      "subject": "warranty_claim",
+      "type": "enum",
+      "enum": "condition_assessment",
+      "purposes": {
+        "inform": { "methods": ["customer_assertion", "agent_observation", "human_verification"], "sufficient": "human_verification" },
+        "proceed": { "methods": ["customer_assertion", "agent_observation", "human_verification"], "sufficient": "human_verification" },
+        "commit": { "methods": ["human_verification"], "sufficient": "human_verification" }
+      }
+    },
+    "warranty_claim.media_refs": {
+      "subject": "warranty_claim",
+      "type": "reference_list",
+      "identifying": true,
+      "purposes": {
+        "inform": { "methods": ["system", "integration", "customer_assertion"], "sufficient": "system" },
+        "proceed": { "methods": ["system", "integration", "customer_assertion"], "sufficient": "system" },
+        "commit": { "methods": ["human_verification"], "sufficient": "human_verification" }
+      }
+    },
+    "product_support_handoff.exit_reason": {
+      "subject": "product_support_handoff",
+      "type": "enum",
+      "enum": "ps_exit_reason",
+      "purposes": {
+        "inform": { "methods": ["system", "derived"], "sufficient": "system" },
+        "proceed": { "methods": ["system", "derived"], "sufficient": "system" },
+        "commit": { "methods": ["system", "derived"], "sufficient": "system" }
+      }
+    },
+    "interaction.occurred_at": {
+      "subject": "interaction",
+      "type": "timestamp",
+      "purposes": {
+        "inform": { "methods": ["system"], "sufficient": "system" },
+        "proceed": { "methods": ["system"], "sufficient": "system" },
+        "commit": { "methods": ["system"], "sufficient": "system" }
+      }
+    }
+  },
+  "domains": {
+    "complaints_warranty": {
+      "status": "implemented",
+      "core_families": ["WELIG"],
+      "on_demand_families": ["WREMEDY"],
+      "topics": ["warranty claim", "defective product", "physical damage", "proof of purchase", "repair eligibility"],
+      "expansion_unit_ceiling": 50
+    }
+  },
+  "families": {
+    "WELIG": { "domain": "complaints_warranty", "description": "Whether the evidence and published warranty boundaries allow assessment." },
+    "WREMEDY": { "domain": "complaints_warranty", "description": "Published repair and remedy boundaries without promising an outcome." }
+  },
+  "slots": {},
+  "unit_kinds": {
+    "value": { "requires_slot": false, "decision_bearing": true }
+  },
+  "exits": { "graph": [], "max_depth": 1 },
+  "composition_rules": [
+    "ask_only_for_missing_evidence",
+    "customer_assertions_are_not_verified_conditions",
+    "media_references_are_not_condition_interpretations",
+    "eligible_for_review_is_not_approval",
+    "never_promise_repair_replacement_refund_or_approval"
+  ],
+  "reference_paths": {
+    "_all": [{ "path": "provenance[*].source_id", "target": "source" }]
+  },
+  "global_identifier_paths": []
+}

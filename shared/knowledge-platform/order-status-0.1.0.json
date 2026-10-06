@@ -1,0 +1,199 @@
+{
+  "format": "sona.knowledge-platform/v1",
+  "version": "order-status-0.1.0",
+  "description": "Order Status / WISMO v0.1. Live fulfillment and carrier facts are evaluated separately from merchant guidance and customer claims. This vocabulary deliberately contains no invented delay threshold, ETA, loss finding, or carrier escalation promise.",
+  "purposes": ["inform", "proceed", "commit"],
+  "establishment_methods": ["system", "integration", "customer_assertion", "agent_observation", "human_verification", "derived"],
+  "subjects": {
+    "interaction": { "native_granularity": "interaction" },
+    "customer": { "native_granularity": "customer" },
+    "order": { "native_granularity": "order" },
+    "line_item": { "native_granularity": "line_item" },
+    "outbound_fulfillment": { "native_granularity": "fulfillment" },
+    "tracking_shipment": { "native_granularity": "tracking_shipment" },
+    "order_status_claim": { "native_granularity": "order_status_claim" }
+  },
+  "enums": {
+    "unit_kind": ["value"],
+    "audience": ["customer", "human_handler"],
+    "order_fulfillment_status": ["fulfilled", "unfulfilled", "partial", "partially_fulfilled", "pending", "restocked", "unknown"],
+    "line_fulfillment_state": ["fulfilled", "partially_fulfilled", "unfulfilled", "unknown"],
+    "carrier_status": ["info_received", "in_transit", "out_for_delivery", "available_for_pickup", "delivered", "exception", "unknown"],
+    "resolution_state": ["order_not_fulfilled", "partial_fulfillment", "fulfilled_tracking_unconfirmed", "in_transit", "delivery_exception", "delivered", "requires_human_review"],
+    "wismo_resolution_outcome": ["determined", "human_decision", "no_rule"],
+    "knowledge_gap": ["order_not_fulfilled_guidance", "carrier_no_scan_guidance", "delivery_exception_guidance", "partial_fulfillment_guidance", "delivered_non_receipt_guidance"]
+  },
+  "facts": {
+    "order.fulfillment_status": {
+      "subject": "order", "type": "enum", "enum": "order_fulfillment_status",
+      "purposes": {
+        "inform": { "methods": ["integration", "system"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration", "system"], "sufficient": "integration" },
+        "commit": { "methods": ["integration", "system"], "sufficient": "integration" }
+      }
+    },
+    "order.line_items": {
+      "subject": "order", "type": "reference_list",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "line_item.title": {
+      "subject": "line_item", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "line_item.ordered_quantity": {
+      "subject": "line_item", "type": "integer",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "line_item.fulfilled_quantity": {
+      "subject": "line_item", "type": "integer",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "line_item.fulfillment_ref": {
+      "subject": "line_item", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "fulfillment.tracking_number": {
+      "subject": "outbound_fulfillment", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "fulfillment.carrier": {
+      "subject": "outbound_fulfillment", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "fulfillment.fulfilled_at": {
+      "subject": "outbound_fulfillment", "type": "timestamp",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.scan_exists": {
+      "subject": "tracking_shipment", "type": "boolean",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.latest_checkpoint": {
+      "subject": "tracking_shipment", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.latest_event_at": {
+      "subject": "tracking_shipment", "type": "timestamp",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.status": {
+      "subject": "tracking_shipment", "type": "enum", "enum": "carrier_status",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.substatus": {
+      "subject": "tracking_shipment", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.delivery_exception": {
+      "subject": "tracking_shipment", "type": "text",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.delivered": {
+      "subject": "tracking_shipment", "type": "boolean",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "tracking.estimated_delivery": {
+      "subject": "tracking_shipment", "type": "timestamp",
+      "purposes": {
+        "inform": { "methods": ["integration"], "sufficient": "integration" },
+        "proceed": { "methods": ["integration"], "sufficient": "integration" },
+        "commit": { "methods": ["integration"], "sufficient": "integration" }
+      }
+    },
+    "customer.claim_non_receipt": {
+      "subject": "customer", "type": "boolean",
+      "purposes": {
+        "inform": { "methods": ["customer_assertion"], "sufficient": "customer_assertion" },
+        "proceed": { "methods": ["customer_assertion"], "sufficient": "customer_assertion" },
+        "commit": { "methods": ["human_verification"], "sufficient": "human_verification" }
+      }
+    }
+  },
+  "domains": {
+    "order_status": {
+      "status": "implemented",
+      "core_families": ["WSTATUS"],
+      "on_demand_families": ["WGUIDE"],
+      "topics": ["where is my order", "order status", "tracking", "delivery exception", "partial shipment", "delivered but not received"],
+      "expansion_unit_ceiling": 100
+    }
+  },
+  "families": {
+    "WSTATUS": { "domain": "order_status", "description": "Typed live fulfillment and carrier state without inferred shipment or delivery claims." },
+    "WGUIDE": { "domain": "order_status", "description": "Merchant-controlled WISMO guidance; absent guidance remains an explicit Knowledge gap." }
+  },
+  "slots": {},
+  "unit_kinds": { "value": { "requires_slot": false, "decision_bearing": true } },
+  "exits": { "graph": [["order_status", "complaints_warranty"]], "max_depth": 2 },
+  "composition_rules": [
+    "separate_fulfillment_from_carrier_movement",
+    "tracking_number_does_not_establish_carrier_possession",
+    "never_infer_eta_from_order_age",
+    "customer_delivery_claims_are_not_carrier_facts",
+    "partial_fulfillment_is_per_line_item",
+    "ownership_unverified_withholds_order_details",
+    "surface_missing_merchant_guidance_without_improvisation"
+  ],
+  "reference_paths": { "_all": [{ "path": "provenance[*].source_id", "target": "source" }] },
+  "global_identifier_paths": []
+}
