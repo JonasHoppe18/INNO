@@ -46,9 +46,9 @@ the same workspace, mailbox and thread. Enabling confirmations alone does not
 create a sent marker. Drafts and ordinary replies retain their normal bubbles.
 The collapsed control shows only its label and icons, with a content-sized
 button. Click or Enter expands the existing message renderer, including its
-View email control. Expanded confirmations use a white card, subtle primary
-border and neutral sender colors while ordinary replies retain their existing
-styling. The conversation text remains 12px. If event metadata cannot be read,
+View email control. Expanded confirmations use a faint primary tint and subtle primary border.
+The sending time appears beside the disclosure label; expanded content does
+not repeat the sender and timestamp. Ordinary replies retain their existing styling. The conversation text remains 12px. If event metadata cannot be read,
 the normal message remains visible.
 If the dedicated event is missing, the reader checks the sender's successful
 `postmark_inbound_auto_reply_sent` log for the same authorized thread and exact

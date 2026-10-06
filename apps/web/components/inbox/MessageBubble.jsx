@@ -675,7 +675,7 @@ function MessageBubbleComponent({
                 isInternalNote
                   ? "border-yellow-200/80 bg-yellow-50/75 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : neutral
-                  ? "border-primary/20 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
+                  ? "border-primary/20 bg-primary/5 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"
                   : isOutbound
                   ? "border-violet-200/80 bg-violet-50/70 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)] dark:border-violet-400/30 dark:bg-violet-500/10"
                   : "border-border/80 bg-card/95 shadow-[0_2px_10px_hsl(var(--foreground)/0.025)]"

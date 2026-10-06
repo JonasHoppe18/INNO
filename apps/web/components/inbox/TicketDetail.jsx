@@ -1042,14 +1042,14 @@ function TicketDetailComponent({
                   </div>
                 ) : null}
                 <MessageRenderBoundary messageId={messageId || message?.id}>
-                  <ConfirmationSent enabled={Boolean(message.confirmation_sent_at && direction === "outbound" && !isDraft)}>
+                  <ConfirmationSent sentAt={message.confirmation_sent_at} enabled={Boolean(message.confirmation_sent_at && direction === "outbound" && !isDraft)}>
                     <MessageBubble
                       message={message}
                       direction={direction}
                       neutral={Boolean(message.confirmation_sent_at)}
                       attachments={messageAttachments}
                       outboundSenderName={currentUserName}
-                      showMeta={!groupedWithPrevious}
+                      showMeta={!groupedWithPrevious && !message.confirmation_sent_at}
                       compactTimestamp
                       showTimestamp={showMessageTimestamp}
                       grouped={groupedWithPrevious}
