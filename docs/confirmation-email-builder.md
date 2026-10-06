@@ -59,8 +59,9 @@ of delivery evidence keep their ordinary bubbles.
 
 Sent CSAT surveys use a matching workspace/thread record in
 `csat_survey_requests` with a non-null `sent_at` and status `sent` or `responded`.
-They appear as a quiet "CSAT email sent" line with the sending time in
-Europe/Copenhagen. Pending, sending, failed and skipped requests do not appear.
+They appear as a quiet, compact, right-aligned "CSAT email sent" line.
+`SentEmailTime` gives both notice types the same HH:mm time in Europe/Copenhagen
+and a full-date tooltip, with the label and time kept together. Pending, sending, failed and skipped requests do not appear.
 The notice follows the last message before the survey was sent. It is display
 metadata on a real message, so it cannot become a customer reply target or
 change message counts. The send flow does not store the mail body; the notice
