@@ -51,7 +51,7 @@ export function CsatSent({ event, threadId }) {
         type="button"
         variant="ghost"
         size="sm"
-        className="ml-auto w-fit font-normal text-muted-foreground focus-visible:ring-offset-conversation"
+        className="ml-auto flex w-fit font-normal text-muted-foreground focus-visible:ring-offset-conversation"
         aria-label="Open sent CSAT email"
         title="Open sent CSAT email"
         onClick={loadPreview}
