@@ -485,10 +485,11 @@ html:has(.dashboard-theme) body, html:has(.design-typography) body,
   color: hsl(var(--foreground)) !important;
 }
 
-/* Shared desktop density keeps navigation and controls the same across routes. */
+/* Keep the browser's normal desktop scale. Users may still use their browser
+   or display settings to choose a denser or more spacious workspace. */
 @media (min-width: 1024px) {
   html:has(.dashboard-theme), html:has(.design-typography) {
-    font-size: 90%;
-    --app-density: 0.9;
+    font-size: 100%;
+    --app-density: 1;
   }
 }
