@@ -1,3 +1,4 @@
+import { markSentEmailMessages } from "@/lib/server/sent-email-messages";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
@@ -99,7 +100,9 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId, sc
       }
       if (error) throw new Error(error.message);
 
-      return Array.isArray(rows) ? rows : [];
+      return markSentEmailMessages(serviceClient, Array.isArray(rows) ? rows : [], {
+        workspaceId: scope.workspaceId, threadId, mailboxIds: [mailboxId],
+      });
     });
   if (messagesOnly) return { messages };
   const messageIds = messages.map((row) => String(row?.id || "").trim()).filter(Boolean);

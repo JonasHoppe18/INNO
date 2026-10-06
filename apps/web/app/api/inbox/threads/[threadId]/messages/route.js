@@ -1,3 +1,4 @@
+import { markSentEmailMessages } from "@/lib/server/sent-email-messages";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
@@ -84,7 +85,9 @@ export async function GET(_request, context) {
 
     if (error) throw new Error(error.message);
 
-    const messages = Array.isArray(rows) ? rows : [];
+    const messages = await markSentEmailMessages(serviceClient, Array.isArray(rows) ? rows : [], {
+      workspaceId: scope.workspaceId, threadId, mailboxIds,
+    });
     const messageIds = messages.map((row) => String(row?.id || "").trim()).filter(Boolean);
 
     let attachments = [];

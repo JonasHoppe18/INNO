@@ -190,6 +190,7 @@ export async function PATCH(request) {
       if (scheduled.status === "pending" && scheduled.scheduledFor && Date.parse(scheduled.scheduledFor) <= Date.now()) {
         await dispatchDueCustomerSatisfactionSurveys(serviceClient, {
           workspaceId: data.workspace_id || scope.workspaceId,
+          threadId: data.id,
           origin: resolveCustomerSatisfactionOrigin(request),
           limit: 1,
         });
