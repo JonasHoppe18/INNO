@@ -1060,7 +1060,7 @@ function TicketDetailComponent({
                     />
                   </ConfirmationSent>
                 </MessageRenderBoundary>
-                <CsatSent event={message.csat_sent_event} />
+                <CsatSent event={message.csat_sent_event} threadId={thread?.id || message.thread_id} />
               </div>
               </Fragment>
             );
