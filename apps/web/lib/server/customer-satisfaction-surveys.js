@@ -345,7 +345,7 @@ export async function scheduleRecentResolvedCustomerSatisfactionSurveys(
 
 export async function dispatchDueCustomerSatisfactionSurveys(
   serviceClient,
-  { workspaceId = null, limit = 25, origin = "" } = {},
+  { workspaceId = null, threadId = null, limit = 25, origin = "" } = {},
 ) {
   let query = serviceClient
     .from("csat_survey_requests")
@@ -356,6 +356,7 @@ export async function dispatchDueCustomerSatisfactionSurveys(
     .order("scheduled_for", { ascending: true })
     .limit(Math.min(Math.max(Number(limit) || 25, 1), 100));
   if (workspaceId) query = query.eq("workspace_id", workspaceId);
+  if (threadId) query = query.eq("thread_id", threadId);
   const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
 

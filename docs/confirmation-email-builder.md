@@ -90,3 +90,19 @@ five real sent CSAT requests in dev to the notices returned by the authorized
 thread detail API. No survey was dispatched during these checks. CSAT evidence
 is in `csat-api-results.json`, `csat-ui-results.json` and `tests-csat.txt` in the
 same local evidence directory.
+
+## Immediate CSAT delivery
+
+When CSAT is enabled with an immediate delay, manual resolution dispatches the
+survey for that exact authorized thread. Previously the endpoint dispatched the
+oldest workspace request with a limit of one; older pending surveys could use
+that slot and leave the newly resolved ticket waiting. The worker still processes
+the normal queue when no thread filter is specified. A future send delay remains
+scheduled. Reopening an already sent survey does not send it again.
+
+On 6 October, test ticket 50204 was enabled for immediate CSAT but remained
+pending with no delivery attempts. Three eligible older requests preceded it.
+Regression tests use a mocked mail sender to verify the target-thread behavior,
+workspace isolation, the worker queue and the status endpoint's delay handling.
+The complete targeted set now has 51 passing tests. No pending customer surveys
+were dispatched as part of this verification.
