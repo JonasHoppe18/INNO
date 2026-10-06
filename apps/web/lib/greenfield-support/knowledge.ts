@@ -1,3 +1,4 @@
+import { searchMerchantDocumentRelease } from "../server/knowledge-v2/merchant-document-retrieval";
 import { PROCEDURE_BLOCK_KINDS } from "./types";
 import type {
   AuthorityLevel,
@@ -2094,6 +2095,8 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
   }
 
   async search(request: KnowledgeSearchRequest): Promise<KnowledgeHit[]> {
+    const documentRelease = await searchMerchantDocumentRelease({ supabase: this.serviceClient, request });
+    if (documentRelease.handled) return documentRelease.hits;
     const finalLimit = Math.max(1, Math.min(request.limit ?? 5, 20));
     // The RPC is capped at 20; use the largest bounded pool available before
     // applicability filtering so an unrelated top hit cannot hide a valid one.
@@ -2148,7 +2151,7 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
     const selected = selectKnowledgeRows(productScopedRows, request.taskQuery ?? request.query, productContext, finalLimit, request.knowledgeTypes, request.completedSteps);
     const rows = selected.rows;
     const evidenceSections = await this.loadEvidenceSections(request.workspaceId, rows, request.query, request.taskQuery ?? request.query);
-    return rows
+    const legacyHits = rows
       .map((row: any, index: number) => ({
       record: {
         id: String(row.id),
@@ -2185,5 +2188,6 @@ export class SupabaseKnowledgeStore implements KnowledgeStore {
       taskSpecificity: selected.taskSpecificity,
       procedureCandidates: selected.procedureCandidates,
       }));
+    return [...documentRelease.hits, ...legacyHits].slice(0, finalLimit);
   }
 }

@@ -1,0 +1,400 @@
+{
+  "format": "sona.knowledge-platform/v1",
+  "version": "product-support-0.3.0",
+  "description": "Product support / troubleshooting v0.2. The frozen v0.1 vocabulary remains unchanged, with source-backed firmware, power-recovery, wireless-interference, and mobile-pairing procedures added as typed model-specific units.",
+  "purposes": [
+    "inform",
+    "proceed",
+    "commit"
+  ],
+  "establishment_methods": [
+    "system",
+    "integration",
+    "customer_assertion",
+    "agent_observation",
+    "human_verification",
+    "derived"
+  ],
+  "subjects": {
+    "interaction": {
+      "native_granularity": "interaction"
+    },
+    "customer": {
+      "native_granularity": "customer"
+    },
+    "product_unit": {
+      "native_granularity": "product_unit"
+    },
+    "symptom": {
+      "native_granularity": "symptom"
+    }
+  },
+  "enums": {
+    "unit_kind": [
+      "procedure",
+      "guidance",
+      "slot_rule",
+      "coverage_state",
+      "media_asset"
+    ],
+    "audience": [
+      "customer",
+      "internal_agent",
+      "human_handler"
+    ],
+    "model": [
+      "a_spire_wireless",
+      "a_blaze",
+      "a_spire",
+      "a_rise",
+      "a_live"
+    ],
+    "problem": [
+      "dongle_connection_lost",
+      "mic_not_working",
+      "audio_while_charging",
+      "power_not_turning_on",
+      "firmware_update",
+      "wireless_interference",
+      "mobile_app_pairing"
+    ],
+    "step_outcome": [
+      "not_attempted",
+      "attempted_unresolved",
+      "attempted_resolved"
+    ],
+    "resolution_outcome": [
+      "steps_available",
+      "steps_exhausted",
+      "blocked_precondition",
+      "not_applicable_to_model",
+      "no_procedure",
+      "model_unknown"
+    ],
+    "exit_domain": [
+      "complaints_warranty",
+      "returns",
+      "complaint"
+    ],
+    "truth_value": [
+      "true",
+      "false",
+      "unknown"
+    ],
+    "media_usage": [
+      "illustrates_step",
+      "identifies_part"
+    ],
+    "reason_code": [
+      "applicability.model_unknown",
+      "applicability.model_not_covered",
+      "procedure.none_published",
+      "procedure.precondition_unmet",
+      "procedure.all_steps_attempted",
+      "exit.suppressed_no_published_domain"
+    ]
+  },
+  "facts": {
+    "product_unit.model": {
+      "subject": "product_unit",
+      "type": "enum",
+      "enum": "model",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "integration",
+            "customer_assertion",
+            "system"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "integration",
+            "customer_assertion",
+            "system"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "integration",
+            "system"
+          ],
+          "sufficient": "integration"
+        }
+      }
+    },
+    "symptom.key": {
+      "subject": "symptom",
+      "type": "enum",
+      "enum": "problem",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "derived"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "derived"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "symptom.steps_attempted": {
+      "subject": "symptom",
+      "type": "step_list",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "product_unit.powers_on_stably": {
+      "subject": "product_unit",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "product_unit.can_enter_pairing_mode": {
+      "subject": "product_unit",
+      "type": "boolean",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "proceed": {
+          "methods": [
+            "customer_assertion",
+            "agent_observation"
+          ],
+          "sufficient": "customer_assertion"
+        },
+        "commit": {
+          "methods": [
+            "human_verification"
+          ],
+          "sufficient": "human_verification"
+        }
+      }
+    },
+    "interaction.channel": {
+      "subject": "interaction",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    },
+    "interaction.language": {
+      "subject": "interaction",
+      "type": "text",
+      "purposes": {
+        "inform": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "proceed": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        },
+        "commit": {
+          "methods": [
+            "system"
+          ],
+          "sufficient": "system"
+        }
+      }
+    }
+  },
+  "domains": {
+    "product_support": {
+      "core_families": [
+        "DIAG"
+      ],
+      "families": [
+        "DIAG",
+        "ESC"
+      ]
+    }
+  },
+  "families": {
+    "DIAG": {
+      "description": "Which published procedure applies, and what is left to try."
+    },
+    "ESC": {
+      "description": "When troubleshooting stops and who takes the case."
+    }
+  },
+  "slots": {
+    "product_support.ESC.on_exhausted": {
+      "family": "ESC",
+      "description": "Where a case goes when the published steps are exhausted or a precondition cannot be met.",
+      "value_shape": {
+        "exit_domain": "exit_domain"
+      }
+    }
+  },
+  "unit_kinds": {
+    "procedure": {
+      "description": "One published troubleshooting procedure for one problem on one or more models. Applicability and preconditions are typed; the step text is merchant prose and may carry nothing decision-bearing that is not also typed here.",
+      "payload_shape": {
+        "problem_key": "problem",
+        "applies_to_models": [
+          "model"
+        ],
+        "preconditions": [
+          {
+            "fact": "string",
+            "must_be": "truth_value",
+            "explain": "string"
+          }
+        ],
+        "steps": [
+          {
+            "id": "string",
+            "order": "integer",
+            "text": "string",
+            "branch": "string|null",
+            "media_ref": "string|null"
+          }
+        ],
+        "on_exhausted": {
+          "exit_domain": "exit_domain"
+        },
+        "provenance": [
+          {
+            "source_id": "uuid",
+            "role": "source_role"
+          }
+        ]
+      }
+    },
+    "media_asset": {
+      "description": "A customer-facing image from the source. It may illustrate a step; it may never be the only place a decision-bearing detail exists.",
+      "payload_shape": {
+        "asset_ref": "string",
+        "usage": "media_usage",
+        "describes_step_id": "string|null",
+        "text_equivalent": "string"
+      }
+    },
+    "slot_rule": {
+      "description": "A typed value for one slot."
+    },
+    "guidance": {
+      "description": "Non-decision-bearing explanation."
+    },
+    "coverage_state": {
+      "description": "Blocked coverage; never an answer."
+    }
+  },
+  "exits": {
+    "max_depth": 1,
+    "allowed": [
+      {
+        "from": "product_support",
+        "to": "complaints_warranty",
+        "when": "steps_exhausted_or_precondition_unmet"
+      },
+      {
+        "from": "product_support",
+        "to": "returns",
+        "when": "customer_asks_to_return_instead"
+      }
+    ]
+  },
+  "composition_rules": [
+    "only_steps_not_yet_attempted",
+    "never_dump_whole_procedure",
+    "applicability_from_typed_models_only",
+    "escalate_when_published_procedure_says_so",
+    "media_never_sole_source_of_decision"
+  ],
+  "prose_lint": {
+    "forbidden_in_step_text": [
+      "warranty",
+      "reklamation",
+      "refund",
+      "return the headset",
+      "garanti"
+    ]
+  },
+  "reference_paths": [
+    "payload.provenance[].source_id",
+    "payload.steps[].media_ref"
+  ],
+  "global_identifier_paths": []
+}

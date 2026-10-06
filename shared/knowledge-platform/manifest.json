@@ -1,0 +1,60 @@
+{
+  "format": "sona.knowledge-platform.manifest/v1",
+  "releases": [
+    {
+      "version": "order-status-0.1.0",
+      "file": "order-status-0.1.0.json",
+      "sha256": "sha256:6b319a9c87dbbe66728ff79fb47f921f1371a7144414f15d4bfc3f795ba09e85"
+    },
+    {
+      "version": "product-support-0.1.0",
+      "file": "product-support-0.1.0.json",
+      "sha256": "sha256:df081fd745ee5701afc41874f56beaa2f4688805fa8b83ac7709530b8c2800da"
+    },
+    {
+      "version": "product-support-0.2.0",
+      "file": "product-support-0.2.0.json",
+      "sha256": "sha256:351557dfb333af75449353f4611bcddc0855af31b8b81b5e5e16a4b71cddf004"
+    },
+    {
+      "version": "product-support-0.3.0",
+      "file": "product-support-0.3.0.json",
+      "sha256": "sha256:513d4ac07991669f15fecf71a184d25cf21024a0705a1cc1faceb2fd9d4afb8f"
+    },
+    {
+      "version": "returns-0.1.0",
+      "file": "returns-0.1.0.json",
+      "sha256": "sha256:5ef1d37f65919396f65cad2f15fca17209e1e6c4caea19c9f92bff1ecbe90458"
+    },
+    {
+      "version": "sona-0.2.0",
+      "file": "sona-0.2.0.json",
+      "sha256": "sha256:5ba618cfa4871f329372f053ea9790d17e546a798e3c2ab172e648fd4140a597"
+    },
+    {
+      "version": "sona-0.3.0",
+      "file": "sona-0.3.0.json",
+      "sha256": "sha256:42f2ce3defbfc2c3a5cb57f97efa2c9175e84ae900c94a26dec0700e3da5285d"
+    },
+    {
+      "version": "sona-0.4.0",
+      "file": "sona-0.4.0.json",
+      "sha256": "sha256:85a5e3484bbe839991ce3ce7459e938889b3e2bb52e6e8f0d91fb54fd26c0781"
+    },
+    {
+      "version": "sona-0.5.0",
+      "file": "sona-0.5.0.json",
+      "sha256": "sha256:4a56a8a38777365f27fd9912c04893da2f15134179bbae09435be3e9e9d5bde6"
+    },
+    {
+      "version": "sona-0.6.0",
+      "file": "sona-0.6.0.json",
+      "sha256": "sha256:29e03a4d3f2b7179542fa50479bc4fda21cafcf8a56ce28d677eb5f4fdb04243"
+    },
+    {
+      "version": "warranty-0.1.0",
+      "file": "warranty-0.1.0.json",
+      "sha256": "sha256:5c494f94d4bd9f8d441cb79bca0b1175c11ceb3d4aa8c4a32f89a08b0fade268"
+    }
+  ]
+}
