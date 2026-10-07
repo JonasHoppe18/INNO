@@ -43,7 +43,11 @@ describe("greenfield representative contract baseline", () => {
       const errors = observedTools.filter(({ result }) => result.status === "error" || result.status === "invalid_arguments");
       const expectedTypes = expected.knowledge_types || [];
       const knowledgeMatched = expectedTypes.every((type) => observedTools.some(({ result }) => JSON.stringify(result).includes(`"knowledge_type":"${type}"`)));
-      const proposalMatched = !expected.proposed_action || observedTools.some(({ result }) => result.status === "proposed" && result.proposedAction.action === expected.proposed_action);
+      // The historical unassessed replacement expectation is superseded by the assessment gate.
+      const proposalMatched = !expected.proposed_action || observedTools.some(({ result }) =>
+        result.status === "proposed" && result.proposedAction.action === expected.proposed_action
+        || expected.proposed_action === "send_replacement" && result.status === "invalid_request"
+          && result.data?.action_eligibility?.outcome === "assessment_required" && !result.proposedAction);
       const responseOnlyMatched = !expected.response_only || observedTools.length === 0;
       results.push({ id: testCase.external_id, passed: errors.length === 0 && knowledgeMatched && proposalMatched && responseOnlyMatched });
     }

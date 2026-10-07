@@ -423,3 +423,13 @@ describe("greenfield playground boundary", () => {
     expect(extractOrderReferences("Sorry, I meant order 1055.")).toEqual(["1055"]);
   });
 });
+
+it("retains bounded action decisions without exposing authorization payloads", () => {
+  const sanitized = sanitizeGreenfieldTrace({ events: [{ type: "action_decision", at: "2026-10-07T06:00:00Z", data: {
+    action: "cancel_order", outcome: "non_action_guidance", proposal_allowed: false,
+    eligibility: { eligible: false, authorized: true, requirements: [{ name: "whole_order_unfulfilled", satisfied: false }],
+      decisionId: "private-decision", evidenceReferences: ["private-evidence"] },
+  } }] });
+  expect(sanitized.events[0]).toMatchObject({ action: "cancel_order", outcome: "non_action_guidance", eligible: false, authorized: true });
+  expect(JSON.stringify(sanitized)).not.toMatch(/private-decision|private-evidence/);
+});
