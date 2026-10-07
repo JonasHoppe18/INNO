@@ -87,9 +87,13 @@ export function advanceCaseContext(context: ConversationContext, ir: TurnIR | nu
     if (next.address && next.address.value !== ir.address.value) delete next.actionConfirmation;
     next.address = { value: ir.address.value, complete: ir.address.complete, orderReference, ...(ir.address.details ? { details: ir.address.details } : {}) };
   }
-  if (ir?.lineChange) next.lineChange = { sourceItem: ir.lineChange.sourceItem ?? next.lineChange?.sourceItem ?? null,
-    targetVariant: ir.lineChange.targetVariant ?? next.lineChange?.targetVariant ?? null,
-    quantity: ir.lineChange.quantity ?? next.lineChange?.quantity ?? null, orderReference };
+  if (ir?.lineChange) {
+    const change = { sourceItem: ir.lineChange.sourceItem ?? next.lineChange?.sourceItem ?? null,
+      targetVariant: ir.lineChange.targetVariant ?? next.lineChange?.targetVariant ?? null,
+      quantity: ir.lineChange.quantity ?? next.lineChange?.quantity ?? null, orderReference };
+    if (next.lineChange && JSON.stringify(next.lineChange) !== JSON.stringify(change)) delete next.actionConfirmation;
+    next.lineChange = change;
+  }
   if (ir?.confirmation && order?.state === "verified" && order.order) {
     if (ir.confirmation.confirmed) {
       next.orderConfirmation = { orderReference: order.requestedOrderId, sourceText: ir.confirmation.sourceText };
