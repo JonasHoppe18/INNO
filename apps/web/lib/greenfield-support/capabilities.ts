@@ -1,4 +1,5 @@
-import { complaintContextForOrder } from "./action-eligibility";
+import type { TurnIR } from "./turn-ir";
+import { actionEligibility, complaintContextForOrder } from "./action-eligibility";
 import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
 import type { StrictToolDefinition } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
@@ -22,6 +23,9 @@ import type {
 } from "./types";
 
 export interface CapabilityContext {
+  turnIR?: TurnIR;
+  /** Server-owned technical interpretation failure; no proposal tool may proceed. */
+  proposalActionsBlocked?: boolean;
   tenant: TenantContext;
   knowledge: KnowledgeStore;
   commerce: CommerceReadProvider;
@@ -512,6 +516,37 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   const registry = {
     definitions,
     manifest,
+    evaluateActionIntents(turnIR: TurnIR) {
+      const focus = orderFocus;
+      if (!context.tenant.customerEmail?.trim() || !context.tenant.shopId || focus?.state !== "verified" || !focus.order) return [];
+      const order = focus.order;
+      return turnIR.actions.flatMap(intent => {
+        const reference = intent.orderReference?.replace(/^#/, "");
+        if (reference && ![focus.requestedOrderId, order.id, order.orderNumber].some(id => sameOrderReference(id, reference))) return [];
+        const items = order.items;
+        const proposal: ProposedAction = { action: intent.action,
+          arguments: { order_id: focus.requestedOrderId, reason: intent.sourceText,
+            ...(items.length === 1 ? { item_id: items[0].id, item_ids: [items[0].id] } : {}) },
+          reason: intent.sourceText, requiresConfirmation: true, status: "proposed" };
+        const eligibility = actionEligibility(proposal, { tenant: context.tenant, manifest,
+          activeOrder: registry.getActiveOrderFocus(), verifiedWorkspaceId: context.tenant.workspaceId,
+          customerMessage: context.customerMessage,
+          complaintContext: complaintContextForOrder(context.conversationContext, focus.requestedOrderId),
+          remedyAuthorization: context.remedyAuthorization });
+        const result = recordResult(intent.action, {
+          status: eligibility.outcome === "proposal_allowed" ? "ok" : "invalid_request",
+          data: jsonValue({ action_intent: intent, action_eligibility: eligibility,
+            action_validation: { valid: eligibility.outcome === "proposal_allowed", checks: [
+              { name: "customer_identity", status: "passed" },
+              { name: "verified_order", status: "passed" },
+              { name: "order_scope", status: "passed" },
+              { name: "case_eligibility", status: eligibility.eligible ? "passed" : "failed" },
+              { name: "proposal_authorization", status: eligibility.authorized ? "passed" : "failed" },
+            ] } }),
+        });
+        return [{ intent, eligibility, result }];
+      });
+    },
     getResult(resultId: string) {
       return resultRecords.get(resultId);
     },
@@ -590,6 +625,11 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           status: "invalid_arguments",
           error: { code: "unknown_tool", message: `Unknown capability: ${toolName}` },
         });
+      }
+      if (context.proposalActionsBlocked && definitions.some(definition =>
+        definition.name === toolName && definition.sensitivity === "proposed_action")) {
+        return recordResult(toolName, { status: "unavailable", error: { code: "turn_ir_unavailable",
+          message: "Proposal-only actions are blocked because semantic interpretation is unavailable for this turn." } });
       }
       const parsed = parseToolArguments(toolName, rawArguments);
       if (parsed.ok === false) return recordResult(toolName, parsed.result);
@@ -766,7 +806,10 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           case "cancel_order":
             return validatedProposedAction("cancel_order", args, stringArg(args, "reason"), context, manifest, orderFocus);
           case "update_address":
-            if (context.customerMessage?.trim() && !isExplicitAddressChangeRequest(context.customerMessage)) {
+            if (context.turnIR?.actions.some(a => a.action === "update_address" && !a.addressProvided)) {
+              return { status: "invalid_request", error: { code: "customer_address_required", message: "The customer must supply the new delivery address before a proposal is possible." } };
+            }
+            if (context.customerMessage?.trim() && !isExplicitAddressChangeRequest(context.customerMessage, context.turnIR)) {
               return {
                 status: "invalid_request",
                 error: {

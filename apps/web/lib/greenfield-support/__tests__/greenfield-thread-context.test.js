@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ScriptedModel, assistantMessage, functionCall, modelResponse } from "@openai/agents/testing";
 import { createCapabilityRegistry, extractOrderReferences } from "../capabilities";
 import { createDemoDependencies } from "../demo-fixtures";
-import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
+import { runGreenfieldAgentWithAgentsSdk as runSdk } from "../agents-sdk";
+const runGreenfieldAgentWithAgentsSdk = options => runSdk({ turnInterpreter: async () => ({ actions: [] }), ...options });
 import {
   createGreenfieldConversationContextStore,
   loadGreenfieldThreadState,

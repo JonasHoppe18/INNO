@@ -433,3 +433,21 @@ it("retains bounded action decisions without exposing authorization payloads", (
   expect(sanitized.events[0]).toMatchObject({ action: "cancel_order", outcome: "non_action_guidance", eligible: false, authorized: true });
   expect(JSON.stringify(sanitized)).not.toMatch(/private-decision|private-evidence/);
 });
+
+it("retains pre-tool action eligibility without exposing semantic quotes or addresses", () => {
+  const sanitized = sanitizeGreenfieldTrace({ events: [{ type: "action_intent", data: {
+    intent: { action: "update_address", sourceText: "private-customer-request", address: "private-address" },
+    eligibility: { eligible: false, authorized: true, outcome: "non_action_guidance" },
+    result: { data: { private: "private-result" } },
+  } }] });
+  expect(sanitized.events[0]).toMatchObject({ action: "update_address", eligible: false, outcome: "non_action_guidance" });
+  expect(JSON.stringify(sanitized)).not.toMatch(/private-customer-request|private-address|private-result/);
+});
+
+it("preserves technical TurnIR failure diagnostics without provider details", () => {
+  const trace = sanitizeGreenfieldTrace({ events: [{ type: "error", data: {
+    code: "turn_ir_unavailable", message: "Proposal-only actions are blocked for this turn.",
+  } }], diagnostics: { turn_ir_unavailable: true } }, { env: { GREENFIELD_PLAYGROUND_ENABLED: "true", GREENFIELD_DEPLOYMENT_ENV: "development", GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk", NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co" } });
+  expect(trace.events[0].code).toBe("turn_ir_unavailable");
+  expect(trace.diagnostics.turn_ir_unavailable).toBe(true);
+});

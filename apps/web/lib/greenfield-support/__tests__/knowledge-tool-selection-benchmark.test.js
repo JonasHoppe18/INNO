@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
+import { runGreenfieldAgentWithAgentsSdk as runSdk } from "../agents-sdk";
+const runGreenfieldAgentWithAgentsSdk = options => runSdk({ turnInterpreter: async () => ({ actions: [] }), ...options });
 import { createDemoDependencies } from "../demo-fixtures";
 
 const RUN_BENCHMARK = process.env.GREENFIELD_TOOL_SELECTION_BENCHMARK === "1";

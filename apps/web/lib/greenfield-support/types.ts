@@ -476,6 +476,7 @@ export type TraceEventType =
   | "tool_result"
   | "action_execution"
   | "action_decision"
+  | "action_intent"
   | "final_response"
   | "error";
 

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
+import { runGreenfieldAgentWithAgentsSdk as runSdk } from "../agents-sdk";
+const runGreenfieldAgentWithAgentsSdk = options => runSdk({ turnInterpreter: async () => ({ actions: [] }), ...options });
 import { SupabaseKnowledgeStore } from "../knowledge";
 
 const RUN_REAL_EVAL = process.env.GREENFIELD_KNOWLEDGE_V1_AGENT_EVAL === "1";

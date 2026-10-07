@@ -378,6 +378,12 @@ function traceEventSummary(event) {
         : null,
     };
   }
+  if (event?.type === "action_intent") {
+    const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
+    return { at: event.at, type: event.type, action: text(data.intent?.action, 80),
+      outcome: text(eligibility.outcome, 80), eligible: eligibility.eligible === true,
+      authorized: eligibility.authorized === true };
+  }
   if (event?.type === "action_decision") {
     const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
     return {
@@ -470,6 +476,7 @@ function sanitizeGreenfieldDiagnostics(value) {
   const modelOutput = isRecord(value.model_output) ? value.model_output : null;
   const validation = isRecord(value.validation) ? value.validation : null;
   return {
+    turn_ir_unavailable: value.turn_ir_unavailable === true,
     question_shape: text(value.question_shape, 40) || "general",
     selected_source_ids: Array.isArray(value.selected_source_ids) ? value.selected_source_ids.slice(0, 20).map((id) => text(id, 160)).filter(Boolean) : [],
     selected_evidence_section_ids: Array.isArray(value.selected_evidence_section_ids)
