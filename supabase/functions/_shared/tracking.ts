@@ -1321,6 +1321,7 @@ export function collectTrackingCandidates(order: any): TrackingCandidate[] {
 // implementations; tests inject stubs. Native API routing is intentionally kept
 // to GLS/PostNord because those are the only carrier APIs currently configured.
 type FetchTrackingDetailDeps = {
+  fetchPostNord?: (trackingNumber: string, trackingUrl: string) => Promise<TrackingDetail>;
   ship24Configured?: () => boolean;
   fetchShip24?: (
     trackingNumber: string,
@@ -1348,7 +1349,13 @@ export async function fetchTrackingDetailForCandidate(
       trackingUrl,
     };
   }
-  if (carrier === "postnord") return await fetchPostNordStatus(trackingNumber, trackingUrl);
+  if (carrier === "postnord") {
+    const native = await (deps?.fetchPostNord ?? fetchPostNordStatus)(trackingNumber, trackingUrl);
+    if (native.lookupSource !== "shopify_fallback" || !(deps?.ship24Configured ?? isShip24Configured)()) return native;
+    // A configured carrier fallback must get a chance after an unavailable native lookup.
+    const fallback = await (deps?.fetchShip24 ?? fetchShip24Status)(trackingNumber, { trackingUrl });
+    return fallback.lookupSource === "ship24_api" && fallback.lookupDetail === "ok" ? fallback : native;
+  }
   if (carrier === "bring") return await fetchBringStatus(trackingNumber, trackingUrl);
 
   // Other non-GLS/PostNord carriers route through Ship24 when configured.
