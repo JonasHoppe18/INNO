@@ -14,7 +14,7 @@ describe("email rendering", () => {
   it("keeps useful inline formatting and resolves inline images", () => {
     const result = sanitizeConversationHtml('<p style="text-align:center;color:#123456;position:fixed">Hello</p><img src="cid:logo" alt="Store logo">', [{ id: "one", content_id: "logo" }]);
     expect(result).toContain("text-align:center");
-    expect(result).toContain("color:#123456");
+    expect(result).not.toContain("color:");
     expect(result).not.toContain("position:");
     expect(result).toContain("/api/attachments/one/download?disposition=inline");
   });
@@ -48,5 +48,16 @@ describe("email rendering", () => {
   });
   it("keeps hidden preheaders hidden in conversation HTML", () => {
     expect(sanitizeConversationHtml(html)).not.toContain("Hidden preheader");
+  });
+  it("normalizes a table-based transactional email without losing its action link", () => {
+    const transactional = `<table cellpadding="60" style="width:100%;padding:60px;color:white"><tr><td height="200" style="height:200px;padding:70px">&nbsp;</td></tr><tr><td><img src="https://example.invalid/logo.png" width="180" height="30" style="width:100%;height:30px"></td></tr><tr><td><a href="https://example.invalid/login" style="color:white;background:#111;display:inline-block;height:50px;padding:20px">Sign in</a></td></tr></table>`;
+    const compact = sanitizeConversationHtml(transactional);
+    expect(compact).not.toMatch(/height:(?:30|50|200)px|height="|cellpadding=|padding:|color:white|(?:[;" ])width:100%/);
+    expect(compact).toContain("width:180px;height:auto");
+    expect(compact).toContain('href="https://example.invalid/login"');
+    expect(compact).toContain("Sign in</a>");
+    const original = buildEmailDocument(transactional);
+    expect(original).toContain("padding:60px");
+    expect(original).toContain('height="30"');
   });
 });
