@@ -1,3 +1,4 @@
+import { interpretTurnIR, normalizeTurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
 import { boundedActionDecision } from "./action-decision";
 import { validateActionProposal } from "./action-executor";
@@ -53,6 +54,8 @@ interface SonaAgentContext {
 
 export interface GreenfieldAgentsSdkOptions {
   tenant: TenantContext;
+  /** Server-owned semantic interpreter; injectable for deterministic evaluation. */
+  turnInterpreter?: TurnInterpreter;
   /** Display-only sender/profile name; never used for authorization. */
   customerDisplayName?: string | null;
   message: string;
@@ -358,11 +361,19 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     options.message,
     conversationContext?.customerProvided,
   );
+  const turnIR = normalizeTurnIR(await (options.turnInterpreter ?? interpretTurnIR)(options.message), options.message);
   const registry = createCapabilityRegistry({
     ...options.capabilities,
     customerMessage: options.message,
+    turnIR,
     conversationContext,
-    orderReferences: options.capabilities.orderReferences ?? extractOrderReferences(options.message),
+    orderReferences: options.capabilities.orderReferences ?? Array.from(new Set([
+      ...extractOrderReferences(options.message),
+      ...turnIR.actions.flatMap(intent => {
+        const reference = intent.orderReference?.replace(/^#/, "");
+        return reference && options.message.includes(reference) ? [reference] : [];
+      }),
+    ])),
     toolDefinitions: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
   });
   let continuityInput = modelConversationContext(
@@ -473,21 +484,36 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }, now());
     preloadedResults.push({ tool: toolName, result });
   };
-  const hasPolicyRequest = shouldPreloadPolicyEvidence(options.message);
+  const intentAssessments = registry.evaluateActionIntents(turnIR);
+  for (const assessment of intentAssessments) pushEvent(trace, "action_intent", assessment, now());
+  const intentDecision = boundedActionDecision(registry.getResults(), [], inferResponseLocale(options.message));
+  const missingAddress = intentAssessments.find(a => a.intent.action === "update_address"
+    && a.eligibility.outcome === "proposal_allowed" && !a.intent.addressProvided);
+  const addressQuestion = missingAddress ? { structuredOutput: { segments: [{ type: "question",
+    purpose: "resolve_required_argument", capability: "update_address", missing_arguments: ["address"],
+    text: inferResponseLocale(options.message) === "da" ? "Hvad er den nye komplette leveringsadresse?" : "What is the complete new delivery address?",
+    basis: { result_id: missingAddress.result.resultId!, field_paths: ["data.action_eligibility"] } }] } } : null;
+  const hasPolicyRequest = !intentDecision && !addressQuestion && shouldPreloadPolicyEvidence(options.message);
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
   const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
 
   try {
     let result: any;
-    await withTrace("Sona support agent", async () => {
-      result = await runner.run(agent, inputItems(options, modelInput), { context, maxTurns });
-    });
+    // A bounded decision needs no writer/tool-loop cooperation, including on writer failure.
+    const preModelBoundary = intentDecision ?? addressQuestion;
+    if (preModelBoundary) {
+      result = { finalOutput: preModelBoundary.structuredOutput };
+    } else {
+      await withTrace("Sona support agent", async () => {
+        result = await runner.run(agent, inputItems(options, modelInput), { context, maxTurns });
+      });
+    }
 
     if (result?.runContext?.usage && typeof result.runContext.usage === "object") {
       trace.usage.push(traceValue(result.runContext.usage) as Record<string, JsonValue>);
     }
     const modelDiagnostics = options.enableDevDiagnostics ? modelOutputDiagnostics(result?.finalOutput) : null;
-    pushEvent(
+    if (!preModelBoundary) pushEvent(
       trace,
       "model_response",
       {
@@ -508,8 +534,8 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
           question_shape: diagnosticQuestionShape(options.message),
           ...evidence,
           validation: null,
-          model_output: modelDiagnostics,
-          model_response_mode: modelDiagnostics.response_mode,
+          model_output: preModelBoundary ? null : modelDiagnostics,
+          model_response_mode: preModelBoundary ? "not_run" : modelDiagnostics.response_mode,
           completeness_check_entered: false,
           recovery_attempted: false,
           recovery_type: [],
@@ -543,15 +569,25 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       complaintContext: complaintContextForOrder(conversationContext, registry.getActiveOrderFocus()?.requestedOrderId),
       remedyAuthorization: options.capabilities.remedyAuthorization,
     };
+    // Missing customer data cannot be filled by model-invented proposal arguments.
+    if (missingAddress) {
+      for (let index = proposedActions.length - 1; index >= 0; index--) {
+        if (proposedActions[index].action === "update_address") proposedActions.splice(index, 1);
+      }
+    }
     // A later live-state gate cannot leave an earlier proposal eligible.
     for (let index = proposedActions.length - 1; index >= 0; index--) {
       if (!validateActionProposal(proposedActions[index], actionContext).valid) proposedActions.splice(index, 1);
     }
-    const actionDecision = boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
+    const actionDecision = intentDecision ?? boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
+    const boundaryOutput = actionDecision ?? addressQuestion;
     if (actionDecision) pushEvent(trace, "action_decision", { action: actionDecision.action,
       outcome: actionDecision.outcome, eligibility: actionDecision.eligibility, proposal_allowed: false }, now());
+    else if (missingAddress) pushEvent(trace, "action_decision", { action: "update_address",
+      outcome: "required_argument", eligibility: missingAddress.eligibility, proposal_allowed: false }, now());
     const responseContext = {
       ...registry,
+      turnIR,
       proposedActions,
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
@@ -565,10 +601,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
-    const validatedOutput = validateStructuredResponse(actionDecision?.structuredOutput ?? result?.finalOutput, responseContext);
+    const validatedOutput = validateStructuredResponse(boundaryOutput?.structuredOutput ?? result?.finalOutput, responseContext);
     // Completeness recovery cannot replace an action-boundary decision with an ineligible action path.
-    const validation = actionDecision ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext);
-    const useAuthoritativeFallback = !actionDecision && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
+    const validation = boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext);
+    const useAuthoritativeFallback = !boundaryOutput && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
     if (options.enableDevDiagnostics && modelDiagnostics) {
       const evidence = evidenceDiagnostics(registry);
       const recovery = recoverySummary(validation);
@@ -585,13 +621,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         question_shape: diagnosticQuestionShape(options.message),
         ...evidence,
         validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
-        model_output: modelDiagnostics,
-        model_response_mode: modelDiagnostics.response_mode,
+        model_output: preModelBoundary ? null : modelDiagnostics,
+        model_response_mode: preModelBoundary ? "not_run" : modelDiagnostics.response_mode,
         intent_resolved_by_approved_segment: validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? null,
         completeness_check_entered: validation.completenessDiagnostics?.entered === true,
         ...recovery,
         fallback_reason: fallbackReason,
-        final_composition_source: responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
+        final_composition_source: boundaryOutput ? "action_boundary" : responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
       }) as JsonObject;
     }
     const actionExecutions = await executeActionProposals({

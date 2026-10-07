@@ -1,5 +1,6 @@
 import { ScriptedModel, assistantMessage, functionCall, modelResponse } from "@openai/agents/testing";
-import { runGreenfieldAgentWithAgentsSdk } from "../agents-sdk";
+import { runGreenfieldAgentWithAgentsSdk as runSdk } from "../agents-sdk";
+const runGreenfieldAgentWithAgentsSdk = options => runSdk({ turnInterpreter: async () => ({ actions: [] }), ...options });
 import { InMemoryCommerceProvider } from "../providers";
 import { describe, expect, it } from "vitest";
 import { actionEligibility, complaintContextForOrder } from "../action-eligibility";
@@ -95,11 +96,10 @@ describe("action decision before rendering", () => {
   for (const c of failureControls) it(c.name, async () => {
     const deps = await createDemoDependencies();
     deps.commerce = new InMemoryCommerceProvider({ customer: { email: deps.tenant.customerEmail }, orders: [{ ...order, fulfillmentStatus: c.state }] });
-    const model = new ScriptedModel([
-      modelResponse([functionCall(c.action, proposal(c.action).arguments, { callId: "invalid-action" })]),
-      modelResponse([assistantMessage(JSON.stringify({ segments: [{ type: "action_offer", capability: c.action, mode: "proposal", missing_arguments: [] }] }))]),
-    ]);
-    const result = await runGreenfieldAgentWithAgentsSdk({ ...deps, message: c.message, model, capabilities: deps, actionExecutor: new PlaygroundDryRunExecutor() });
+    const model = new ScriptedModel([]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...deps, message: c.message, model, capabilities: deps,
+      turnInterpreter: async () => ({ actions: [{ action: c.action, sourceText: c.message, orderReference: "123", addressProvided: true }] }),
+      actionExecutor: new PlaygroundDryRunExecutor() });
     model.assertComplete();
     expect(result.proposedActions).toEqual([]);
     expect(result.actionExecutions).toEqual([]);

@@ -378,6 +378,12 @@ function traceEventSummary(event) {
         : null,
     };
   }
+  if (event?.type === "action_intent") {
+    const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
+    return { at: event.at, type: event.type, action: text(data.intent?.action, 80),
+      outcome: text(eligibility.outcome, 80), eligible: eligibility.eligible === true,
+      authorized: eligibility.authorized === true };
+  }
   if (event?.type === "action_decision") {
     const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
     return {

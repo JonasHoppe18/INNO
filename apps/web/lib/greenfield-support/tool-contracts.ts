@@ -1,3 +1,4 @@
+import type { TurnIR } from "./turn-ir";
 import type { JsonObject, SensitiveAction, ToolExecutionResult } from "./types";
 
 export type ToolSensitivity = "read_only" | "proposed_action";
@@ -40,7 +41,8 @@ const stringProperty = (description: string): Property => ({ type: "string", des
  * boundary deterministic so the model cannot turn a policy question into a
  * proposed order mutation just because the customer says "my order".
  */
-export function isExplicitAddressChangeRequest(message: string): boolean {
+export function isExplicitAddressChangeRequest(message: string, turnIR?: TurnIR): boolean {
+  if (turnIR) return turnIR.actions.some(intent => intent.action === "update_address");
   const text = String(message ?? "").replace(/[\u2019]/g, "'").trim();
   if (!text) return false;
   return /\b(?:change|modify|update|correct|edit|fix|replace|switch|set|move|amend)\b[\s\S]{0,100}\b(?:shipping|delivery|mailing|billing)?\s*address\b/i.test(text)

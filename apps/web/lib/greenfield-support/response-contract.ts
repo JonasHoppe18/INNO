@@ -1,3 +1,4 @@
+import type { TurnIR } from "./turn-ir";
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
 import type { CapabilityManifest, ConversationContext, GreenfieldInteractionChannel, JsonObject, ProposedAction, ToolExecutionResult } from "./types";
@@ -161,6 +162,7 @@ export type ResponseFailureClass =
   | "model_response_invalid";
 
 export interface ResponseValidationContext {
+  turnIR?: TurnIR;
   manifest: CapabilityManifest;
   getResult: (resultId: string) => ResponseEvidenceRecord | undefined;
   definitions: StrictToolDefinition[];
@@ -1428,7 +1430,7 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
   }
   if (segment.capability === "update_address"
     && context.customerMessage?.trim()
-    && !isExplicitAddressChangeRequest(context.customerMessage)) {
+    && !isExplicitAddressChangeRequest(context.customerMessage, context.turnIR)) {
     return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
   }
   if (!availableCapability(segment.capability, context)) {
@@ -1469,7 +1471,7 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
     case "action_offer": {
       if (segment.capability === "update_address"
         && context.customerMessage?.trim()
-        && !isExplicitAddressChangeRequest(context.customerMessage)) {
+        && !isExplicitAddressChangeRequest(context.customerMessage, context.turnIR)) {
         return [{ index, code: "address_change_request_required", message: "An address proposal requires an explicit request to change the existing order address." }];
       }
       const definition = definitionFor(segment.capability, context);
