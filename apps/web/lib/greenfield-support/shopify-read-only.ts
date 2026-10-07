@@ -1,3 +1,4 @@
+import { resolveCatalogIdentity } from "./catalog-identity";
 import type {
   CommerceReadProvider,
   CustomerSnapshot,
@@ -27,15 +28,6 @@ function customerProfileName(raw: Record<string, unknown>): string | null {
 function safeLookup(value: unknown): string {
   const result = clean(value);
   return /^[#a-z0-9_-]{1,80}$/i.test(result) ? result : "";
-}
-
-function normalizedProductText(value: unknown): string {
-  return clean(value)
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
 }
 
 function hasOwn(value: unknown, key: string): boolean {
@@ -103,55 +95,6 @@ export function shopifyAvailabilityState(
   if (quantity === null || policy === null) return "UNKNOWN";
   if (quantity > 0) return "AVAILABLE";
   return policy === "continue" ? "AVAILABLE_TO_ORDER" : "OUT_OF_STOCK";
-}
-
-function variantLookupValues(variant: Record<string, unknown>, product?: Record<string, unknown>): string[] {
-  const productPrefix = product?.title == null ? "" : `${clean(product.title)} `;
-  return [
-    variant.title,
-    variant.sku,
-    variant.option1,
-    variant.option2,
-    variant.option3,
-    `${productPrefix}${clean(variant.title)}`,
-    `${productPrefix}${clean(variant.sku)}`,
-  ]
-    .map(normalizedProductText)
-    .filter(Boolean);
-}
-
-function productIdentityValues(product: Record<string, unknown>): string[] {
-  return [product.title, product.handle].map(normalizedProductText).filter(Boolean);
-}
-
-function selectAvailabilityProducts(query: string, products: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const wanted = normalizedProductText(query);
-  if (!wanted) return [];
-  const exact = products.filter((product) =>
-    productIdentityValues(product).includes(wanted) ||
-    (Array.isArray(product.variants) && product.variants.some((variant) =>
-      variant && typeof variant === "object" && variantLookupValues(variant as Record<string, unknown>, product).includes(wanted),
-    )),
-  );
-  if (exact.length) return exact;
-  return products.filter((product) =>
-    productIdentityValues(product).some((value) => value.includes(wanted)) ||
-    (Array.isArray(product.variants) && product.variants.some((variant) =>
-      variant && typeof variant === "object" && variantLookupValues(variant as Record<string, unknown>, product).some((value) => value.includes(wanted)),
-    )),
-  );
-}
-
-function selectedAvailabilityVariants(query: string, product: Record<string, unknown>): Array<Record<string, unknown>> {
-  const variants = Array.isArray(product.variants)
-    ? product.variants.filter((variant): variant is Record<string, unknown> => Boolean(variant && typeof variant === "object"))
-    : [];
-  const wanted = normalizedProductText(query);
-  if (productIdentityValues(product).includes(wanted) || productIdentityValues(product).some((value) => value.includes(wanted))) return variants;
-  const exact = variants.filter((variant) => variantLookupValues(variant, product).includes(wanted));
-  if (exact.length) return exact;
-  const contains = variants.filter((variant) => variantLookupValues(variant, product).some((value) => value.includes(wanted)));
-  return contains.length ? contains : variants;
 }
 
 function publicAvailabilityVariant(
@@ -292,11 +235,11 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
     if (!this.domain || !this.token) throw new Error("Shopify read-only provider requires server-side credentials.");
   }
 
-  private async get(path: string, params: Record<string, string> = {}): Promise<any> {
-    const url = new URL(`https://${this.domain}/admin/api/${this.apiVersion}/${path.replace(/^\/+/, "")}`);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value) url.searchParams.set(key, value);
-    });
+  private async readPage(url: URL): Promise<{ payload: any; next: URL | null }> {
+    const expectedPath = url.pathname;
+    if (url.protocol !== "https:" || url.host !== this.domain || url.username || url.password) {
+      throw new Error("Shopify read pagination scope mismatch.");
+    }
     const response = await this.fetchImpl(url.toString(), {
       method: "GET",
       headers: { Accept: "application/json", "X-Shopify-Access-Token": this.token },
@@ -304,7 +247,42 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`Shopify read failed (${response.status}).`);
-    return payload;
+    const nextLink = response.headers?.get("link")?.split(",")
+      .find((link) => /;\s*rel=["']?next["']?(?:\s*;|\s*$)/.test(link));
+    const nextHref = nextLink?.match(/<([^>]+)>/)?.[1];
+    if (nextLink && !nextHref) throw new Error("Shopify read pagination malformed link.");
+    const next = nextHref ? new URL(nextHref) : null;
+    if (next && (next.protocol !== "https:" || next.host !== this.domain ||
+      next.pathname !== expectedPath || next.username || next.password || !next.searchParams.has("page_info"))) {
+      throw new Error("Shopify read pagination scope mismatch.");
+    }
+    return { payload, next };
+  }
+
+  private async get(path: string, params: Record<string, string> = {}): Promise<any> {
+    const url = new URL(`https://${this.domain}/admin/api/${this.apiVersion}/${path.replace(/^\/+/, "")}`);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) url.searchParams.set(key, value);
+    });
+    return (await this.readPage(url)).payload;
+  }
+
+  private async resolveProduct(query: string) {
+    let url: URL | null = new URL(`https://${this.domain}/admin/api/${this.apiVersion}/products.json`);
+    url.searchParams.set("status", "active");
+    url.searchParams.set("limit", "250");
+    url.searchParams.set("fields", "id,title,handle,status,published_at,variants");
+    const products: Array<Record<string, unknown>> = [];
+    const visited = new Set<string>();
+    while (url) {
+      if (visited.has(url.href)) throw new Error("Shopify read pagination repeated cursor.");
+      visited.add(url.href);
+      const page = await this.readPage(url);
+      if (!Array.isArray(page.payload?.products)) throw new Error("Shopify product catalog unavailable.");
+      products.push(...page.payload.products.filter((product: any) => product && product.status === "active"));
+      url = page.next;
+    }
+    return resolveCatalogIdentity(query, products);
   }
 
   async getOrder(orderId: string): Promise<OrderSnapshot | null> {
@@ -374,11 +352,12 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
   async getProduct(query: string): Promise<JsonValue> {
     const productQuery = clean(query);
     if (!productQuery) return { status: "missing_query" };
-    const payload = await this.get("products.json", { status: "active", limit: "10", title: productQuery });
-    const products = Array.isArray(payload?.products) ? payload.products : [];
+    const matches = await this.resolveProduct(productQuery);
     return {
-      status: products.length ? "ok" : "not_found",
-      products: products.map((product: any) => ({ id: product?.id ?? null, title: product?.title ?? null, handle: product?.handle ?? null, variants: product?.variants ?? [] })),
+      status: matches.length ? (matches.length > 1 ? "ambiguous" : "ok") : "not_found",
+      products: matches.map(({ product, variants }) => ({
+        id: product.id ?? null, title: product.title ?? null, handle: product.handle ?? null, variants,
+      })) as JsonValue,
     };
   }
 
@@ -387,19 +366,7 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
     const observedAt = new Date().toISOString();
     if (!productQuery) return { status: "unknown", query: productQuery, provider: this.providerName, source: "shopify_live", observed_at: observedAt, products: [] };
 
-    const fields = "id,title,handle,status,published_at,variants";
-    const titlePayload = await this.get("products.json", {
-      status: "active",
-      limit: "10",
-      title: productQuery,
-      fields,
-    });
-    let products = Array.isArray(titlePayload?.products) ? titlePayload.products : [];
-    if (!products.length) {
-      const listingPayload = await this.get("products.json", { status: "active", limit: "250", fields });
-      products = Array.isArray(listingPayload?.products) ? listingPayload.products : [];
-    }
-    const matches = selectAvailabilityProducts(productQuery, products);
+    const matches = await this.resolveProduct(productQuery);
     if (!matches.length) {
       return {
         status: "not_found",
@@ -426,8 +393,7 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
       locationScope = "unknown";
     }
 
-    const outputProducts = matches.map((product: any) => {
-      const variants = selectedAvailabilityVariants(productQuery, product);
+    const outputProducts = matches.map(({ product, variants }) => {
       return {
         id: product?.id == null ? null : clean(product.id),
         title: product?.title == null ? null : clean(product.title),
@@ -437,10 +403,7 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
     });
     const selectedVariantCount = outputProducts.reduce((count, product) => count + product.variants.length, 0);
     const ambiguous = matches.length !== 1 || selectedVariantCount !== 1;
-    const singleProductIsNamed = matches.length === 1 && (
-      productIdentityValues(matches[0]).includes(normalizedProductText(productQuery)) ||
-      productIdentityValues(matches[0]).some((value) => value.includes(normalizedProductText(productQuery)))
-    );
+    const singleProductIsNamed = matches.length === 1 && !matches[0].variantSpecified;
     return {
       status: ambiguous ? "ambiguous" : "ok",
       selection: ambiguous ? "ambiguous" : singleProductIsNamed ? "product" : "exact_variant",

@@ -32,8 +32,7 @@ function providerFor(products, calls = []) {
       const parsed = new URL(url);
       if (parsed.pathname.endsWith("/locations.json")) return jsonResponse(locationPayload());
       if (parsed.pathname.endsWith("/products.json")) {
-        const title = parsed.searchParams.get("title");
-        return jsonResponse(productPayload(title ? products : []));
+        return jsonResponse(productPayload(products));
       }
       throw new Error(`unexpected test request: ${url}`);
     },
@@ -190,7 +189,7 @@ describe("greenfield product availability", () => {
 
     const result = await registry.execute("get_product_availability", JSON.stringify({ query: "Aurora Headset White / L" }));
     const productRequest = calls.find(({ url }) => new URL(url).pathname.endsWith("/products.json"));
-    expect(new URL(productRequest.url).searchParams.get("title")).toBe("Aurora Headset White / L");
+    expect(new URL(productRequest.url).searchParams.get("title")).toBeNull();
     expect(result).toMatchObject({ status: "ok", data: { query: "Aurora Headset White / L", products: [{ variants: [{ title: "White / L", availability_state: "OUT_OF_STOCK" }] }] } });
   });
 
