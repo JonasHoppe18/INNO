@@ -1647,6 +1647,10 @@ function citedCareText(basis: KnowledgeBasis, context: ResponseValidationContext
     ? Array.from(new Set(selected.map((record) => record.text))).join("\n\n") : null;
 }
 
+function undocumentedDishwasherMethod(text: string): boolean {
+  return /not (?:established|specified|documented)|no (?:verified|documented|confirmed) evidence|(?:does|do) not (?:state|specify|confirm|establish)\b/i.test(text);
+}
+
 function validateProductCareGuidance(
   segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>, context: ResponseValidationContext, index: number,
 ): ResponseValidationIssue[] {
@@ -1657,8 +1661,8 @@ function validateProductCareGuidance(
   if ((segment.text.match(/\d+(?:[.,]\d+)?/g) ?? []).some((number) => !sourceNumbers.has(number))) {
     return [{ index, code: "unsupported_care_value", message: "Care values must be established by the cited care evidence." }];
   }
-  const uncertainty = /(?:couldn['’]?t|cannot|can['’]?t|unable to)\s+(?:verify|confirm|establish)|not (?:specified|documented|verified|confirmed|established)|(?:does|do) not (?:specify|confirm|establish)|(?:no|without)\s+(?:verified|documented|confirmed|evidence)/i;
-  const sourceHasMethod = /dishwasher/i.test(source) && !/not (?:established|specified|documented)|no (?:verified|documented|confirmed) evidence/i.test(source);
+  const uncertainty = /(?:couldn['’]?t|cannot|can['’]?t|unable to)\s+(?:verify|confirm|establish)|not (?:specified|documented|verified|confirmed|established)|(?:does|do) not (?:state|specify|confirm|establish)|(?:no|without)\s+(?:verified|documented|confirmed|evidence)/i;
+  const sourceHasMethod = /dishwasher/i.test(source) && !undocumentedDishwasherMethod(source);
   const methodClaims = segment.text.split(/[.!?;\n]|\bbut\b/i).filter((clause) => /dishwasher/i.test(clause));
   if (!sourceHasMethod && methodClaims.some((clause) => !uncertainty.test(clause))) {
     return [{ index, code: "unsupported_care_method", message: "An undocumented cleaning method cannot be claimed safe or unsafe." }];
@@ -1778,7 +1782,7 @@ function preserveSupportedProductAnswers(validation: ResponseValidationResult, c
     const subject = selectedCareSubject(context);
     const selected = subject ? careRecords(context).filter((record) => record.subject === subject) : [];
     const documentedMethod = selected.some((record) => /dishwasher/i.test(record.text)
-      && !/not (?:established|specified|documented)/i.test(record.text));
+      && !undocumentedDishwasherMethod(record.text));
     const alreadyBounded = approved.some((segment) => segment.type === "limitation" && /dishwasher/i.test(segment.text));
     const evidence = selected.at(-1);
     if (evidence && !documentedMethod && !alreadyBounded) {
@@ -1789,7 +1793,7 @@ function preserveSupportedProductAnswers(validation: ResponseValidationResult, c
   }
   if (!approved.length && productCareRequest(context) && !selectedCareSubject(context)
     && !meaningful(context.customerProvidedContext?.product) && !context.turnIR?.actions.length
-    && careRecords(context).length) {
+    && (careRecords(context).length || /\b(?:it|this|that|den|det)\b/i.test(context.customerMessage ?? ""))) {
     const segment: ResponseSegment = { type: "question", purpose: "clarify_task",
       text: "Which product or model are you referring to?", capability: null, missing_arguments: [] };
     if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "process", result: "recovered" }); }

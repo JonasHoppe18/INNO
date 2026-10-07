@@ -343,3 +343,32 @@ describe("availability ambiguity can bind only to an independently verified iden
     expect(validate(ctx, { type: "limitation", text: "Stock may be the reason. We will investigate the delay.", basis: basis("order", "fulfillmentStatus") }).allValid).toBe(false);
   });
 });
+
+
+describe("source uncertainty and absent product remain safe responses", () => {
+  it("recovers a missing product clarification even without a model question or tool read", () => {
+    const ctx = context([], { customerMessage: "Can I chuck it in the washing machine?" });
+    const result = ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx);
+    expect(result.approvedSegments).toHaveLength(1);
+    expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("Which product");
+    expect(fallbackResponse(ctx)).not.toContain("try again");
+  });
+  it("does not replace a known product or an action request with an absence question", () => {
+    for (const extra of [{ customerProvidedContext: { product: "Aurora" } }, { turnIR: { actions: [{ action: "cancel_order" }] } }]) {
+      const ctx = context([], { customerMessage: "Can I wash it?", ...extra });
+      expect(ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx).approvedSegments).toHaveLength(0);
+    }
+  });
+  it("preserves documented cloth care alongside explicit dishwasher uncertainty", () => {
+    const data = { results: [
+      care("Aurora Vase — Support Guide", "The approved product information does not state whether the vase is dishwasher-safe."),
+      care("Aurora Vase — Support Guide", "Clean with a soft damp cloth and avoid abrasive cleaners."),
+    ] };
+    const ctx = careContext("Is the Aurora dishwasher safe on a cool cycle?", data);
+    const result = ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx);
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("soft damp cloth"); expect(answer).toContain("abrasive");
+    expect(answer).toContain("not established");
+    expect(validate(ctx, guidance("The vase is dishwasher safe.", "results[0].evidence_sections[0].content")).allValid).toBe(false);
+  });
+});
