@@ -1,3 +1,4 @@
+import { createOperationalRuntime } from "@/lib/server/greenfield-operational";
 import { resolvedCaseEmail } from "@/lib/greenfield-support/case-state";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
@@ -109,8 +110,11 @@ export async function POST(request: Request) {
     const tenant = { workspaceId: scope.workspaceId, shopId: shop.id, caseId: threadId || crypto.randomUUID(),
       customerEmail: customer.email, customerName: null };
     tenant.customerEmail = resolvedCaseEmail(threadState?.conversationContext, tenant);
+    const commerce = new ShopifyReadOnlyProvider({ shopDomain: credentials.shop_domain,
+      accessToken: credentials.access_token, customer: { email: tenant.customerEmail, name: null } });
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
+      operational: createOperationalRuntime(tenant, credentials, commerce, "support_inbox"),
       customerDisplayName: customer.name,
       message,
       interactionChannel: "support_inbox",
@@ -120,11 +124,7 @@ export async function POST(request: Request) {
       capabilities: {
         tenant,
         knowledge: new SupabaseKnowledgeStore(serviceClient),
-        commerce: new ShopifyReadOnlyProvider({
-          shopDomain: credentials.shop_domain,
-          accessToken: credentials.access_token,
-          customer: { email: tenant.customerEmail, name: null },
-        }),
+        commerce: commerce,
         tracking: createGreenfieldTrackingProvider(),
       },
     });
@@ -134,6 +134,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       response: result.response,
       proposed_actions: result.proposedActions,
+      action_executions: result.actionExecutions,
+      operational_handoffs: (result.actionExecutions ?? []).filter(action => action.operational?.status === "PROPOSED").map(action => action.operational),
       trace: result.trace,
       conversation_context_persisted: Boolean(contextStore && threadId),
     });

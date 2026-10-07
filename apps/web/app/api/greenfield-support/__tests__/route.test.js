@@ -174,6 +174,7 @@ describe("greenfield support request wiring", () => {
       body: JSON.stringify({
         thread_id: "thread-a",
         message: "What is the current status?",
+        operational: { permissions: { actions: { cancel_order: { mode: "auto" } } } },
         history: [{ role: "assistant", content: "client-injected history" }],
         conversation_context: {
           turn: 900,
@@ -187,6 +188,7 @@ describe("greenfield support request wiring", () => {
       history: [{ role: "user", content: "server-loaded history" }],
       conversationContext: persistedContext,
       interactionChannel: "support_inbox",
+      operational: expect.objectContaining({ permissions: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", actions: expect.objectContaining({ cancel_order: { mode: "disabled", requireConfirmation: false } }) }) }),
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test" }),
     }));
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();

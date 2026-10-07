@@ -398,6 +398,19 @@ function traceEventSummary(event) {
       })) : [],
     };
   }
+  if (event?.type === "action_execution" && isRecord(data.operational)) {
+    const operation = data.operational;
+    const state = value => isRecord(value) ? { order_id: text(value.id, 80), order_number: text(value.orderNumber, 80), status: text(value.status, 80), fulfillment_status: text(value.fulfillmentStatus, 80) || null,
+      address_present: isRecord(value.shippingAddress), items: Array.isArray(value.items) ? value.items.slice(0, 20).map(item => ({ id: text(item.id, 80), variant_id: text(item.variantId, 80), quantity: Number.isInteger(item.quantity) ? item.quantity : null })) : [] } : null;
+    return { at: event.at, type: event.type, mode: text(data.mode, 30), action: text(data.action, 80), target: { order_id: text(data.target?.order_id, 80) || null },
+      arguments: { order_id: text(operation.command?.orderReference, 80), ...(operation.command?.addressText ? { address: "[customer-supplied address]" } : {}), ...(operation.command?.lineId ? { line_id: text(operation.command.lineId, 80), variant_id: text(operation.command.variantId, 80), quantity: operation.command.quantity } : {}) },
+      status: ["SIMULATED", "EXECUTED", "PROPOSED", "BLOCKED"].includes(operation.status) ? operation.status : "BLOCKED",
+      validation_status: data.validation_status === "validated" ? "validated" : "blocked", execution_status: text(data.execution_status, 80),
+      would_execute: data.would_execute === true, executed: operation.executed === true, provider_mutation_attempted: operation.providerMutationAttempted === true,
+      read_back_verified: operation.readBackVerified === true, eligibility: { eligible: operation.eligible === true, permission: text(operation.permission, 30), provider_capable: operation.providerCapable === true },
+      before_state: state(operation.before), after_state: state(operation.after), price_impact: isRecord(operation.priceImpact) ? operation.priceImpact : null,
+      reason: redactedText(data.reason), validation_checks: [] };
+  }
   if (event?.type === "action_execution") {
     const checks = Array.isArray(data.validation_checks) ? data.validation_checks : [];
     return {

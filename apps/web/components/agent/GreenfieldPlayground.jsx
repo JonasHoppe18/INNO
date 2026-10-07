@@ -95,6 +95,10 @@ function buildReasoningSteps(trace) {
     return { title: toolLabel(event.name), detail, status: status === "ok" || resultCount > 0 ? "complete" : "neutral" };
   });
 
+  for (const action of trace?.simulated_actions || []) {
+    if (!action?.status) continue;
+    steps.push({ title: `${actionLabel(action.action)} · ${action.status}`, detail: action.read_back_verified ? "The resulting state was verified. Provider mutation attempted: " + (action.provider_mutation_attempted ? "Yes." : "No.") : humanize(action.reason || "Human review required"), status: action.read_back_verified ? "complete" : "neutral" });
+  }
   if (!steps.length && sources.length) {
     steps.push({ title: "Supporting knowledge", detail: `${sources.length} source${sources.length === 1 ? "" : "s"} was attached to the response.`, status: "complete" });
   }
@@ -318,15 +322,17 @@ function AnswerInspector({ message }) {
           ) : null}
 
           {simulatedActions.length ? (
-            <InspectorSection title="Proposed actions" count={simulatedActions.length}>
+            <InspectorSection title="Action outcomes" count={simulatedActions.length}>
               <div className="flex flex-col gap-2">
                 {simulatedActions.map((action, index) => (
                   <div key={`${action?.action || "action"}-${index}`} className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold">{actionLabel(action?.action)}</p>
-                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.1em]">Dry run</span>
+                      <span className="rounded-md border border-amber-300 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.1em]">{action?.status || "Dry run"}</span>
                     </div>
-                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: No</p>
+                    <p className="mt-2 leading-relaxed">Validation: {action?.validation_status || "not recorded"} · Executed: {action?.executed ? "Yes" : "No"}</p>
+                    {action?.status ? <p className="mt-1 leading-relaxed">Provider mutation attempted: {action?.provider_mutation_attempted ? "Yes" : "No"} · Read-back verified: {action?.read_back_verified ? "Yes" : "No"}</p> : null}
+                    {action?.before_state ? <details className="mt-2"><summary className="cursor-pointer">Validated action and state transition</summary><pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs">{JSON.stringify({ capability: action.action, arguments: action.arguments, eligibility: action.eligibility, before: action.before_state, after: action.after_state, priceImpact: action.price_impact }, null, 2)}</pre></details> : null}
                     {action?.reason ? <p className="mt-1 leading-relaxed text-amber-800/80 dark:text-amber-300/80">{action.reason}</p> : null}
                   </div>
                 ))}

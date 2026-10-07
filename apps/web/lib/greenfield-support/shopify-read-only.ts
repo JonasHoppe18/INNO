@@ -140,6 +140,9 @@ function mapOrder(raw: any): OrderSnapshot {
     title: clean(item?.title),
     quantity: integer(item?.quantity) ?? 0,
     variantId: item?.variant_id == null ? null : clean(item.variant_id),
+    ...(item?.product_id != null ? { productId: clean(item.product_id) } : {}),
+    ...(item?.variant_title != null ? { variantTitle: clean(item.variant_title) } : {}),
+    ...(item?.price != null ? { unitPrice: clean(item.price), totalDiscount: clean(item.total_discount ?? "0") } : {}),
   }));
   const lineItemsById = new Map<string, (typeof lineItems)[number]>(lineItems.filter((item) => item.id).map((item) => [item.id, item]));
   const fulfilledQuantities = new Map<string, number>();
@@ -197,6 +200,8 @@ function mapOrder(raw: any): OrderSnapshot {
     currency: raw?.currency ?? null,
     items: lineItems,
     fulfillments: rawFulfillments.map(mapFulfillment),
+    ...(raw?.email ? { customerEmail: clean(raw.email) } : {}),
+    ...(raw?.shipping_address ? { shippingAddress: Object.fromEntries(Object.entries({ address1: raw.shipping_address.address1, address2: raw.shipping_address.address2, city: raw.shipping_address.city, zip: raw.shipping_address.zip, countryCode: raw.shipping_address.country_code, provinceCode: raw.shipping_address.province_code }).filter(([, value]) => value != null).map(([key, value]) => [key, clean(value)])) } : {}),
   };
 }
 
@@ -347,6 +352,20 @@ export class ShopifyReadOnlyProvider implements CommerceReadProvider {
       this.customerResult = existing;
     }
     return this.customerResult;
+  }
+
+  async getOrderLineVariants(productId: string): Promise<import("./operational-types").CatalogVariant[]> {
+    if (!/^\d+$/.test(productId)) return [];
+    const [product, locations, shop] = await Promise.all([this.get(`products/${productId}.json`), this.get("locations.json", { limit: "250" }), this.get("shop.json")]);
+    if (clean(product.product?.id) !== productId) return [];
+    const locationScopeResolved = (locations.locations ?? []).filter((l: any) => l.active !== false).length === 1;
+    return (product.product?.variants ?? []).map((variant: any) => {
+      const availability = shopifyAvailabilityState(variant, { locationScopeResolved });
+      return { id: clean(variant.id), productId, title: clean(variant.title), options: [variant.option1, variant.option2, variant.option3].map(clean).filter(Boolean),
+        price: variant.price == null ? null : clean(variant.price), currency: shop.shop?.currency ?? null,
+        availableQuantity: locationScopeResolved ? sellableQuantity(variant) : null,
+        availability: availability === "AVAILABLE" ? "available" : availability === "OUT_OF_STOCK" ? "unavailable" : "unknown" };
+    });
   }
 
   async getProduct(query: string): Promise<JsonValue> {

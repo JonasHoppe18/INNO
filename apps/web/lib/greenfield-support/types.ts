@@ -230,7 +230,9 @@ export interface OrderSnapshot {
   updatedAt?: string | null;
   total?: string | null;
   currency?: string | null;
-  items?: Array<{ id: string; title: string; quantity: number; variantId?: string | null }>;
+  items?: Array<{ id: string; title: string; quantity: number; variantId?: string | null; productId?: string | null; variantTitle?: string | null; unitPrice?: string | null; totalDiscount?: string | null }>;
+  customerEmail?: string | null;
+  shippingAddress?: { [key: string]: string };
   fulfillments?: FulfillmentSnapshot[];
 }
 
@@ -303,7 +305,8 @@ export interface CaseState {
   pendingAction?: { action: ProposedAction["action"]; sourceText: string; orderReference: string | null };
   orderConfirmation?: { orderReference: string; sourceText: string };
   actionConfirmation?: { orderReference: string; action: ProposedAction["action"]; sourceText: string };
-  address?: { value: string; complete: boolean; orderReference: string };
+  address?: { value: string; complete: boolean; orderReference: string; details?: import("./operational-types").DeliveryAddress };
+  lineChange?: { sourceItem: string | null; targetVariant: string | null; quantity: number | null; orderReference: string | null };
 }
 
 export interface TrackingSnapshot {
@@ -387,18 +390,19 @@ export type SensitiveAction =
   | "update_address"
   | "create_return"
   | "create_refund"
-  | "send_replacement";
+  | "send_replacement"
+  | "update_order_line";
 
 export interface ProposedAction {
   action: SensitiveAction;
   arguments: JsonObject;
   reason: string;
-  requiresConfirmation: true;
+  requiresConfirmation: boolean;
   status: "proposed";
 }
 
 export type ActionValidationStatus = "validated" | "blocked";
-export type ActionExecutionStatus = "dry_run_success" | "blocked" | "executed";
+export type ActionExecutionStatus = "dry_run_success" | "blocked" | "executed" | "simulated_success" | "hitl" | "read_back_failed";
 
 export interface ActionValidationCheck {
   name: string;
@@ -407,7 +411,7 @@ export interface ActionValidationCheck {
 }
 
 export interface ActionExecutionResult {
-  mode: "dry_run";
+  mode: "dry_run" | "simulated" | "auto" | "hitl" | "blocked";
   action: SensitiveAction;
   target: { order_id: string | null };
   arguments: JsonObject;
@@ -415,7 +419,8 @@ export interface ActionExecutionResult {
   validation_status: ActionValidationStatus;
   execution_status: ActionExecutionStatus;
   would_execute: boolean;
-  executed: false;
+  executed: boolean;
+  operational?: import("./operational-types").OperationalOutcome;
   validation_checks: ActionValidationCheck[];
   reason: string;
 }

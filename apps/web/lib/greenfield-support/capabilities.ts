@@ -1,3 +1,4 @@
+import { normalizeLiveShipment } from "./live-tracking";
 import type { TurnIR } from "./turn-ir";
 import { actionEligibility, complaintContextForOrder } from "./action-eligibility";
 import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
@@ -195,6 +196,7 @@ function verifiedTrackingSource(orders: Awaited<ReturnType<CommerceReadProvider[
         order_id: order.id,
         order_number: order.orderNumber,
         fulfillment_id: fulfillment.id,
+        tracking_number: fulfillment.trackingNumber ?? null,
         carrier: fulfillment.carrier ?? null,
         tracking_url: fulfillment.trackingUrl ?? null,
       };
@@ -517,6 +519,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   const registry = {
     definitions,
     manifest,
+    recordOperationalOutcome(data: JsonObject) { return recordResult("operational_execution", { status: "ok", data }); },
     recordCaseRequirements(data: JsonObject) { return recordResult("resolve_case_state", { status: "ok", data }); },
     evaluateActionIntents(turnIR: TurnIR) {
       const focus = orderFocus;
@@ -820,7 +823,8 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             if (liveResult.status !== "ok") {
               return { status: liveResult.status, data: jsonValue(verified), error: liveResult.error };
             }
-            return { status: "ok", data: jsonValue({ ...verified, live_tracking: liveResult.data }) };
+            if (normalizeTrackingNumber(liveResult.data.trackingNumber) !== normalizeTrackingNumber(trackingNumber)) return { status: "invalid_request", data: jsonValue(verified), error: { code: "tracking_identifier_mismatch", message: "Carrier data does not match the verified tracking identifier." } };
+            return { status: "ok", data: jsonValue({ ...verified, live_tracking: normalizeLiveShipment(liveResult.data) }) };
           }
           case "cancel_order":
             return validatedProposedAction("cancel_order", args, stringArg(args, "reason"), context, manifest, orderFocus);

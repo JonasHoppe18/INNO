@@ -13,7 +13,8 @@ const CaseStateSchema = z.object({
   requestedChange: z.object({ sourceText: z.string().min(1).max(1000), description: z.string().max(500).optional(), orderReference: z.string().nullable() }).optional(),
   orderConfirmation: z.object({ orderReference: z.string().min(1), sourceText: z.string().min(1).max(1000) }).optional(),
   actionConfirmation: z.object({ orderReference: z.string().min(1), action, sourceText: z.string().min(1).max(1000) }).optional(),
-  address: z.object({ value: z.string().min(1).max(500), complete: z.boolean(), orderReference: z.string().min(1) }).optional(),
+  address: z.object({ value: z.string().min(1).max(500), complete: z.boolean(), orderReference: z.string().min(1), details: TurnIRSchema.shape.address.unwrap().unwrap().shape.details.unwrap().unwrap().optional() }).optional(),
+  lineChange: z.object({ sourceItem: z.string().nullable(), targetVariant: z.string().nullable(), quantity: z.number().int().min(1).nullable(), orderReference: z.string().nullable() }).optional(),
 });
 
 export function normalizeCaseState(value: unknown): CaseState | undefined {
@@ -66,7 +67,7 @@ export function advanceCaseContext(context: ConversationContext, ir: TurnIR | nu
     ?? next.orderConfirmation?.orderReference ?? next.address?.orderReference;
   if (changedOrder || (oldBinding && orderReference && reference(oldBinding) !== reference(orderReference))) {
     delete next.pendingAction; delete next.requestedChange; delete next.orderConfirmation;
-    delete next.actionConfirmation; delete next.address;
+    delete next.actionConfirmation; delete next.address; delete next.lineChange;
   }
   const suppliedEmail = message.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0];
   if (suppliedEmail) next.customerEmail = email(suppliedEmail)!;
@@ -84,7 +85,14 @@ export function advanceCaseContext(context: ConversationContext, ir: TurnIR | nu
   if (next.requestedChange && !next.requestedChange.orderReference && orderReference) next.requestedChange = { ...next.requestedChange, orderReference };
   if (ir?.address && orderReference) {
     if (next.address && next.address.value !== ir.address.value) delete next.actionConfirmation;
-    next.address = { value: ir.address.value, complete: ir.address.complete, orderReference };
+    next.address = { value: ir.address.value, complete: ir.address.complete, orderReference, ...(ir.address.details ? { details: ir.address.details } : {}) };
+  }
+  if (ir?.lineChange) {
+    const change = { sourceItem: ir.lineChange.sourceItem ?? next.lineChange?.sourceItem ?? null,
+      targetVariant: ir.lineChange.targetVariant ?? next.lineChange?.targetVariant ?? null,
+      quantity: ir.lineChange.quantity ?? next.lineChange?.quantity ?? null, orderReference };
+    if (next.lineChange && JSON.stringify(next.lineChange) !== JSON.stringify(change)) delete next.actionConfirmation;
+    next.lineChange = change;
   }
   if (ir?.confirmation && order?.state === "verified" && order.order) {
     if (ir.confirmation.confirmed) {
@@ -109,9 +117,9 @@ export function caseActionIntents(context: ConversationContext, ir: TurnIR | nul
     addressProvided: intent.addressProvided || Boolean(intent.action === "update_address" && address?.complete
       && reference(address.orderReference) === reference(binding)
       && (!intent.orderReference || reference(intent.orderReference) === reference(binding))) })) };
-  if (!pending || ir.orderContext === "status" || (!hasOrderReference && !ir.confirmation && !ir.address)) return ir;
+  if (!pending || ir.orderContext === "status" || (!hasOrderReference && !ir.confirmation && !ir.address && !ir.lineChange)) return ir;
   if (pending.orderReference && binding && reference(pending.orderReference) !== reference(binding)) return ir;
-  return { ...ir, actions: [{ action: pending.action as TurnIR["actions"][number]["action"],
+  return { ...ir, ...(state?.lineChange ? { lineChange: state.lineChange } : {}), actions: [{ action: pending.action as TurnIR["actions"][number]["action"],
     sourceText: pending.sourceText, orderReference: pending.orderReference,
     addressProvided: Boolean(address?.complete && reference(address.orderReference) === reference(binding)) }] };
 }
