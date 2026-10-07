@@ -372,3 +372,24 @@ describe("source uncertainty and absent product remain safe responses", () => {
     expect(validate(ctx, guidance("The vase is dishwasher safe.", "results[0].evidence_sections[0].content")).allValid).toBe(false);
   });
 });
+
+
+describe("product care binds the source product heading, not generic section headings", () => {
+  const data = { results: [
+    care("Aurora Ceramic Vase — Support Guide / Verified product support information", "The approved product information does not state whether the vase is dishwasher-safe."),
+    care("Aurora Ceramic Vase — Support Guide / Verified product support information", "Clean with a soft damp cloth and avoid abrasive cleaners."),
+    care("Cedar Side Table — Support Guide / Verified product support information", "Clean with wood cleaner."),
+  ] };
+  it("keeps same-product uncertainty and cleaning instructions", () => {
+    const ctx = careContext("Is the Aurora dishwasher safe on a cool cycle?", data);
+    const result = ensureAnswerCompleteness(validate(ctx, guidance("Dishwasher safety is not established. Clean with a damp cloth.", "results[0].evidence_sections[0].content", "results[1].evidence_sections[0].content")), ctx);
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("soft damp cloth"); expect(answer).toContain("abrasive");
+    expect(answer).toContain("not established"); expect(answer).not.toContain("wood cleaner");
+    expect(result.rejectedSegments).toHaveLength(0);
+  });
+  it("rejects another product despite an identical generic section heading", () => {
+    const ctx = careContext("Is the Aurora dishwasher safe?", data);
+    expect(validate(ctx, guidance("Use wood cleaner.", "results[2].evidence_sections[0].content")).allValid).toBe(false);
+  });
+});

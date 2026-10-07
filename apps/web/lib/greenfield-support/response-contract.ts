@@ -1583,8 +1583,9 @@ function productCareRequest(context: ResponseValidationContext): boolean {
 function careSubject(record: JsonObject): string {
   const title = String(record.title ?? "");
   const parts = title.split(/\s+\/\s+/);
-  const label = parts.length > 1 && parts.at(-1)!.trim().split(/\s+/).length > 2
-    ? parts.at(-1)! : parts[0].split(/\s+[—–]\s+/)[0];
+  const productHeading = parts[0].split(/\s+[—–]\s+/);
+  const label = productHeading.length > 1 ? productHeading[0]
+    : parts.length > 1 && parts.at(-1)!.trim().split(/\s+/).length > 2 ? parts.at(-1)! : parts[0];
   return normalizedPhrase(label);
 }
 
