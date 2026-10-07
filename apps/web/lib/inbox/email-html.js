@@ -129,7 +129,7 @@ const buildCidAttachmentUrlMap = (attachments = []) => {
   return map;
 };
 
-const resolveInlineCidImages = (html, attachments = []) => {
+export const resolveInlineCidImages = (html, attachments = []) => {
   const cidMap = buildCidAttachmentUrlMap(attachments);
   const removeUnresolvedCidImages = (value) =>
     String(value || "").replace(/<img\b[^>]*\bsrc=(['"])cid:[^'"]+\1[^>]*>/gi, "");
