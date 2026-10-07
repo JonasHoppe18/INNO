@@ -406,12 +406,30 @@ export interface ActionExecutionResult {
   reason: string;
 }
 
+/** Server-owned assessment. Customer wording and model arguments cannot authorize a remedy. */
+export interface RemedyAuthorization {
+  workspaceId: string;
+  shopId: string;
+  orderId: string;
+  action: SensitiveAction;
+  itemIds: string[];
+  decisionId: string;
+  evidenceReferences: string[];
+  requirements: Array<{ name: string; satisfied: boolean }>;
+  approved: boolean;
+  /** Monetary limit approved by the scoped assessment, in the order currency. */
+  maximumRefundAmount?: string;
+}
+
 export interface ActionExecutorContext {
   tenant: TenantContext;
   manifest: CapabilityManifest;
   activeOrder: ConversationContext["activeOrder"];
   /** Server-owned scope binding; never supplied by the model or client. */
   verifiedWorkspaceId: string;
+  customerMessage?: string;
+  complaintContext?: string;
+  remedyAuthorization?: RemedyAuthorization;
 }
 
 export interface ActionExecutor {
@@ -457,6 +475,7 @@ export type TraceEventType =
   | "tool_call"
   | "tool_result"
   | "action_execution"
+  | "action_decision"
   | "final_response"
   | "error";
 

@@ -1,3 +1,6 @@
+import { complaintContextForOrder } from "./action-eligibility";
+import { boundedActionDecision } from "./action-decision";
+import { validateActionProposal } from "./action-executor";
 import { Agent, Runner, tool, withTrace } from "@openai/agents";
 import type { AgentInputItem, JsonSchemaDefinition, Model } from "@openai/agents";
 import { z } from "zod";
@@ -531,6 +534,22 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       };
     }
 
+    const actionContext = {
+      tenant: options.tenant,
+      manifest: registry.manifest,
+      activeOrder: registry.getActiveOrderFocus(),
+      verifiedWorkspaceId: options.tenant.workspaceId,
+      customerMessage: options.message,
+      complaintContext: complaintContextForOrder(conversationContext, registry.getActiveOrderFocus()?.requestedOrderId),
+      remedyAuthorization: options.capabilities.remedyAuthorization,
+    };
+    // A later live-state gate cannot leave an earlier proposal eligible.
+    for (let index = proposedActions.length - 1; index >= 0; index--) {
+      if (!validateActionProposal(proposedActions[index], actionContext).valid) proposedActions.splice(index, 1);
+    }
+    const actionDecision = boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
+    if (actionDecision) pushEvent(trace, "action_decision", { action: actionDecision.action,
+      outcome: actionDecision.outcome, eligibility: actionDecision.eligibility, proposal_allowed: false }, now());
     const responseContext = {
       ...registry,
       proposedActions,
@@ -546,11 +565,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
-    const validation = ensureAnswerCompleteness(
-      validateStructuredResponse(result?.finalOutput, responseContext),
-      responseContext,
-    );
-    const useAuthoritativeFallback = shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
+    const validatedOutput = validateStructuredResponse(actionDecision?.structuredOutput ?? result?.finalOutput, responseContext);
+    // Completeness recovery cannot replace an action-boundary decision with an ineligible action path.
+    const validation = actionDecision ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext);
+    const useAuthoritativeFallback = !actionDecision && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
     if (options.enableDevDiagnostics && modelDiagnostics) {
       const evidence = evidenceDiagnostics(registry);
       const recovery = recoverySummary(validation);
@@ -580,12 +598,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       executor: options.actionExecutor,
       proposals: proposedActions,
       approvedSegments: validation.approvedSegments,
-      context: {
-        tenant: options.tenant,
-        manifest: registry.manifest,
-        activeOrder: registry.getActiveOrderFocus(),
-        verifiedWorkspaceId: options.tenant.workspaceId,
-      },
+      context: actionContext,
     });
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
     const responseWithoutSignature = validation.approvedSegments.length && !useAuthoritativeFallback

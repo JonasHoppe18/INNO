@@ -378,6 +378,17 @@ function traceEventSummary(event) {
         : null,
     };
   }
+  if (event?.type === "action_decision") {
+    const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
+    return {
+      at: event.at, type: event.type,
+      action: text(data.action, 80), outcome: text(data.outcome, 80), proposal_allowed: data.proposal_allowed === true,
+      eligible: eligibility.eligible === true, authorized: eligibility.authorized === true,
+      requirements: Array.isArray(eligibility.requirements) ? eligibility.requirements.slice(0, 24).map(item => ({
+        name: redactedText(item?.name), satisfied: item?.satisfied === true,
+      })) : [],
+    };
+  }
   if (event?.type === "action_execution") {
     const checks = Array.isArray(data.validation_checks) ? data.validation_checks : [];
     return {

@@ -1,3 +1,4 @@
+import { complaintContextForOrder } from "./action-eligibility";
 import { GREENFIELD_TOOL_DEFINITIONS, isExplicitAddressChangeRequest, parseToolArguments } from "./tool-contracts";
 import type { StrictToolDefinition } from "./tool-contracts";
 import { validateActionProposal } from "./action-executor";
@@ -16,6 +17,7 @@ import type {
   OrderSnapshot,
   ProposedAction,
   TenantContext,
+  RemedyAuthorization,
   ToolExecutionResult,
 } from "./types";
 
@@ -26,6 +28,8 @@ export interface CapabilityContext {
   tracking?: LiveTrackingProvider;
   /** Server-owned current customer wording; never supplied by the model. */
   customerMessage?: string;
+  /** Trusted assessment from the server, never a model/client argument. */
+  remedyAuthorization?: RemedyAuthorization;
   /** Explicit order references extracted from the current customer request. */
   orderReferences?: string[];
   /** Trusted server-owned continuity state; never supplied by the model. */
@@ -310,11 +314,14 @@ function validatedProposedAction(
     manifest,
     activeOrder: orderFocus,
     verifiedWorkspaceId: context.tenant.workspaceId,
+    customerMessage: context.customerMessage,
+    complaintContext: complaintContextForOrder(context.conversationContext, orderFocus?.requestedOrderId),
+    remedyAuthorization: context.remedyAuthorization,
   });
   if (!validation.valid) {
     return {
       status: "invalid_request",
-      data: jsonValue({ action_validation: validation }),
+      data: jsonValue({ action_validation: validation, action_eligibility: validation.eligibility }),
       error: { code: "action_not_validated", message: validation.reason },
     };
   }
@@ -590,6 +597,14 @@ export function createCapabilityRegistry(context: CapabilityContext) {
       const query = stringArg(args, "query");
       try {
         const result = await (async (): Promise<ToolExecutionResult> => {
+          if (manifest.proposalOnlyTools.includes(toolName) && context.tenant.customerEmail
+            && orderFocus?.state === "verified" && sameOrderReference(args.order_id, orderFocus.requestedOrderId)) {
+            // Refresh operational truth before eligibility; persisted context cannot authorize dispatch changes.
+            const requestedOrderId = orderFocus.requestedOrderId;
+            orderFocus = { requestedOrderId, state: "unresolved", order: null };
+            const current = await context.commerce.getOrder(requestedOrderId);
+            orderFocus = { requestedOrderId, state: current ? "verified" : "unresolved", order: current };
+          }
           switch (toolName) {
           case "search_policy":
             return knowledgeResult(await searchKnowledge(context, query, ["policy"], 5), query);

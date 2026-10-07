@@ -729,30 +729,36 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
 
   it("uses the latest refund proposal amount without executing either proposal", async () => {
     const dependencies = await createDemoDependencies();
+    dependencies.remedyAuthorization = {
+      workspaceId: dependencies.tenant.workspaceId, shopId: dependencies.tenant.shopId,
+      orderId: "10232", action: "create_refund", itemIds: ["line-10232"],
+      decisionId: "approved-refund", evidenceReferences: ["assessment-evidence"],
+      approved: true, maximumRefundAmount: "50", requirements: [{ name: "refund_assessed", satisfied: true }],
+    };
     const firstModel = new ScriptedModel([
       modelResponse([functionCall("get_order", { order_id: "10232" }, { callId: "order-1" })]),
-      modelResponse([functionCall("create_refund", { order_id: "10232", amount: "500", reason: "Damaged item" }, { callId: "refund-1" })]),
+      modelResponse([functionCall("create_refund", { order_id: "10232", amount: "50", reason: "Damaged item" }, { callId: "refund-1" })]),
       modelResponse([assistantMessage(structured({ type: "action_offer", capability: "create_refund", mode: "proposal", missing_arguments: [] }))]),
     ]);
-    const first = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, message: "Refund 500 for order #10232.", model: firstModel, capabilities: dependencies, actionExecutor: new PlaygroundDryRunExecutor() });
+    const first = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, message: "Refund 50 for order #10232.", model: firstModel, capabilities: dependencies, actionExecutor: new PlaygroundDryRunExecutor() });
 
     const secondModel = new ScriptedModel([
       modelResponse([functionCall("get_order", { order_id: "10232" }, { callId: "order-2" })]),
-      modelResponse([functionCall("create_refund", { order_id: "10232", amount: "300", reason: "Customer corrected the amount" }, { callId: "refund-2" })]),
+      modelResponse([functionCall("create_refund", { order_id: "10232", amount: "30", reason: "Customer corrected the amount" }, { callId: "refund-2" })]),
       modelResponse([assistantMessage(structured({ type: "action_offer", capability: "create_refund", mode: "proposal", missing_arguments: [] }))]),
     ]);
     const second = await runGreenfieldAgentWithAgentsSdk({
       ...dependencies,
-      message: "Actually make it 300.",
-      history: [{ role: "user", content: "Refund 500 for order #10232." }, { role: "assistant", content: first.response }],
+      message: "Actually make it 30.",
+      history: [{ role: "user", content: "Refund 50 for order #10232." }, { role: "assistant", content: first.response }],
       conversationContext: first.conversationContext,
       model: secondModel,
       capabilities: dependencies,
       actionExecutor: new PlaygroundDryRunExecutor(),
     });
 
-    expect(first.actionExecutions[0].arguments.amount).toBe("500");
-    expect(second.actionExecutions[0].arguments.amount).toBe("300");
+    expect(first.actionExecutions[0].arguments.amount).toBe("50");
+    expect(second.actionExecutions[0].arguments.amount).toBe("30");
     expect(first.actionExecutions[0].executed).toBe(false);
     expect(second.actionExecutions[0].executed).toBe(false);
   });

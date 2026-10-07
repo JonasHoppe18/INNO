@@ -1,3 +1,5 @@
+import { actionEligibility } from "./action-eligibility";
+import type { ActionEligibility } from "./action-eligibility";
 import { GREENFIELD_TOOL_DEFINITIONS, PROPOSED_ACTION_TOOL_NAMES, parseToolArguments } from "./tool-contracts";
 import type {
   ActionExecutionResult,
@@ -37,6 +39,7 @@ function check(name: string, passed: boolean, detail: string): ActionValidationC
 
 export interface ActionValidationResult {
   valid: boolean;
+  eligibility: ActionEligibility;
   checks: ActionValidationCheck[];
   reason: string;
 }
@@ -118,8 +121,13 @@ export function validateActionProposal(proposal: ProposedAction, context: Action
       : "A verified order item is required for a replacement proposal."));
   }
 
+  const eligibility = actionEligibility(proposal, context);
+  checks.push(check("case_eligibility", eligibility.eligible, eligibility.reason));
+  checks.push(check("proposal_authorization", eligibility.authorized, eligibility.authorized
+    ? "The proposal authorization requirements are satisfied. Execution still requires customer confirmation."
+    : "Explicit scoped merchant remedy authorization is required."));
   const failed = checks.find((item) => item.status === "failed");
-  return { valid: !failed, checks, reason: failed?.detail || "The action is valid for a dry-run." };
+  return { valid: !failed, eligibility, checks, reason: failed?.detail || "The action is valid for a dry-run." };
 }
 
 export class PlaygroundDryRunExecutor implements ActionExecutor {
