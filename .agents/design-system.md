@@ -110,3 +110,7 @@ Screenshots og testresultater gemmes lokalt. Kunde-mails, PII og shop-data må i
 8. Ved ændring af rækkehøjde eller afstand i virtualiserede lister: opdater både rendering og spacer-beregning. Inboxkort er 76 px med 4 px mellemrum, altså 80 px stride.
 
 UI må genbruge eksisterende workspace-scopede læseflows til nødvendig visning som previews. Designarbejde ændrer ikke afsendelse, statuslogik, actions eller automation.
+
+## Mailindhold
+
+Ticket-preview bruger synlig tekst uden styles og inline-skjulte preheaders. Gamle tekstfelter med CSS-støj kan falde tilbage til tekst udtrukket fra den gemte HTML. Samtalen bevarer tilladt inline-formatering og attachment-billeder; billeder med indlæsningsfejl skjules. "View email" viser mailens styles og klasser i en sandboxet iframe med CSP, uden scripts, formularer eller adgang til Sonas dokument. Originale mailfelter ændres ikke af visningen. Plain-text-mails og strukturerede kontaktformularer beholder deres læsevenlige visning.

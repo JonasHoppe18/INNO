@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils";
 import { formatBytes, getEffectiveSenderEmail, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { deriveMessageBodies } from "@/components/inbox/message-body";
+import { buildEmailDocument, readableEmailText, sanitizeConversationHtml } from "@/lib/inbox/email-rendering";
 import {
   escapeHtml,
   getAttachmentInlineSrc,
-  sanitizeEmailHtml,
 } from "@/lib/inbox/email-html";
 
 const decodeHtmlEntitiesOnce = (value = "") => {
@@ -507,15 +507,13 @@ function MessageBubbleComponent({
       bccList.length === 0);
   const rawBodyHtml = message?.body_html || "";
   const safeBodyHtml = useMemo(
-    () => sanitizeEmailHtml(rawBodyHtml, attachments),
+    () => sanitizeConversationHtml(rawBodyHtml, attachments),
     [rawBodyHtml, attachments]
   );
   const safeModalBodyHtml = useMemo(
     () =>
       viewEmailOpen
-        ? sanitizeEmailHtml(rawBodyHtml, attachments, {
-            preserveInlineStyles: true,
-          })
+        ? buildEmailDocument(rawBodyHtml, attachments)
         : "",
     [rawBodyHtml, attachments, viewEmailOpen]
   );
@@ -524,11 +522,11 @@ function MessageBubbleComponent({
     [message]
   );
   const safeCleanBodyHtml = useMemo(
-    () => sanitizeEmailHtml(cleanBodyHtml || "", attachments),
+    () => sanitizeConversationHtml(cleanBodyHtml || "", attachments),
     [attachments, cleanBodyHtml]
   );
   const safeQuotedBodyHtml = useMemo(
-    () => sanitizeEmailHtml(quotedBodyHtml || "", attachments),
+    () => sanitizeConversationHtml(quotedBodyHtml || "", attachments),
     [attachments, quotedBodyHtml]
   );
   const selectedAttachmentUrl = useMemo(() => {
@@ -584,7 +582,7 @@ function MessageBubbleComponent({
   const subjectLine = String(message?.subject || "").trim() || "Email";
   const senderDetails = formatAddressLabel(senderDisplayName, senderEmail);
   const rawPlainBodyFull = stripQuotedHeaderTail(
-    decodeHtmlEntities(message.body_text || message.snippet || "No preview available.")
+    decodeHtmlEntities(readableEmailText(message.body_text || message.snippet || "", rawBodyHtml) || "No preview available.")
   );
   const rawPlainBody = rawPlainBodyFull.replace(/\[cid:[^\]]+\]/gi, "").trim();
   const shouldFormatRawPlainBody =
@@ -619,7 +617,7 @@ function MessageBubbleComponent({
     : linkifyText(
         isStructuredForm
           ? structuredFormText || cleanBodyText || rawPlainBody
-          : cleanBodyText || rawPlainBody
+          : readableEmailText(cleanBodyText || rawPlainBody, cleanBodyHtml || rawBodyHtml)
       );
   const modalHtml = isStructuredForm
     ? formattedStructuredHtml
@@ -683,6 +681,12 @@ function MessageBubbleComponent({
             >
               <div
                 className={cn("px-3.5 py-2.5 text-sm leading-[1.5] text-foreground", isOutbound && "text-sm")}
+                onErrorCapture={(event) => {
+                  if (event.target.tagName === "IMG") {
+                    event.target.hidden = true;
+                    event.target.style.display = "none";
+                  }
+                }}
                 onClick={(e) => {
                   if (e.target.tagName !== "IMG") return;
                   const src = e.target.getAttribute("src");
@@ -810,7 +814,15 @@ function MessageBubbleComponent({
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
-              {modalHtml ? (
+              {modalHtml && !isStructuredForm ? (
+                <iframe
+                  title={`Email: ${subjectLine}`}
+                  srcDoc={modalHtml}
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  referrerPolicy="no-referrer"
+                  className="h-[50vh] w-full border-0 bg-white"
+                />
+              ) : modalHtml ? (
                 <div
                   className={EMAIL_MODAL_BODY_CLASS}
                   dangerouslySetInnerHTML={{ __html: modalHtml }}
