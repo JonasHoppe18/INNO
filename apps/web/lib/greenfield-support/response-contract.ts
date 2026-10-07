@@ -1852,6 +1852,18 @@ function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseVal
     && !validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, -1).length) {
     return { ...segment, text: "The available order and stock records do not establish that stock is the reason for this order's delay." };
   }
+  if (segment.type === "knowledge_guidance" && /\b(?:price|pris)\b/i.test(context.customerMessage ?? "")
+    && /\b(?:shipping|postage|include|includes|included|insert|fragt|indeholder)\b/i.test(context.customerMessage ?? "")
+    && ["search_policy", "search_product_knowledge"].includes(resultFor(segment.basis, context)?.toolName ?? "")
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && segment.basis.field_paths.every((path) => /^results\[\d+\]\.evidence_sections\[\d+\]\.(?:content|text)$/.test(normalizedDataPath(path)))
+    && !validateBasis(segment.basis, context, { requireOk: true, requireMeaningfulFields: true, scope: "data" }, -1).length) {
+    const evidence = resultFor(segment.basis, context)!;
+    const values = segment.basis.field_paths.map((path) => dataFieldValue(evidence.result, path).value);
+    if (values.every((value) => typeof value === "string")) {
+      segment = { ...segment, text: Array.from(new Set(values as string[])).join("\n\n") };
+    }
+  }
   const careBasis = segment.type === "knowledge_guidance" ? segment.basis
     : segment.type === "fact" && segment.fact_kind === "product_value" && segment.evidence.length === 1 ? segment.evidence[0] : null;
   if (careBasis && productCareRequest(context) && careBasis.field_paths.some((path) => normalizedDataPath(path) === "results")

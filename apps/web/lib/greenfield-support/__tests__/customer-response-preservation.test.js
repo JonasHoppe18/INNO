@@ -450,3 +450,25 @@ describe("order evidence cannot carry inventory prose or partial item identity",
     expect(validate(ctx, fact("product_availability", "stock", "products[0].variants[0].availability_state")).allValid).toBe(false);
   });
 });
+
+
+describe("multi-fact price answers render actual knowledge content", () => {
+  it("preserves shipping facts while excluding invented merchant prose", () => {
+    const policy = record("policy", "search_policy", { results: [{ knowledge_type: "policy", authority: "authoritative", evidence_sections: [{ content: "Standard shipping: 49 DKK." }, { content: "Free shipping from 599 DKK." }] }] });
+    const ctx = context([policy], { customerMessage: "What is the price and postage?" });
+    const result = validate(ctx, { type: "knowledge_guidance", text: "Invented Merchant ships everywhere for free.", basis: basis("policy", "results[0].evidence_sections[0].content", "results[0].evidence_sections[1].content") });
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("49 DKK"); expect(answer).toContain("599 DKK"); expect(answer).not.toContain("Invented Merchant"); expect(answer).not.toContain("everywhere");
+  });
+  it("cannot turn cover-only knowledge into invented current price", () => {
+    const productKnowledge = record("knowledge", "search_product_knowledge", { results: [care("Aurora Cover", "Cover only. Cushion insert is not included.")] });
+    const ctx = context([productKnowledge], { customerMessage: "Does it include the insert and what is the price?" });
+    const result = validate(ctx, { type: "knowledge_guidance", text: "The current price is 999.", basis: basis("knowledge", "results[0].evidence_sections[0].content") });
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("Cover only"); expect(answer).not.toContain("999");
+  });
+  it("still rejects fabricated knowledge paths in multi-fact answers", () => {
+    const ctx = careContext("Does it include the insert and what is the price?");
+    expect(validate(ctx, guidance("The price is 999.", "results[0].evidence_sections[0].fabricated")).allValid).toBe(false);
+  });
+});
