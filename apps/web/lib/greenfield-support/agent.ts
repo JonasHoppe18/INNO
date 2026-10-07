@@ -18,6 +18,7 @@ import { createCapabilityRegistry, extractOrderReferences } from "./capabilities
 import { GREENFIELD_RUNTIME_TOOL_DEFINITIONS } from "./tool-contracts";
 import {
   composeSafeKnowledgeGapResponse,
+  normalizeMerchantPolicyAttribution,
   ensureAnswerCompleteness,
   inferResponseLocale,
   recoverAuthoritativePolicyAnswer,
@@ -111,7 +112,7 @@ export function keepActionStatusHonest(response: string, actions: ProposedAction
     : `${safeResponse}\n\n${reminder}`;
 }
 
-export function fallbackResponse(context?: {
+function rawFallbackResponse(context?: {
   activeOrder?: ConversationContext["activeOrder"];
   locale?: "da" | "en";
   customerMessage?: string;
@@ -144,6 +145,10 @@ export function fallbackResponse(context?: {
   const orderClarification = renderOrderCandidateClarificationFromResults(context?.getResults, context?.locale);
   if (orderClarification) return preserveSupported(orderClarification);
   return supported ?? "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
+}
+
+export function fallbackResponse(context?: Parameters<typeof rawFallbackResponse>[0]) {
+  return normalizeMerchantPolicyAttribution(rawFallbackResponse(context));
 }
 
 function responseUsage(response: ModelResponse) {

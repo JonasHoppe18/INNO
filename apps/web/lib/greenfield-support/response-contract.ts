@@ -1932,7 +1932,9 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
   const approvedSegments: ResponseSegment[] = [];
   const rejectedSegments: Array<{ index: number; type?: string; issues: ResponseValidationIssue[] }> = [];
   for (let index = 0; index < parsed.data.segments.length; index += 1) {
-    const segment = canonicalSemanticSegment(parsed.data.segments[index], context);
+    const canonical = canonicalSemanticSegment(parsed.data.segments[index], context);
+    const segment = canonical.type === "knowledge_guidance"
+      ? { ...canonical, text: normalizeMerchantPolicyAttribution(canonical.text) } : canonical;
     const issues = validateSegment(segment, context, index);
     if (issues.length) rejectedSegments.push({ index, type: segment.type, issues });
     else {
@@ -2259,6 +2261,22 @@ function compositionPieceText(piece: CustomerCompositionPiece, context: Response
     policy: true,
     basis: piece.segment.basis,
   });
+}
+
+/** Correct policy ownership only; retain the claim, conditions, numbers and formatting. */
+export function normalizeMerchantPolicyAttribution(value: string): string {
+  const terms = "(?:returns?|refunds?|shipping|delivery|warranty|guarantee|prices?|pricing|cancellation|order[ -]changes?|polic(?:y|ies)|terms?|conditions?|rules?)\\b";
+  const modifiers = "(?:(?!(?:agent|support|assistant|reply|response|message|advice|explanation|help|service|signature|Sona|and|or)\\b)(?!" + terms + ")[\\p{L}\\p{N}][\\p{L}\\p{N}’'_-]*\\s+){0,5}";
+  const owner = new RegExp("\\bSona(?:['’ʼ]s|s|['’ʼ])\\s+(" + modifiers + ")(?=" + terms + ")|\\bSona\\s+()(?=" + terms + ")", "giu");
+  return value
+    .replace(owner, (_match, adjectives: string | undefined, _bare: string | undefined, offset: number) => {
+      const sentenceStart = !value.slice(0, offset).trim() || /[.!?]\s*$/.test(value.slice(0, offset));
+      return `${sentenceStart ? "The" : "the"} store's ${adjectives ?? ""}`;
+    })
+    .replace(/\bSonas?['’]?\s+(?=(?:retur(?:politik|betingelser|vilkår)|fragt(?:priser|betingelser)|leverings(?:vilkår|betingelser)|garanti(?:vilkår|betingelser)?|priser|handelsbetingelser)\b)/gi, "butikkens ")
+    .replace(/\bSonas?['’]?\s+((?:Rückgabe|Versand|Liefer|Garantie|Geschäfts)(?:bedingungen|richtlinien|preise)?|Garantie|Preise)\b/g, "$1 des Shops")
+    .replace(/\b((?:(?:return|shipping|delivery|warranty|operational)\s+)?(?:polic(?:y|ies)|terms|conditions|rules|prices))\s+(?:of|from)\s+Sona\b/gi, "$1 of the store")
+    .replace(/\bSona\s+(sets|charges|requires|accepts|offers)\s+(?=(?:(?:ordinary|standard|normal|free)\s+){0,3}(?:returns?|shipping|delivery|warrant(?:y|ies)|prices?|pricing|policies|terms|conditions|rules)\b)/gi, "The store $1 ");
 }
 
 function neutralizeAgentPolicyOwnership(value: string) {
@@ -5151,7 +5169,7 @@ function isRedundantPolicyQuestion(
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const hasOperationalTracking = context.operationalScope && segments.some(segment => segment.type === "fact" && segment.evidence.some(basis => resultFor(basis, context)?.toolName === "get_tracking"));
   const actionableComposition = hasOperationalTracking ? null : composeActionableResponse(segments, context);
-  if (actionableComposition) return actionableComposition;
+  if (actionableComposition) return normalizeMerchantPolicyAttribution(actionableComposition);
 
   const rendered: string[] = [];
   const consumed = new Set<number>();
@@ -5254,7 +5272,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
   const response = rendered.filter(Boolean).join("\n\n");
   const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
   const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
-  return greeting && response ? `${greeting}\n\n${response}` : response;
+  return normalizeMerchantPolicyAttribution(greeting && response ? `${greeting}\n\n${response}` : response);
 }
 
 /** Preserve exact selected material policy text through the ordinary claim contract. */

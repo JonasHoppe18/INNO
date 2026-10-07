@@ -1,4 +1,4 @@
-import { preserveMaterialPolicyEvidence } from "./response-contract";
+import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
@@ -90,7 +90,7 @@ function signatureLanguage(message: string): "da" | "de" | "en" {
 }
 
 function composeGreenfieldResponse(response: string, signature: GreenfieldAgentsSdkOptions["signature"], message: string): string {
-  const normalizedResponse = String(response || "").trim();
+  const normalizedResponse = normalizeMerchantPolicyAttribution(String(response || "").trim());
   const normalizedSignature = typeof signature === "string"
     ? String(signature || "").trim()
     : selectSignatureText({
