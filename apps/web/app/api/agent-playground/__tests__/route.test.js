@@ -166,7 +166,7 @@ describe("greenfield agent playground API", () => {
     expect(mocks.resolveShopifyCredentialsWithDiagnostics).toHaveBeenCalled();
     expect(mocks.loadUserEmailSignatureConfig).toHaveBeenCalled();
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
-      tenant: { workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: null },
+      tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: null, caseId: expect.stringMatching(/^ephemeral-/) }),
       customerDisplayName: null,
       history: [],
       conversationContext: undefined,

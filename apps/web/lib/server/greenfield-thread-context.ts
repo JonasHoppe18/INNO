@@ -1,3 +1,4 @@
+import { normalizeCaseState } from "../greenfield-support/case-state";
 import { applyScope } from "./workspace-auth";
 import { normalizeCustomerProvidedContext, normalizeOrderCandidates } from "../greenfield-support/conversation-context";
 import type { ConversationContext } from "../greenfield-support/types";
@@ -74,6 +75,7 @@ export function normalizeStoredConversationContext(value: unknown): Conversation
     turn: Number(turn),
     activeOrder,
     customerSignal,
+    ...(normalizeCaseState(source.caseState) ? { caseState: normalizeCaseState(source.caseState) } : {}),
     ...(customerProvided ? { customerProvided } : {}),
     ...(orderCandidates.length ? { orderCandidates } : {}),
   };

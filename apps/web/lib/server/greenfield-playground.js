@@ -1,3 +1,4 @@
+import { normalizeCaseState } from "../greenfield-support/case-state";
 import { normalizeCustomerProvidedContext, normalizeOrderCandidates } from "../greenfield-support/conversation-context";
 
 const MAX_MESSAGE_LENGTH = 12_000;
@@ -169,6 +170,7 @@ function safeContext(value) {
           verified_order_number: order ? text(order.orderNumber, 80) || null : null,
         }
       : null,
+    case_state: normalizeCaseState(value.caseState) ?? null,
     customer_signal: value.customerSignal === "resolution" ? "resolution" : null,
     customer_provided: customerProvided ?? null,
     order_candidates: orderCandidates.length
@@ -194,6 +196,7 @@ export function normalizePlaygroundContext(value) {
         }
       : null,
     customerSignal: context.customer_signal,
+    ...(context.case_state ? { caseState: context.case_state } : {}),
     ...(context.customer_provided ? { customerProvided: context.customer_provided } : {}),
     ...(context.order_candidates?.length
       ? { orderCandidates: normalizeOrderCandidates(context.order_candidates) }

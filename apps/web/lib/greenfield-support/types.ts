@@ -70,6 +70,7 @@ export type GreenfieldInteractionChannel = "support_email" | "support_inbox" | "
  */
 export interface TenantContext {
   workspaceId: string;
+  caseId?: string;
   shopId?: string | null;
   customerEmail?: string | null;
   customerName?: string | null;
@@ -281,6 +282,7 @@ export interface CustomerProvidedContext {
  * that the tool boundary cannot safely reconstruct from prose alone.
  */
 export interface ConversationContext {
+  caseState?: CaseState;
   turn: number;
   activeOrder: {
     requestedOrderId: string;
@@ -290,6 +292,18 @@ export interface ConversationContext {
   customerSignal: "resolution" | null;
   customerProvided?: CustomerProvidedContext;
   orderCandidates?: OrderCandidate[];
+}
+
+/** Resolved conversational state. Operational snapshots still require live reads. */
+export interface CaseState {
+  scope: { workspaceId: string; shopId: string | null; caseId: string; customerEmail: string | null };
+  customerEmail?: string;
+  identityUnavailable?: boolean;
+  requestedChange?: { sourceText: string; description?: string; orderReference: string | null };
+  pendingAction?: { action: ProposedAction["action"]; sourceText: string; orderReference: string | null };
+  orderConfirmation?: { orderReference: string; sourceText: string };
+  actionConfirmation?: { orderReference: string; action: ProposedAction["action"]; sourceText: string };
+  address?: { value: string; complete: boolean; orderReference: string };
 }
 
 export interface TrackingSnapshot {
@@ -415,7 +429,7 @@ export interface RemedyAuthorization {
   itemIds: string[];
   decisionId: string;
   evidenceReferences: string[];
-  requirements: Array<{ name: string; satisfied: boolean }>;
+  requirements: Array<{ name: string; satisfied: boolean; owner?: "customer" | "human" }>;
   approved: boolean;
   /** Monetary limit approved by the scoped assessment, in the order currency. */
   maximumRefundAmount?: string;
@@ -477,6 +491,7 @@ export type TraceEventType =
   | "action_execution"
   | "action_decision"
   | "action_intent"
+  | "case_state"
   | "final_response"
   | "error";
 

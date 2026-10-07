@@ -1,3 +1,4 @@
+import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
 import { interpretTurnIR, normalizeTurnIR, type TurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
 import { boundedActionDecision } from "./action-decision";
@@ -355,7 +356,9 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     tools: GREENFIELD_RUNTIME_TOOL_DEFINITIONS,
     usage: [],
   };
-  const conversationContext = options.conversationContext ?? options.capabilities.conversationContext;
+  const previousContext = options.conversationContext ?? options.capabilities.conversationContext;
+  options = { ...options, tenant: { ...options.tenant, customerEmail: resolvedCaseEmail(previousContext, options.tenant) } };
+  let conversationContext = prepareCaseContext(previousContext, options.tenant);
   const customerProvidedContext = extractCustomerProvidedContext(
     options.history ?? [],
     options.message,
@@ -369,10 +372,25 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "turn_ir_unavailable",
       message: "Semantic interpretation is unavailable. Proposal-only actions are blocked for this turn." }, now());
   }
+  let providerCustomer = await options.capabilities.commerce.getCustomer().catch(() => null);
+  const identityMismatch = Boolean(options.tenant.customerEmail && providerCustomer?.email
+    && options.tenant.customerEmail.toLowerCase() !== providerCustomer.email.trim().toLowerCase());
+  if (identityMismatch) {
+    conversationContext.caseState!.customerEmail = options.tenant.customerEmail!;
+    conversationContext.caseState!.identityUnavailable = true;
+    options.tenant.customerEmail = null;
+    providerCustomer = null;
+    pushEvent(trace, "error", { code: "customer_identity_scope_mismatch", message: "Provider identity does not match the current case." }, now());
+  }
+  const currentReferences = options.capabilities.orderReferences ?? extractOrderReferences(options.message);
+  conversationContext = advanceCaseContext(conversationContext, turnIR, options.message,
+    currentReferences.length === 1 ? { requestedOrderId: currentReferences[0], state: "unresolved", order: null } : conversationContext.activeOrder);
   const registry = createCapabilityRegistry({
     ...options.capabilities,
+    tenant: options.tenant,
+    customerIdentityMismatch: identityMismatch,
     customerMessage: options.message,
-    turnIR: turnIR ?? undefined,
+    turnIR: caseActionIntents(conversationContext, turnIR, currentReferences.length > 0) ?? undefined,
     proposalActionsBlocked: turnIR === null,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? Array.from(new Set([
@@ -393,9 +411,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     registry.getOrderCandidates(),
   );
   const instructions = instructionsForCapabilities(registry.manifest);
-  const providerCustomer = !options.tenant.customerName && !options.customerDisplayName
-    ? await options.capabilities.commerce.getCustomer().catch(() => null)
-    : null;
   const verifiedProfileName = options.tenant.customerName ?? providerCustomer?.name ?? null;
   const customerDisplayName = resolveCustomerDisplayName({
     verifiedProfileName,
@@ -466,14 +481,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }, now());
   }
   preloadedResults.push(...orderContextResults);
-  continuityInput = modelConversationContext(
-    conversationContext,
-    registry.getActiveOrderFocus(),
-    options.message,
-    options.history ?? [],
-    options.interactionChannel,
-    registry.getOrderCandidates(),
-  );
   const preload = async (toolName: "search_policy", query: string) => {
     const startedPreload = Date.now();
     pushEvent(trace, "tool_call", {
@@ -492,23 +499,77 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }, now());
     preloadedResults.push({ tool: toolName, result });
   };
-  const intentAssessments = turnIR ? registry.evaluateActionIntents(turnIR) : [];
+  conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());
+  const effectiveTurnIR = caseActionIntents(conversationContext, turnIR, currentReferences.length > 0);
+  const intentAssessments = effectiveTurnIR ? registry.evaluateActionIntents(effectiveTurnIR) : [];
+  pushEvent(trace, "case_state", { canonical: conversationContext.caseState,
+    active_order: registry.getActiveOrderFocus(), information_ownership: { identity: "server", order_state: "live_data", address: "customer", execution_approval: "human" } }, now());
   for (const assessment of intentAssessments) pushEvent(trace, "action_intent", assessment, now());
-  const intentDecision = boundedActionDecision(registry.getResults(), [], inferResponseLocale(options.message));
+  let intentDecision = boundedActionDecision(registry.getResults(), [], inferResponseLocale(options.message));
   const missingAddress = intentAssessments.find(a => a.intent.action === "update_address"
     && a.eligibility.outcome === "proposal_allowed" && !a.intent.addressProvided);
   const addressQuestion = missingAddress ? { structuredOutput: { segments: [{ type: "question",
     purpose: "resolve_required_argument", capability: "update_address", missing_arguments: ["address"],
     text: inferResponseLocale(options.message) === "da" ? "Hvad er den nye komplette leveringsadresse?" : "What is the complete new delivery address?",
     basis: { result_id: missingAddress.result.resultId!, field_paths: ["data.action_eligibility"] } }] } } : null;
-  const hasPolicyRequest = !intentDecision && !addressQuestion && shouldPreloadPolicyEvidence(options.message);
+  const requirements = caseIntakeRequirements(conversationContext, turnIR, registry.getOrderCandidates(),
+    registry.getResults().filter(record => record.toolName === "get_order").at(-1)?.result.status, options.capabilities.remedyAuthorization);
+  if (requirements[0]?.field === "photo" && intentDecision?.outcome === "assessment_required") intentDecision = null;
+  let intakeDecision: { structuredOutput: unknown } | null = null;
+  if (requirements.length && !intentDecision && !addressQuestion) {
+    const requirement = requirements[0];
+    const result = registry.recordCaseRequirements({ requirements: requirements.map(r => ({ ...r })),
+      active_order_reference: registry.getActiveOrderFocus()?.requestedOrderId ?? null,
+      available_proposal_capabilities: registry.manifest.proposalOnlyTools });
+    const texts = {
+      photo: "Could you supply the required photo of the affected item?",
+      order_lookup: "Order lookup is currently unavailable. The order reference you supplied is retained; no order change has been made.",
+      customer_email: "What email address was used for the order?",
+      identity_verification: "The email you supplied still needs identity verification before order details can be accessed.",
+      order_choice: `Which order do you mean: ${(registry.getOrderCandidates() ?? []).map(c => `#${c.orderNumber}`).join(" or ")}?`,
+      order_reference: "I couldn’t find a matching order through your verified identity. Do you have another order reference?",
+      desired_change: "What would you like to change on this order?",
+      variant_edit: "Changing ordered items, variants or quantities is not available through the current automated capabilities. This requires human review; no order change has been made.",
+    };
+    intakeDecision = { structuredOutput: { segments: [requirement.owner === "customer"
+      ? { type: "question", purpose: "pure_clarification", text: texts[requirement.field], capability: null, missing_arguments: [] }
+      : { type: "limitation", text: texts[requirement.field], basis: { result_id: result.resultId, field_paths: ["data.requirements"] } }] } };
+    pushEvent(trace, "case_state", { requirements: requirements.map(r => ({ ...r })), diagnostic: "case_intake_required" }, now());
+  }
+  let confirmedProposal: { structuredOutput: unknown } | null = null;
+  const confirmedAssessment = intentAssessments.find(assessment =>
+    ["cancel_order", "update_address"].includes(assessment.intent.action)
+    && assessment.eligibility.outcome === "proposal_allowed"
+    && confirmedCaseAction(conversationContext, assessment.intent.action)
+    && (assessment.intent.action !== "update_address" || assessment.intent.addressProvided));
+  if (confirmedAssessment && !intakeDecision && !intentDecision && !addressQuestion) {
+    const action = confirmedAssessment.intent.action;
+    const args = { order_id: registry.getActiveOrderFocus()!.requestedOrderId, reason: confirmedAssessment.intent.sourceText,
+      ...(action === "update_address" ? { address: conversationContext.caseState?.address?.value ?? "" } : {}) };
+    const result = await registry.execute(action, JSON.stringify(args));
+    pushEvent(trace, "tool_call", { call_id: `case_${action}`, name: action, arguments: args, preloaded: true }, now());
+    pushEvent(trace, "tool_result", { call_id: `case_${action}`, name: action, result, duration_ms: 0, preloaded: true }, now());
+    if (result.proposedAction) {
+      proposedActions.push(result.proposedAction);
+      confirmedProposal = { structuredOutput: { segments: [{ type: "action_offer", capability: action, mode: "proposal", missing_arguments: [] }] } };
+    }
+  }
+  const hasPolicyRequest = !intakeDecision && !confirmedProposal && !intentDecision && !addressQuestion && shouldPreloadPolicyEvidence(options.message);
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
+  continuityInput = modelConversationContext(
+    conversationContext,
+    registry.getActiveOrderFocus(),
+    options.message,
+    options.history ?? [],
+    options.interactionChannel,
+    registry.getOrderCandidates(),
+  );
   const modelInput = preloadedEvidenceInput(continuityInput, preloadedResults);
 
   try {
     let result: any;
     // A bounded decision needs no writer/tool-loop cooperation, including on writer failure.
-    const preModelBoundary = intentDecision ?? addressQuestion;
+    const preModelBoundary = intentDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
     if (preModelBoundary) {
       result = { finalOutput: preModelBoundary.structuredOutput };
     } else {
@@ -588,15 +649,21 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     for (let index = proposedActions.length - 1; index >= 0; index--) {
       if (!validateActionProposal(proposedActions[index], actionContext).valid) proposedActions.splice(index, 1);
     }
-    const actionDecision = intentDecision ?? boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
-    const boundaryOutput = actionDecision ?? addressQuestion;
+    const actionDecision = requirements[0]?.field === "photo" && intakeDecision ? null
+      : intentDecision ?? boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
+    const boundaryOutput = actionDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
     if (actionDecision) pushEvent(trace, "action_decision", { action: actionDecision.action,
       outcome: actionDecision.outcome, eligibility: actionDecision.eligibility, proposal_allowed: false }, now());
     else if (missingAddress) pushEvent(trace, "action_decision", { action: "update_address",
       outcome: "required_argument", eligibility: missingAddress.eligibility, proposal_allowed: false }, now());
     const responseContext = {
       ...registry,
-      turnIR: turnIR ?? undefined,
+      turnIR: effectiveTurnIR ?? undefined,
+      knownCaseArguments: [...(conversationContext.activeOrder ? ["order_id"] : []),
+        ...(conversationContext.caseState?.scope.customerEmail ? ["customer_email"] : []),
+        ...(conversationContext.caseState?.address?.complete ? ["address"] : []),
+        ...(new Set((registry.getActiveOrderFocus()?.order?.fulfillments ?? []).map(f => f.trackingNumber).filter(Boolean)).size === 1 ? ["tracking_number"] : [])],
+      confirmedAction: (action: string) => confirmedCaseAction(conversationContext, action),
       proposedActions,
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
@@ -610,7 +677,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       },
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
-    const validatedOutput = validateStructuredResponse(boundaryOutput?.structuredOutput ?? result?.finalOutput, responseContext);
+    let validatedOutput = validateStructuredResponse(boundaryOutput?.structuredOutput ?? result?.finalOutput, responseContext);
+    if (!boundaryOutput && !validatedOutput.approvedSegments.length && turnIR?.orderContext === "status"
+      && responseContext.activeOrder?.state === "verified" && responseContext.activeOrder.order) {
+      const evidence = registry.getResults().find(record => record.toolName === "get_order" && record.result.status === "ok");
+      if (evidence) validatedOutput = validateStructuredResponse({ segments: [{ type: "fact", fact_kind: "order_fulfillment_status",
+        evidence: [{ result_id: evidence.resultId, field_paths: ["fulfillmentStatus"] }] }] }, responseContext);
+    }
     // Completeness recovery cannot replace an action-boundary decision with an ineligible action path.
     const validation = boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext);
     const useAuthoritativeFallback = !boundaryOutput && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
@@ -637,7 +710,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         completeness_check_entered: validation.completenessDiagnostics?.entered === true,
         ...recovery,
         fallback_reason: fallbackReason,
-        final_composition_source: boundaryOutput ? "action_boundary" : responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
+        final_composition_source: boundaryOutput ? (intakeDecision || confirmedProposal ? "case_state_boundary" : "action_boundary") : responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
       }) as JsonObject;
     }
     const actionExecutions = await executeActionProposals({
