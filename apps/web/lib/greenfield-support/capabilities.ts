@@ -1,3 +1,4 @@
+import { compilePolicyRequirements } from "../../../../shared/knowledge-v2/policy-retrieval.mjs";
 import { normalizeLiveShipment } from "./live-tracking";
 import type { TurnIR } from "./turn-ir";
 import { actionEligibility, complaintContextForOrder } from "./action-eligibility";
@@ -357,6 +358,7 @@ function searchKnowledge(
   query: string,
   knowledgeTypes: Parameters<KnowledgeStore["search"]>[0]["knowledgeTypes"],
   limit: number,
+  verifiedOrder?: OrderSnapshot | null,
 ) {
   const customerProvided = context.conversationContext?.customerProvided;
   const continuityTerms = knowledgeTypes?.includes("product")
@@ -368,6 +370,9 @@ function searchKnowledge(
   const contextualQuery = [query, ...continuityTerms.filter((term) => term && !normalizedQuery.includes(term.toLowerCase()))]
     .filter(Boolean)
     .join(" ");
+  const policyRequirements = knowledgeTypes?.includes("policy")
+    ? compilePolicyRequirements(context.turnIR?.policyIntents ?? [], verifiedOrder?.shippingAddress?.countryCode ?? null)
+    : [];
   return context.knowledge.search({
     workspaceId: context.tenant.workspaceId,
     trustedShopId: context.tenant.shopId ?? null,
@@ -375,7 +380,8 @@ function searchKnowledge(
     taskQuery: [customerProvided?.issue, context.customerMessage].filter(Boolean).join(" ") || query,
     completedSteps: customerProvided?.attemptedSteps ?? [],
     knowledgeTypes,
-    limit,
+    ...(policyRequirements.length ? { policyRequirements } : {}),
+    limit: policyRequirements.length ? 20 : limit,
   });
 }
 
@@ -664,7 +670,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           }
           switch (toolName) {
           case "search_policy":
-            return knowledgeResult(await searchKnowledge(context, query, ["policy"], 5), query);
+            return knowledgeResult(await searchKnowledge(context, query, ["policy"], 5, orderFocus?.state === "verified" ? orderFocus.order : null), query);
           case "search_product_knowledge":
             return knowledgeResult(await searchKnowledge(context, query, ["product"], 5), query);
           case "search_historical_cases":

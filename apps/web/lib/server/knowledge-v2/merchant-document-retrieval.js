@@ -1,3 +1,4 @@
+import { selectMaterialPolicyUnits } from "../../../../../shared/knowledge-v2/policy-retrieval.mjs";
 import { loadPlatformFromRepo } from "../../../../../shared/knowledge-v2/platform-node.mjs";
 import { validateUnit } from "../../../../../shared/knowledge-v2/units.mjs";
 import { extractReferences } from "../../../../../shared/knowledge-v2/references.mjs";
@@ -116,7 +117,7 @@ export async function searchMerchantDocumentRelease({ supabase, request }) {
     identities.has(request.productContext.productId)
   )
     selectedProducts.push(request.productContext.productId);
-  const ranked = members
+  let ranked = members
     .filter((u) => {
       const p = u.payload;
       const a = p.applicability;
@@ -147,6 +148,13 @@ export async function searchMerchantDocumentRelease({ supabase, request }) {
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || a.u.id.localeCompare(b.u.id))
     .slice(0, Math.max(1, Math.min(request.limit ?? 5, 20)));
+  let policyCoverage;
+  if (request.knowledgeTypes?.includes("policy") && request.policyRequirements?.length) {
+    const selection = selectMaterialPolicyUnits(members.filter(u => u.payload.semantic_type === "POLICY"
+      || ["damaged_item", "warranty"].includes(u.domain_key)), request.policyRequirements, selectedProducts, request.limit);
+    policyCoverage = selection.coverage;
+    ranked = selection.units.map(u => ({ u, score: 1 }));
+  }
   return {
     handled: allDocumentMembers,
     hits: ranked.map(({ u, score }, i) => {
@@ -159,6 +167,7 @@ export async function searchMerchantDocumentRelease({ supabase, request }) {
         list_style: "ordered",
       }));
       const structuredData = {
+        ...(policyCoverage ? { policy_coverage: policyCoverage } : {}),
         semantic_type: p.semantic_type,
         support_domain: u.domain_key,
         applicability: p.applicability,

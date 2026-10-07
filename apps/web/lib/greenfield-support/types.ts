@@ -150,7 +150,15 @@ export interface KnowledgeRecord {
   customerAliases?: string[];
 }
 
+export interface PolicyRequirement {
+  domain: string;
+  facets: string[];
+  destination: string | null;
+}
+
 export interface KnowledgeSearchRequest {
+  /** Compiled from server-owned semantic intent and verified order destination. */
+  policyRequirements?: PolicyRequirement[];
   workspaceId: string;
   query: string;
   /** Server-owned latest customer wording used for task specificity; retrieval query may be model-composed. */

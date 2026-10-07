@@ -1526,6 +1526,7 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       const issues = validateKnowledgeBasis(segment.basis, context, index);
       if (!issues.length) issues.push(...validatePolicyTruth(segment, context, index));
       if (!issues.length) issues.push(...validateProductCareGuidance(segment, context, index));
+      if (!issues.length) issues.push(...validateMaterialPolicyValues(segment, context, index));
       if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
         issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
       }
@@ -5254,4 +5255,62 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
   const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
   const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
   return greeting && response ? `${greeting}\n\n${response}` : response;
+}
+
+/** Preserve exact selected material policy text through the ordinary claim contract. */
+export function preserveMaterialPolicyEvidence(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
+  const approved = [...validation.approvedSegments];
+  const diagnostics = [...validation.issues];
+  const rejected = [...validation.rejectedSegments];
+  for (const record of context.getResults?.() ?? []) {
+    if (record.toolName !== "search_policy" || record.result.status !== "ok") continue;
+    const data = record.result.data as any;
+    const incompleteIndex = (data?.results ?? []).findIndex((item: any) => item.structured_data?.policy_coverage?.some((coverage: any) => coverage.omitted?.length));
+    if (incompleteIndex >= 0) {
+      const bounded = validateStructuredResponse({ segments: [{ type: "limitation",
+        text: "Some material policy conditions are unavailable in the selected evidence, so I cannot confirm an unconditional policy outcome.",
+        basis: { result_id: record.resultId, field_paths: [`data.results.${incompleteIndex}.structured_data.policy_coverage`] } }] }, context);
+      approved.push(...bounded.approvedSegments);
+      rejected.push(...bounded.rejectedSegments);
+      diagnostics.push(...bounded.issues);
+    }
+    for (let index = 0; index < (data?.results ?? []).length; index++) {
+      const item = data.results[index];
+      // Procedures retain their existing source-bound step contract.
+      if (item.knowledge_type === "procedural" || !item.structured_data?.policy_coverage?.length) continue;
+      for (let sectionIndex = 0; sectionIndex < (item.evidence_sections ?? []).length; sectionIndex++) {
+        const text = item.evidence_sections[sectionIndex].content?.trim();
+        if (!text || approved.some(segment => segment.type === "knowledge_guidance" && segment.text.toLowerCase().includes(text.toLowerCase()))) continue;
+        const addition = validateStructuredResponse({ segments: [{ type: "knowledge_guidance", text,
+          basis: { result_id: record.resultId, field_paths: [`results.${index}.evidence_sections.${sectionIndex}.content`] } }] }, context);
+        approved.push(...addition.approvedSegments);
+        rejected.push(...addition.rejectedSegments);
+        diagnostics.push(...addition.issues);
+      }
+    }
+  }
+  return { ...validation, approvedSegments: approved, rejectedSegments: rejected, issues: diagnostics };
+}
+
+function validateMaterialPolicyValues(segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
+  const evidence = resultFor(segment.basis, context);
+  if (evidence?.toolName !== "search_policy") return [];
+  const data = evidence.result.data as any;
+  const records = citedKnowledgeRecords(data?.results ?? [], segment.basis.field_paths) as any[];
+  if (!records.some(record => record.structured_data?.policy_coverage?.length)) return [];
+  const source = records.flatMap(record => (record.evidence_sections ?? []).map((section: any) => section.content)).join("\n");
+  if (records.some(record => record.structured_data?.policy_coverage?.some((coverage: any) => coverage.omitted?.length))
+    && !source.toLowerCase().includes(segment.text.trim().toLowerCase())) {
+    return [{ index, code: "material_policy_evidence_incomplete", message: "Incomplete material coverage cannot support an unconditional policy conclusion." }];
+  }
+  const attribution = segment.text.match(/(?:under|according to|ifølge)\s+([\p{L}][\p{L}\s-]{0,60}?)['’]s\s+(?:standard\s+)?(?:returns?|shipping|delivery)\s+policy/iu)?.[1];
+  if (attribution && !/^(?:the )?(?:store|merchant|shop)$/i.test(attribution)
+    && !records.some(record => JSON.stringify(record).toLowerCase().includes(attribution.toLowerCase()))) {
+    return [{ index, code: "unsupported_policy_attribution", message: "Policy attribution must come from the cited merchant evidence." }];
+  }
+  const numbers = new Set(source.match(/\d+(?:[.,]\d+)?/g) ?? []);
+  if ((segment.text.match(/\d+(?:[.,]\d+)?/g) ?? []).some(number => !numbers.has(number))) {
+    return [{ index, code: "unsupported_material_policy_value", message: "Material policy values must be supported by the selected applicable source evidence." }];
+  }
+  return [];
 }

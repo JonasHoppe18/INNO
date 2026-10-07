@@ -1,3 +1,4 @@
+import { preserveMaterialPolicyEvidence } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
@@ -570,7 +571,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       confirmedProposal = { structuredOutput: { segments: [{ type: "action_offer", capability: action, mode: "proposal", missing_arguments: [] }] } };
     }
   }
-  const hasPolicyRequest = !intakeDecision && !confirmedProposal && !intentDecision && !addressQuestion && shouldPreloadPolicyEvidence(options.message);
+  const hasPolicyRequest = Boolean(turnIR?.policyIntents?.length) || (!intakeDecision && !confirmedProposal && !intentDecision && !addressQuestion && shouldPreloadPolicyEvidence(options.message));
   if (hasPolicyRequest) await preload("search_policy", policyEvidenceQuery(options.message));
   continuityInput = modelConversationContext(
     conversationContext,
@@ -719,7 +720,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         evidence: [{ result_id: evidence.resultId, field_paths: ["fulfillmentStatus"] }] }] }, responseContext);
     }
     // Completeness recovery cannot replace an action-boundary decision with an ineligible action path.
-    const validation = boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext);
+    const validation = preserveMaterialPolicyEvidence(boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext), responseContext);
     const useAuthoritativeFallback = !boundaryOutput && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
     if (options.enableDevDiagnostics && modelDiagnostics) {
       const evidence = evidenceDiagnostics(registry);
