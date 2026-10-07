@@ -1,4 +1,4 @@
-import { interpretTurnIR, normalizeTurnIR, type TurnInterpreter } from "./turn-ir";
+import { interpretTurnIR, normalizeTurnIR, type TurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
 import { boundedActionDecision } from "./action-decision";
 import { validateActionProposal } from "./action-executor";
@@ -361,15 +361,23 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     options.message,
     conversationContext?.customerProvided,
   );
-  const turnIR = normalizeTurnIR(await (options.turnInterpreter ?? interpretTurnIR)(options.message), options.message);
+  let turnIR: TurnIR | null = null;
+  try {
+    turnIR = normalizeTurnIR(await (options.turnInterpreter ?? interpretTurnIR)(options.message), options.message);
+  } catch {
+    // An unavailable interpretation is not a successful interpretation with no actions.
+    pushEvent(trace, "error", { code: "turn_ir_unavailable",
+      message: "Semantic interpretation is unavailable. Proposal-only actions are blocked for this turn." }, now());
+  }
   const registry = createCapabilityRegistry({
     ...options.capabilities,
     customerMessage: options.message,
-    turnIR,
+    turnIR: turnIR ?? undefined,
+    proposalActionsBlocked: turnIR === null,
     conversationContext,
     orderReferences: options.capabilities.orderReferences ?? Array.from(new Set([
       ...extractOrderReferences(options.message),
-      ...turnIR.actions.flatMap(intent => {
+      ...(turnIR?.actions ?? []).flatMap(intent => {
         const reference = intent.orderReference?.replace(/^#/, "");
         return reference && options.message.includes(reference) ? [reference] : [];
       }),
@@ -484,7 +492,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }, now());
     preloadedResults.push({ tool: toolName, result });
   };
-  const intentAssessments = registry.evaluateActionIntents(turnIR);
+  const intentAssessments = turnIR ? registry.evaluateActionIntents(turnIR) : [];
   for (const assessment of intentAssessments) pushEvent(trace, "action_intent", assessment, now());
   const intentDecision = boundedActionDecision(registry.getResults(), [], inferResponseLocale(options.message));
   const missingAddress = intentAssessments.find(a => a.intent.action === "update_address"
@@ -531,6 +539,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       if (options.enableDevDiagnostics && modelDiagnostics) {
         const evidence = evidenceDiagnostics(registry);
         trace.diagnostics = traceValue({
+          turn_ir_unavailable: turnIR === null,
           question_shape: diagnosticQuestionShape(options.message),
           ...evidence,
           validation: null,
@@ -587,7 +596,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       outcome: "required_argument", eligibility: missingAddress.eligibility, proposal_allowed: false }, now());
     const responseContext = {
       ...registry,
-      turnIR,
+      turnIR: turnIR ?? undefined,
       proposedActions,
       activeOrder: registry.getActiveOrderFocus(),
       customerMessage: options.message,
@@ -618,6 +627,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
             ? "contract_rejected_segments"
             : "no_approved_segments";
       trace.diagnostics = traceValue({
+        turn_ir_unavailable: turnIR === null,
         question_shape: diagnosticQuestionShape(options.message),
         ...evidence,
         validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
@@ -673,6 +683,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
     if (options.enableDevDiagnostics) {
       trace.diagnostics = traceValue({
+        turn_ir_unavailable: turnIR === null,
         question_shape: diagnosticQuestionShape(options.message),
         ...evidenceDiagnostics(registry),
         validation: null,

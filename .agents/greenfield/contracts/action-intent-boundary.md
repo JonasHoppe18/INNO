@@ -11,3 +11,5 @@ The interpreter is mandatory in the normal SDK path. Tests inject a server-owned
 DEV trace projection retains action, eligibility and outcome without exposing customer quotes, addresses or authorization payloads. Final bounded composition is marked `action_boundary`; the support model is marked `not_run` when skipped.
 
 This boundary creates no external execution authority. Customer confirmation, existing action execution checks, workspace/shop scope and remedy assessment requirements still apply. Knowledge, commerce adapters, merchant data, product resolution and writer instructions are unchanged.
+
+A technical interpretation failure is recorded as `turn_ir_unavailable`, distinct from a successful TurnIR with no actions. The turn continues through the existing read-only answer path. A server-owned failure flag blocks every proposal-only tool before argument parsing or provider access, so a model-created action cannot become a proposal or execution. No provider error details are exposed in the trace.

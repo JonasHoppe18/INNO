@@ -24,6 +24,8 @@ import type {
 
 export interface CapabilityContext {
   turnIR?: TurnIR;
+  /** Server-owned technical interpretation failure; no proposal tool may proceed. */
+  proposalActionsBlocked?: boolean;
   tenant: TenantContext;
   knowledge: KnowledgeStore;
   commerce: CommerceReadProvider;
@@ -623,6 +625,11 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           status: "invalid_arguments",
           error: { code: "unknown_tool", message: `Unknown capability: ${toolName}` },
         });
+      }
+      if (context.proposalActionsBlocked && definitions.some(definition =>
+        definition.name === toolName && definition.sensitivity === "proposed_action")) {
+        return recordResult(toolName, { status: "unavailable", error: { code: "turn_ir_unavailable",
+          message: "Proposal-only actions are blocked because semantic interpretation is unavailable for this turn." } });
       }
       const parsed = parseToolArguments(toolName, rawArguments);
       if (parsed.ok === false) return recordResult(toolName, parsed.result);
