@@ -384,13 +384,14 @@ describe("greenfield agent playground API", () => {
     const response = await POST(new Request("http://localhost/api/agent-playground", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "send", session_id: "session-a", message: "Where is my order?", access_token: "browser-must-not-win", mode: "live" }),
+      body: JSON.stringify({ action: "send", session_id: "session-a", message: "Where is my order?", access_token: "browser-must-not-win", mode: "live", operational: { permissions: { actions: { cancel_order: { mode: "auto" } } } } }),
     }));
     expect(response.status).toBe(200);
     expect(mocks.runGreenfieldAgentWithAgentsSdk).toHaveBeenCalledWith(expect.objectContaining({
       tenant: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", customerEmail: "customer@example.test", customerName: null }),
       customerDisplayName: "Jonas",
       interactionChannel: "playground",
+      operational: expect.objectContaining({ permissions: expect.objectContaining({ workspaceId: "workspace-a", shopId: "shop-a", actions: expect.objectContaining({ cancel_order: { mode: "disabled", requireConfirmation: false } }) }) }),
       actionExecutor: expect.any(Object),
     }));
     expect(mocks.runGreenfieldAgentWithAgentsSdk.mock.calls[0][0].model).toBeUndefined();

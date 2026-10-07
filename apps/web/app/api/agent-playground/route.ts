@@ -1,3 +1,4 @@
+import { createOperationalRuntime } from "@/lib/server/greenfield-operational";
 import { resolvedCaseEmail } from "@/lib/greenfield-support/case-state";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -509,8 +510,11 @@ export async function POST(request: Request) {
       customerEmail: resolvedCaseEmail(contextBefore as any, { workspaceId: scope.workspaceId, shopId: shop.id, caseId: session.id, customerEmail: session.customer_email }),
       customerName: null,
     };
+    const commerce = new ShopifyReadOnlyProvider({ shopDomain: credentials.shop_domain,
+      accessToken: credentials.access_token, customer: { email: tenant.customerEmail, name: null } });
     const result = await runGreenfieldAgentWithAgentsSdk({
       tenant,
+      operational: createOperationalRuntime(tenant, credentials, commerce, "playground"),
       customerDisplayName: customerFirstName,
       message: messageForAgent,
       interactionChannel: "playground",
@@ -521,11 +525,7 @@ export async function POST(request: Request) {
       capabilities: {
         tenant,
         knowledge: new SupabaseKnowledgeStore(serviceClient),
-        commerce: new ShopifyReadOnlyProvider({
-          shopDomain: credentials.shop_domain,
-          accessToken: credentials.access_token,
-          customer: { email: tenant.customerEmail, name: null },
-        }),
+        commerce: commerce,
         tracking: createGreenfieldTrackingProvider(),
       },
       actionExecutor: new PlaygroundDryRunExecutor(),

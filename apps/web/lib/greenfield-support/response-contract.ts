@@ -1,3 +1,5 @@
+import { isVerifiedOperationalOutcome, operationalReply } from "./operational-execution";
+import type { OperationalOutcome } from "./operational-types";
 import type { TurnIR } from "./turn-ir";
 import { z } from "zod";
 import { PRODUCT_AVAILABILITY_STATES } from "./types";
@@ -88,6 +90,7 @@ const AcknowledgementSchema = z.object({
 }).strict();
 
 export const ResponseSegmentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("operational_result"), basis: BasisSchema }).strict(),
   FactSchema,
   QuestionSchema,
   LimitationSchema,
@@ -191,6 +194,7 @@ export interface ResponseValidationContext {
   };
   /** Server-owned channel context used to adapt source instructions to the current interaction. */
   interactionChannel?: GreenfieldInteractionChannel;
+  operationalScope?: { workspaceId: string; shopId: string; caseId?: string; customerEmail?: string };
   knownCaseArguments?: string[];
   confirmedAction?: (capability: string) => boolean;
   /** Server-owned identity availability; never inferred from untrusted message text. */
@@ -1504,6 +1508,18 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
 
 function validateSegment(segment: ResponseSegment, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
   switch (segment.type) {
+    case "operational_result": {
+      const evidence = resultFor(segment.basis, context);
+      const outcome = (evidence?.result.data as JsonObject)?.operation as unknown as OperationalOutcome;
+      const scope = context.operationalScope;
+      const scoped = scope && outcome?.workspaceId === scope.workspaceId && outcome?.shopId === scope.shopId
+        && outcome?.caseId === (scope.caseId ?? null) && outcome?.customerEmail === scope.customerEmail?.trim().toLowerCase();
+      const channelValid = outcome?.status !== "SIMULATED" || context.interactionChannel === "playground";
+      const executionChannelValid = outcome?.status !== "EXECUTED" || ["support_inbox", "support_email"].includes(context.interactionChannel ?? "");
+      return evidence?.toolName === "operational_execution" && evidence.result.status === "ok" && scoped && channelValid && executionChannelValid
+        && segment.basis.field_paths.length === 1 && segment.basis.field_paths[0] === "data.operation" && isVerifiedOperationalOutcome(outcome)
+        ? [] : [{ index, code: "operational_result_not_verified", message: "An execution outcome must cite the scoped server decision and verified read-back." }];
+    }
     case "fact":
       return validateFact(segment, context, index);
     case "knowledge_guidance": {
@@ -2805,6 +2821,13 @@ function latestShipmentScan(facts: Extract<ResponseSegment, { type: "fact" }>[],
 }
 
 function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[], context: ResponseValidationContext) {
+  const trackingIds = Array.from(new Set(facts.flatMap(fact => fact.evidence.filter(basis => resultFor(basis, context)?.toolName === "get_tracking").map(basis => basis.result_id))));
+  if (trackingIds.length > 1) return trackingIds.map(id => {
+    const grouped = facts.filter(fact => fact.evidence.some(basis => basis.result_id === id)).map(fact => ({ ...fact, evidence: fact.evidence.filter(basis => basis.result_id === id) }));
+    const result = context.getResult(id)?.result.data as JsonObject;
+    const number = (result?.tracking_identifier as JsonObject)?.tracking_number;
+    return `${number ? `Shipment ${number}:\n` : ""}${renderShipmentFacts(grouped, context)}`;
+  }).join("\n\n");
   const locale = localeFor(context);
   const carrier = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["carrier"]));
   const tracking = scalarFactValue(facts, context, (path) => pathHasAnySuffix(path, ["trackingNumber", "tracking_number"]));
@@ -2840,7 +2863,7 @@ function renderShipmentFacts(facts: Extract<ResponseSegment, { type: "fact" }>[]
 
   const normalizedEvent = event?.toLowerCase().replace(/[.!?]+$/g, "");
   const normalizedStatus = status?.toLowerCase().replace(/[_\s-]+/g, " ");
-  const duplicateEvent = Boolean(normalizedEvent && normalizedStatus && normalizedEvent.includes(normalizedStatus));
+  const duplicateEvent = Boolean(normalizedEvent && normalizedStatus && normalizedEvent === normalizedStatus);
   if (event && !duplicateEvent && !(carrier && tracking && !status)) {
     paragraphs.push(locale === "da" ? `Den seneste opdatering er: ${sentence(event)}` : `The latest update is: ${sentence(event)}`);
   }
@@ -5125,7 +5148,8 @@ function isRedundantPolicyQuestion(
 
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
-  const actionableComposition = composeActionableResponse(segments, context);
+  const hasOperationalTracking = context.operationalScope && segments.some(segment => segment.type === "fact" && segment.evidence.some(basis => resultFor(basis, context)?.toolName === "get_tracking"));
+  const actionableComposition = hasOperationalTracking ? null : composeActionableResponse(segments, context);
   if (actionableComposition) return actionableComposition;
 
   const rendered: string[] = [];
@@ -5197,6 +5221,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       context,
       { policy: isPolicyKnowledgeBasis(segment.basis, context), basis: segment.basis },
     ));
+    else if (segment.type === "operational_result") rendered.push(operationalReply((resultFor(segment.basis, context)!.result.data as JsonObject).operation as unknown as OperationalOutcome, context.locale ?? inferResponseLocale(context.customerMessage ?? "")));
     else if (segment.type === "action_offer") rendered.push(renderActionOffer(segment, context));
     else if (segment.type === "acknowledgement") rendered.push(renderAcknowledgement(segment.kind, context));
     else if (segment.type === "question" && isRedundantPolicyQuestion(segment, policyFocus, hasPolicyGuidance, context)) {

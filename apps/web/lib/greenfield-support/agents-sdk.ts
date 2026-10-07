@@ -1,3 +1,5 @@
+import { resolveOperationalAction } from "./operational-execution";
+import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
 import { interpretTurnIR, normalizeTurnIR, type TurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
@@ -55,6 +57,7 @@ interface SonaAgentContext {
 
 export interface GreenfieldAgentsSdkOptions {
   tenant: TenantContext;
+  operational?: OperationalRuntime;
   /** Server-owned semantic interpreter; injectable for deterministic evaluation. */
   turnInterpreter?: TurnInterpreter;
   /** Display-only sender/profile name; never used for authorization. */
@@ -501,7 +504,20 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());
   const effectiveTurnIR = caseActionIntents(conversationContext, turnIR, currentReferences.length > 0);
-  const intentAssessments = effectiveTurnIR ? registry.evaluateActionIntents(effectiveTurnIR) : [];
+  const operationalOutcome = options.operational ? await resolveOperationalAction({ tenant: options.tenant,
+    commerce: options.capabilities.commerce, runtime: options.operational, channel: options.interactionChannel }, conversationContext, effectiveTurnIR) : null;
+  const operationalRecord = operationalOutcome ? registry.recordOperationalOutcome({ operation: traceValue(operationalOutcome) }) : null;
+  const operationalDecision = operationalRecord ? { structuredOutput: { segments: [{ type: "operational_result", basis: { result_id: operationalRecord.resultId, field_paths: ["data.operation"] } }] } } : null;
+  const intentAssessments = effectiveTurnIR && !operationalDecision ? registry.evaluateActionIntents(effectiveTurnIR) : [];
+  if (options.operational && turnIR?.orderContext === "status" && !effectiveTurnIR?.actions.length && registry.getActiveOrderFocus()?.state === "verified") {
+    const numbers = Array.from(new Set((registry.getActiveOrderFocus()?.order?.fulfillments ?? []).filter(f => !["cancelled", "canceled", "failed", "failure"].includes(String(f.status ?? "").toLowerCase())).map(f => f.trackingNumber).filter((value): value is string => Boolean(value && /^[A-Za-z0-9][A-Za-z0-9 ._/-]{1,79}$/.test(value)))));
+    for (const trackingNumber of numbers) {
+      const trackingResult = await registry.execute("get_tracking", JSON.stringify({ tracking_number: trackingNumber }));
+      pushEvent(trace, "tool_call", { name: "get_tracking", call_id: `preloaded_tracking_${trackingNumber}`, arguments: { tracking_number: trackingNumber }, preloaded: true }, now());
+      pushEvent(trace, "tool_result", { name: "get_tracking", call_id: `preloaded_tracking_${trackingNumber}`, result: trackingResult, preloaded: true, duration_ms: 0 }, now());
+      preloadedResults.push({ tool: "get_tracking", result: trackingResult });
+    }
+  }
   pushEvent(trace, "case_state", { canonical: conversationContext.caseState,
     active_order: registry.getActiveOrderFocus(), information_ownership: { identity: "server", order_state: "live_data", address: "customer", execution_approval: "human" } }, now());
   for (const assessment of intentAssessments) pushEvent(trace, "action_intent", assessment, now());
@@ -516,7 +532,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     registry.getResults().filter(record => record.toolName === "get_order" || record.toolName === "get_order_history").at(-1)?.result.status, options.capabilities.remedyAuthorization);
   if (requirements[0]?.field === "photo" && intentDecision?.outcome === "assessment_required") intentDecision = null;
   let intakeDecision: { structuredOutput: unknown } | null = null;
-  if (requirements.length && !intentDecision && !addressQuestion) {
+  if (requirements.length && !intentDecision && !addressQuestion && !operationalDecision) {
     const requirement = requirements[0];
     const result = registry.recordCaseRequirements({ requirements: requirements.map(r => ({ ...r })),
       active_order_reference: registry.getActiveOrderFocus()?.requestedOrderId ?? null,
@@ -542,7 +558,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     && assessment.eligibility.outcome === "proposal_allowed"
     && confirmedCaseAction(conversationContext, assessment.intent.action)
     && (assessment.intent.action !== "update_address" || assessment.intent.addressProvided));
-  if (confirmedAssessment && !intakeDecision && !intentDecision && !addressQuestion) {
+  if (confirmedAssessment && !intakeDecision && !intentDecision && !addressQuestion && !operationalDecision) {
     const action = confirmedAssessment.intent.action;
     const args = { order_id: registry.getActiveOrderFocus()!.requestedOrderId, reason: confirmedAssessment.intent.sourceText,
       ...(action === "update_address" ? { address: conversationContext.caseState?.address?.value ?? "" } : {}) };
@@ -569,7 +585,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   try {
     let result: any;
     // A bounded decision needs no writer/tool-loop cooperation, including on writer failure.
-    const preModelBoundary = intentDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
+    const preModelBoundary = operationalDecision ?? intentDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
     if (preModelBoundary) {
       result = { finalOutput: preModelBoundary.structuredOutput };
     } else {
@@ -649,15 +665,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     for (let index = proposedActions.length - 1; index >= 0; index--) {
       if (!validateActionProposal(proposedActions[index], actionContext).valid) proposedActions.splice(index, 1);
     }
-    const actionDecision = requirements[0]?.field === "photo" && intakeDecision ? null
+    const actionDecision = operationalDecision || (requirements[0]?.field === "photo" && intakeDecision) ? null
       : intentDecision ?? boundedActionDecision(registry.getResults(), proposedActions, inferResponseLocale(options.message));
-    const boundaryOutput = actionDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
+    const boundaryOutput = operationalDecision ?? actionDecision ?? addressQuestion ?? intakeDecision ?? confirmedProposal;
     if (actionDecision) pushEvent(trace, "action_decision", { action: actionDecision.action,
       outcome: actionDecision.outcome, eligibility: actionDecision.eligibility, proposal_allowed: false }, now());
     else if (missingAddress) pushEvent(trace, "action_decision", { action: "update_address",
       outcome: "required_argument", eligibility: missingAddress.eligibility, proposal_allowed: false }, now());
     const responseContext = {
       ...registry,
+      operationalScope: options.operational ? { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" } : undefined,
       turnIR: effectiveTurnIR ?? undefined,
       knownCaseArguments: [...(conversationContext.activeOrder ? ["order_id"] : []),
         ...(conversationContext.caseState?.scope.customerEmail ? ["customer_email"] : []),
@@ -678,6 +695,23 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
     };
     let validatedOutput = validateStructuredResponse(boundaryOutput?.structuredOutput ?? result?.finalOutput, responseContext);
+    if (!boundaryOutput && options.operational && turnIR?.orderContext === "status") {
+      const trackingFacts = registry.getResults().filter(record => record.toolName === "get_tracking" && record.result.status === "ok").flatMap(record => {
+        const data = record.result.data as JsonObject; const live = data?.live_tracking as JsonObject;
+        const event = live?.latestEvent as JsonObject;
+        return [["shipment_status", "live_tracking.status", live?.status], ["shipment_event", "live_tracking.latestEvent.description", event?.description], ["shipment_eta", "live_tracking.estimatedDelivery", live?.estimatedDelivery], ["shipment_timestamp", "live_tracking.latestEvent.timestamp", event?.timestamp], ["shipment_location", "live_tracking.latestEvent.location", event?.location]]
+          .filter(([, , value]) => value && value !== "unknown").map(([kind, path]) => ({ type: "fact", fact_kind: kind, evidence: [{ result_id: record.resultId, field_paths: [path] }] }));
+      });
+      if (!trackingFacts.some(fact => fact.fact_kind === "shipment_status") && !validatedOutput.approvedSegments.some(segment => segment.type === "fact" && segment.fact_kind === "order_fulfillment_status")) {
+        const orderEvidence = registry.getResults().find(record => record.toolName === "get_order" && record.result.status === "ok");
+        if (orderEvidence) trackingFacts.push({ type: "fact", fact_kind: "order_fulfillment_status", evidence: [{ result_id: orderEvidence.resultId, field_paths: ["fulfillmentStatus"] }] });
+      }
+      for (const fact of trackingFacts) {
+        if (validatedOutput.approvedSegments.some(segment => JSON.stringify(segment) === JSON.stringify(fact))) continue;
+        const addition = validateStructuredResponse({ segments: [fact] }, responseContext);
+        validatedOutput = { ...validatedOutput, approvedSegments: [...validatedOutput.approvedSegments, ...addition.approvedSegments], rejectedSegments: [...validatedOutput.rejectedSegments, ...addition.rejectedSegments] };
+      }
+    }
     if (!boundaryOutput && !validatedOutput.approvedSegments.length && turnIR?.orderContext === "status"
       && responseContext.activeOrder?.state === "verified" && responseContext.activeOrder.order) {
       const evidence = registry.getResults().find(record => record.toolName === "get_order" && record.result.status === "ok");
@@ -710,10 +744,15 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         completeness_check_entered: validation.completenessDiagnostics?.entered === true,
         ...recovery,
         fallback_reason: fallbackReason,
-        final_composition_source: boundaryOutput ? (intakeDecision || confirmedProposal ? "case_state_boundary" : "action_boundary") : responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
+        final_composition_source: boundaryOutput ? (operationalDecision ? "operational_execution" : intakeDecision || confirmedProposal ? "case_state_boundary" : "action_boundary") : responseCompositionSource(modelDiagnostics, validation, useAuthoritativeFallback),
       }) as JsonObject;
     }
-    const actionExecutions = await executeActionProposals({
+    const actionExecutions = operationalOutcome ? [{ mode: operationalOutcome.mode, action: operationalOutcome.action,
+      target: { order_id: operationalOutcome.command?.orderReference ?? registry.getActiveOrderFocus()?.requestedOrderId ?? null }, arguments: traceValue(operationalOutcome.command ?? {}) as JsonObject,
+      proposal_status: "proposed" as const, validation_status: operationalOutcome.eligible ? "validated" as const : "blocked" as const,
+      execution_status: operationalOutcome.status === "SIMULATED" ? "simulated_success" as const : operationalOutcome.status === "EXECUTED" ? "executed" as const : operationalOutcome.status === "PROPOSED" ? "hitl" as const : "blocked" as const,
+      would_execute: operationalOutcome.eligible && operationalOutcome.permission === "auto" && operationalOutcome.providerCapable,
+      executed: operationalOutcome.executed, validation_checks: [], reason: operationalOutcome.reason, operational: operationalOutcome }] : await executeActionProposals({
       executor: options.actionExecutor,
       proposals: proposedActions,
       approvedSegments: validation.approvedSegments,
@@ -744,6 +783,13 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       structured_response: validation.parsed,
       validation: summarizeResponseValidation(validation, { includeCompleteness: options.enableDevDiagnostics === true }),
     }, now());
+    if (operationalOutcome?.readBackVerified && conversationContext.caseState) {
+      // Completed intent is not authority for a later edit of the same order.
+      const state = { ...conversationContext.caseState };
+      delete state.pendingAction; delete state.requestedChange; delete state.actionConfirmation;
+      delete state.orderConfirmation; delete state.address; delete state.lineChange;
+      conversationContext = { ...conversationContext, caseState: state };
+    }
     trace.finishedAt = now();
     return {
       response,
