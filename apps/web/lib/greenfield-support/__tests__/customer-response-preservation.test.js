@@ -393,3 +393,18 @@ describe("product care binds the source product heading, not generic section hea
     expect(validate(ctx, guidance("Use wood cleaner.", "results[2].evidence_sections[0].content")).allValid).toBe(false);
   });
 });
+
+
+describe("care limitations cannot smuggle unsupported method instructions", () => {
+  const data = { results: [care("Aurora Vase — Support Guide", "The product information does not state whether the vase is dishwasher-safe.")] };
+  it("renders only bounded uncertainty from a source-bound limitation", () => {
+    const ctx = careContext("Is the Aurora dishwasher safe?", data);
+    const result = validate(ctx, { type: "limitation", text: "Dishwasher safety is unverified. I recommend a cool dishwasher cycle.", basis: basis("care", "results[0].evidence_sections[0].content") });
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("not established"); expect(answer).not.toContain("recommend"); expect(answer).not.toContain("cycle");
+  });
+  it("still rejects operational promises in a care limitation", () => {
+    const ctx = careContext("Is the Aurora dishwasher safe?", data);
+    expect(validate(ctx, { type: "limitation", text: "Dishwasher safety is unverified. We will send a replacement.", basis: basis("care", "results[0].evidence_sections[0].content") }).allValid).toBe(false);
+  });
+});

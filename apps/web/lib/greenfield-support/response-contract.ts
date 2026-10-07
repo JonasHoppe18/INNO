@@ -1824,6 +1824,15 @@ function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseVal
     && !context.turnIR?.actions.length) {
     return { ...segment, purpose: "clarify_task" };
   }
+  if (segment.type === "limitation" && productCareRequest(context)
+    && /dishwasher/i.test(context.customerMessage ?? "") && /dishwasher/i.test(segment.text)
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && segment.basis && citedCareText(segment.basis, context)) {
+    const records = careRecords(context).filter((record) => record.subject === selectedCareSubject(context));
+    if (!records.some((record) => /dishwasher/i.test(record.text) && !undocumentedDishwasherMethod(record.text))) {
+      return { ...segment, text: "Dishwasher safety is not established in the retrieved product guidance." };
+    }
+  }
   if (segment.type === "limitation" && /\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")
     && /\b(?:cause|reason|delay|because)\b/i.test(segment.text)
     && ["get_order", "get_product_availability"].includes(resultFor(segment.basis, context)?.toolName ?? "")
