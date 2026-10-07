@@ -21,6 +21,7 @@ import {
   ensureAnswerCompleteness,
   inferResponseLocale,
   recoverAuthoritativePolicyAnswer,
+  recoverSupportedProductResponse,
   renderOrderCandidateClarificationFromResults,
   renderResponseSegments,
   shouldPreferAuthoritativeEvidenceFallback,
@@ -118,12 +119,14 @@ export function fallbackResponse(context?: {
   interactionChannel?: GreenfieldInteractionChannel;
   getResults?: () => ResponseEvidenceRecord[];
 }) {
+  const supported = recoverSupportedProductResponse(context ?? {});
+  const preserveSupported = (answer: string) => [supported, answer].filter(Boolean).join("\n\n");
   const requestedOrderId = context?.activeOrder?.requestedOrderId;
   if (context?.activeOrder?.state === "unresolved" && requestedOrderId) {
     const reference = ` #${requestedOrderId.replace(/^#/, "")}`;
-    return context.locale === "da"
+    return preserveSupported(context.locale === "da"
       ? `Jeg kunne ikke bekræfte ordre${reference}. Hvis du har et andet gyldigt ordrenummer eller en anden ordreidentifikator, må du gerne sende det.`
-      : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`;
+      : `I couldn’t verify order${reference}. If you have a different valid order number or order identifier, please share it.`);
   }
   const knowledgeGap = composeSafeKnowledgeGapResponse({
     locale: context?.locale,
@@ -131,16 +134,16 @@ export function fallbackResponse(context?: {
     customerProvidedContext: context?.customerProvidedContext,
     getResults: context?.getResults,
   });
-  if (knowledgeGap) return knowledgeGap;
+  if (knowledgeGap) return preserveSupported(knowledgeGap);
   const recoveredPolicyAnswer = recoverAuthoritativePolicyAnswer({
     customerMessage: context?.customerMessage,
     interactionChannel: context?.interactionChannel,
     getResults: context?.getResults,
   });
-  if (recoveredPolicyAnswer) return recoveredPolicyAnswer;
+  if (recoveredPolicyAnswer) return preserveSupported(recoveredPolicyAnswer);
   const orderClarification = renderOrderCandidateClarificationFromResults(context?.getResults, context?.locale);
-  if (orderClarification) return orderClarification;
-  return "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
+  if (orderClarification) return preserveSupported(orderClarification);
+  return supported ?? "I’m sorry, but I couldn’t safely complete that lookup right now. Could you try again in a moment?";
 }
 
 function responseUsage(response: ModelResponse) {
