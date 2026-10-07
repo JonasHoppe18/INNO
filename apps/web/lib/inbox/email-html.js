@@ -288,7 +288,9 @@ export const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
       if (!isSafeAttachmentSrc) return "";
 
       const styleMatch = String(imgTag).match(/\sstyle=(['"])([\s\S]*?)\1/i);
-      const safeStyle = preserveInlineStyles ? sanitizeInlineStyle(styleMatch?.[2] || "") : "";
+      const safeStyle = preserveInlineStyles && options?.preserveInlineImageStyles !== false
+        ? sanitizeInlineStyle(styleMatch?.[2] || "")
+        : "";
       const senderSetWidth = /(?:^|;)\s*width\s*:/i.test(safeStyle);
 
       const isSignatureImage = offset >= signatureZoneStart;

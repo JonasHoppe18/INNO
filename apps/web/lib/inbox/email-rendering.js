@@ -45,22 +45,30 @@ const safeStyles = {
     "font-weight": [/^(?:normal|bold|[1-9]00)$/],
     "font-style": [/^(?:normal|italic)$/],
     "text-decoration": [/^(?:none|underline|line-through)$/],
-    "color": [/^(?:#[\da-f]{3,8}|[a-z]+|rgba?\([\d\s,.%]+\))$/i],
-    "background-color": [/^(?:#[\da-f]{3,8}|[a-z]+|rgba?\([\d\s,.%]+\))$/i],
-    "border-radius": [/^[\d.]+(?:px|%)$/],
-    "padding": [/^[\d.]+(?:px|em|rem)(?:\s+[\d.]+(?:px|em|rem)){0,3}$/],
+    "display": [/^none$/],
+  },
+  img: {
     "width": [/^(?:auto|[\d.]+(?:px|%))$/],
-    "height": [/^(?:auto|[\d.]+px)$/],
+    "height": [/^auto$/],
     "max-width": [/^[\d.]+(?:px|%)$/],
     "max-height": [/^(?:none|[\d.]+px)$/],
-    "display": [/^(?:none|block|inline|inline-block)$/],
   },
 };
 
 export function sanitizeConversationHtml(html, attachments = []) {
-  return sanitizeHtml(sanitizeEmailHtml(html, attachments, { preserveInlineStyles: true }), {
+  return sanitizeHtml(sanitizeEmailHtml(html, attachments, {
+    preserveInlineStyles: true,
+    preserveInlineImageStyles: false,
+  }), {
     allowedTags: [...sanitizeHtml.defaults.allowedTags, "img"],
-    allowedAttributes: attributes,
+    allowedAttributes: {
+      "*": ["style", "dir", "lang", "hidden", "aria-hidden"],
+      a: attributes.a,
+      img: ["src", "alt", "loading", "data-signature-image"],
+      table: ["role"],
+      td: ["colspan", "rowspan"],
+      th: ["colspan", "rowspan"],
+    },
     allowedStyles: safeStyles,
     allowedSchemes: ["http", "https", "mailto", "tel"],
     allowedSchemesByTag: { img: ["http", "https", "data"] },
