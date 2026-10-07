@@ -408,3 +408,28 @@ describe("care limitations cannot smuggle unsupported method instructions", () =
     expect(validate(ctx, { type: "limitation", text: "Dishwasher safety is unverified. We will send a replacement.", basis: basis("care", "results[0].evidence_sections[0].content") }).allValid).toBe(false);
   });
 });
+
+
+describe("an order update preserves requested shipment state independently of payment", () => {
+  const order = record("order", "get_order", { id: "o1", financialStatus: "paid", fulfillmentStatus: null, fulfillments: [] });
+  const focus = { state: "verified", requestedOrderId: "1065", order: { id: "o1" } };
+  it("restores verified unfulfilled status when only payment was emitted", () => {
+    const ctx = context([order], { customerMessage: "Any update on my order?", activeOrder: focus });
+    const result = ensureAnswerCompleteness(validate(ctx, fact("order_financial_status", "order", "financialStatus")), ctx);
+    expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("not shipped yet");
+  });
+  it("does not duplicate an already approved fulfillment fact", () => {
+    const ctx = context([order], { customerMessage: "Order status?", activeOrder: focus });
+    const result = ensureAnswerCompleteness(validate(ctx, fact("order_fulfillment_status", "order", "fulfillmentStatus")), ctx);
+    expect(result.approvedSegments.filter(s => s.fact_kind === "order_fulfillment_status")).toHaveLength(1);
+  });
+  it.each([
+    { activeOrder: { ...focus, order: { id: "other" } } },
+    { activeOrder: { ...focus, state: "unresolved" } },
+    { activeOrder: focus, turnIR: { actions: [{ action: "cancel_order" }] } },
+  ])("cannot restore state outside the verified read-only order focus", (extra) => {
+    const ctx = context([order], { customerMessage: "Order update please", ...extra });
+    const result = ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx);
+    expect(result.approvedSegments.filter(s => s.fact_kind === "order_fulfillment_status")).toHaveLength(0);
+  });
+});

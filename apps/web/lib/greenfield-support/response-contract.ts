@@ -1684,6 +1684,18 @@ function validateProductCareGuidance(
 function preserveSupportedProductAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
   const approved = [...validation.approvedSegments];
   const recovery: CompletenessRecoveryDiagnostic[] = [];
+  if (context.activeOrder?.state === "verified" && !context.turnIR?.actions.length
+    && /\b(?:update|status|shipped|afsendt|opdatering)\b/i.test(context.customerMessage ?? "")
+    && !approved.some((segment) => segment.type === "fact" && segment.fact_kind === "order_fulfillment_status")) {
+    const orderId = String(context.activeOrder.order?.id);
+    const evidence = (context.getResults?.() ?? []).find((record) =>
+      String(objectValue(record.result.data)?.id) === orderId && verifiedUnfulfilledValue(record, "fulfillmentStatus") !== null);
+    if (evidence) {
+      const segment: ResponseSegment = { type: "fact", fact_kind: "order_fulfillment_status",
+        evidence: [{ result_id: evidence.resultId, field_paths: ["fulfillmentStatus"] }] };
+      if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "status", result: "recovered" }); }
+    }
+  }
   if (/\b(?:price|pris)\b/i.test(context.customerMessage ?? "")) {
     const candidates = (context.getResults?.() ?? []).flatMap((evidence) => {
       if (evidence.toolName !== "get_product" || evidence.result.status !== "ok") return [];
