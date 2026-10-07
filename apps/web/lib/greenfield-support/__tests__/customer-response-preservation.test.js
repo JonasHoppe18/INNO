@@ -472,3 +472,13 @@ describe("multi-fact price answers render actual knowledge content", () => {
     expect(validate(ctx, guidance("The price is 999.", "results[0].evidence_sections[0].fabricated")).allValid).toBe(false);
   });
 });
+
+
+describe("read-only missing product slots share the absence clarification contract", () => {
+  it.each(["disambiguate_entity", "clarify_item", "clarify_task"])("normalizes a %s product knowledge question without requiring a lookup", (purpose) => {
+    const ctx = context([], { customerMessage: "Can I chuck it in the washing machine?" });
+    const result = validate(ctx, { type: "question", purpose, text: "Which item do you mean?", capability: "search_product_knowledge", missing_arguments: ["product"], basis: null });
+    expect(result.allValid).toBe(true); expect(result.rejectedSegments).toHaveLength(0);
+    expect(result.approvedSegments[0].purpose).toBe("clarify_task");
+  });
+});

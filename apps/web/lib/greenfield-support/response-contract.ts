@@ -1377,7 +1377,7 @@ function validateGroundedQuestion(
   const contextOnlyClarification = canClarifyMissingCustomerContext(segment, context)
     || (purpose === "clarify_task" && segment.capability === null && !segment.missing_arguments.length
       && !segment.basis && !meaningful(context.customerProvidedContext?.product)
-      && /\b(?:which|what)\s+(?:product|model|device)\b/i.test(segment.text ?? "")
+      && /\b(?:which|what)\s+(?:product|model|device|item)\b/i.test(segment.text ?? "")
       && productCareRequest(context) && !selectedCareSubject(context));
   const implicitTaskClarification = canClarifyInsufficientTaskResult(segment, context);
   const grounded = contextOnlyClarification || implicitTaskClarification
@@ -1830,6 +1830,14 @@ export function recoverSupportedProductResponse(
 }
 
 function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseValidationContext): ResponseSegment {
+  if (segment.type === "question" && ["clarify_item", "clarify_task", "disambiguate_entity"].includes(segment.purpose)
+    && productCareRequest(context) && !segment.basis && !context.turnIR?.actions.length
+    && !meaningful(context.customerProvidedContext?.product) && !selectedCareSubject(context)
+    && (segment.capability === null || segment.capability === "search_product_knowledge")
+    && segment.missing_arguments.every((argument) => argument === "product")
+    && /\b(?:which|what)\s+(?:product|model|device|item)\b/i.test(segment.text ?? "")) {
+    return { ...segment, purpose: "clarify_task", capability: null, missing_arguments: [] };
+  }
   if (segment.type === "question" && segment.purpose === "clarify_item"
     && segment.capability === null && segment.missing_arguments.length === 0 && !segment.basis
     && !meaningful(context.customerProvidedContext?.product) && !selectedCareSubject(context)
