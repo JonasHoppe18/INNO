@@ -276,3 +276,70 @@ describe("verified stock cannot silently become an order-delay explanation", () 
     expect(ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx).approvedSegments).toHaveLength(0);
   });
 });
+
+describe("availability ambiguity can bind only to an independently verified identity", () => {
+  const order = record("order", "get_order", { id: "o1", fulfillmentStatus: null, fulfillments: [], items: [{ variantId: "v1" }] });
+  const availability = record("stock", "get_product_availability", {
+    status: "ambiguous", selection: "ambiguous", provider: "shopify_read_only", source: "shopify_live",
+    products: [{ id: "p1", title: "Aurora Vase", variants: [
+      { id: "v0", title: "Ivory", availability_state: "AVAILABLE" },
+      { id: "v1", title: "Moss", availability_state: "OUT_OF_STOCK" },
+    ] }],
+  }, "invalid_request");
+  const focus = { state: "verified", order: { id: "o1" }, requestedOrderId: "1065" };
+  const value = fact("product_availability", "stock", "products[0].variants[1].availability_state");
+  it("accepts the canonical variant bound by the current verified order", () => {
+    const ctx = context([order, availability], { customerMessage: "Is it in stock?", activeOrder: focus });
+    const result = validate(ctx, value);
+    expect(result.allValid).toBe(true); expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("Moss) is currently out of stock");
+  });
+  it("accepts a binding from a separate successful unique catalog read", () => {
+    const catalog = record("catalog", "get_product", { products: [{ id: "p1", variants: [{ id: "v1" }] }] });
+    expect(validate(context([catalog, availability]), value).allValid).toBe(true);
+  });
+  it("rejects availability without an independent canonical identity", () => {
+    expect(validate(context([availability]), value).allValid).toBe(false);
+  });
+  it("rejects a different variant from the same live response", () => {
+    const ctx = context([order, availability], { activeOrder: focus });
+    expect(validate(ctx, fact("product_availability", "stock", "products[0].variants[0].availability_state")).allValid).toBe(false);
+  });
+  it("does not arbitrarily choose among multiple ordered variants", () => {
+    const multiple = { ...order, result: { status: "ok", data: { ...order.result.data, items: [{ variantId: "v0" }, { variantId: "v1" }] } } };
+    expect(validate(context([multiple, availability], { activeOrder: focus }), value).allValid).toBe(false);
+  });
+  it("rejects evidence outside the active verified order focus", () => {
+    expect(validate(context([order, availability], { activeOrder: { ...focus, order: { id: "different" } } }), value).allValid).toBe(false);
+  });
+  it("rejects an unsuccessful order read as identity authority", () => {
+    const failed = { ...order, result: { ...order.result, status: "error" } };
+    expect(validate(context([failed, availability], { activeOrder: focus }), value).allValid).toBe(false);
+  });
+  it("rejects ambiguity carrying an unverified provider source", () => {
+    const other = { ...availability, result: { ...availability.result, data: { ...availability.result.data, source: "unverified" } } };
+    expect(validate(context([order, other], { activeOrder: focus }), value).allValid).toBe(false);
+  });
+  it("rejects non-normalized availability values", () => {
+    const other = { ...availability, result: { ...availability.result, data: { ...availability.result.data, products: [{ id: "p1", variants: [{ id: "v1", availability_state: "IN_STOCK" }] }] } } };
+    expect(validate(context([order, other], { activeOrder: focus }), fact("product_availability", "stock", "products[0].variants[0].availability_state")).allValid).toBe(false);
+  });
+  it("recovers the exact returned field without modifying provider data", () => {
+    const bytes = JSON.stringify(availability);
+    const ctx = context([order, availability], { customerMessage: "Is it stuck because of stock?", activeOrder: focus });
+    const result = ensureAnswerCompleteness(validateStructuredResponse({}, ctx), ctx);
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("Moss) is currently out of stock"); expect(answer).toContain("do not establish");
+    expect(JSON.stringify(availability)).toBe(bytes);
+  });
+  it("never renders speculative cause prose from a limitation", () => {
+    const ctx = context([order, availability], { customerMessage: "Is it stuck because of stock?", activeOrder: focus });
+    const result = validate(ctx, { type: "limitation", text: "Stock is a possible reason for the delay.", basis: basis("order", "fulfillmentStatus") });
+    expect(result.allValid).toBe(true);
+    expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("do not establish");
+    expect(renderResponseSegments(result.approvedSegments, ctx)).not.toContain("possible reason");
+  });
+  it("never normalizes an unsupported operational promise into an approved limitation", () => {
+    const ctx = context([order, availability], { customerMessage: "Is it stuck because of stock?", activeOrder: focus });
+    expect(validate(ctx, { type: "limitation", text: "Stock may be the reason. We will investigate the delay.", basis: basis("order", "fulfillmentStatus") }).allValid).toBe(false);
+  });
+});

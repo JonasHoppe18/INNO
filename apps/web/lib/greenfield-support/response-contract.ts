@@ -952,13 +952,46 @@ function verifiedUnfulfilledValue(evidence: ResponseEvidenceRecord | undefined, 
     && Array.isArray(data?.fulfillments) && data.fulfillments.length === 0 ? "unfulfilled" : null;
 }
 
+function verifiedAmbiguousAvailability(
+  evidence: ResponseEvidenceRecord | undefined, path: string, context: ResponseValidationContext,
+): boolean {
+  const data = objectValue(evidence?.result.data);
+  if (evidence?.toolName !== "get_product_availability" || evidence.result.status !== "invalid_request"
+    || data?.status !== "ambiguous" || data.selection !== "ambiguous"
+    || data.provider !== "shopify_read_only" || data.source !== "shopify_live") return false;
+  const match = normalizedDataPath(path).match(/^(products\[\d+\])\.variants\[(\d+)\]\.availability_state$/);
+  if (!match) return false;
+  const productId = dataFieldValue(evidence.result, `${match[1]}.id`).value;
+  const variantId = dataFieldValue(evidence.result, `${match[1]}.variants[${match[2]}].id`).value;
+  const state = dataFieldValue(evidence.result, path).value;
+  if (!meaningful(productId) || !meaningful(variantId) || !(PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(String(state))) return false;
+  return (context.getResults?.() ?? []).some((record) => {
+    if (record.result.status !== "ok") return false;
+    const source = objectValue(record.result.data);
+    if (record.toolName === "get_order" && context.activeOrder?.state === "verified"
+      && String(source?.id) === String(context.activeOrder.order?.id)) {
+      const items = Array.isArray(source?.items) ? source.items : [];
+      const ids = new Set(items.map((item) => objectValue(item)?.variantId).filter(meaningful).map(String));
+      return ids.size === 1 && ids.has(String(variantId));
+    }
+    if (record.toolName === "get_product" && effectiveResultStatus(record) === "ok") {
+      const products = Array.isArray(source?.products) ? source.products : [];
+      const product = products.length === 1 ? objectValue(products[0]) : null;
+      const variants = Array.isArray(product?.variants) ? product.variants : [];
+      return String(product?.id) === String(productId) && variants.length === 1
+        && String(objectValue(variants[0])?.id) === String(variantId);
+    }
+    return false;
+  });
+}
+
 function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext, index: number) {
-  const issues = segment.evidence.flatMap((basis) => validateBasis(
-    basis,
-    context,
-    { requireOk: true, requireMeaningfulFields: true, scope: "data" },
-    index,
-  ));
+  const issues = segment.evidence.flatMap((basis) => {
+    const states = basis.field_paths.filter(safeLiveProductAvailabilityFieldPath);
+    const boundAmbiguity = segment.fact_kind === "product_availability" && states.length > 0
+      && states.every((path) => verifiedAmbiguousAvailability(resultFor(basis, context), path, context));
+    return validateBasis(basis, context, { requireOk: !boundAmbiguity, requireMeaningfulFields: true, scope: "data" }, index);
+  });
   const semanticIssues = segment.fact_kind === "order_fulfillment_status"
     ? issues.filter((issue) => issue.code !== "empty_field" || !segment.evidence.every((basis) =>
       basis.field_paths.every((path) => meaningful(dataFieldValue(resultFor(basis, context)!.result, path).value)
@@ -1672,21 +1705,27 @@ function preserveSupportedProductAnswers(validation: ResponseValidationResult, c
   }
   if (/\b(?:stock|availability|available|lager)\b/i.test(context.customerMessage ?? "")) {
     const candidates = (context.getResults?.() ?? []).flatMap((evidence) => {
-      if (evidence.toolName !== "get_product_availability" || evidence.result.status !== "ok") return [];
+      if (evidence.toolName !== "get_product_availability") return [];
       const products = objectValue(evidence.result.data)?.products;
-      if (!Array.isArray(products) || products.length !== 1) return [];
-      const variants = objectValue(products[0])?.variants;
-      if (!Array.isArray(variants) || variants.length !== 1) return [];
-      const value = objectValue(variants[0]);
-      return meaningful(value?.id) && (PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(String(value?.availability_state))
-        ? [{ evidence, identity: `${objectValue(products[0])?.id}/${value.id}/${value.availability_state}` }] : [];
+      if (!Array.isArray(products)) return [];
+      return products.flatMap((product, productIndex) => {
+        const variants = objectValue(product)?.variants;
+        if (!Array.isArray(variants)) return [];
+        return variants.flatMap((variant, variantIndex) => {
+          const value = objectValue(variant);
+          const path = `products[${productIndex}].variants[${variantIndex}].availability_state`;
+          const unique = evidence.result.status === "ok" && products.length === 1 && variants.length === 1;
+          return meaningful(value?.id) && (PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(String(value?.availability_state))
+            && (unique || verifiedAmbiguousAvailability(evidence, path, context))
+            ? [{ evidence, path, identity: `${objectValue(product)?.id}/${value.id}/${value.availability_state}` }] : [];
+        });
+      });
     });
     const latest = candidates.at(-1);
-    const path = "products[0].variants[0].availability_state";
     const alreadyCited = latest && approved.some((segment) => segment.type === "fact" && segment.fact_kind === "product_availability"
-      && segment.evidence.some((basis) => basis.result_id === latest.evidence.resultId && basis.field_paths.some((field) => normalizedDataPath(field) === path)));
+      && segment.evidence.some((basis) => basis.result_id === latest.evidence.resultId && basis.field_paths.some((field) => normalizedDataPath(field) === latest.path)));
     if (latest && !alreadyCited && new Set(candidates.map((candidate) => candidate.identity)).size === 1) {
-      const segment: ResponseSegment = { type: "fact", fact_kind: "product_availability", evidence: [{ result_id: latest.evidence.resultId, field_paths: [path] }] };
+      const segment: ResponseSegment = { type: "fact", fact_kind: "product_availability", evidence: [{ result_id: latest.evidence.resultId, field_paths: [latest.path] }] };
       if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "status", result: "recovered" }); }
     }
   }
@@ -1712,14 +1751,16 @@ function preserveSupportedProductAnswers(validation: ResponseValidationResult, c
   if (/\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")) {
     const order = (context.getResults?.() ?? []).find((evidence) => verifiedUnfulfilledValue(evidence, "fulfillmentStatus") !== null);
     const items = objectValue(order?.result.data)?.items;
-    const availability = (context.getResults?.() ?? []).filter((evidence) => evidence.toolName === "get_product_availability" && evidence.result.status === "ok");
+    const availability = (context.getResults?.() ?? []).filter((evidence) => evidence.toolName === "get_product_availability");
     const matchingStock = Array.isArray(items) && availability.some((evidence) => {
       const products = objectValue(evidence.result.data)?.products;
-      return Array.isArray(products) && products.some((product) => {
+      return Array.isArray(products) && products.some((product, productIndex) => {
         const variants = objectValue(product)?.variants;
-        return Array.isArray(variants) && variants.some((variant) => {
+        return Array.isArray(variants) && variants.some((variant, variantIndex) => {
           const value = objectValue(variant);
-          return value?.availability_state === "OUT_OF_STOCK" && items.some((item) =>
+          return value?.availability_state === "OUT_OF_STOCK"
+            && (evidence.result.status === "ok" || verifiedAmbiguousAvailability(evidence,
+              `products[${productIndex}].variants[${variantIndex}].availability_state`, context)) && items.some((item) =>
             meaningful(objectValue(item)?.variantId) && String(objectValue(item)?.variantId) === String(value?.id));
         });
       });
@@ -1758,7 +1799,7 @@ function preserveSupportedProductAnswers(validation: ResponseValidationResult, c
 }
 
 export function recoverSupportedProductResponse(
-  input: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext" | "interactionChannel" | "locale" | "getResults">,
+  input: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext" | "interactionChannel" | "locale" | "activeOrder" | "getResults">,
 ): string | null {
   const results = input.getResults?.() ?? [];
   const context: ResponseValidationContext = {
@@ -1777,6 +1818,13 @@ function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseVal
     && /\b(?:which|what)\s+(?:product|model|device)\b/i.test(segment.text ?? "")
     && !context.turnIR?.actions.length) {
     return { ...segment, purpose: "clarify_task" };
+  }
+  if (segment.type === "limitation" && /\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")
+    && /\b(?:cause|reason|delay|because)\b/i.test(segment.text)
+    && ["get_order", "get_product_availability"].includes(resultFor(segment.basis, context)?.toolName ?? "")
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && !validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, -1).length) {
+    return { ...segment, text: "The available order and stock records do not establish that stock is the reason for this order's delay." };
   }
   const careBasis = segment.type === "knowledge_guidance" ? segment.basis
     : segment.type === "fact" && segment.fact_kind === "product_value" && segment.evidence.length === 1 ? segment.evidence[0] : null;
