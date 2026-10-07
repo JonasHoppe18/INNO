@@ -801,7 +801,8 @@ function citedKnowledgeRecords(results: unknown[], fieldPaths: string[]) {
 }
 
 function normalizedDataPath(path: string): string {
-  return path.startsWith("data.") ? path.slice("data.".length) : path;
+  return (path.startsWith("data.") ? path.slice("data.".length) : path)
+    .replace(/\.(\d+)(?=\.|$)/g, "[$1]");
 }
 
 function pathHasSuffix(path: string, suffix: string): boolean {
@@ -942,14 +943,64 @@ function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
   }
 }
 
+function verifiedUnfulfilledValue(evidence: ResponseEvidenceRecord | undefined, path: string): string | null {
+  if (evidence?.toolName !== "get_order" || evidence.result.status !== "ok"
+    || !["fulfillmentStatus", "fulfillment_status"].includes(normalizedDataPath(path))) return null;
+  const data = objectValue(evidence.result.data);
+  const field = dataFieldValue(evidence.result, path);
+  return field.exists && field.value === null && meaningful(data?.id)
+    && Array.isArray(data?.fulfillments) && data.fulfillments.length === 0 ? "unfulfilled" : null;
+}
+
+function verifiedAmbiguousAvailability(
+  evidence: ResponseEvidenceRecord | undefined, path: string, context: ResponseValidationContext,
+): boolean {
+  const data = objectValue(evidence?.result.data);
+  if (evidence?.toolName !== "get_product_availability" || evidence.result.status !== "invalid_request"
+    || data?.status !== "ambiguous" || data.selection !== "ambiguous"
+    || data.provider !== "shopify_read_only" || data.source !== "shopify_live") return false;
+  const match = normalizedDataPath(path).match(/^(products\[\d+\])\.variants\[(\d+)\]\.availability_state$/);
+  if (!match) return false;
+  const productId = dataFieldValue(evidence.result, `${match[1]}.id`).value;
+  const variantId = dataFieldValue(evidence.result, `${match[1]}.variants[${match[2]}].id`).value;
+  const state = dataFieldValue(evidence.result, path).value;
+  if (!meaningful(productId) || !meaningful(variantId) || !(PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(String(state))) return false;
+  return (context.getResults?.() ?? []).some((record) => {
+    if (record.result.status !== "ok") return false;
+    const source = objectValue(record.result.data);
+    if (record.toolName === "get_order" && context.activeOrder?.state === "verified"
+      && String(source?.id) === String(context.activeOrder.order?.id)) {
+      const items = Array.isArray(source?.items) ? source.items : [];
+      const ids = new Set(items.map((item) => objectValue(item)?.variantId).filter(meaningful).map(String));
+      return items.length > 0 && items.every((item) => meaningful(objectValue(item)?.variantId))
+        && ids.size === 1 && ids.has(String(variantId));
+    }
+    if (record.toolName === "get_product" && effectiveResultStatus(record) === "ok") {
+      const products = Array.isArray(source?.products) ? source.products : [];
+      const product = products.length === 1 ? objectValue(products[0]) : null;
+      const variants = Array.isArray(product?.variants) ? product.variants : [];
+      return String(product?.id) === String(productId) && variants.length === 1
+        && String(objectValue(variants[0])?.id) === String(variantId);
+    }
+    return false;
+  });
+}
+
 function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext, index: number) {
-  const issues = segment.evidence.flatMap((basis) => validateBasis(
-    basis,
-    context,
-    { requireOk: true, requireMeaningfulFields: true, scope: "data" },
-    index,
-  ));
-  if (issues.length) return issues;
+  const issues = segment.evidence.flatMap((basis) => {
+    const states = basis.field_paths.filter(safeLiveProductAvailabilityFieldPath);
+    const boundAmbiguity = segment.fact_kind === "product_availability" && states.length > 0
+      && states.every((path) => verifiedAmbiguousAvailability(resultFor(basis, context), path, context));
+    return validateBasis(basis, context, { requireOk: !boundAmbiguity, requireMeaningfulFields: true, scope: "data" }, index);
+  });
+  const semanticIssues = segment.fact_kind === "order_fulfillment_status"
+    ? issues.filter((issue) => issue.code !== "empty_field" || !segment.evidence.every((basis) =>
+      basis.field_paths.every((path) => meaningful(dataFieldValue(resultFor(basis, context)!.result, path).value)
+        || verifiedUnfulfilledValue(resultFor(basis, context), path) !== null
+        || (normalizedDataPath(path) === "fulfillments" && basis.field_paths.some((field) =>
+          verifiedUnfulfilledValue(resultFor(basis, context), field) !== null)))))
+    : issues;
+  if (semanticIssues.length) return semanticIssues;
 
   const paths = segment.evidence.flatMap((basis) => basis.field_paths);
   if (segment.fact_kind === "product_value" && paths.some(unsupportedLiveProductFieldPath)) {
@@ -1323,7 +1374,11 @@ function validateGroundedQuestion(
   if (segment.capability && !availableCapability(segment.capability, context)) {
     issues.push({ index, code: "unknown_question_capability", message: "The question references a capability that is not available in this run." });
   }
-  const contextOnlyClarification = canClarifyMissingCustomerContext(segment, context);
+  const contextOnlyClarification = canClarifyMissingCustomerContext(segment, context)
+    || (purpose === "clarify_task" && segment.capability === null && !segment.missing_arguments.length
+      && !segment.basis && !meaningful(context.customerProvidedContext?.product)
+      && /\b(?:which|what)\s+(?:product|model|device|item)\b/i.test(segment.text ?? "")
+      && productCareRequest(context) && !selectedCareSubject(context));
   const implicitTaskClarification = canClarifyInsufficientTaskResult(segment, context);
   const grounded = contextOnlyClarification || implicitTaskClarification
     ? { evidence: undefined, issues: [] }
@@ -1449,6 +1504,7 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
     case "knowledge_guidance": {
       const issues = validateKnowledgeBasis(segment.basis, context, index);
       if (!issues.length) issues.push(...validatePolicyTruth(segment, context, index));
+      if (!issues.length) issues.push(...validateProductCareGuidance(segment, context, index));
       if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
         issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
       }
@@ -1515,6 +1571,335 @@ function containsUnvalidatedOperationalCommitment(value: string): boolean {
     || new RegExp(`\\b(?:do you mean|do you want us|would you like us|shall we|should we|are you asking(?: us)?|which option do you prefer|what would you prefer|would you rather|let me know whether|vil du have os|skal vi|hvilken mulighed foretrækker du)\\b[\\s\\S]{0,96}\\b${operation}\\b`, "i").test(text);
 }
 
+function productCareRequest(context: ResponseValidationContext): boolean {
+  const pattern = /\b(?:wash\w*|dishwasher|clean\w*|dry\w*|care|bleach|vask\w*|tør\w*|rengør\w*)\b/i;
+  if (pattern.test(context.customerMessage ?? "")) return true;
+  // Follow-up intent may be carried by the current read query. It selects
+  // evidence only; it never establishes a product fact or instruction.
+  return /\b(?:same|it|that|this|samme|det)\b/i.test(context.customerMessage ?? "")
+    && (context.getResults?.() ?? []).some((record) => record.toolName === "search_product_knowledge"
+      && pattern.test(String(objectValue(record.result.data)?.query ?? "")));
+}
+
+function careSubject(record: JsonObject): string {
+  const title = String(record.title ?? "");
+  const parts = title.split(/\s+\/\s+/);
+  const productHeading = parts[0].split(/\s+[—–]\s+/);
+  const label = productHeading.length > 1 ? productHeading[0]
+    : parts.length > 1 && parts.at(-1)!.trim().split(/\s+/).length > 2 ? parts.at(-1)! : parts[0];
+  return normalizedPhrase(label);
+}
+
+function careRecords(context: ResponseValidationContext) {
+  return (context.getResults?.() ?? []).flatMap((evidence) => {
+    if (evidence.toolName !== "search_product_knowledge" || evidence.result.status !== "ok") return [];
+    const results = objectValue(evidence.result.data)?.results;
+    return Array.isArray(results) ? results.flatMap((value, resultIndex) => {
+      const record = objectValue(value);
+      if (!record || record.knowledge_type !== "product" || !["authoritative", "guidance", "reference"].includes(String(record.authority))) return [];
+      const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
+      return sections.flatMap((section, sectionIndex) => {
+        const text = objectValue(section)?.content ?? objectValue(section)?.text;
+        return typeof text === "string" && /\b(?:wash\w*|dishwasher|clean\w*|dry\w*|bleach|reshape|abrasive\w*|damp cloth)\b/i.test(text)
+          ? [{ evidence, resultIndex, sectionIndex, subject: careSubject(record), text, textField: typeof objectValue(section)?.content === "string" ? "content" : "text" }] : [];
+      });
+    }) : [];
+  });
+}
+
+function selectedCareSubject(context: ResponseValidationContext): string | null {
+  const subjects = Array.from(new Set(careRecords(context).map((record) => record.subject).filter(Boolean)));
+  const stop = new Set("textile care support guide instructions product the a an for and".split(" "));
+  const match = (value: string) => {
+    const phrase = normalizedPhrase(value);
+    const exact = subjects.filter((subject) => ` ${phrase} `.includes(` ${subject} `));
+    if (exact.length) {
+      const longest = Math.max(...exact.map((subject) => subject.length));
+      return exact.filter((subject) => subject.length === longest);
+    }
+    const words = new Set(phrase.split(" "));
+    const candidates = subjects.flatMap((subject) => {
+      const tokens = subject.split(" ").filter((word) => word.length > 2 && !stop.has(word));
+      if (!tokens.length || !words.has(tokens[0])) return [];
+      return [{ subject, count: tokens.filter((word) => words.has(word)).length }];
+    });
+    const best = Math.max(0, ...candidates.map((candidate) => candidate.count));
+    return candidates.filter((candidate) => candidate.count === best).map((candidate) => candidate.subject);
+  };
+  const current = match(context.customerMessage ?? "");
+  if (current.length) return current.length === 1 ? current[0] : null;
+  const previous = match(context.customerProvidedContext?.product ?? "");
+  return previous.length === 1 ? previous[0] : null;
+}
+
+function citedCareText(basis: KnowledgeBasis, context: ResponseValidationContext): string | null {
+  const evidence = resultFor(basis, context);
+  if (evidence?.toolName !== "search_product_knowledge") return null;
+  const selected = careRecords(context).filter((record) => record.evidence.resultId === evidence.resultId
+    && basis.field_paths.some((path) => {
+      const normalized = normalizedDataPath(path);
+      return normalized === `results[${record.resultIndex}]`
+        || normalized === `results[${record.resultIndex}].evidence_sections`
+        || normalized === `results[${record.resultIndex}].evidence_sections[${record.sectionIndex}]`
+        || normalized === `results[${record.resultIndex}].evidence_sections[${record.sectionIndex}].content`
+        || normalized === `results[${record.resultIndex}].evidence_sections[${record.sectionIndex}].text`;
+    }));
+  const subject = selectedCareSubject(context);
+  return subject && selected.length && selected.every((record) => record.subject === subject)
+    ? Array.from(new Set(selected.map((record) => record.text))).join("\n\n") : null;
+}
+
+function undocumentedDishwasherMethod(text: string): boolean {
+  return /not (?:established|specified|documented)|no (?:verified|documented|confirmed) evidence|(?:does|do) not (?:state|specify|confirm|establish)\b/i.test(text);
+}
+
+function validateProductCareGuidance(
+  segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>, context: ResponseValidationContext, index: number,
+): ResponseValidationIssue[] {
+  if (!productCareRequest(context) || resultFor(segment.basis, context)?.toolName !== "search_product_knowledge") return [];
+  const source = citedCareText(segment.basis, context);
+  if (!source) return [{ index, code: "product_care_binding_required", message: "Care guidance must bind returned care content for the current product, not metadata or another product." }];
+  const sourceNumbers = new Set(source.match(/\d+(?:[.,]\d+)?/g) ?? []);
+  if ((segment.text.match(/\d+(?:[.,]\d+)?/g) ?? []).some((number) => !sourceNumbers.has(number))) {
+    return [{ index, code: "unsupported_care_value", message: "Care values must be established by the cited care evidence." }];
+  }
+  const uncertainty = /(?:couldn['’]?t|cannot|can['’]?t|unable to)\s+(?:verify|confirm|establish)|not (?:specified|documented|verified|confirmed|established)|(?:does|do) not (?:state|specify|confirm|establish)|(?:no|without)\s+(?:verified|documented|confirmed|evidence)/i;
+  const sourceHasMethod = /dishwasher/i.test(source) && !undocumentedDishwasherMethod(source);
+  const methodClaims = segment.text.split(/[.!?;\n]|\bbut\b/i).filter((clause) => /dishwasher/i.test(clause));
+  if (!sourceHasMethod && methodClaims.some((clause) => !uncertainty.test(clause))) {
+    return [{ index, code: "unsupported_care_method", message: "An undocumented cleaning method cannot be claimed safe or unsafe." }];
+  }
+  const method = /\b(?:machine[ -]+wash\w*|washing machine)\b/i;
+  const prohibition = /\b(?:do not|don['’]?t|cannot|can['’]?t|must not|mustn['’]?t|should not|shouldn['’]?t|not|never|avoid)\b[\s\S]{0,96}\b(?:machine[ -]+wash\w*|washing machine)\b|\bno\s+machine[ -]+wash\w*/i;
+  if (prohibition.test(source)) {
+    const clauses = segment.text.split(/[.!?;\n]|,|\band\b|\bbut\b/i);
+    if (clauses.some((clause) => method.test(clause) && !prohibition.test(clause)
+      && !/machine[ -]+wash\w*[^.!?;]{0,40}\bnot\b/i.test(clause))) {
+      return [{ index, code: "care_instruction_conflict", message: "Care guidance contradicts the cited machine-washing prohibition." }];
+    }
+  }
+  return [];
+}
+
+/** Restore only current, source-bound answers. No new lookup or model prose. */
+function preserveSupportedProductAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
+  const approved = [...validation.approvedSegments];
+  const recovery: CompletenessRecoveryDiagnostic[] = [];
+  if (context.activeOrder?.state === "verified" && !context.turnIR?.actions.length
+    && /\b(?:update|status|shipped|afsendt|opdatering)\b/i.test(context.customerMessage ?? "")
+    && !approved.some((segment) => segment.type === "fact" && segment.fact_kind === "order_fulfillment_status")) {
+    const orderId = String(context.activeOrder.order?.id);
+    const evidence = (context.getResults?.() ?? []).find((record) =>
+      String(objectValue(record.result.data)?.id) === orderId && verifiedUnfulfilledValue(record, "fulfillmentStatus") !== null);
+    if (evidence) {
+      const segment: ResponseSegment = { type: "fact", fact_kind: "order_fulfillment_status",
+        evidence: [{ result_id: evidence.resultId, field_paths: ["fulfillmentStatus"] }] };
+      if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "status", result: "recovered" }); }
+    }
+  }
+  if (/\b(?:price|pris)\b/i.test(context.customerMessage ?? "")) {
+    const candidates = (context.getResults?.() ?? []).flatMap((evidence) => {
+      if (evidence.toolName !== "get_product" || evidence.result.status !== "ok") return [];
+      const data = objectValue(evidence.result.data);
+      const products = Array.isArray(data?.products) ? data.products : [];
+      if (products.length !== 1) return [];
+      const product = objectValue(products[0]);
+      const variants = Array.isArray(product?.variants) ? product.variants : [];
+      if (!meaningful(product?.id) || variants.length !== 1) return [];
+      const variant = objectValue(variants[0]);
+      if (!meaningful(variant?.id) || typeof variant?.price !== "string" || !/^\d+(?:\.\d+)?$/.test(variant.price)) return [];
+      return [{ evidence, price: variant.price, identity: `${product.id}/${variant.id}/${variant.price}` }];
+    });
+    const latest = candidates.at(-1);
+    if (latest && new Set(candidates.map((candidate) => candidate.identity)).size === 1) {
+      const path = "products[0].variants[0].price";
+      const alreadyCited = approved.some((segment) => segment.type === "fact" && segment.fact_kind === "product_value"
+        && segment.evidence.some((basis) => basis.result_id === latest.evidence.resultId && basis.field_paths.some((field) => normalizedDataPath(field) === path)));
+      if (!alreadyCited) {
+        const segment: ResponseSegment = { type: "fact", fact_kind: "product_value", evidence: [{ result_id: latest.evidence.resultId, field_paths: [path] }] };
+        if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "cost", result: "recovered" }); }
+      }
+    }
+  }
+  if (/\b(?:stock|availability|available|lager)\b/i.test(context.customerMessage ?? "")) {
+    const candidates = (context.getResults?.() ?? []).flatMap((evidence) => {
+      if (evidence.toolName !== "get_product_availability") return [];
+      const products = objectValue(evidence.result.data)?.products;
+      if (!Array.isArray(products)) return [];
+      return products.flatMap((product, productIndex) => {
+        const variants = objectValue(product)?.variants;
+        if (!Array.isArray(variants)) return [];
+        return variants.flatMap((variant, variantIndex) => {
+          const value = objectValue(variant);
+          const path = `products[${productIndex}].variants[${variantIndex}].availability_state`;
+          const unique = evidence.result.status === "ok" && products.length === 1 && variants.length === 1;
+          return meaningful(value?.id) && (PRODUCT_AVAILABILITY_STATES as readonly string[]).includes(String(value?.availability_state))
+            && (unique || verifiedAmbiguousAvailability(evidence, path, context))
+            ? [{ evidence, path, identity: `${objectValue(product)?.id}/${value.id}/${value.availability_state}` }] : [];
+        });
+      });
+    });
+    const latest = candidates.at(-1);
+    const alreadyCited = latest && approved.some((segment) => segment.type === "fact" && segment.fact_kind === "product_availability"
+      && segment.evidence.some((basis) => basis.result_id === latest.evidence.resultId && basis.field_paths.some((field) => normalizedDataPath(field) === latest.path)));
+    if (latest && !alreadyCited && new Set(candidates.map((candidate) => candidate.identity)).size === 1) {
+      const segment: ResponseSegment = { type: "fact", fact_kind: "product_availability", evidence: [{ result_id: latest.evidence.resultId, field_paths: [latest.path] }] };
+      if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "status", result: "recovered" }); }
+    }
+  }
+  if (productCareRequest(context)) {
+    const subject = selectedCareSubject(context);
+    const records = subject ? careRecords(context).filter((record) => record.subject === subject) : [];
+    const latestId = records.at(-1)?.evidence.resultId;
+    const text = approved.filter((segment) => segment.type === "knowledge_guidance" && citedCareText(segment.basis, context))
+      .map((segment) => (segment as Extract<ResponseSegment, { type: "knowledge_guidance" }>).text).join(" ");
+    const facets = (value: string) => ["wash", "dry", "reshape", "bleach", "spot clean", "professional dry clean", "air", "abrasive", "damp cloth"]
+      .filter((facet) => new RegExp(`\\b${facet.replace(/ /g, "[ -]+")}\\w*`, "i").test(value));
+    const present = new Set(facets(text));
+    const selected = records.filter((record) => record.evidence.resultId === latestId
+      && facets(record.text).some((facet) => !present.has(facet)));
+    if (selected.length) {
+      const segment: ResponseSegment = { type: "knowledge_guidance", text: Array.from(new Set(selected.map((record) => record.text))).join("\n\n"),
+        basis: { result_id: latestId!, field_paths: selected.map((record) => `results[${record.resultIndex}].evidence_sections[${record.sectionIndex}].${record.textField}`) } };
+      if (segment.basis.field_paths.length <= 32 && !validateSegment(segment, context, -1).length) {
+        approved.push(segment); recovery.push({ type: "process", result: "recovered" });
+      }
+    }
+  }
+  if (/\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")) {
+    const order = (context.getResults?.() ?? []).find((evidence) => verifiedUnfulfilledValue(evidence, "fulfillmentStatus") !== null);
+    const items = objectValue(order?.result.data)?.items;
+    const availability = (context.getResults?.() ?? []).filter((evidence) => evidence.toolName === "get_product_availability");
+    const matchingStock = Array.isArray(items) && availability.some((evidence) => {
+      const products = objectValue(evidence.result.data)?.products;
+      return Array.isArray(products) && products.some((product, productIndex) => {
+        const variants = objectValue(product)?.variants;
+        return Array.isArray(variants) && variants.some((variant, variantIndex) => {
+          const value = objectValue(variant);
+          return value?.availability_state === "OUT_OF_STOCK"
+            && (evidence.result.status === "ok" || verifiedAmbiguousAvailability(evidence,
+              `products[${productIndex}].variants[${variantIndex}].availability_state`, context)) && items.some((item) =>
+            meaningful(objectValue(item)?.variantId) && String(objectValue(item)?.variantId) === String(value?.id));
+        });
+      });
+    });
+    const alreadyBounded = approved.some((segment) => segment.type === "limitation"
+      && /not (?:confirm|establish)|cannot (?:confirm|establish)|couldn['’]?t (?:verify|confirm)|unverified/i.test(segment.text));
+    if (order && matchingStock && !alreadyBounded) {
+      const segment: ResponseSegment = { type: "limitation",
+        text: "The available order and stock records do not establish that stock is the reason for this order's delay.",
+        basis: { result_id: order.resultId, field_paths: ["id", "fulfillmentStatus"] } };
+      if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "status", result: "recovered" }); }
+    }
+  }
+  if (/dishwasher/i.test(context.customerMessage ?? "") && productCareRequest(context)) {
+    const subject = selectedCareSubject(context);
+    const selected = subject ? careRecords(context).filter((record) => record.subject === subject) : [];
+    const documentedMethod = selected.some((record) => /dishwasher/i.test(record.text)
+      && !undocumentedDishwasherMethod(record.text));
+    const alreadyBounded = approved.some((segment) => segment.type === "limitation" && /dishwasher/i.test(segment.text));
+    const evidence = selected.at(-1);
+    if (evidence && !documentedMethod && !alreadyBounded) {
+      const segment: ResponseSegment = { type: "limitation", text: "Dishwasher safety is not established in the retrieved product guidance.",
+        basis: { result_id: evidence.evidence.resultId, field_paths: [`results[${evidence.resultIndex}].evidence_sections[${evidence.sectionIndex}].${evidence.textField}`] } };
+      if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "process", result: "recovered" }); }
+    }
+  }
+  if (!approved.length && productCareRequest(context) && !selectedCareSubject(context)
+    && !meaningful(context.customerProvidedContext?.product) && !context.turnIR?.actions.length
+    && (careRecords(context).length || /\b(?:it|this|that|den|det)\b/i.test(context.customerMessage ?? ""))) {
+    const segment: ResponseSegment = { type: "question", purpose: "clarify_task",
+      text: "Which product or model are you referring to?", capability: null, missing_arguments: [] };
+    if (!validateSegment(segment, context, -1).length) { approved.push(segment); recovery.push({ type: "process", result: "recovered" }); }
+  }
+  return recovery.length ? { ...validation, approvedSegments: approved,
+    completenessDiagnostics: { entered: true, cues: [], recovery } } : validation;
+}
+
+export function recoverSupportedProductResponse(
+  input: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext" | "interactionChannel" | "locale" | "activeOrder" | "getResults">,
+): string | null {
+  const results = input.getResults?.() ?? [];
+  const context: ResponseValidationContext = {
+    ...input, getResults: () => results, getResult: (id) => results.find((record) => record.resultId === id),
+    definitions: [], manifest: { readTools: results.map((record) => record.toolName), proposalOnlyTools: [],
+      configured: { knowledge: true, commerce: true, tracking: false } },
+  };
+  const recovered = preserveSupportedProductAnswers(validateStructuredResponse(null, context), context);
+  return recovered.approvedSegments.length ? renderResponseSegments(recovered.approvedSegments, context) || null : null;
+}
+
+function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseValidationContext): ResponseSegment {
+  if (segment.type === "question" && ["clarify_item", "clarify_task", "disambiguate_entity"].includes(segment.purpose)
+    && productCareRequest(context) && !segment.basis && !context.turnIR?.actions.length
+    && !meaningful(context.customerProvidedContext?.product) && !selectedCareSubject(context)
+    && (segment.capability === null || segment.capability === "search_product_knowledge")
+    && segment.missing_arguments.every((argument) => argument === "product")
+    && /\b(?:which|what)\s+(?:product|model|device|item)\b/i.test(segment.text ?? "")) {
+    return { ...segment, purpose: "clarify_task", capability: null, missing_arguments: [] };
+  }
+  if (segment.type === "question" && segment.purpose === "clarify_item"
+    && segment.capability === null && segment.missing_arguments.length === 0 && !segment.basis
+    && !meaningful(context.customerProvidedContext?.product) && !selectedCareSubject(context)
+    && /\b(?:which|what)\s+(?:product|model|device)\b/i.test(segment.text ?? "")
+    && !context.turnIR?.actions.length) {
+    return { ...segment, purpose: "clarify_task" };
+  }
+  if (segment.type === "limitation" && productCareRequest(context)
+    && /dishwasher/i.test(context.customerMessage ?? "") && /dishwasher/i.test(segment.text)
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && segment.basis && citedCareText(segment.basis, context)) {
+    const records = careRecords(context).filter((record) => record.subject === selectedCareSubject(context));
+    if (!records.some((record) => /dishwasher/i.test(record.text) && !undocumentedDishwasherMethod(record.text))) {
+      return { ...segment, text: "Dishwasher safety is not established in the retrieved product guidance." };
+    }
+  }
+  if (segment.type === "limitation" && /\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")
+    && ["get_order", "get_product_availability"].includes(resultFor(segment.basis, context)?.toolName ?? "")
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && !validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, -1).length) {
+    return { ...segment, text: "The available order and stock records do not establish that stock is the reason for this order's delay." };
+  }
+  if (segment.type === "knowledge_guidance" && /\b(?:price|pris)\b/i.test(context.customerMessage ?? "")
+    && /\b(?:shipping|postage|include|includes|included|insert|fragt|indeholder)\b/i.test(context.customerMessage ?? "")
+    && ["search_policy", "search_product_knowledge"].includes(resultFor(segment.basis, context)?.toolName ?? "")
+    && !containsUnvalidatedOperationalCommitment(segment.text)
+    && segment.basis.field_paths.every((path) => /^results\[\d+\]\.evidence_sections\[\d+\]\.(?:content|text)$/.test(normalizedDataPath(path)))
+    && !validateBasis(segment.basis, context, { requireOk: true, requireMeaningfulFields: true, scope: "data" }, -1).length) {
+    const evidence = resultFor(segment.basis, context)!;
+    const values = segment.basis.field_paths.map((path) => dataFieldValue(evidence.result, path).value);
+    if (values.every((value) => typeof value === "string")) {
+      segment = { ...segment, text: Array.from(new Set(values as string[])).join("\n\n") };
+    }
+  }
+  const careBasis = segment.type === "knowledge_guidance" ? segment.basis
+    : segment.type === "fact" && segment.fact_kind === "product_value" && segment.evidence.length === 1 ? segment.evidence[0] : null;
+  if (careBasis && productCareRequest(context) && careBasis.field_paths.some((path) => normalizedDataPath(path) === "results")
+    && resultFor(careBasis, context)?.toolName === "search_product_knowledge"
+    && !validateBasis(careBasis, context, { requireOk: true, requireMeaningfulFields: true, scope: "data" }, -1).length) {
+    const subject = selectedCareSubject(context);
+    const selected = careRecords(context).filter((record) => record.subject === subject && record.evidence.resultId === careBasis.result_id);
+    if (selected.length && selected.length <= 32) {
+      const basis = { result_id: careBasis.result_id, field_paths: selected.map((record) =>
+        `results[${record.resultIndex}].evidence_sections[${record.sectionIndex}].${record.textField}`) };
+      if (segment.type === "knowledge_guidance") segment = { ...segment, basis };
+      else if (segment.type === "fact") segment = { ...segment, evidence: [basis] };
+    }
+  }
+  // A static care value cited as a live product fact is a semantic kind error.
+  // Render only the actual cited source content, never model-written prose.
+  if (segment.type === "fact" && segment.fact_kind === "product_value" && productCareRequest(context)
+    && segment.evidence.length === 1) {
+    const basis = segment.evidence[0];
+    const evidence = resultFor(basis, context);
+    if (evidence?.toolName === "search_product_knowledge" && !validateKnowledgeBasis(basis, context, -1).length) {
+      const text = citedCareText(basis, context);
+      if (text) return { type: "knowledge_guidance", text, basis };
+    }
+  }
+  return segment;
+}
+
 export function validateStructuredResponse(input: unknown, context: ResponseValidationContext): ResponseValidationResult {
   const parsed = StructuredResponseSchema.safeParse(parseInput(input));
   if (!parsed.success) {
@@ -1525,10 +1910,14 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
   const approvedSegments: ResponseSegment[] = [];
   const rejectedSegments: Array<{ index: number; type?: string; issues: ResponseValidationIssue[] }> = [];
   for (let index = 0; index < parsed.data.segments.length; index += 1) {
-    const segment = parsed.data.segments[index];
+    const segment = canonicalSemanticSegment(parsed.data.segments[index], context);
     const issues = validateSegment(segment, context, index);
     if (issues.length) rejectedSegments.push({ index, type: segment.type, issues });
-    else approvedSegments.push(segment);
+    else {
+      const careContent = segment.type === "knowledge_guidance" && productCareRequest(context)
+        ? citedCareText(segment.basis, context) : null;
+      approvedSegments.push(careContent && segment.type === "knowledge_guidance" ? { ...segment, text: careContent } : segment);
+    }
   }
   return {
     schemaValid: true,
@@ -2055,8 +2444,10 @@ function factEvidenceValues(segment: Extract<ResponseSegment, { type: "fact" }>,
     if (!evidence) return [];
     return basis.field_paths.flatMap((path) => {
       const field = dataFieldValue(evidence.result, path);
-      if (!field.exists || !meaningful(field.value)) return [];
-      return [{ path, value: field.value, evidence }];
+      const value = segment.fact_kind === "order_fulfillment_status"
+        ? verifiedUnfulfilledValue(evidence, path) ?? field.value : field.value;
+      if (!field.exists || !meaningful(value)) return [];
+      return [{ path, value, evidence }];
     });
   });
 }
@@ -2503,8 +2894,7 @@ function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, c
   const values = factEvidenceValues(segment, context);
   switch (segment.fact_kind) {
     case "product_value": {
-      const item = values.find((candidate) => safeLiveProductFieldPath(candidate.path));
-      if (!item) return "";
+      return Array.from(new Set(values.filter((candidate) => safeLiveProductFieldPath(candidate.path)).map((item) => {
       const locale = localeFor(context);
       const phrase = /\.variants\[\d+\]\.title$/i.test(item.path)
         ? locale === "da" ? "Varianten er" : "The variant is"
@@ -2516,6 +2906,7 @@ function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, c
               ? locale === "da" ? "Prisen er" : "The price is"
               : locale === "da" ? "Produktinformationen er" : "The product information is";
       return `${phrase} ${String(item.value)}.`;
+      }))).join("\n\n");
     }
     case "product_availability": {
       const item = values.find((candidate) => safeLiveProductAvailabilityFieldPath(candidate.path));
@@ -3898,13 +4289,14 @@ export function ensureAnswerCompleteness(
   validation: ResponseValidationResult,
   context: ResponseValidationContext,
 ): ResponseValidationResult {
+  validation = preserveSupportedProductAnswers(validation, context);
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
   const plan = actionablePolicyPlan(context);
   const completenessDiagnostics: ResponseCompletenessDiagnostics = {
     entered: true,
     cues: [...cues],
-    recovery: [],
+    recovery: [...(validation.completenessDiagnostics?.recovery ?? [])],
     intent_resolved_by_approved_segment: approvedSegmentsResolveIntent(validation, context, cues, plan),
     ...(cues.includes("timing") ? { timing_candidates: timingCandidateDiagnosticsForContext(context) } : {}),
   };
