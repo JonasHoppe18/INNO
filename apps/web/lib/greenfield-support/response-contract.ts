@@ -972,7 +972,8 @@ function verifiedAmbiguousAvailability(
       && String(source?.id) === String(context.activeOrder.order?.id)) {
       const items = Array.isArray(source?.items) ? source.items : [];
       const ids = new Set(items.map((item) => objectValue(item)?.variantId).filter(meaningful).map(String));
-      return ids.size === 1 && ids.has(String(variantId));
+      return items.length > 0 && items.every((item) => meaningful(objectValue(item)?.variantId))
+        && ids.size === 1 && ids.has(String(variantId));
     }
     if (record.toolName === "get_product" && effectiveResultStatus(record) === "ok") {
       const products = Array.isArray(source?.products) ? source.products : [];
@@ -1846,7 +1847,6 @@ function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseVal
     }
   }
   if (segment.type === "limitation" && /\b(?:because|due to|caused by|reason)\b[\s\S]{0,80}\b(?:stock|inventory)\b/i.test(context.customerMessage ?? "")
-    && /\b(?:cause|reason|delay|because)\b/i.test(segment.text)
     && ["get_order", "get_product_availability"].includes(resultFor(segment.basis, context)?.toolName ?? "")
     && !containsUnvalidatedOperationalCommitment(segment.text)
     && !validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, -1).length) {

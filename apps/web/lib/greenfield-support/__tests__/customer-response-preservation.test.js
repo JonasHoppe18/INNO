@@ -433,3 +433,20 @@ describe("an order update preserves requested shipment state independently of pa
     expect(result.approvedSegments.filter(s => s.fact_kind === "order_fulfillment_status")).toHaveLength(0);
   });
 });
+
+
+describe("order evidence cannot carry inventory prose or partial item identity", () => {
+  it("replaces source-bound stock-causation prose with the bounded uncertainty", () => {
+    const order = record("order", "get_order", { id: "o1", fulfillmentStatus: null, fulfillments: [] });
+    const ctx = context([order], { customerMessage: "Is it stuck because of stock?" });
+    const result = validate(ctx, { type: "limitation", text: "The product is out of stock and is holding up the order.", basis: basis("order", "id") });
+    const answer = renderResponseSegments(result.approvedSegments, ctx);
+    expect(answer).toContain("do not establish"); expect(answer).not.toContain("is out of stock"); expect(answer).not.toContain("holding up");
+  });
+  it("rejects an ambiguous stock binding if any order item lacks verified variant identity", () => {
+    const order = record("order", "get_order", { id: "o1", items: [{ variantId: "v1" }, { variantId: null }] });
+    const stock = record("stock", "get_product_availability", { status: "ambiguous", selection: "ambiguous", provider: "shopify_read_only", source: "shopify_live", products: [{ id: "p1", variants: [{ id: "v1", availability_state: "OUT_OF_STOCK" }] }] }, "invalid_request");
+    const ctx = context([order, stock], { activeOrder: { state: "verified", order: { id: "o1" } } });
+    expect(validate(ctx, fact("product_availability", "stock", "products[0].variants[0].availability_state")).allValid).toBe(false);
+  });
+});
