@@ -513,7 +513,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     text: inferResponseLocale(options.message) === "da" ? "Hvad er den nye komplette leveringsadresse?" : "What is the complete new delivery address?",
     basis: { result_id: missingAddress.result.resultId!, field_paths: ["data.action_eligibility"] } }] } } : null;
   const requirements = caseIntakeRequirements(conversationContext, turnIR, registry.getOrderCandidates(),
-    registry.getResults().filter(record => record.toolName === "get_order").at(-1)?.result.status, options.capabilities.remedyAuthorization);
+    registry.getResults().filter(record => record.toolName === "get_order" || record.toolName === "get_order_history").at(-1)?.result.status, options.capabilities.remedyAuthorization);
   if (requirements[0]?.field === "photo" && intentDecision?.outcome === "assessment_required") intentDecision = null;
   let intakeDecision: { structuredOutput: unknown } | null = null;
   if (requirements.length && !intentDecision && !addressQuestion) {

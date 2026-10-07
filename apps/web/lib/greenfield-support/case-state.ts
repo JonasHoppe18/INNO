@@ -138,7 +138,8 @@ export function caseIntakeRequirements(context: ConversationContext, ir: TurnIR 
   if (!state?.scope.customerEmail || state.identityUnavailable) return [{ field: state?.customerEmail ? "identity_verification" : "customer_email",
     owner: state?.customerEmail ? "human" : "customer" }];
   if (candidates.length > 1 && !context.activeOrder) return [{ field: "order_choice", owner: "customer" }];
-  if (!context.activeOrder) return [{ field: "order_reference", owner: "customer" }];
+  if (!context.activeOrder) return [orderReadStatus === "error" || orderReadStatus === "unavailable"
+    ? { field: "order_lookup", owner: "live_data" } : { field: "order_reference", owner: "customer" }];
   if (context.activeOrder.state === "unresolved") return [{
     field: orderReadStatus === "not_found" ? "order_reference" : "order_lookup",
     owner: orderReadStatus === "not_found" ? "customer" : "live_data" }];

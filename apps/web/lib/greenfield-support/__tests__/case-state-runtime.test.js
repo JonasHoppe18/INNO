@@ -49,3 +49,5 @@ describe('Customer evidence ownership in normal runtime',()=>{
  expect(r.response).toMatch(/photo/i);expect(r.response).not.toMatch(/email|order number/i);expect(r.proposedActions).toEqual([]);expect(r.actionExecutions).toEqual([]);expect(r.trace.diagnostics.fallback_reason).toBeNull();
  });
 });
+
+it('keeps a failed candidate lookup provider-owned rather than requesting known identity',async()=>{const s=await session();s.historyRead.mockRejectedValue(new Error('Provider timeout'));const r=await s.turn('Where is my order?',status);expect(r.response).not.toMatch(/what email|order number|order reference\?/i);expect(r.trace.diagnostics.fallback_reason).toBeNull();expect(r.proposedActions).toEqual([]);});
