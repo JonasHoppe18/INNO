@@ -191,6 +191,8 @@ export interface ResponseValidationContext {
   };
   /** Server-owned channel context used to adapt source instructions to the current interaction. */
   interactionChannel?: GreenfieldInteractionChannel;
+  knownCaseArguments?: string[];
+  confirmedAction?: (capability: string) => boolean;
   /** Server-owned identity availability; never inferred from untrusted message text. */
   trustedCustomerIdentity?: {
     verified: boolean;
@@ -1143,6 +1145,9 @@ function validateCapabilityArguments(
   const required = new Set(definition.parameters.required);
   const issues: ResponseValidationIssue[] = [];
   for (const argument of missingArguments) {
+    if (context.knownCaseArguments?.includes(argument)) {
+      issues.push({ index, code: "known_case_argument_reasked", message: "This argument is already present in the scoped canonical case context." });
+    }
     if (!properties.includes(argument)) {
       issues.push({ index, code: `${codePrefix}_argument_not_in_schema`, message: `The requested argument is not accepted by ${capability}.` });
     } else if (!required.has(argument)) {
@@ -2137,6 +2142,10 @@ function renderActionOffer(segment: Extract<ResponseSegment, { type: "action_off
       : "I still need a few details before I can prepare the requested change.";
   }
   const action = customerFacingAction(segment.capability, locale);
+  if (!segment.missing_arguments.length && context.confirmedAction?.(segment.capability)) {
+    return locale === "da" ? "Din bekræftede anmodning er klar til gennemgang. Der er ikke ændret noget."
+      : "Your confirmed request is ready for review. Nothing has been changed.";
+  }
   if (locale === "da") {
     if (segment.missing_arguments.length) {
       return `Kan du sende ${listArguments(segment.missing_arguments, locale)} først? Når jeg har dem, kan jeg hjælpe dig med at ${action}. Der bliver ikke ændret noget, før du bekræfter.`;

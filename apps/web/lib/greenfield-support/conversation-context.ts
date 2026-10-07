@@ -266,6 +266,7 @@ export function modelConversationContext(
   const context: JsonObject = {
     turn: (previous?.turn ?? 0) + 1,
     interaction_channel: interactionChannel ?? null,
+    case_state: previous?.caseState ? JSON.parse(JSON.stringify(previous.caseState)) : null,
     active_order: activeOrder
       ? {
           requested_order_id: activeOrder.requestedOrderId,
@@ -305,6 +306,7 @@ export function nextConversationContext(
   return {
     turn: (previous?.turn ?? 0) + 1,
     activeOrder,
+    ...(previous?.caseState ? { caseState: previous.caseState } : {}),
     customerSignal: isCustomerResolution(message) ? "resolution" : null,
     ...(customerProvided ? { customerProvided } : {}),
     ...(normalizedOrderCandidates.length ? { orderCandidates: normalizedOrderCandidates } : {}),

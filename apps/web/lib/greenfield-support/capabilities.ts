@@ -24,6 +24,7 @@ import type {
 
 export interface CapabilityContext {
   turnIR?: TurnIR;
+  customerIdentityMismatch?: boolean;
   /** Server-owned technical interpretation failure; no proposal tool may proceed. */
   proposalActionsBlocked?: boolean;
   tenant: TenantContext;
@@ -516,6 +517,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
   const registry = {
     definitions,
     manifest,
+    recordCaseRequirements(data: JsonObject) { return recordResult("resolve_case_state", { status: "ok", data }); },
     evaluateActionIntents(turnIR: TurnIR) {
       const focus = orderFocus;
       if (!context.tenant.customerEmail?.trim() || !context.tenant.shopId || focus?.state !== "verified" || !focus.order) return [];
@@ -571,7 +573,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
       const previousSelection = hasExplicitOrder ? null : selectedCandidate(orderCandidates, context.customerMessage ?? "", product);
       if (!context.tenant.customerEmail) return [];
       if (explicitOrderReference) {
-        if (orderFocus?.state === "verified") return [];
+        if (orderFocus?.state === "verified" && orderFocus.order && resultRecords.size) return [];
         const requestedOrderId = orderFocus?.requestedOrderId ?? explicitOrderReference;
         return [{
           tool: "get_order",
@@ -579,7 +581,14 @@ export function createCapabilityRegistry(context: CapabilityContext) {
           result: await registry.execute("get_order", JSON.stringify({ order_id: requestedOrderId })),
         }];
       }
-      if (orderFocus || (!shouldPreResolveCustomerOrders(context.customerMessage ?? "") && !previousSelection)) return [];
+      if (orderFocus) {
+        const requestedOrderId = orderFocus.requestedOrderId;
+        orderFocus = { requestedOrderId, state: "unresolved", order: null };
+        return [{ tool: "get_order", arguments: { order_id: requestedOrderId },
+          result: await registry.execute("get_order", JSON.stringify({ order_id: requestedOrderId })) }];
+      }
+      if (!context.turnIR?.orderContext && !context.turnIR?.actions.length
+        && !shouldPreResolveCustomerOrders(context.customerMessage ?? "") && !previousSelection) return [];
       if (previousSelection) {
         orderCandidates = [];
         return [{
@@ -592,10 +601,14 @@ export function createCapabilityRegistry(context: CapabilityContext) {
       try {
         const orders = await context.commerce.getOrderHistory(context.tenant.customerEmail);
         const candidates = safeOrderCandidates(orders);
-        const fullHistoryRequest = FULL_ORDER_HISTORY_REQUEST.test(context.customerMessage ?? "");
-        const selected = candidates.length === 1
-          ? candidates[0]
-          : selectedCandidate(candidates, context.customerMessage ?? "", product);
+        const fullHistoryRequest = context.turnIR?.orderSelection === "latest" || FULL_ORDER_HISTORY_REQUEST.test(context.customerMessage ?? "");
+        const dates = orders.map(order => ({ order, time: Date.parse(order.createdAt ?? "") }));
+        const newest = dates.length && dates.every(value => Number.isFinite(value.time))
+          ? dates.sort((a, b) => b.time - a.time) : [];
+        const latest = context.turnIR?.orderSelection === "latest" && newest.length
+          && (newest.length === 1 || newest[0].time > newest[1].time) ? orderCandidateFromSnapshot(newest[0].order) : null;
+        const selected = latest ?? (candidates.length === 1 ? candidates[0]
+          : selectedCandidate(candidates, context.customerMessage ?? "", product));
         orderCandidates = selected ? [] : candidates;
         const historyResult = recordResult("get_order_history", fullHistoryRequest
           ? { status: orders.length ? "ok" : "not_found", data: jsonValue({ orders }) }
@@ -643,7 +656,8 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             const requestedOrderId = orderFocus.requestedOrderId;
             orderFocus = { requestedOrderId, state: "unresolved", order: null };
             const current = await context.commerce.getOrder(requestedOrderId);
-            orderFocus = { requestedOrderId, state: current ? "verified" : "unresolved", order: current };
+            const matched = current && [current.id, current.orderNumber].some(reference => sameOrderReference(reference, requestedOrderId));
+            orderFocus = { requestedOrderId, state: matched ? "verified" : "unresolved", order: matched ? current : null };
           }
           switch (toolName) {
           case "search_policy":
@@ -668,6 +682,10 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             }
             orderCandidates = [];
             const order = await context.commerce.getOrder(orderId);
+            if (order && ![order.id, order.orderNumber].some(reference => sameOrderReference(reference, orderId))) {
+              orderFocus = { requestedOrderId: orderId, state: "unresolved", order: null };
+              return { status: "invalid_request", error: { code: "order_identity_mismatch", message: "The returned order does not match the requested reference." } };
+            }
             if (!order) {
               orderFocus = { ...orderFocus, state: "unresolved", order: null };
               return { status: "not_found", data: jsonValue({ order_id: orderId, order_focus: orderFocusData(orderFocus) }) };
@@ -706,6 +724,7 @@ export function createCapabilityRegistry(context: CapabilityContext) {
             return { status: orders.length ? "ok" : "not_found", data: jsonValue({ orders }) };
           }
           case "get_customer": {
+            if (context.customerIdentityMismatch) return { status: "unavailable", error: { code: "customer_identity_scope_mismatch", message: "Provider identity does not match the current case." } };
             const customer = await context.commerce.getCustomer();
             return customer ? { status: "ok", data: jsonValue(customer) } : { status: "not_found" };
           }

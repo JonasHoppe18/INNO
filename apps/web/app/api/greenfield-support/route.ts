@@ -1,3 +1,4 @@
+import { resolvedCaseEmail } from "@/lib/greenfield-support/case-state";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
@@ -105,8 +106,11 @@ export async function POST(request: Request) {
       workspaceId: scope.workspaceId,
     });
 
+    const tenant = { workspaceId: scope.workspaceId, shopId: shop.id, caseId: threadId || crypto.randomUUID(),
+      customerEmail: customer.email, customerName: null };
+    tenant.customerEmail = resolvedCaseEmail(threadState?.conversationContext, tenant);
     const result = await runGreenfieldAgentWithAgentsSdk({
-      tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: null },
+      tenant,
       customerDisplayName: customer.name,
       message,
       interactionChannel: "support_inbox",
@@ -114,12 +118,12 @@ export async function POST(request: Request) {
       history: threadState?.history || normalizeHistory(body?.history),
       conversationContext: threadState?.conversationContext,
       capabilities: {
-        tenant: { workspaceId: scope.workspaceId, shopId: shop.id, customerEmail: customer.email, customerName: null },
+        tenant,
         knowledge: new SupabaseKnowledgeStore(serviceClient),
         commerce: new ShopifyReadOnlyProvider({
           shopDomain: credentials.shop_domain,
           accessToken: credentials.access_token,
-          customer: { email: customer.email, name: null },
+          customer: { email: tenant.customerEmail, name: null },
         }),
         tracking: createGreenfieldTrackingProvider(),
       },

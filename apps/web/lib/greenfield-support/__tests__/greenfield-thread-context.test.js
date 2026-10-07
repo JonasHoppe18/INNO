@@ -318,7 +318,8 @@ describe("greenfield persisted thread context", () => {
       ]),
     });
 
-    expect(second.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual(["get_order"]);
+    expect(second.trace.events.filter((event) => event.type === "tool_call").map((event) => event.data.name)).toEqual(["get_order", "get_order"]);
+    expect(second.trace.events.find((event) => event.type === "tool_call").data.preloaded).toBe(true);
     expect(second.response).toContain("shipped");
   });
 

@@ -1,3 +1,4 @@
+import { resolvedCaseEmail } from "@/lib/greenfield-support/case-state";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
@@ -504,7 +505,8 @@ export async function POST(request: Request) {
     const tenant = {
       workspaceId: scope.workspaceId,
       shopId: shop.id,
-      customerEmail: session.customer_email,
+      caseId: session.id,
+      customerEmail: resolvedCaseEmail(contextBefore as any, { workspaceId: scope.workspaceId, shopId: shop.id, caseId: session.id, customerEmail: session.customer_email }),
       customerName: null,
     };
     const result = await runGreenfieldAgentWithAgentsSdk({
@@ -522,7 +524,7 @@ export async function POST(request: Request) {
         commerce: new ShopifyReadOnlyProvider({
           shopDomain: credentials.shop_domain,
           accessToken: credentials.access_token,
-          customer: { email: session.customer_email, name: null },
+          customer: { email: tenant.customerEmail, name: null },
         }),
         tracking: createGreenfieldTrackingProvider(),
       },
