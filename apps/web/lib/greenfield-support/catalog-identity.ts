@@ -7,7 +7,7 @@ const equivalents: Record<string, string> = {
   lampe: "lamp", lampen: "lamp", vasen: "vase",
 };
 const functionWords = new Set(
-  "a an the this that my your please can could i buy is it in stock today now right price for of and with about what does include inside postage variant sku to den det en et jeg kan er har på lager pris tak vil gerne købe med til".split(" ").map(normalize),
+  "a an the this that my your please can could i buy is it in stock today now right price for of and with about what does include inside postage product variant sku id color colour finish option actually then to den det en et jeg kan er har på lager pris tak vil gerne købe med til".split(" ").map(normalize),
 );
 
 function normalize(value: unknown): string {
