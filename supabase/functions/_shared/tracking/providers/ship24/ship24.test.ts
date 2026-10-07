@@ -298,14 +298,14 @@ Deno.test("GLS/PostNord stay native; other carriers remain eligible for live loo
 Deno.test("non-GLS/PostNord carrier + ship24 configured → Ship24 adapter called", async () => {
   let called = false;
   const detail = await fetchTrackingDetailForCandidate(
-    { company: "Bring", trackingNumber: "370438109757988982", trackingUrl: "" },
+    { company: "UPS", trackingNumber: "UPS123456789", trackingUrl: "" },
     {
       ship24Configured: () => true,
       fetchShip24: (tn) => {
         called = true;
         return Promise.resolve(
           ship24PayloadToTrackingDetail(
-            ship24Payload({ milestone: "in_transit", courierCode: "bring" }),
+            ship24Payload({ milestone: "in_transit", courierCode: "ups" }),
             { trackingNumber: tn },
           ),
         );
@@ -314,7 +314,7 @@ Deno.test("non-GLS/PostNord carrier + ship24 configured → Ship24 adapter calle
   );
   assertEquals(called, true);
   assertEquals(detail.lookupSource, "ship24_api");
-  assertEquals(detail.carrier, "Bring");
+  assertEquals(detail.carrier, "UPS");
 });
 
 // ── 15. P1 regression: Ship24-derived facts respected by the claim guardrail ──
