@@ -9,6 +9,7 @@ import { SettingsRouteContext } from "@/components/settings/SettingsRouteContext
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
 import { AiInstructionsSection } from "@/components/settings/sections/AiInstructionsSection";
+import { EmailSection } from "@/components/settings/sections/email/EmailSection";
 import {
   DEFAULT_EMAIL_SECTION,
   parseSettingsPathname,
@@ -20,6 +21,7 @@ import {
 const SECTION_COMPONENTS = {
   general: GeneralSection,
   ai: AiInstructionsSection,
+  email: EmailSection,
 };
 
 function SettingsContent({ section }) {
