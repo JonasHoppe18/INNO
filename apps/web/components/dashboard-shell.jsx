@@ -10,6 +10,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteHeaderActionsProvider } from "@/components/site-header-actions";
 import { SetupBanner } from "@/components/onboarding/SetupBanner";
 import { cn } from "@/lib/utils";
+import { isSettingsSectionPath } from "@/lib/settings/navigation";
 
 export function DashboardShell({ children }) {
   const pathname = usePathname();
@@ -21,7 +22,7 @@ export function DashboardShell({ children }) {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
   const isInboxWorkspace = pathname === "/inbox";
-  const isSettingsWorkspace = pathname === "/settings";
+  const isSettingsWorkspace = isSettingsSectionPath(pathname);
   const isPlaygroundWorkspace = pathname === "/playground";
   const isFixedWorkspace = isInboxWorkspace || isSettingsWorkspace || isPlaygroundWorkspace;
 

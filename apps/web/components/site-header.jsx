@@ -21,6 +21,7 @@ const TITLE_MAP = {
 
 function getSiteTitle(pathname) {
   if (TITLE_MAP[pathname]) return TITLE_MAP[pathname];
+  if (pathname?.startsWith("/settings")) return "Settings";
   if (pathname?.startsWith("/knowledge/product-questions")) return "Product Questions";
   if (pathname?.startsWith("/knowledge/returns")) return "Returns & Refunds";
   if (pathname?.startsWith("/knowledge/shipping")) return "Shipping & Delivery";

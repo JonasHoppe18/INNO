@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { settingsPageKey } from "@/lib/settings/navigation";
 
 export function GlobalTestModeBanner() {
-  const pathname = usePathname();
+  const pageKey = settingsPageKey(usePathname());
   const [testModeEnabled, setTestModeEnabled] = useState(false);
   const bannerRef = useRef(null);
 
@@ -30,7 +31,7 @@ export function GlobalTestModeBanner() {
     return () => {
       active = false;
     };
-  }, [pathname]);
+  }, [pageKey]);
 
   useEffect(() => {
     const root = document.documentElement;
