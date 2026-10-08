@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsWorkspaceProvider, useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
@@ -49,7 +49,10 @@ function SettingsContent({ section }) {
 export function SettingsWorkspace() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const route = parseSettingsPathname(pathname) || { section: "general", emailSection: null };
+  const route = useMemo(
+    () => parseSettingsPathname(pathname) || { section: "general", emailSection: null },
+    [pathname]
+  );
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
@@ -64,61 +67,71 @@ export function SettingsWorkspace() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
 
-  // Browser back/forward: same unsaved-changes question as the menu.
-  const lastUrlRef = useRef("");
-  useEffect(() => {
-    lastUrlRef.current = `${window.location.pathname}${window.location.search}`;
-  }, [pathname, searchParams]);
-  useEffect(() => {
-    const handlePopState = () => {
-      const decision = decideSettingsPopState({
-        previousUrl: lastUrlRef.current,
-        nextUrl: `${window.location.pathname}${window.location.search}`,
-        dirty: dirtyRef.current,
-        confirm: (message) => window.confirm(message),
-        restore: (url) => window.history.pushState(null, "", url),
-      });
-      if (decision === "discard") setDirty(false);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  // The rendered section follows the URL only after the unsaved-changes check, so
+  // browser back/forward cannot unmount a dirty section before the user answers.
+  const [active, setActive] = useState(route);
+  const activeUrlRef = useRef("");
+  useLayoutEffect(() => {
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (route.section === active.section && route.emailSection === active.emailSection) {
+      activeUrlRef.current = currentUrl;
+      return;
+    }
+    const decision = decideSettingsPopState({
+      previousUrl: activeUrlRef.current,
+      nextUrl: currentUrl,
+      dirty: dirtyRef.current,
+      confirm: (message) => window.confirm(message),
+      restore: (url) => window.history.pushState(null, "", url),
+    });
+    if (decision === "restore") return;
+    if (decision === "discard") {
+      dirtyRef.current = false;
+      setDirty(false);
+    }
+    activeUrlRef.current = currentUrl;
+    setActive(route);
+  }, [route, active, searchParams]);
 
   // Client-side only: pushState keeps section switches instant (no server round trip).
   const navigate = useCallback(
     (section, emailSection = null) => {
-      const leavingSection = section !== route.section;
-      if (leavingSection && dirtyRef.current && !window.confirm("Discard your unsaved changes?")) return;
-      if (leavingSection) setDirty(false);
+      const leavingSection = section !== active.section;
+      if (leavingSection && dirtyRef.current) {
+        if (!window.confirm("Discard your unsaved changes?")) return;
+        // Already confirmed here; the URL check above must not ask again.
+        dirtyRef.current = false;
+        setDirty(false);
+      }
       window.history.pushState(
         null,
         "",
         withSearchParams(settingsPath(section, emailSection), searchParams, ["tab", "section"])
       );
     },
-    [route.section, searchParams]
+    [active.section, searchParams]
   );
 
   const routeValue = useMemo(
     () => ({
-      section: route.section,
-      emailSection: route.emailSection || DEFAULT_EMAIL_SECTION,
+      section: active.section,
+      emailSection: active.emailSection || DEFAULT_EMAIL_SECTION,
       navigate,
       setDirty,
     }),
-    [route.section, route.emailSection, navigate]
+    [active.section, active.emailSection, navigate]
   );
 
   return (
     <SettingsWorkspaceProvider>
       <SettingsRouteContext.Provider value={routeValue}>
         <SettingsShell
-          activeSection={route.section}
+          activeSection={active.section}
           onSelectSection={(key) => {
-            if (key !== route.section) navigate(key);
+            if (key !== active.section) navigate(key);
           }}
         >
-          <SettingsContent section={route.section} />
+          <SettingsContent section={active.section} />
         </SettingsShell>
       </SettingsRouteContext.Provider>
     </SettingsWorkspaceProvider>

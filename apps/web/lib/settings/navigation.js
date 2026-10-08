@@ -111,3 +111,9 @@ export function decideSettingsPopState({ previousUrl, nextUrl, dirty, confirm, r
   restore(previousUrl);
   return "restore";
 }
+
+// Settings sections share one page; page-level effects keyed on the pathname
+// should not rerun when only the section changes.
+export function settingsPageKey(pathname) {
+  return isSettingsSectionPath(pathname) ? "/settings" : pathname;
+}

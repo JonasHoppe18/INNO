@@ -6,6 +6,7 @@ import {
   legacySettingsPath,
   parseSettingsPathname,
   parseSettingsSlug,
+  settingsPageKey,
   settingsPath,
   withSearchParams,
 } from "../navigation";
@@ -73,5 +74,13 @@ describe("settings navigation", () => {
     expect(isSettingsSectionPath("/settings/csat/email")).toBe(false);
     expect(isSettingsSectionPath("/settings/confirmation/email")).toBe(false);
     expect(isSettingsSectionPath("/inbox")).toBe(false);
+  });
+
+  it("treats all settings sections as one page for page-level effects", () => {
+    expect(settingsPageKey("/settings/general")).toBe("/settings");
+    expect(settingsPageKey("/settings/email/routing")).toBe("/settings");
+    expect(settingsPageKey("/settings")).toBe("/settings");
+    expect(settingsPageKey("/settings/csat/email")).toBe("/settings/csat/email");
+    expect(settingsPageKey("/inbox")).toBe("/inbox");
   });
 });
