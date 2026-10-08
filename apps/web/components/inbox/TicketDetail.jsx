@@ -1,3 +1,4 @@
+import { calendarDayKey, formatDayLabel } from "@/lib/format/datetime";
 import { CsatSent } from "@/components/inbox/CsatSent";
 import { ConfirmationSent } from "@/components/inbox/ConfirmationSent";
 import { Component, Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,30 +41,10 @@ const QUESTION_SIGNAL_PATTERN =
 const OPEN_ISSUE_PATTERN =
   /\b(?:problem|issue|doesn'?t|does not|not\s+work(?:ing)?|still|however|but|cost|price|who\s+needs\s+to\s+pay|hvem\s+skal\s+betale)\b/i;
 
-const MESSAGE_DISPLAY_TIMEZONE = "Europe/Copenhagen";
 const MESSAGE_GROUP_WINDOW_MS = 15 * 60 * 1000;
 
 function getMessageTimestampValue(message = null) {
   return message?.received_at || message?.sent_at || message?.created_at || "";
-}
-
-function getDayKeyForDate(date, timeZone = MESSAGE_DISPLAY_TIMEZONE) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year || ""}-${values.month || ""}-${values.day || ""}`;
-}
-
-function shiftDayKey(dayKey, days) {
-  const [year, month, day] = String(dayKey).split("-").map(Number);
-  if (![year, month, day].every(Number.isFinite)) return "";
-  const shifted = new Date(Date.UTC(year, month - 1, day + days));
-  return shifted.toISOString().slice(0, 10);
 }
 
 function getMessageDayKey(message = null) {
@@ -71,24 +52,11 @@ function getMessageDayKey(message = null) {
   if (!timestampValue) return "";
   const date = new Date(timestampValue);
   if (Number.isNaN(date.getTime())) return "";
-  return getDayKeyForDate(date);
+  return calendarDayKey(date);
 }
 
 function formatMessageDayLabel(message = null) {
-  const timestampValue = getMessageTimestampValue(message);
-  if (!timestampValue) return "";
-  const date = new Date(timestampValue);
-  if (Number.isNaN(date.getTime())) return "";
-  const messageDayKey = getMessageDayKey(message);
-  const todayDayKey = getDayKeyForDate(new Date());
-  if (messageDayKey === todayDayKey) return "Today";
-  if (messageDayKey === shiftDayKey(todayDayKey, -1)) return "Yesterday";
-  return date.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    timeZone: MESSAGE_DISPLAY_TIMEZONE,
-    year: "numeric",
-  });
+  return formatDayLabel(getMessageTimestampValue(message));
 }
 
 function canGroupMessages(previousMessage, message, mailboxEmails = []) {
@@ -305,7 +273,7 @@ function TicketDetailComponent({
 
     return node.scrollHeight - node.scrollTop - node.clientHeight > 96;
   }, []);
-  const todayMessageDayKey = useMemo(() => getDayKeyForDate(new Date()), []);
+  const todayMessageDayKey = useMemo(() => calendarDayKey(new Date()), []);
   const firstUnreadMessageIndex = useMemo(() => {
     if (
       !Array.isArray(messages) ||

@@ -1,4 +1,5 @@
 "use client";
+import { formatDate, formatWeekdayDay } from "@/lib/format/datetime";
 
 import {
   Area,
@@ -36,11 +37,10 @@ function groupByWeek(data) {
 }
 
 function formatXLabel(date, periodDays) {
-  const d = new Date(date);
   if (periodDays === "all" || Number(periodDays) >= 90) {
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return formatDate(date);
   }
-  return d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
+  return formatWeekdayDay(date);
 }
 
 export function TicketVolumeChart({ data = [], periodDays = "30", compact = false }) {
@@ -88,7 +88,7 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
             <ChartTooltipContent
               hideLabel={false}
               labelFormatter={(label) =>
-                new Date(label).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                formatDate(label, { year: "always" })
               }
             />
           }

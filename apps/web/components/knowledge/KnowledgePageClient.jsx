@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -40,13 +41,7 @@ import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-t
 
 function formatDate(value) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDateValue(value);
 }
 
 function formatPrice(value) {

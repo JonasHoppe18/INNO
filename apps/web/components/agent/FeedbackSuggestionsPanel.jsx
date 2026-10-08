@@ -1,4 +1,5 @@
 "use client";
+import { formatDate } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -157,7 +158,7 @@ export function FeedbackSuggestionsPanel() {
                     </span>
                   ) : null}
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(row.created_at).toLocaleDateString("da-DK")}
+                    {formatDate(row.created_at)}
                   </span>
                 </div>
 

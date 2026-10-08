@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/format/datetime";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, ChevronRight, Copy, ExternalLink, Loader2, Truck, X } from "lucide-react";
 import Image from "next/image";
@@ -93,22 +94,6 @@ function getStatusDotClasses(status = "") {
   if (lower.includes("transit") || lower.includes("shipped")) return "bg-blue-500";
   if (lower.includes("delay") || lower.includes("exception")) return "bg-red-500";
   return "bg-slate-400";
-}
-
-// 24h, Copenhagen time, matching the rest of the ticket panel ("6 Oct, 19:05").
-// A fixed format keeps the timestamp column aligned.
-function formatTimelineTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Europe/Copenhagen",
-  });
 }
 
 // Events an agent should notice: failed delivery attempts, exceptions, delays.
@@ -460,7 +445,7 @@ export function TrackingCard({
                           </div>
                           {event.timestamp || event.time ? (
                             <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                              {formatTimelineTime(event.timestamp) || event.time}
+                              {formatDateTime(event.timestamp) || event.time}
                             </span>
                           ) : null}
                         </div>

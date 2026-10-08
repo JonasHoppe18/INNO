@@ -1,3 +1,4 @@
+import { formatDate, formatListTimestamp } from "@/lib/format/datetime";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -43,24 +44,7 @@ function createServiceClient() {
 }
 
 function formatTime(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (isToday) {
-    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday =
-    date.getFullYear() === yesterday.getFullYear() &&
-    date.getMonth() === yesterday.getMonth() &&
-    date.getDate() === yesterday.getDate();
-  if (isYesterday) return "Yesterday";
-  return date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+  return formatListTimestamp(value);
 }
 
 function searchParamValue(searchParams, key) {
@@ -69,9 +53,7 @@ function searchParamValue(searchParams, key) {
 }
 
 function formatPeriodDate(value) {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return formatDate(value) || value;
 }
 
 function resolveDashboardPeriod(searchParams = {}) {

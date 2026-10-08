@@ -1,3 +1,4 @@
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 import { memo, useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,20 +10,8 @@ import {
   ticketStatusLabel,
 } from "@/components/inbox/panel-primitives";
 
-const DISPLAY_LOCALE = "en-GB";
-const DISPLAY_TIMEZONE = "Europe/Copenhagen";
-
-const formatDate = (value, { withYear = true } = {}) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString(DISPLAY_LOCALE, {
-    timeZone: DISPLAY_TIMEZONE,
-    day: "numeric",
-    month: "short",
-    ...(withYear ? { year: "numeric" } : {}),
-  });
-};
+const formatDate = (value, { withYear = true } = {}) =>
+  formatDateValue(value, { year: withYear ? "always" : "auto" });
 
 const formatMoney = (amount, currency) => {
   const value = typeof amount === "number" ? amount : Number(String(amount ?? "").replace(",", "."));

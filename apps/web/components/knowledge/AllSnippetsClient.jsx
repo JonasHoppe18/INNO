@@ -1,4 +1,5 @@
 "use client";
+import { formatDate } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -62,7 +63,7 @@ function formatRelative(iso) {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   if (day < 30) return `${day}d ago`;
-  return date.toLocaleDateString();
+  return formatDate(date);
 }
 
 function FilterChip({ label, onClear }) {
