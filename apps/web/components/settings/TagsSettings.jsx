@@ -1,7 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Tag } from "lucide-react";
+import { Pencil, Power, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  SettingsEmptyState,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRowMenu,
+  SettingsTable,
+  SettingsTableRow,
+} from "@/components/settings/ui/settings-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -257,90 +267,62 @@ export function TagsSettings() {
   });
 
   return (
-    <div className="w-full space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Tags</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create tags to categorize tickets. AI automatically applies relevant tags as soon as a new email is received.
-          </p>
-        </div>
+    <SettingsPage
+      width="wide"
+      title="Tags"
+      description="Create tags to categorize tickets. AI automatically applies relevant tags as soon as a new email is received."
+      actions={
         <Button size="sm" onClick={() => { setEditTarget(null); setModalOpen(true); }}>
-          <Plus className="w-4 h-4 mr-1.5" />
           New tag
         </Button>
-      </div>
-
+      }
+    >
       {loading ? (
-        <div className="py-8 text-center text-sm text-muted-foreground">Loading tags…</div>
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading tags…</p>
       ) : tags.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center text-muted-foreground">
-          <Tag className="w-8 h-8 mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">No tags yet</p>
-          <p className="text-xs mt-1">Create your first tag to get started.</p>
-        </div>
+        <SettingsEmptyState title="No tags yet" description="Create your first tag to get started." />
       ) : (
-        <div className="space-y-6">
-          {groupKeys.map((groupKey) => (
-            <div key={groupKey || "__none__"}>
-              {groupKey && (
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {groupKey}
-                </p>
-              )}
-              <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-                {grouped[groupKey].map((tag) => (
-                  <div key={tag.id} className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <div className="min-w-0">
-                        <span className={`text-sm font-medium ${tag.is_active ? "text-foreground" : "text-muted-foreground line-through"}`}>
-                          {tag.name}
-                        </span>
-                        {!tag.is_active && (
-                            <span className="ml-2 text-xs italic text-muted-foreground">inactive</span>
-                        )}
-                        {tag.ai_prompt && (
-                          <p className="mt-0.5 max-w-xs truncate text-xs text-muted-foreground">{tag.ai_prompt}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleActive(tag)}
-                        disabled={!!togglingId}
-                        className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        {tag.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setEditTarget(tag); setModalOpen(true); }}
-                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        aria-label="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(tag)}
-                        disabled={deletingId === tag.id}
-                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-danger hover:text-danger-foreground"
-                        aria-label="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+        groupKeys.map((groupKey) => (
+          <SettingsGroup key={groupKey || "__none__"} title={groupKey || undefined}>
+            <SettingsTable
+              template="minmax(200px,1fr) minmax(0,1.4fr) 40px"
+              columns={[
+                { key: "name", label: "Name" },
+                { key: "rule", label: "AI rule" },
+                { key: "actions", label: "" },
+              ]}
+            >
+              {grouped[groupKey].map((tag) => (
+                <SettingsTableRow key={tag.id} muted={!tag.is_active}>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
+                    <span className="truncate font-medium text-foreground">{tag.name}</span>
+                    {!tag.is_active ? <Badge variant="neutral" className="shrink-0">Inactive</Badge> : null}
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+                  <p className="truncate text-xs text-muted-foreground">{tag.ai_prompt || ""}</p>
+                  <SettingsRowMenu>
+                    <DropdownMenuItem onSelect={() => { setEditTarget(tag); setModalOpen(true); }}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={!!togglingId} onSelect={() => handleToggleActive(tag)}>
+                      <Power className="mr-2 h-4 w-4" />
+                      {tag.is_active ? "Deactivate" : "Activate"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-danger-foreground focus:text-danger-foreground"
+                      disabled={deletingId === tag.id}
+                      onSelect={() => handleDelete(tag)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </SettingsRowMenu>
+                </SettingsTableRow>
+              ))}
+            </SettingsTable>
+          </SettingsGroup>
+        ))
       )}
 
       <TagFormModal
@@ -349,6 +331,6 @@ export function TagsSettings() {
         onSave={editTarget ? handleEdit : handleCreate}
         initial={editTarget}
       />
-    </div>
+    </SettingsPage>
   );
 }
