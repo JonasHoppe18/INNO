@@ -12,6 +12,7 @@ import {
   SettingsSaveBar,
 } from "@/components/settings/ui/settings-layout";
 import { resourcePayload } from "@/lib/settings/resource-map";
+import { draftAfterSave } from "@/lib/settings/ai-instructions";
 
 export function AiInstructionsSection() {
   const { resources, setResource } = useSettingsWorkspace();
@@ -24,18 +25,19 @@ export function AiInstructionsSection() {
   useSettingsDirty(dirty);
 
   const save = async () => {
+    const submitted = draft;
     setSaving(true);
     try {
       const response = await fetch("/api/persona", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ instructions: draft }),
+        body: JSON.stringify({ instructions: submitted }),
       });
       if (!response.ok) throw new Error("Could not save AI instructions.");
-      const next = draft.trim();
+      const next = submitted.trim();
       setSaved(next);
-      setDraft(next);
+      setDraft((current) => draftAfterSave({ draft: current, submitted, saved: next }));
       setResource("/api/persona", { persona: { instructions: next } });
       toast.success("AI instructions saved.");
     } catch (error) {
