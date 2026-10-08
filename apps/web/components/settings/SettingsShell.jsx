@@ -91,7 +91,7 @@ export function SettingsShell({ activeSection, onSelectSection, children }) {
         </nav>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-conversation">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
           <div className="min-w-0">
             {children}
