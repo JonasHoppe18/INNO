@@ -1,4 +1,4 @@
-import { ANSWER_FACETS, compilePreciseAnswerRequests, documentedUnknown, internalAnswerInstruction, sourceSupportsFacet, sourceDomainSupportsFacet, type CoveredAnswerFacet, type PreciseAnswerRequest } from "./answer-facets";
+import { ANSWER_FACETS, compilePreciseAnswerRequests, documentedUnknown, internalAnswerInstruction, sourceSupportsFacet, sourceSupportsRequest, qualifierLabel, sourceDomainSupportsFacet, type CoveredAnswerFacet, type PreciseAnswerRequest } from "./answer-facets";
 import { isVerifiedOperationalOutcome, operationalReply } from "./operational-execution";
 import type { OperationalOutcome } from "./operational-types";
 import type { TurnIR } from "./turn-ir";
@@ -5279,6 +5279,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
 
   const rendered: string[] = [];
   const consumed = new Set<number>();
+  const renderedSourceParagraphs = new Set<string>();
   const policyFocus = customerKnowledgeFocus(context.customerMessage);
   const hasPolicyGuidance = segments.some((segment) => segment.type === "knowledge_guidance" && isPolicyKnowledgeBasis(segment.basis, context));
   const hasOrderRecoveryQuestion = context.activeOrder?.state === "unresolved"
@@ -5341,12 +5342,17 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "evidence_limitation") rendered.push(renderEvidenceLimitation(segment, context));
     else if (segment.type === "facet_limit") rendered.push(renderFacetLimit(segment, context));
-    else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).map(section => {
+    else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).flatMap(section => {
       const requests = preciseRequests(context);
       const request = requests.find(request => sourceMatchesRequest(section.record, request, context));
       const subject = request && verifiedAnswerSubject(context, request);
       const prefix = subject && new Set(requests.map(request => request.subject).filter(Boolean)).size > 1 ? `${subject.title}: ` : "";
-      return prefix + normalizeMerchantPolicyAttribution(section.text);
+      const productIds = objectValue(objectValue(section.record.structured_data)?.applicability)?.product_ids;
+      const scope = Array.isArray(productIds) ? [...productIds].map(String).sort().join("|") : String(objectValue(section.record.provenance)?.source_id ?? "");
+      const paragraphKey = `${scope}:${section.text.trim().replace(/\s+/g, " ")}`;
+      if (renderedSourceParagraphs.has(paragraphKey)) return [];
+      renderedSourceParagraphs.add(paragraphKey);
+      return [prefix + normalizeMerchantPolicyAttribution(section.text)];
     }).join("\n\n"));
     else if (segment.type === "source_comparison") {
       const comparison = shippingComparison(segment, context);
@@ -5590,6 +5596,9 @@ function validateSourceContent(segment: Extract<ResponseSegment, { type: "source
       if (segment.kind === "product_constraint" && preciseRequests(context).length && !preciseRequests(context).some(request => request.facet === segment.facet && sourceMatchesRequest(record, request, context))) {
         return [{ index, code: "answer_facet_scope_unverified", message: "The source does not bind a requested facet for this subject." }];
       }
+      if (segment.kind === "product_constraint" && preciseRequests(context).length && !preciseRequests(context).some(request => request.facet === segment.facet && sourceMatchesRequest(record, request, context) && sourceSupportsRequest(String(section?.content ?? section?.text ?? ""), request))) {
+        return [{ index, code: "answer_facet_qualifier_mismatch", message: "The source does not address the specifically requested property." }];
+      }
       if (segment.kind === "product_property" && structured?.semantic_type !== "FACT") {
         return [{ index, code: "product_property_kind_mismatch", message: "A static product property requires a source-authored fact." }];
       }
@@ -5682,6 +5691,7 @@ export interface AnswerObligation {
   status: "supported" | "unavailable" | "unknown" | "missing";
   facet?: CoveredAnswerFacet;
   subjectIds?: string[];
+  qualifiers?: string[];
   rendered?: boolean;
   satisfied: boolean;
   resultIds: string[];
@@ -5985,7 +5995,7 @@ function projectedProductContent(basis: KnowledgeBasis, context: ResponseValidat
       return typeof section?.[field] === "string" ? [`results[${match[1]}].evidence_sections[${index}].${field}`] : [];
     });
   });
-  const facet = preciseRequests(context).find(request => paths.length && paths.every(path => sourceSections({ result_id: basis.result_id, field_paths: [path] }, context).some(section => sourceSupportsFacet(section.text, request.facet))))?.facet;
+  const facet = preciseRequests(context).find(request => paths.length && paths.every(path => sourceSections({ result_id: basis.result_id, field_paths: [path] }, context).some(section => sourceSupportsRequest(section.text, request))))?.facet;
   const sourceCare = paths.length > 0 && sourceSections({ result_id: basis.result_id, field_paths: paths }, context).every(section => {
     const structured = objectValue(section.record.structured_data);
     return structured?.support_domain === "care" && ["GUIDANCE", "FACT"].includes(String(structured.semantic_type));
@@ -6066,8 +6076,8 @@ function segmentCovers(existing: ResponseSegment, required: ResponseSegment, con
 function preciseRequests(context: ResponseValidationContext): PreciseAnswerRequest[] {
   return context.preciseRequests ?? compilePreciseAnswerRequests(context.turnIR?.answerRequests ?? []);
 }
-function requestedProductMatches(title: string, context: ResponseValidationContext): boolean {
-  const first = normalizedPhrase(title).split(" ")[0];
+function requestedProductMatches(title: string, context: ResponseValidationContext, request?: PreciseAnswerRequest): boolean {
+  const first = normalizedPhrase(request?.subject ?? title).split(" ").find(token => token.length > 2);
   return Boolean(first?.length > 2 && normalizedPhrase(`${context.customerMessage ?? ""} ${context.customerProvidedContext?.product ?? ""}`).split(" ").includes(first));
 }
 export function verifiedAnswerSubject(context: ResponseValidationContext, request?: PreciseAnswerRequest): { id: string; title: string; handle?: string } | null {
@@ -6076,7 +6086,7 @@ export function verifiedAnswerSubject(context: ResponseValidationContext, reques
     const products = Array.isArray(data?.products) ? data.products.map(objectValue) : [data];
     // Both supported catalog envelopes are normalized here; never select one of multiple returned products.
     if (products.length !== 1) return [];
-    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context) && (!request || requestSubjectMatches(request, product.title)) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
+    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context, request) && (!request || requestSubjectMatches(request, product.title)) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
   });
   const ids = new Set(subjects.map(subject => subject.id));
   return ids.size === 1 ? subjects[0] : null;
@@ -6104,7 +6114,7 @@ function facetCandidates(request: PreciseAnswerRequest, context: ResponseValidat
       if (!record || !sourceMatchesRequest(record, request, context) || !productScopeSupported(record, context) || !Array.isArray(record.evidence_sections)) return [];
       return record.evidence_sections.flatMap((value, sectionIndex) => {
         const section = objectValue(value); const field = typeof section?.content === "string" ? "content" : "text";
-        return typeof section?.[field] === "string" && sourceSupportsFacet(String(section[field]), request.facet)
+        return typeof section?.[field] === "string" && sourceSupportsRequest(String(section[field]), request)
           ? [{ type: "source_content" as const, kind: "product_constraint" as const, facet: request.facet,
             basis: { result_id: evidence.resultId, field_paths: [`results[${index}].evidence_sections[${sectionIndex}].${field}`] } }] : [];
       });
@@ -6188,11 +6198,13 @@ function renderFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit
     else if (dependencies.some(facet => ["certification", "placement"].includes(facet))) text = da ? "Bed butikken eller producenten om bekræftet vejledning om certificering og placering, før du stoler på produktet nær varme." : "Ask the store or manufacturer for verified certification and placement guidance before relying on the product near heat.";
     else if (dependencies.some(facet => ["load_capacity", "weight_limit"].includes(facet))) text = da ? "Bed butikken eller producenten om at bekræfte bæreevnen og de relevante monteringsforhold, før du belaster eller monterer produktet." : "Ask the store or manufacturer to verify the load rating and applicable installation conditions before loading or installing it.";
   }
-  return prefix + text;
+  const localizedQualifiers: Record<string, string> = { dishwasher: "opvaskemaskine", "machine wash": "maskinvask", "hand wash": "håndvask", "dry clean": "rensning", bleach: "blegemiddel", "abrasive cleaners": "skuremidler", "fire resistance": "brandmodstand", "fire safety": "brandsikkerhed", "strong household chemicals": "stærke husholdningskemikalier" };
+  const qualifierLabels = [...new Set((request?.qualifiers ?? []).map(value => qualifierLabel(value, segment.facet)).map(value => da ? localizedQualifiers[value] ?? value : value))];
+  return prefix + (qualifierLabels.length ? `${da ? "Om" : "For"} ${qualifierLabels.join(", ")}: ` : "") + text;
 }
 function preciseFacetSegments(request: PreciseAnswerRequest, validation: ResponseValidationResult, context: ResponseValidationContext): ResponseSegment[] {
   return validation.approvedSegments.filter(segment => segment.type === "facet_limit" ? segment.facet === request.facet && segment.request_index === request.requestIndex
-    : segment.type === "source_content" && segment.facet === request.facet && sourceSections(segment.basis, context).every(section => sourceMatchesRequest(section.record, request, context)) && facetSourceText(segment, context).every(text => sourceSupportsFacet(text, request.facet)));
+    : segment.type === "source_content" && segment.facet === request.facet && sourceSections(segment.basis, context).every(section => sourceMatchesRequest(section.record, request, context)) && facetSourceText(segment, context).every(text => sourceSupportsRequest(text, request)));
 }
 function preservePreciseAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
   const requests = preciseRequests(context);
@@ -6205,7 +6217,7 @@ function preservePreciseAnswers(validation: ResponseValidationResult, context: R
     const checked = candidates.map(candidate => validateStructuredResponse({ segments: [candidate] }, context));
     const accepted = checked.flatMap(value => value.approvedSegments);
     const obligation: AnswerObligation = { id: request.id, kind: request.facet, facet: request.facet, status: "missing", satisfied: false,
-      subjectIds: verifiedAnswerSubject(context, request) ? [verifiedAnswerSubject(context, request)!.id] : [], resultIds: [], sourceIds: [], rejectionCodes: checked.flatMap(value => value.issues.map(issue => issue.code)), recovery: "not_needed" };
+      qualifiers: request.qualifiers, subjectIds: verifiedAnswerSubject(context, request) ? [verifiedAnswerSubject(context, request)!.id] : [], resultIds: [], sourceIds: [], rejectionCodes: checked.flatMap(value => value.issues.map(issue => issue.code)), recovery: "not_needed" };
     // A qualified next step is conditional on unresolved safety, not an extra ask for known limits.
     const unknownSafety = obligations.some(obligation => obligation.id.startsWith(`answer.${request.requestIndex}.`) && request.requiredFor.includes(obligation.facet as any) && obligation.status !== "supported");
     if (request.facet === "qualified_next_step" && !unknownSafety) { obligation.status = "supported"; obligation.satisfied = true; obligations.push(obligation); continue; }
@@ -6248,7 +6260,9 @@ export function renderWithAnswerCoverage(validation: ResponseValidationResult, c
     if (!obligation || !obligation.satisfied) continue;
     const segments = preciseFacetSegments(request, validation, context);
     if (!segments.length) { obligation.rendered = request.facet === "qualified_next_step" && obligation.status === "supported"; continue; }
-    const pieces = segments.map(segment => renderResponseSegments([segment], { ...context, firstResponse: false }));
+    const pieces = segments.flatMap(segment => segment.type === "source_content"
+      ? segment.basis.field_paths.map(path => renderResponseSegments([{ ...segment, basis: { ...segment.basis, field_paths: [path] } }], { ...context, firstResponse: false }))
+      : [renderResponseSegments([segment], { ...context, firstResponse: false })]);
     const missing = pieces.filter(piece => !normalizedPhrase(response).includes(normalizedPhrase(piece)));
     if (missing.length) response = [response, ...missing].filter(Boolean).join("\n\n");
     obligation.rendered = pieces.every(piece => normalizedPhrase(response).includes(normalizedPhrase(piece)));

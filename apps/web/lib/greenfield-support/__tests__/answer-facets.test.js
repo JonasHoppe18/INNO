@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compilePreciseAnswerRequests, sourceSupportsFacet } from "../answer-facets";
+import { compilePreciseAnswerRequests, sourceSupportsFacet, sourceSupportsRequest } from "../answer-facets";
 import { ensureAnswerCompleteness, validateStructuredResponse, renderWithAnswerCoverage, missingPreciseEvidence } from "../response-contract";
 const scope = { workspaceId: "w1", shopId: "s1" };
 function setup(facets, texts = [], overrides = {}) {
@@ -279,5 +279,320 @@ describe("PR 104 per-subject evidence and coverage", () => {
     const result = recover(ctx);
     expect(result.validation.coverage.obligations.find(o => o.id === "answer.1.load_capacity")).toMatchObject({ subjectIds: [], status: "unknown" });
     expect(result.response).toContain("Vale Cabinet: I cannot verify this product's identity");
+  });
+});
+
+describe("second review: exact property entailment", () => {
+  function question(facet, message, texts, qualifiers) {
+    const { ctx, sources, records } = setup([facet], texts);
+    ctx.customerMessage = message;
+    ctx.turnIR.answerRequests[0].sourceText = message;
+    if (qualifiers) ctx.turnIR.answerRequests[0].qualifiers = qualifiers.map(value => ({ facet, value }));
+    return { ctx, sources, records };
+  }
+  it.each([
+    ["Is Vale Shelf UL certified?", "FSC certified.", "UL"],
+    ["Is Vale Shelf UL 153 certified?", "UL 1598 certified.", "UL 153"],
+    ["Er Vale Shelf UL-certificeret?", "FSC-certificeret.", "UL"],
+    ["Is Vale Shelf UL certified?", "FSC certified. UL is the model name.", "UL"],
+    ["Is Vale Shelf UL certified?", "UL model, FSC certified.", "UL"],
+    ["Is Vale Shelf UL certified?", "FSC certified, UL is the model name.", "UL"],
+  ])("another certification cannot satisfy %s", (message, source, qualifier) => {
+    const { ctx } = question("certification", message, [source]);
+    const result = recover(ctx, { segments: [sourceSegment("certification")] });
+    expect(result.validation.rejectedSegments.length).toBeGreaterThan(0);
+    expect(result.validation.coverage.obligations.find(o => o.facet === "certification")).toMatchObject({ status: "unknown", qualifiers: [qualifier] });
+    expect(result.response).toContain("cannot verify the requested safety certification");
+    expect(result.response).not.toContain(source);
+  });
+  it.each([
+    ["Is Vale Shelf UL certified?", "UL certified.", "supported"],
+    ["Is Vale Shelf UL certified?", "UL and FSC certified.", "supported"],
+    ["Is Vale Shelf UL certified?", "Certification: UL.", "supported"],
+    ["Is Vale Shelf UL 153 certified?", "Certified to UL 153.", "supported"],
+    ["Er Vale Shelf UL-certificeret?", "UL-certificering er ikke dokumenteret.", "unknown"],
+    ["Is Vale Shelf UL certified?", "UL certification is not established.", "unknown"],
+  ])("preserves specifically supported or unavailable certification: %s", (message, source, status) => {
+    const result = recover(question("certification", message, [source]).ctx);
+    expect(result.response).toContain(source);
+    expect(result.validation.coverage.obligations.find(o => o.facet === "certification")).toMatchObject({ status, rendered: true });
+  });
+  it.each([
+    "Hand wash with warm water.", "Machine wash at 30 degrees.",
+    "Vask i hånden med varmt vand.", "Hand wash only. Dishwasher is the model name.",
+    "Hand wash the item; dishwasher is the model name.", "Hand wash this model, dishwasher is just its name.",
+  ])("generic washing cannot establish dishwasher safety: %s", source => {
+    const result = recover(question("cleaning_method", "Is Vale Shelf dishwasher-safe?", [source]).ctx);
+    expect(result.validation.coverage.obligations.find(o => o.facet === "cleaning_method")).toMatchObject({ status: "unknown", qualifiers: ["dishwasher"] });
+    expect(result.response).toContain("does not establish that the requested cleaning method is safe");
+  });
+  it.each([
+    ["Is Vale Shelf dishwasher-safe?", "Dishwasher-safe.", "supported"],
+    ["Is Vale Shelf dishwasher-safe?", "Dishwasher safety is not established.", "unknown"],
+    ["Kan Vale Shelf vaskes i opvaskemaskinen?", "Tåler opvaskemaskine.", "supported"],
+    ["Kan Vale Shelf vaskes i opvaskemaskinen?", "Sikkerhed ved vask i opvaskemaskine er ikke dokumenteret.", "unknown"],
+    ["Can I machine wash Vale Shelf?", "Do not machine wash or tumble dry.", "supported"],
+  ])("keeps exact method guidance or uncertainty for %s", (message, source, status) => {
+    const result = recover(question("cleaning_method", message, [source]).ctx);
+    expect(result.response).toContain(source);
+    expect(result.validation.coverage.obligations.find(o => o.facet === "cleaning_method")).toMatchObject({ status, rendered: true });
+  });
+  it("unsupported model prose cannot substitute UL for a source's FSC", () => {
+    const { ctx, sources } = question("certification", "Is Vale Shelf UL certified?", ["FSC certified."]);
+    sources[0].structured_data.semantic_type = "FACT";
+    const result = recover(ctx, { segments: [{ type: "knowledge_guidance", text: "Yes, it is UL certified.", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } }] });
+    expect(result.response).not.toContain("it is UL certified");
+    expect(result.validation.coverage.obligations.find(o => o.facet === "certification")).toMatchObject({ status: "unknown" });
+  });
+  it.each(["Product weight: 5 kg.", "Produktets vægt: 5 kg.", "Load information. Product weight: 5 kg."])("product mass does not establish maximum load: %s", source => {
+    const result = recover(question("load_capacity", "What is Vale Shelf's maximum load?", [source]).ctx);
+    expect(result.response).toContain("cannot verify an approved load capacity");
+    expect(result.response).not.toContain(source);
+    expect(result.validation.coverage.obligations.find(o => o.facet === "load_capacity")).toMatchObject({ status: "unknown" });
+  });
+  it("keeps a supported alternative when the requested method remains unavailable", () => {
+    const result = recover(question("cleaning_method", "Is Vale Shelf dishwasher-safe?", ["Clean with a soft damp cloth and avoid abrasive cleaners."]).ctx);
+    expect(result.response).toContain("soft damp cloth");
+    expect(result.response).toContain("does not establish that the requested cleaning method is safe");
+    expect(result.validation.coverage.obligations.find(o => o.facet === "cleaning_alternative")).toMatchObject({ status: "supported", rendered: true });
+  });
+});
+
+describe("second review: Danish and English verified evidence", () => {
+  it.each([
+    ["load_capacity", "Maksimal belastning: 5 kg.", "supported"],
+    ["load_capacity", "Maximum load: 5 kg.", "supported"],
+    ["weight_limit", "Tilladt belastning er 5 kg.", "supported"],
+    ["weight_limit", "Weight limit: 5 kg.", "supported"],
+    ["load_capacity", "Maksimal belastning er ikke oplyst.", "unknown"],
+    ["load_capacity", "No approved maximum load rating is specified.", "unknown"],
+    ["electrical_safety", "Elektrisk reparation og udskiftning af kabel er ikke dokumenteret. Kontakt butikken ved beskadigede elektriske dele.", "unknown"],
+    ["repair_boundary", "Reparation af strømledning er ikke beskrevet. Kontakt en kvalificeret fagperson.", "unknown"],
+    ["certification", "Brandcertificering er ikke dokumenteret.", "unknown"],
+    ["certification", "Fire resistance certification is not established.", "unknown"],
+    ["placement", "Sikker afstand til pejs er ikke dokumenteret.", "unknown"],
+    ["prohibited_method", "Brug ikke blegemiddel eller skuremidler.", "supported"],
+    ["prohibited_method", "Undgå skuremidler og stærke kemikalier.", "supported"],
+    ["load_capacity", "Der er ingen oplysninger om maksimal belastning.", "unknown"],
+    ["certification", "UL certification is not verified.", "unknown"],
+    ["prohibited_method", "Do not use bleach or abrasive cleaners.", "supported"],
+    ["cleaning_alternative", "Rengør med en blød fugtig klud.", "supported"],
+    ["cleaning_alternative", "Clean with a soft damp cloth.", "supported"],
+  ])("retains source meaning for %s: %s", (facet, source, status) => {
+    const result = recover(setup([facet], [source]).ctx);
+    expect(result.response).toContain(source);
+    expect(result.validation.coverage.obligations.find(o => o.facet === facet)).toMatchObject({ status, rendered: true });
+  });
+  it.each(["Rengør ikke med en klud.", "Vask ved 90 grader er ikke tilladt.", "Do not wipe with a cloth."])("a prohibited method is not an approved alternative: %s", source => {
+    expect(sourceSupportsFacet(source, "cleaning_alternative")).toBe(false);
+  });
+  it("localized evidence retains product, tenant and source authority controls", () => {
+    const { ctx, sources } = setup(["load_capacity"], ["Maksimal belastning: 500 kg."]);
+    sources[0].structured_data.applicability.product_ids = ["wrong-product"];
+    expect(recover(ctx).response).not.toContain("500 kg");
+    sources[0].structured_data.applicability.product_ids = ["p1"];
+    sources[0].shop_id = "wrong-shop";
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+});
+
+describe("second review: prefixed titles and paragraph deduplication", () => {
+  it("accepts a single verified title with an omitted brand prefix", () => {
+    const { ctx, records } = setup(["load_capacity"], ["Maximum load: 5 kg."]);
+    records[0].result.data.title = "Acme Vale Shelf";
+    const result = recover(ctx);
+    expect(result.response).toContain("Maximum load: 5 kg");
+    expect(result.response).not.toContain("cannot verify this product's identity");
+    expect(result.validation.coverage.obligations.find(o => o.facet === "load_capacity")).toMatchObject({ subjectIds: ["p1"], rendered: true });
+  });
+  it.each(["ambiguous", "wrong-product", "wrong-tenant"])("prefix matching remains fail closed for %s", mode => {
+    const { ctx, records } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+    ctx.preciseReadResults = Object.fromEntries(compilePreciseAnswerRequests(ctx.turnIR.answerRequests).map(r => [r.id,["catalog"]]));
+    records[0].result.data = mode === "ambiguous" ? { products: [{ id: "p1", title: "Acme Vale Shelf" }, { id: "p2", title: "Other Vale Shelf" }] } : { id: "p1", title: mode === "wrong-product" ? "Acme Luna Lamp" : "Acme Vale Shelf", ...(mode === "wrong-tenant" ? { shop_id: "other" } : {}) };
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+  it("one source paragraph renders once while satisfying three obligations", () => {
+    const text = "Electrical repairs and cable replacement are not described. Contact store support if electrical parts appear damaged.";
+    const result = recover(setup(["electrical_safety", "repair_boundary"], [text]).ctx);
+    expect(result.response.split(text)).toHaveLength(2);
+    expect(result.validation.coverage.obligations).toHaveLength(3);
+    expect(result.validation.coverage.obligations.every(o => o.satisfied && o.rendered)).toBe(true);
+  });
+  it("overlapping model source paths cannot duplicate a shared paragraph after recovery", () => {
+    const texts = ["Do not machine wash or tumble dry.", "Clean with a soft damp cloth."];
+    const { ctx } = setup(["cleaning_method", "prohibited_method"], texts);
+    const segments = [
+      { type: "source_content", kind: "product_constraint", facet: "cleaning_method", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content", "results[1].evidence_sections[0].content"] } },
+      { type: "source_content", kind: "product_constraint", facet: "prohibited_method", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } },
+    ];
+    const result = recover(ctx,{segments});
+    for (const text of texts) expect(result.response.split(text)).toHaveLength(2);
+    expect(result.validation.coverage.obligations.every(o => o.satisfied && o.rendered)).toBe(true);
+  });
+  it("does not deduplicate different product subjects or unique negative conditions", () => {
+    const { ctx, sources } = mixedSetup();
+    sources[1].evidence_sections[0].content = sources[0].evidence_sections[0].content;
+    const result = recover(ctx);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    expect(result.response).toContain("Luna Lamp: Maximum load capacity: 5 kg");
+    const distinct = recover(setup(["repair_boundary"], ["Repairs are not described. Contact store support.", "Cable replacement is not approved. Contact a qualified professional."]).ctx);
+    expect(distinct.response).toContain("Repairs are not described");
+    expect(distinct.response).toContain("Cable replacement is not approved");
+  });
+});
+
+
+describe("second review qualifier contract", () => {
+  it("fire safety certification does not establish specifically requested fire resistance", () => {
+    const request = compilePreciseAnswerRequests([{ facets: ["certification"], sourceText: "Is it fire-resistant?" }])[0];
+    expect(sourceSupportsRequest("Fire safety certification is verified.", request)).toBe(false);
+    expect(sourceSupportsRequest("Fire resistance certification is not established.", request)).toBe(true);
+  });
+  it("exact load qualifiers reject another load property", () => {
+    const request = compilePreciseAnswerRequests([{ facets: ["load_capacity"], qualifiers: [{ facet: "load_capacity", value: "shelf load" }] }])[0];
+    expect(sourceSupportsRequest("Maximum load: 5 kg.", request)).toBe(false);
+    expect(sourceSupportsRequest("Maximum shelf load is not specified.", request)).toBe(true);
+  });
+  it("a model cannot turn a Danish prohibited method into positive prose", () => {
+    const { ctx } = setup(["prohibited_method"], ["Må ikke vaskes i opvaskemaskine."]);
+    ctx.customerMessage = "Må Vale Shelf vaskes i opvaskemaskine?";
+    ctx.turnIR.answerRequests[0].sourceText = ctx.customerMessage;
+    const result = recover(ctx, { segments: [{ type: "knowledge_guidance", text: "Det er sikkert at vaske i opvaskemaskine.", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } }] });
+    expect(result.response).toContain("Må ikke vaskes i opvaskemaskine");
+    expect(result.response).not.toContain("Det er sikkert");
+  });
+});
+
+
+describe("qualified limitation disposition", () => {
+  it("names only the unavailable certificate when another requested certificate is verified", () => {
+    const { ctx } = setup(["certification"], ["FSC certified."]);
+    const message = "Is Vale Shelf UL and FSC certified?";
+    ctx.customerMessage = message;
+    ctx.turnIR.answerRequests = ["UL", "FSC"].map(value => ({ kind: "product_property", subject: "Vale Shelf", sourceText: value, facets: ["certification"], qualifiers: [{ facet: "certification", value }] }));
+    const result = recover(ctx);
+    expect(result.response).toContain("For UL: I cannot verify");
+    expect(result.response).toContain("FSC certified");
+    expect(result.response).not.toContain("For FSC: I cannot verify");
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.0.certification")).toMatchObject({ status: "unknown", qualifiers: ["UL"], rendered: true });
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.1.certification")).toMatchObject({ status: "supported", qualifiers: ["FSC"], rendered: true });
+  });
+  it("names the unavailable method using the existing Danish locale", () => {
+    const { ctx } = setup(["cleaning_method"], ["Rengør med en blød fugtig klud."], { locale: "da" });
+    ctx.turnIR.answerRequests[0].sourceText = "Må Vale Shelf vaskes i opvaskemaskine?";
+    const result = recover(ctx);
+    expect(result.response).toContain("Om opvaskemaskine:");
+    expect(result.response).not.toContain("dishwasher");
+    expect(result.response).toContain("fugtig klud");
+  });
+});
+
+describe("candidate predicates versus specifically requested properties", () => {
+  it.each([
+    ["solid oak", "The Oak variant uses oak veneer over an engineered wood core."],
+    ["all wool", "Material: 100% wool."],
+    ["cotton", "Material: 100% wool."],
+  ])("answers candidate material %s using the actual source value", (qualifier, text) => {
+    const { ctx, sources } = setup(["material_composition"], [text]);
+    sources[0].structured_data.semantic_type = "FACT";
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "material_composition", value: qualifier }];
+    const result = recover(ctx, { segments: [{ type: "knowledge_guidance", text: "Material: 100% cotton.", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } }] });
+    expect(result.response).toContain(text);
+    expect(result.response).not.toContain("does not establish the requested material");
+    expect(result.response).not.toContain("100% cotton");
+    expect(result.validation.coverage.obligations.find(o => o.facet === "material_composition")).toMatchObject({ status: "supported", rendered: true });
+  });
+  it("a documented rated load answers the candidate load without affirming it", () => {
+    const { ctx } = setup(["load_capacity"], ["Maximum load: 5 kg."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "load_capacity", value: "20 kg" }];
+    const result = recover(ctx, { segments: [{ type: "knowledge_guidance", text: "It can safely hold 20 kg.", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } }] });
+    expect(result.response).toContain("Maximum load: 5 kg");
+    expect(result.response).not.toContain("hold 20 kg");
+    expect(result.response).not.toContain("cannot verify an approved load capacity");
+  });
+  it("a documented negative chemical restriction addresses a specifically asked strong cleaner", () => {
+    const { ctx } = setup(["cleaning_method", "prohibited_method"], ["Avoid prolonged contact with standing water and strong household chemicals.", "For care, wipe with a lightly damp cloth and dry immediately."]);
+    ctx.turnIR.answerRequests[0].sourceText = "Can I use strong bathroom cleaner?";
+    ctx.turnIR.answerRequests[0].qualifiers = ["cleaning_method", "prohibited_method"].map(facet => ({ facet, value: "strong bathroom cleaner" }));
+    const result = recover(ctx);
+    expect(result.response).toContain("strong household chemicals");
+    expect(result.response).toContain("lightly damp cloth");
+    expect(result.response).not.toContain("cannot verify all applicable cleaning restrictions");
+    expect(result.response).not.toContain("does not establish that the requested cleaning method is safe");
+    expect(result.validation.coverage.obligations.every(o=>o.satisfied&&o.rendered)).toBe(true);
+  });
+  it("generic positive care advice does not certify a specific strong cleaner", () => {
+    const { ctx } = setup(["cleaning_method"], ["Clean with household cleaning products."]);
+    ctx.turnIR.answerRequests[0].sourceText = "Can I use strong bathroom cleaner?";
+    const result = recover(ctx);
+    expect(result.validation.coverage.obligations.find(o=>o.facet==='cleaning_method')).toMatchObject({status:'unknown'});
+  });
+});
+
+describe("precise qualifier normalization", () => {
+  it("keeps the quoted qualifier but does not duplicate its normalized equivalent", () => {
+    const requests = compilePreciseAnswerRequests([{ facets: ["certification"], sourceText: "Is it fire resistant?", qualifiers: [{ facet: "certification", value: "fire resistant" }] }]);
+    expect(requests[0].qualifiers).toEqual(["fire resistant"]);
+  });
+  it("proposed books load remains answered by the documented absence of a rating", () => {
+    const { ctx } = setup(["load_capacity"], ["No approved maximum load rating is specified."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "load_capacity", value: "8 kg of books" }];
+    const result = recover(ctx);
+    expect(result.response).toContain("No approved maximum load rating is specified");
+    expect(result.response).not.toContain("I cannot verify an approved load capacity");
+  });
+  it("a redundant depth qualifier does not reject a verified axis phrasing", () => {
+    const { ctx } = setup(["dimension_depth"], ["Depth is 18 cm."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "dimension_depth", value: "deep" }];
+    const result = recover(ctx);
+    expect(result.response).toContain("Depth is 18 cm");
+    expect(result.response).not.toContain("do not establish a labeled depth");
+  });
+});
+
+describe("qualified method parameters", () => {
+  it("a safe method alone cannot establish the requested temperature", () => {
+    const { ctx } = setup(["cleaning_method"], ["Dishwasher-safe at 30 degrees."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "cleaning_method", value: "dishwasher at 90 degrees" }];
+    const result = recover(ctx);
+    expect(result.validation.coverage.obligations.find(o=>o.facet==='cleaning_method')).toMatchObject({status:'unknown'});
+    expect(result.response).not.toContain("Dishwasher-safe at 30 degrees");
+  });
+  it("different care clauses cannot supply a method's missing parameter", () => {
+    const { ctx } = setup(["cleaning_method"], ["Dishwasher-safe at 30 degrees. Dry at 90 degrees."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "cleaning_method", value: "dishwasher at 90 degrees" }];
+    expect(recover(ctx).validation.coverage.obligations.find(o=>o.facet==='cleaning_method')).toMatchObject({status:'unknown'});
+  });
+});
+
+
+describe("qualified component and axis guidance", () => {
+  it("genuine electrical repair uncertainty supports a power-cord replacement question", () => {
+    const text = "Electrical repairs and cable replacement are not described. Contact store support if electrical parts appear damaged.";
+    const { ctx } = setup(["electrical_safety", "repair_boundary"], [text]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "electrical_safety", value: "power cord" }, { facet: "repair_boundary", value: "replace the power cord" }];
+    const result = recover(ctx);
+    expect(result.response.split(text)).toHaveLength(2);
+    expect(result.response).not.toContain("I cannot verify an approved customer repair");
+    expect(result.validation.coverage.obligations.every(o=>o.satisfied&&o.rendered)).toBe(true);
+  });
+  it("an unrelated repair property is not established by an electrical paragraph", () => {
+    const { ctx } = setup(["repair_boundary"], ["Cable replacement is documented. Contact store support."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "repair_boundary", value: "shade replacement" }];
+    expect(recover(ctx).validation.coverage.obligations.find(o=>o.facet==='repair_boundary')).toMatchObject({status:'unknown'});
+  });
+  it("a question-shaped axis label does not suppress a labeled dimension", () => {
+    const { ctx } = setup(["dimension_depth"], ["Depth is 18 cm."]);
+    ctx.turnIR.answerRequests[0].qualifiers = [{ facet: "dimension_depth", value: "how deep" }];
+    expect(recover(ctx).response).toContain("Depth is 18 cm");
+  });
+});
+
+
+describe("qualified method units", () => {
+  it("equal numeric temperatures in different units do not establish the requested setting", () => {
+    const request = compilePreciseAnswerRequests([{ facets: ["cleaning_method"], qualifiers: [{ facet: "cleaning_method", value: "dishwasher at 90°F" }] }])[0];
+    expect(sourceSupportsRequest("Dishwasher-safe at 90°C.", request)).toBe(false);
+    expect(sourceSupportsRequest("Dishwasher-safe at 90 degrees Fahrenheit.", request)).toBe(true);
   });
 });

@@ -145,3 +145,36 @@ describe("PR 104 SDK per-product reads", () => {
     expect(result.response).toContain(handoff);
   });
 });
+
+describe("second review SDK boundary", () => {
+  it("verified branded catalog title drives scoped reads despite omitted prefix", async () => {
+    const dependencies = await createDemoDependencies();
+    dependencies.commerce.getProduct = async () => ({ products: [{ id: "p1", title: "Acme Vale Shelf" }] });
+    const reads = [];
+    dependencies.knowledge.search = async request => { reads.push(request.query); return [hit("Maximum load: 5 kg.")]; };
+    const message = "What is Vale Shelf's maximum load?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"] }] }) });
+    model.assertComplete();
+    expect(reads[0]).toMatch(/^Acme Vale Shelf:/);
+    expect(result.response).toContain("Maximum load: 5 kg");
+    expect(result.proposedActions).toEqual([]);
+    expect(result.actionExecutions).toEqual([]);
+  });
+  it("passes the requested certification qualifier into reads and fails closed on another certificate", async () => {
+    const dependencies = await createDemoDependencies();
+    dependencies.commerce.getProduct = async () => ({ products: [{ id: "p1", title: "Vale Shelf" }] });
+    const reads = [];
+    dependencies.knowledge.search = async request => { reads.push(request.query); return [hit("FSC certified.")]; };
+    const message = "Is Vale Shelf UL certified?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["certification"], qualifiers: [{ facet: "certification", value: "UL" }] }] }) });
+    model.assertComplete();
+    expect(reads[0]).toContain("UL");
+    expect(result.response).toContain("cannot verify the requested safety certification");
+    expect(result.response).not.toContain("FSC certified");
+    expect(result.proposedActions).toEqual([]);
+  });
+});

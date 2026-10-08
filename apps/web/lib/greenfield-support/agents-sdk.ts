@@ -517,14 +517,14 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       if (!missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) continue;
       const budget = preciseReadBudgets.get(request.subject) ?? 0;
       if (budget <= 0) continue;
-      const query = `${subject.title}: ${facetReadQuery(request.facet)}`;
+      const query = `${subject.title}: ${facetReadQuery(request.facet)}${request.qualifiers.length ? ` ${request.qualifiers.join(" ")}` : ""}`;
       preciseReadBudgets.set(request.subject, budget - 1);
       const result = await preload("search_product_knowledge", query);
       if (result.resultId) (preciseReadResults[request.id] ??= []).push(result.resultId);
       // Retry the verified catalog alias, never a different product or an invented value.
       if (subject.handle && (preciseReadBudgets.get(request.subject) ?? 0) > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
         preciseReadBudgets.set(request.subject, (preciseReadBudgets.get(request.subject) ?? 0) - 1);
-        const retry = await preload("search_product_knowledge", `${subject.handle}: ${facetReadQuery(request.facet)}`);
+        const retry = await preload("search_product_knowledge", `${subject.handle}: ${facetReadQuery(request.facet)}${request.qualifiers.length ? ` ${request.qualifiers.join(" ")}` : ""}`);
         if (retry.resultId) (preciseReadResults[request.id] ??= []).push(retry.resultId);
       }
     }

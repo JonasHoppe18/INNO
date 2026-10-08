@@ -353,3 +353,25 @@ it("a typed missing-order clarification cannot invent a photo attachment channel
   expect(answer).toMatch(/order/i);
   expect(answer).not.toMatch(/attach|photos|upload|here/i);
 });
+
+
+describe("source-quoted property qualifier contract", () => {
+  it("preserves an exact requested certification qualifier in TurnIR", () => {
+    const message = "Is Vale Shelf UL certified?";
+    const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["certification"], qualifiers: [{ facet: "certification", value: "UL" }] }] }, message);
+    expect(ir.answerRequests[0].qualifiers).toEqual([{ facet: "certification", value: "UL" }]);
+  });
+  it("rejects an invented property qualifier before the response boundary", () => {
+    const message = "Is Vale Shelf UL certified?";
+    expect(() => normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["certification"], qualifiers: [{ facet: "certification", value: "FSC" }] }] }, message)).toThrow("Property qualifiers must quote");
+  });
+});
+
+describe("redundant semantic facet labels", () => {
+  it.each(["maximum load", "How much weight"])("does not discard the interpreted request for redundant label %s", value => {
+    const message = "How much weight can Vale Shelf hold?";
+    const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"], qualifiers: [{ facet: "load_capacity", value }] }] }, message);
+    expect(ir.answerRequests[0].facets).toEqual(["load_capacity"]);
+    expect(ir.answerRequests[0].qualifiers).toEqual([]);
+  });
+});
