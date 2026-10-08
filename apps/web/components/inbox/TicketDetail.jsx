@@ -224,6 +224,7 @@ function TicketDetailComponent({
   onTicketStateChange,
   onOpenInsights,
   onBackToInbox = null,
+  alwaysShowBackButton = false,
   showThinkingCard = false,
   isDraftFetching = false,
   isPostApprovalDraftLoading = false,
@@ -824,7 +825,7 @@ function TicketDetailComponent({
               type="button"
               onClick={onBackToInbox}
               aria-label="Back to inbox"
-              className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 lg:hidden"
+              className={`inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1.5 text-sm font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 ${alwaysShowBackButton ? "" : "lg:hidden"}`}
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               <span>Inbox</span>

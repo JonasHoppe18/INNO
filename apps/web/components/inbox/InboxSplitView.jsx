@@ -655,6 +655,18 @@ const stripThreadSuffix = (value) =>
     .trim();
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
+// Per-viewer layout preference: "split" (list + conversation side by side) or
+// "list" (full-width ticket list; opening a ticket shows it full width).
+const INBOX_LAYOUT_STORAGE_KEY = "sona.inbox.layout";
+
+const readStoredInboxLayout = () => {
+  try {
+    return window.localStorage.getItem(INBOX_LAYOUT_STORAGE_KEY) === "list" ? "list" : "split";
+  } catch {
+    return "split";
+  }
+};
+
 const isInternalNoteMessage = (message) =>
   String(message?.provider_message_id || "").startsWith("internal-note:");
 
@@ -1022,6 +1034,16 @@ export function InboxSplitView({
   // Shadow preview (v2 pipeline) — per thread
   // Shape: { [threadId]: { loading: boolean, draft_text: string|null, confidence: number, sources: [], proposed_actions: [], error: string|null } }
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [inboxLayout, setInboxLayout] = useState(readStoredInboxLayout);
+  const isListLayout = inboxLayout === "list";
+  const handleInboxLayoutChange = useCallback((nextLayout) => {
+    setInboxLayout(nextLayout);
+    try {
+      window.localStorage.setItem(INBOX_LAYOUT_STORAGE_KEY, nextLayout);
+    } catch {
+      // Preference just won't persist (private mode / blocked storage).
+    }
+  }, []);
   const [returnTrackingActionState, setReturnTrackingActionState] = useState(null);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationCache, setTranslationCache] = useState({});
@@ -1724,10 +1746,10 @@ export function InboxSplitView({
     } else if (resolvedView === "automated") {
       scopedRows = sortByDropdown(withEffectiveFields.filter((row) => row.isNotification));
     } else if (resolvedView === "all") {
-      // Today's "View all" semantics: no view-based restriction at all —
-      // every status, automated or not, every inbox — only the status
-      // dropdown/search/unread filters below narrow it further.
-      scopedRows = sortByDropdown(withEffectiveFields);
+      // "All tickets": every customer conversation — every status, every
+      // inbox, assigned or not. Automated/spam stays in the Spam inbox.
+      // Only the status dropdown/search/unread filters below narrow it.
+      scopedRows = sortByDropdown(withEffectiveFields.filter((row) => !row.isNotification));
     } else if (resolvedView.startsWith("inbox:")) {
       const targetInbox = resolvedView.slice("inbox:".length);
       const inInbox = withEffectiveFields.filter(
@@ -2989,6 +3011,8 @@ export function InboxSplitView({
             <TicketListToolbar
               filters={filters}
               onFiltersChange={handleFiltersChange}
+              layout={inboxLayout}
+              onLayoutChange={handleInboxLayoutChange}
             />
           </div>
           <WorkspaceTabsRow
@@ -3027,6 +3051,8 @@ export function InboxSplitView({
     filters,
     handleCreateTicket,
     handleFiltersChange,
+    handleInboxLayoutChange,
+    inboxLayout,
     openThreads,
     selectedThreadId,
     setTitleContent,
@@ -3684,7 +3710,10 @@ export function InboxSplitView({
         key={activeView}
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
-        className={selectedThreadId ? "hidden lg:flex" : "flex"}
+        className={
+          selectedThreadId ? (isListLayout ? "hidden" : "hidden lg:flex") : "flex"
+        }
+        variant={isListLayout ? "rows" : "cards"}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
         mailboxEmails={mailboxEmails}
@@ -3714,9 +3743,9 @@ export function InboxSplitView({
       />
 
       <div
-        className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-border/60 bg-background ${
-          selectedThreadId ? "flex" : "hidden lg:flex"
-        }`}
+        className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background ${
+          isListLayout ? "lg:border-l lg:border-border/90" : "border-l border-border/60"
+        } ${selectedThreadId ? "flex" : isListLayout ? "hidden" : "hidden lg:flex"}`}
       >
         <InboxContentBoundary resetKey={selectedThreadId || "no-thread"}>
           <TicketDetail
@@ -3734,6 +3763,7 @@ export function InboxSplitView({
           onTicketStateChange={handleTicketStateChange}
           onOpenInsights={() => setInsightsOpen(true)}
           onBackToInbox={handleBackToInbox}
+          alwaysShowBackButton={isListLayout}
           showThinkingCard={isDraftGenerating}
           isDraftFetching={
             !draftReady &&

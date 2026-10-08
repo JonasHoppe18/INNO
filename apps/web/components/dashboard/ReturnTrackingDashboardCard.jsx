@@ -84,7 +84,7 @@ function latestCheckpoint(detail) {
 
 function ticketHref(threadId) {
   const id = String(threadId || "").trim();
-  return id ? `/inbox/tickets?thread=${encodeURIComponent(id)}` : "/inbox/tickets";
+  return id ? `/inbox?view=all&thread=${encodeURIComponent(id)}` : "/inbox?view=all";
 }
 
 function buildCarrierTrackingUrl({ carrier = "", trackingNumber = "", trackingUrl = "" } = {}) {

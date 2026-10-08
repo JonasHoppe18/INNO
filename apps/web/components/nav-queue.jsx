@@ -325,7 +325,7 @@ export function NavQueue({
                 hideIcon
                 pl="pl-7"
                 label="All tickets"
-                href="/inbox/tickets"
+                href="/inbox?view=all"
                 active={isViewActive("all")}
               />
             </>
