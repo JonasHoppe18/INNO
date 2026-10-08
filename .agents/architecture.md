@@ -1,6 +1,26 @@
 # Arkitektur — target og landkort
 
-Sona er en AI-first support platform til Shopify-butikker. **Målet** er én grounded end-to-end support-agent der kan håndtere kundeservicesager med høj svarkvalitet (tools, autoritativ policy, trace, eval).
+# Visionen for Sona AI
+
+**Visionen med Sona er at skabe en AI-kundeservicemedarbejder, der kan håndtere størstedelen af en webshops kundehenvendelser selvstændigt, korrekt og med samme kvalitet som en dygtig menneskelig medarbejder.**
+
+Sona skal være mere end en chatbot, der besvarer spørgsmål. Den skal forstå kundens problem, huske samtalens kontekst, finde den nødvendige information og hjælpe kunden hele vejen frem til en løsning.
+
+Sona skal kunne kombinere tre centrale ting:
+
+1. **Webshoppens viden:** Forstå produkter, handelsbetingelser, returpolitikker, reklamationsprocedurer og interne retningslinjer.
+2. **Live data:** Hente aktuelle oplysninger om ordrer, leveringer, lagerstatus, kunder og forsendelser fra eksempelvis Shopify og fragtleverandører.
+3. **Handlinger:** Udføre relevante opgaver som at annullere ordrer, ændre leveringsadresser og håndtere returneringer, når det er tilladt og sikkert.
+
+Det afgørende er, at Sona ikke bare skal have adgang til information. **Den skal vide, hvornår informationen er tilstrækkelig, hvad den må gøre, og hvordan den bedst hjælper kunden videre.** Den skal ikke stille unødvendige spørgsmål, gentage information eller give generiske svar, når problemet allerede kan løses.
+
+Samtidig skal Sona kommunikere naturligt, personligt og professionelt. Kunden skal opleve at skrive med en kompetent kundeservicemedarbejder frem for en traditionel AI-chatbot. Hver webshop skal kunne tilpasse Sonas tone, personlighed og kommunikationsstil, så den passer til virksomhedens brand.
+
+**Målet er, at Sona på sigt skal kunne håndtere 80–90 % eller mere af en webshops kundehenvendelser med minimal menneskelig involvering**, uden at gå på kompromis med korrekthed eller kundetilfredshed. Når Sona ikke kan løse en sag forsvarligt, skal den vide hvorfor og sørge for, at et menneske kan overtage med den nødvendige kontekst.
+
+Sona skal være en skalerbar SaaS-platform, som webshops nemt kan tilslutte deres eksisterende systemer til og tage i brug uden omfattende teknisk opsætning.
+
+**Den langsigtede ambition er at gøre intelligent, proaktiv og personlig kundeservice tilgængelig for enhver webshop — med en AI-medarbejder, der ikke blot svarer, men faktisk løser kundernes problemer.**
 
 ## Læs dette først
 
