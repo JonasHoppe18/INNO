@@ -75,7 +75,7 @@ Eksponerer: `{ loading, error, workspaceId, shopId, shopDomain, supabaseUserId, 
 
 Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi `SettingsWorkspace` ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
 
-Sektionerne læser via `useSettingsResource(url)`, som returnerer data synkront fra kortet. Hvis ressourcen mangler eller fejlede i bootstrap, henter hooken den via `readResponse` og lægger den i kortet. Efter et vellykket gem opdaterer sektionen kortet med det persisterede resultat (`setResource(url, payload)`), så den næste visning er korrekt uden et nyt kald.
+Sektionerne læser via `useSettingsResource(url)`, som returnerer data synkront fra kortet. Hvis ressourcen mangler eller fejlede i bootstrap, henter hooken den via `readResponse` og lægger den i kortet. Efter et vellykket gem kalder sektionen `refreshResource(url)`. Den henter GET-ressourcen i baggrunden og erstatter værdien i kortet, så den næste visning af sektionen viser det gemte uden skeleton. Den mountede sektion bliver ved med at vise sin egen kladde.
 
 `scopedReadCache` (TTL 15 s) bruges ikke til settings, fordi dens udløb ville give skeleton-blink ved sektionsskift.
 
@@ -88,12 +88,12 @@ Hver sektion er en komponent i `components/settings/sections/` med sit eget stat
 | `GeneralSection.jsx` | `GeneralTab` + general-state, `canSave`, `handleSaveGeneral`/`Reset` | workspace-kontekst, `/api/settings/test-mode` |
 | `AiInstructionsSection.jsx` | `AiInstructionsTab`, `AiPromptModal` | `/api/persona` |
 | `MembersSection.jsx` | `MembersTab`, `StoreTeamRow` | `members` fra kontekst, `reload` efter ændring |
-| `EmailSection.jsx` + `email/*.jsx` | `EmailSettings` delt i fem undersektions-komponenter; signatur-builder-helpers i `email/signature-builder.js` | via `EmailSettingsProvider` |
+| `email/EmailSection.jsx` + `email/EmailSettings.jsx` | email-state og handlers; `EmailSettings`-viewet flyttes intakt (opdeling i fem undersektions-komponenter hører til trin 2); signatur-builder-helpers i `email/signature-builder.js`; række-normalisering i `lib/settings/email-rows.js` | ressource-kortet |
 | `ProfileSection.jsx` | `ProfileTab` (er allerede selvstændig) | `/api/settings/theme` |
 | `BillingSection.jsx` | `BillingTab` | — |
 | mailboxes, tags, automation, customer-satisfaction | eksisterende komponenter, uændrede | — |
 
-`EmailSettingsProvider` ejer email-kladden (auto-reply, signatur, routing, sender rules, blocklist), `canSaveEmailSettings`, `handleSaveEmailSettings` og `handleDiscardEmailSettings`. `EmailSection` forbliver mounted, når man skifter undersektion (kun `emailSection` i URL'en ændres). Kladden overlever derfor skiftet, ligesom i dag hvor undersektionerne bare er skjult med CSS. Undersektions-menuen og gem-baren renderes af `EmailSection`, som i dag.
+`EmailSection` ejer email-kladden (auto-reply, signatur, routing, sender rules, blocklist), `canSaveEmailSettings`, `handleSaveEmailSettings` og `handleDiscardEmailSettings`. `EmailSection` forbliver mounted, når man skifter undersektion (kun `emailSection` i URL'en ændres). Kladden overlever derfor skiftet, ligesom i dag hvor undersektionerne bare er skjult med CSS. Undersektions-menuen og gem-baren renderes af `EmailSection`, som i dag.
 
 `SettingsPanel.jsx` slettes, når alle sektioner er flyttet.
 
@@ -121,7 +121,7 @@ Skift mellem email-undersektioner advarer ikke (som i dag). Browserens tilbage-k
 **Unit (vitest):**
 - `legacySettingsPath`: alle tabs, email-sections, `mailbox_id`, ukendte værdier.
 - `isSettingsSectionPath`: sektioner sand, builders falsk.
-- Ressource-map: bootstrap-ressourcer kan læses synkront under deres URL. En manglende eller fejlet ressource hentes én gang. `setResource` erstatter værdien.
+- Ressource-map: bootstrap-ressourcer (også fejlede) lander under deres URL; manglende URL'er identificeres til direkte hentning (workspace-only-ressourcer kun med workspace).
 
 **Manuelt på localhost mod dev (evidens i PR):**
 - Screenshots før og efter af hver sektion og email-undersektion (desktop + mobilbredde), taget lokalt og ikke uploadet.
