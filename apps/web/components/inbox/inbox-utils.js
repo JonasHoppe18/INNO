@@ -1,3 +1,4 @@
+import { formatListTimestamp } from "@/lib/format/datetime";
 import {
   getEffectiveSenderEmail,
   getEffectiveSenderName,
@@ -5,57 +6,9 @@ import {
   getSenderLabel,
 } from "@/lib/inbox/sender";
 
-const MESSAGE_DISPLAY_TIMEZONE = "Europe/Copenhagen";
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function getCalendarDayKey(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: MESSAGE_DISPLAY_TIMEZONE,
-    year: "numeric",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year || ""}-${values.month || ""}-${values.day || ""}`;
-}
-
-function getCalendarDayDistance(fromKey, toKey) {
-  const [fromYear, fromMonth, fromDay] = String(fromKey).split("-").map(Number);
-  const [toYear, toMonth, toDay] = String(toKey).split("-").map(Number);
-  if (![fromYear, fromMonth, fromDay, toYear, toMonth, toDay].every(Number.isFinite)) {
-    return null;
-  }
-  const fromUtc = Date.UTC(fromYear, fromMonth - 1, fromDay);
-  const toUtc = Date.UTC(toYear, toMonth - 1, toDay);
-  return Math.round((fromUtc - toUtc) / DAY_MS);
-}
-
+// Inbox list timestamps: 11:44 today, Yesterday, N days ago, then 8 Oct.
 export function formatMessageTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const diffDays = getCalendarDayDistance(
-    getCalendarDayKey(new Date()),
-    getCalendarDayKey(date),
-  );
-  if (diffDays === 0) {
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: MESSAGE_DISPLAY_TIMEZONE,
-    });
-  }
-  if (diffDays === 1) return "Yesterday";
-  if (Number.isFinite(diffDays) && diffDays > 1 && diffDays < 7) {
-    return `${diffDays} days ago`;
-  }
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: MESSAGE_DISPLAY_TIMEZONE,
-  });
+  return formatListTimestamp(value);
 }
 
 export function formatBytes(value) {

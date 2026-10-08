@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -69,9 +70,7 @@ const TYPE_ICON = {
 
 function formatDate(value) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateValue(value) || "—";
 }
 
 function statusClass(status) {

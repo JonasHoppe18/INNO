@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScopedReadResource } from "@/hooks/useScopedReadResource";
@@ -81,8 +82,7 @@ function formatMoneyTotals(totals = []) {
 }
 function formatDate(value) {
   if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateValue(value) || "—";
 }
 function formatDateLabel(value, fallback) {
   return value ? formatDate(`${value}T00:00:00`) : fallback;

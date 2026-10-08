@@ -1,3 +1,4 @@
+import { formatDateTime, formatFullDateTime, formatTime } from "@/lib/format/datetime";
 import { Component, memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
@@ -226,7 +227,6 @@ const isImageAttachment = (attachmentOrMime = "") => {
 };
 const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";
 const normalizeLower = (value = "") => String(value || "").trim().toLowerCase();
-const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 
 function ImageGrid({ images, onOpen }) {
   const count = images.length;
@@ -468,29 +468,11 @@ function MessageBubbleComponent({
   const displaySenderName = isAuthoredByCurrentUser ? "You" : senderDisplayName;
   const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
-  const fullTimestamp = timestampValue
-    ? new Date(timestampValue).toLocaleString("da-DK", {
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZone: DISPLAY_TIMEZONE,
-      })
-    : "";
+  const fullTimestamp = timestampValue ? formatFullDateTime(timestampValue) : "";
   const timestamp = showTimestamp && timestampValue
-    ? new Date(timestampValue).toLocaleString("da-DK", compactTimestamp
-      ? {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: DISPLAY_TIMEZONE,
-      }
-      : {
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZone: DISPLAY_TIMEZONE,
-      })
+    ? compactTimestamp
+      ? formatTime(timestampValue)
+      : formatDateTime(timestampValue)
     : "";
   const toList = Array.isArray(message.to_emails) ? message.to_emails : [];
   const ccList = Array.isArray(message.cc_emails) ? message.cc_emails : [];

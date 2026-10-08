@@ -1,4 +1,5 @@
 "use client";
+import { formatDate } from "@/lib/format/datetime";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -51,15 +52,8 @@ import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 
 const PAGE_SIZE = 25;
 const EMPTY_CUSTOMERS = [];
-const dateFormat = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
 function date(value) {
-  return value && Number.isFinite(Date.parse(value))
-    ? dateFormat.format(new Date(value))
-    : "—";
+  return formatDate(value, { year: "always" }) || "—";
 }
 function initials(name) {
   return name

@@ -1,4 +1,5 @@
 "use client";
+import { formatFullDateTime } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
@@ -41,12 +42,7 @@ import zendeskLogo from "../../../../assets/Zendesk_logo.webp";
 
 function formatDateTime(value) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatFullDateTime(value) || "—";
 }
 
 function formatDuration(start, end) {

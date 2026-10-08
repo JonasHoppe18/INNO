@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/format/datetime";
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 
 function stripThreadMeta(value = "") {
@@ -91,14 +92,7 @@ export function normalizeTrackingStatusLabel(value = "") {
 
 function formatEventTimestamp(value) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatDateTime(value);
 }
 
 function buildTrackingEventFromLog(log) {

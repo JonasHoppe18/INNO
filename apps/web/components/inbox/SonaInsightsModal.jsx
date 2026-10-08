@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/format/datetime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -139,17 +140,6 @@ const buildShopifyOrderUrl = (order, shopDomain) => {
   return `https://${normalizedDomain}/admin/orders/${encodeURIComponent(normalizedAdminId)}`;
 };
 
-const formatPanelDateTime = (value) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: DISPLAY_TIMEZONE,
-  });
-};
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -886,7 +876,7 @@ export function SonaInsightsModal({
                 <TicketMetadataPanel threadId={threadId} />
                 {ticketThread?.created_at ? (
                   <div className="mt-1.5">
-                    <PropertyRow label="Created">{formatPanelDateTime(ticketThread.created_at)}</PropertyRow>
+                    <PropertyRow label="Created">{formatDateTime(ticketThread.created_at)}</PropertyRow>
                   </div>
                 ) : null}
               </PanelSection>

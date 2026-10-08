@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -16,9 +17,7 @@ const PERIOD_OPTIONS = [
 
 function formatDate(value, fallback) {
   if (!value) return fallback;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return fallback;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatDateValue(value) || fallback;
 }
 
 function periodLabel(period, range) {

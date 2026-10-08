@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
@@ -27,13 +28,7 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 function formatDate(value) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDateValue(value);
 }
 
 const UUID_REGEX =

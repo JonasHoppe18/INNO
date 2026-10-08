@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/format/datetime";
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
@@ -236,12 +237,7 @@ function formatActionTimestamp(value, nowMs = null) {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
 
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatDateTime(date);
 }
 
 function formatAddressObjectLines(address = {}) {
@@ -451,14 +447,7 @@ function formatCurrency(value, currency) {
 
 function formatOrderDate(value) {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  return formatDate(value, { year: "always" }) || null;
 }
 
 function getOrderDisplayNumber(orderSummary = null) {

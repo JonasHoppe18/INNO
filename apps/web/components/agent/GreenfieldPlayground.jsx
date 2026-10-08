@@ -1,4 +1,5 @@
 "use client";
+import { formatTime } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -27,11 +28,6 @@ const STARTER_MESSAGES = [
   "Is this product compatible with my setup?",
 ];
 
-function formatTime(value) {
-  if (!value) return "";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
 
 function formatDuration(value) {
   const milliseconds = Number(value);

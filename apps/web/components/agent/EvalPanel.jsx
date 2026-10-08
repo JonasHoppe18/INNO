@@ -1,4 +1,5 @@
 "use client";
+import { formatDate } from "@/lib/format/datetime";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -681,7 +682,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
               {run.pipeline_version === "v2" && (
                 <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-xs font-semibold text-violet-700">V2</span>
               )}
-              {run.created_at && ` · ${new Date(run.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
+              {run.created_at && ` · ${formatDate(run.created_at)}`}
             </p>
           </div>
           <div className="hidden shrink-0 items-center gap-4 sm:flex">

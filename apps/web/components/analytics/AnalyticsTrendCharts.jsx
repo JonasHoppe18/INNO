@@ -1,4 +1,5 @@
 "use client";
+import { formatDate as formatDateValue, formatMonth } from "@/lib/format/datetime";
 
 import { useReducedMotion } from "motion/react";
 import {
@@ -20,10 +21,9 @@ import {
 
 function formatDate(value) {
   if (!value) return "";
-  const normalized = value.length === 7 ? `${value}-01` : value;
-  const date = new Date(`${normalized}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", { month: "short", day: value.length === 7 ? undefined : "numeric" });
+  // "YYYY-MM" buckets are months; "YYYY-MM-DD" buckets are days.
+  if (value.length === 7) return formatMonth(`${value}-01`) || value;
+  return formatDateValue(value) || value;
 }
 
 const axisProps = {
