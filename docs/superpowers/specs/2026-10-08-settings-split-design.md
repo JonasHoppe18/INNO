@@ -22,30 +22,23 @@ Målet er at dele `apps/web/components/settings/SettingsPanel.jsx` (4.711 linjer
 
 ## Ruter
 
-Sektionerne ligger i en route group, så builderne ikke arver settings-layoutet:
+Hver sektion får sin egen URL (`/settings/general`, `/settings/email/routing` …). De serveres alle af **én optional catch-all-rute**, og der navigeres client-side mellem dem:
 
 ```
 app/(dashboard)/settings/
-  page.jsx                      → redirect (se "Gamle links")
-  (sections)/
-    layout.jsx                  → SettingsShell: venstremenu + mobil-select + SettingsWorkspaceProvider
-    general/page.jsx
-    members/page.jsx
-    mailboxes/page.jsx
-    tags/page.jsx
-    ai/page.jsx
-    automation/page.jsx
-    email/
-      layout.jsx                → EmailSettingsProvider (delt kladde på tværs af undersektioner)
-      page.jsx                  → redirect til /settings/email/auto-reply
-      [section]/page.jsx        → auto-reply | routing | sender-rules | blocklist | signatures; ellers notFound()
-    customer-satisfaction/page.jsx
-    profile/page.jsx
-    billing/page.jsx
-  csat/…  confirmation/…        → uændret, uden for gruppen
+  [[...slug]]/page.jsx          → erstatter page.jsx; redirecter gamle links, ellers renderer den SettingsWorkspace
+  csat/…  confirmation/…        → uændret; statiske segmenter vinder over catch-all
 ```
 
-Rute-nøglerne er de nuværende tab- og section-nøgler. Det holder redirects trivielle og lader trin 3 omdøbe ét sted.
+**Hvorfor ikke én mappe pr. sektion:** `(dashboard)/layout.jsx` er dynamisk (Clerk `auth()`, `cookies()`), og `(dashboard)/loading.jsx` er en global skeleton. Med separate route-segmenter ville første besøg på hver sektion kræve en tur til serveren, og dashboard-skeletonen ville vises imens. I dag er et faneskift øjeblikkeligt. Catch-all + `window.history.pushState` bevarer det. Next 14.2 synkroniserer `pushState` med `usePathname`, så aktiv sektion udledes af URL'en uden server-tur.
+
+`[[...slug]]/page.jsx` er en server-komponent:
+- uden slug og med `?tab=` → `redirect(legacySettingsPath(searchParams))`
+- uden slug og uden `?tab=` → `redirect("/settings/general")`
+- slug, der ikke er en kendt sektion (`parseSettingsSlug` returnerer `null`) → `redirect("/settings/general")`
+- ellers → `<SettingsWorkspace />` (client)
+
+`/settings/email` uden undersektion → `/settings/email/auto-reply`.
 
 ### Gamle links
 
@@ -66,11 +59,11 @@ Interne links opdateres til de nye stier: `CsatEmailBuilder` back-link, `Confirm
 
 `lib/settings/navigation.js` er eneste kilde til navigationen:
 
-- `SETTINGS_NAV`: grupperne og punkterne fra `MENU_SECTIONS` (key, label, ikon, href)
+- `SETTINGS_NAV`: grupperne og punkterne fra `MENU_SECTIONS` (key, label; ikonerne mappes i shell'en)
 - `EMAIL_SECTIONS`: fra den nuværende fil
-- `legacySettingsPath`, `isSettingsSectionPath`
+- `parseSettingsSlug(slug)`, `settingsPath(section, emailSection?)`, `legacySettingsPath(searchParams)`, `isSettingsSectionPath(pathname)`
 
-`SettingsShell` renderer desktop-menuen og mobil-`<select>` præcis som i dag. Aktivt punkt udledes af `usePathname()` i stedet for `activeTab`-state. Punkterne er `Link`s. Mobil-select navigerer med `router.push`.
+`SettingsShell` renderer desktop-menuen og mobil-`<select>` præcis som i dag. Aktiv sektion udledes af `usePathname()` via `parseSettingsSlug` i stedet for `activeTab`-state. Menupunkter og mobil-select navigerer med `window.history.pushState(null, "", settingsPath(section, emailSection))`, ligesom i dag, bare med nye stier. Der er ingen server-tur og ingen skeleton.
 
 ## Data: workspace-kontekst + sektioner der henter selv
 
@@ -80,7 +73,7 @@ Ejer kun *hvem er jeg* og bruges af flere sektioner. Den indeholder den nuværen
 
 Eksponerer: `{ loading, error, workspaceId, shopId, shopDomain, supabaseUserId, workspaceName, currentRole, canManageMembers, members, reload, setWorkspaceName }`.
 
-Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi layoutet ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
+Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi `SettingsWorkspace` ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
 
 Sektionerne læser via `useSettingsResource(url)`, som returnerer data synkront fra kortet. Hvis ressourcen mangler eller fejlede i bootstrap, henter hooken den via `readResponse` og lægger den i kortet. Efter et vellykket gem opdaterer sektionen kortet med det persisterede resultat (`setResource(url, payload)`), så den næste visning er korrekt uden et nyt kald.
 
@@ -100,7 +93,7 @@ Hver sektion er en komponent i `components/settings/sections/` med sit eget stat
 | `BillingSection.jsx` | `BillingTab` | — |
 | mailboxes, tags, automation, customer-satisfaction | eksisterende komponenter, uændrede | — |
 
-`EmailSettingsProvider` ejer email-kladden (auto-reply, signatur, routing, sender rules, blocklist), `canSaveEmailSettings`, `handleSaveEmailSettings` og `handleDiscardEmailSettings`. Fordi den ligger i `email/layout.jsx`, overlever ændringer et skift mellem undersektioner, ligesom i dag hvor de bare er skjult med CSS. Undersektions-menuen og gem-baren renderes i email-layoutet, som i dag.
+`EmailSettingsProvider` ejer email-kladden (auto-reply, signatur, routing, sender rules, blocklist), `canSaveEmailSettings`, `handleSaveEmailSettings` og `handleDiscardEmailSettings`. `EmailSection` forbliver mounted, når man skifter undersektion (kun `emailSection` i URL'en ændres). Kladden overlever derfor skiftet, ligesom i dag hvor undersektionerne bare er skjult med CSS. Undersektions-menuen og gem-baren renderes af `EmailSection`, som i dag.
 
 `SettingsPanel.jsx` slettes, når alle sektioner er flyttet.
 
