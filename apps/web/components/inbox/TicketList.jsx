@@ -7,8 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TicketListItem } from "@/components/inbox/TicketListItem";
-import { ArrowDownUp, Inbox, Search, SearchX, X } from "lucide-react";
+import { LIST_ROW_GRID_CLASS, TicketListItem } from "@/components/inbox/TicketListItem";
+import { ArrowDownUp, Columns2, Inbox, Rows3, Search, SearchX, X } from "lucide-react";
 import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
 import { useThreadPreviewMessages } from "@/hooks/useInboxData";
 import { customerPreviewsByThread } from "@/components/inbox/message-preview";
@@ -25,11 +25,16 @@ const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
 const TICKET_ROW_GAP_PX = 4;
 const VIRTUAL_ROW_HEIGHT_PX = 76 + TICKET_ROW_GAP_PX;
+// "rows" variant (full-width list layout): single-line rows separated by a
+// border instead of gapped cards.
+const VIRTUAL_LIST_ROW_HEIGHT_PX = 56;
 const VIRTUAL_OVERSCAN_ROWS = 6;
 
 export function TicketListToolbar({
   filters,
   onFiltersChange,
+  layout = null,
+  onLayoutChange,
   className = "",
 }) {
   const hasActiveSearch = Boolean(String(filters.query || "").trim());
@@ -90,6 +95,21 @@ export function TicketListToolbar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      {layout && onLayoutChange ? (
+        <button
+          type="button"
+          onClick={() => onLayoutChange(layout === "list" ? "split" : "list")}
+          aria-label={layout === "list" ? "Switch to split view" : "Switch to list view"}
+          title={layout === "list" ? "Split view" : "List view"}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-[background-color,border-color,color,transform,box-shadow] duration-150 hover:border-border/70 hover:bg-background hover:text-accent-foreground hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 active:scale-[0.97]"
+        >
+          {layout === "list" ? (
+            <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Rows3 className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -118,7 +138,10 @@ export function TicketList({
   approveCloseGroupKey = null,
   onApproveClose,
   onKeepWaiting,
+  variant = "cards",
 }) {
+  const isRowsVariant = variant === "rows";
+  const rowHeightPx = isRowsVariant ? VIRTUAL_LIST_ROW_HEIGHT_PX : VIRTUAL_ROW_HEIGHT_PX;
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
   // Task 8, Plan 2: when `groups` is supplied (Waiting tab), render is driven
@@ -293,6 +316,9 @@ export function TicketList({
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      // In the full-width list layout the arrows would open a ticket straight
+      // from the overview; only step between tickets once one is open.
+      if (isRowsVariant && !selectedThreadId) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
       e.preventDefault();
@@ -320,7 +346,7 @@ export function TicketList({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [renderedThreads, selectedThreadId, onSelectThread]);
+  }, [isRowsVariant, renderedThreads, selectedThreadId, onSelectThread]);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -373,20 +399,20 @@ export function TicketList({
     const viewportHeight = virtualViewport.height || 720;
     const startIndex = Math.max(
       0,
-      Math.floor(virtualViewport.scrollTop / VIRTUAL_ROW_HEIGHT_PX) -
+      Math.floor(virtualViewport.scrollTop / rowHeightPx) -
         VIRTUAL_OVERSCAN_ROWS
     );
     const visibleCount =
-      Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT_PX) +
+      Math.ceil(viewportHeight / rowHeightPx) +
       VIRTUAL_OVERSCAN_ROWS * 2;
     const endIndex = Math.min(total, startIndex + visibleCount);
     return {
       rows: renderedThreads.slice(startIndex, endIndex),
-      before: startIndex * VIRTUAL_ROW_HEIGHT_PX,
-      after: Math.max(0, (total - endIndex) * VIRTUAL_ROW_HEIGHT_PX),
+      before: startIndex * rowHeightPx,
+      after: Math.max(0, (total - endIndex) * rowHeightPx),
       startIndex,
     };
-  }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
+  }, [renderedThreads, rowHeightPx, virtualViewport.height, virtualViewport.scrollTop]);
 
   const previewThreadIds = virtualWindow.rows.filter(({ thread }) => !thread.is_local && /^[a-f0-9-]{36}$/i.test(String(thread.id))).map(({ thread }) => thread.id);
   const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
@@ -397,7 +423,13 @@ export function TicketList({
   const previews = useMemo(() => customerPreviewsByThread(previewMessages, mailboxEmails, isInternalSender), [previewMessages, mailboxEmails, isInternalSender]);
 
   return (
-    <aside className={`animate-view-enter flex w-full flex-col rounded-none bg-conversation lg:border-l lg:border-border/90 lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none ${className}`}>
+    <aside
+      className={`animate-view-enter flex w-full flex-col rounded-none lg:border-l lg:border-border/90 ${
+        isRowsVariant
+          ? "min-w-0 flex-1 bg-conversation"
+          : "bg-conversation lg:w-[--ticket-list-width] lg:min-w-[--ticket-list-width] lg:max-w-[--ticket-list-width] lg:flex-none"
+      } ${className}`}
+    >
       <div className="flex h-12 shrink-0 items-center border-b border-border/55 bg-background lg:hidden">
         <TicketListToolbar
           filters={filters}
@@ -410,7 +442,25 @@ export function TicketList({
         onScroll={updateVirtualViewport}
       >
         {renderedThreads.length ? (
-          <div className="p-[4px]">
+          <div
+            className={
+              isRowsVariant
+                ? "m-3 overflow-clip rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.04)] lg:m-4"
+                : "p-[4px]"
+            }
+          >
+            {isRowsVariant ? (
+              <div
+                className={`${LIST_ROW_GRID_CLASS} sticky top-0 z-10 h-9 border-b border-border/60 bg-muted/40 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground backdrop-blur supports-[backdrop-filter]:bg-muted/60`}
+              >
+                <span>Customer</span>
+                <span>Subject</span>
+                <span className="hidden lg:inline">Status</span>
+                <span className="hidden xl:inline">Owner</span>
+                <span className="hidden xl:inline">#</span>
+                <span className="text-right">Updated</span>
+              </div>
+            ) : null}
             {virtualWindow.before ? (
               <div style={{ height: virtualWindow.before }} aria-hidden="true" />
             ) : null}
@@ -441,7 +491,7 @@ export function TicketList({
               // small quiet text-buttons instead of relying on selection.
               const isApproveCloseRow = approveCloseThreadIds.has(String(thread.id));
               return (
-                <div key={thread.id} className="mb-[4px] last:mb-0">
+                <div key={thread.id} className={isRowsVariant ? "" : "mb-[4px] last:mb-0"}>
                   {groupHeaderLabel ? (
                     <div className="px-3.5 pb-1 pt-2.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                       {groupHeaderLabel}
@@ -466,6 +516,8 @@ export function TicketList({
                       isExiting={isExiting}
                       isNew={newThreadIds.has(String(thread.id))}
                       mountIndex={absoluteIndex}
+                      variant={isRowsVariant ? "row" : "card"}
+                      showDivider={absoluteIndex > 0}
                       showApproveCloseActions={isApproveCloseRow}
                       onApproveClose={
                         isApproveCloseRow && onApproveClose
@@ -493,7 +545,12 @@ export function TicketList({
               );
             })}
             {virtualWindow.after ? (
-              <div style={{ height: Math.max(0, virtualWindow.after - TICKET_ROW_GAP_PX) }} aria-hidden="true" />
+              <div
+                style={{
+                  height: Math.max(0, virtualWindow.after - (isRowsVariant ? 0 : TICKET_ROW_GAP_PX)),
+                }}
+                aria-hidden="true"
+              />
             ) : null}
           </div>
         ) : isNeedsAttentionRoute && !hasActiveListFilters ? (

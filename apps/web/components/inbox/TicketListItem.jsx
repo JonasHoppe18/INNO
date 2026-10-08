@@ -1,8 +1,13 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Mail, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
-import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
+import {
+  assigneeInitials,
+  CANONICAL_STATUS_OPTIONS,
+  canonicalStatusOption,
+  formatWakeCountdown,
+} from "@/lib/inbox/view-model";
 import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 import { formatTicketReference } from "@/lib/tickets/reference";
 
@@ -14,7 +19,21 @@ const STATUS_DOT_STYLES = {
   Solved: "bg-muted-foreground/60",
 };
 
+// List layout shows the same lifecycle status as the ticket header control.
+const LIFECYCLE_DOT_STYLES = {
+  needs_attention: "bg-warning-foreground",
+  waiting_customer: "bg-info-foreground",
+  waiting_third_party: "bg-info-foreground",
+  resolved: "bg-success-foreground",
+  blocked: "bg-destructive",
+};
+
 const PREFETCH_HOVER_DELAY_MS = 150;
+
+// Shared by the list-layout header (TicketList) and each row so columns line
+// up: customer · subject · status (lg+) · owner, # (xl+) · updated.
+export const LIST_ROW_GRID_CLASS =
+  "grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_4.5rem] items-center gap-x-5 pl-4 pr-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_10rem_5rem] xl:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_10rem_8rem_4rem_5rem]";
 
 function TicketListItemComponent({
   thread,
@@ -28,11 +47,14 @@ function TicketListItemComponent({
   assigneeLabel = null,
   priority,
   reason = null,
+  waitAge = null,
   showLegacyStatus = false,
   wakeDays = null,
   isExiting = false,
   isNew = false,
   mountIndex = 0,
+  variant = "card",
+  showDivider = false,
   showApproveCloseActions = false,
   onApproveClose,
   onKeepWaiting,
@@ -108,6 +130,203 @@ function TicketListItemComponent({
   };
 
   const handleDragEnd = () => setIsDragging(false);
+
+  const reasonClassName = reason
+    ? reason.key === "customer_replied"
+      ? "text-warning-foreground"
+      : reason.key === "approve_close"
+        ? "text-accent-foreground"
+        : "text-success-foreground"
+    : "";
+
+  if (variant === "row") {
+    // Full-width list layout: one column-aligned row per ticket (grid shared
+    // with the header in TicketList). Same data and handlers as the card;
+    // approve/keep-waiting sit after the row button as siblings (nested
+    // buttons are invalid).
+    // Real names get two initials; a bare email address gets one letter, and
+    // no-reply senders get a neutral mail glyph instead of noise like "NC".
+    const senderLabel = String(customerLabel || "").trim();
+    const senderIsEmail = senderLabel.includes("@");
+    const senderIsNoReply = /^(no-?reply|do-?not-?reply|mailer-daemon)/i.test(senderLabel);
+    const senderInitials = senderIsEmail
+      ? (senderLabel.match(/[a-z0-9]/i)?.[0] || "?").toUpperCase()
+      : assigneeInitials(senderLabel) || "?";
+    const lifecycleStatus = canonicalStatusOption({
+      status: status || thread?.status,
+      waiting_reason: thread?.waiting_reason,
+    });
+    const lifecycleLabel =
+      CANONICAL_STATUS_OPTIONS.find((option) => option.value === lifecycleStatus)?.label ||
+      (lifecycleStatus === "blocked" ? "Blocked" : "Needs attention");
+    // Second line only when it adds something: why the ticket is back in the
+    // queue, or how long it has been waiting. "New" is already the unread bar.
+    const statusDetail =
+      reason && reason.key !== "new"
+        ? { text: reason.label, className: reasonClassName }
+        : wakeCountdownText
+          ? { text: wakeCountdownText, className: "text-muted-foreground" }
+          : waitAge && lifecycleStatus !== "resolved"
+            ? { text: `Waiting ${waitAge}`, className: "text-muted-foreground" }
+            : null;
+    return (
+      <div
+        className={cn(
+          "group relative flex h-14 items-center transition-[background-color,opacity] duration-150 ease-out hover:bg-muted/50",
+          showDivider && "border-t border-border/50",
+          isActive && "bg-accent hover:bg-accent",
+          isNew && "animate-ticket-enter",
+          isExiting && "pointer-events-none opacity-0",
+          isDragging && "opacity-40",
+        )}
+      >
+        {isUnread ? (
+          <span aria-hidden="true" className="absolute inset-y-2.5 left-0 w-0.5 rounded-r-full bg-primary" />
+        ) : null}
+        <button
+          type="button"
+          draggable={isDraggable}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onClick={(event) =>
+            isExiting
+              ? null
+              : onSelect?.({
+                  newTab: Boolean(event.metaKey || event.ctrlKey),
+                })
+          }
+          onContextMenu={(event) => onContextMenu?.(event)}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          className={cn(
+            LIST_ROW_GRID_CLASS,
+            "h-full min-w-0 flex-1 text-left text-[13px] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            isDraggable && "cursor-grab active:cursor-grabbing",
+          )}
+          aria-current={isActive ? "page" : undefined}
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {senderIsNoReply ? <Mail className="size-3.5" /> : senderInitials}
+            </span>
+            <span
+              title={customerLabel}
+              className={cn(
+                "min-w-0 truncate",
+                isUnread ? "font-semibold text-foreground" : "text-foreground/85",
+              )}
+            >
+              {customerLabel}
+            </span>
+            {isUnread ? <span className="sr-only">Unread</span> : null}
+          </span>
+
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                title={thread.subject || "Untitled ticket"}
+                className={cn(
+                  "min-w-0 truncate text-foreground",
+                  isUnread ? "font-semibold" : "font-medium",
+                )}
+              >
+                {thread.subject || "Untitled ticket"}
+              </span>
+              {hasAiDraft ? (
+                <span title="Draft ready" aria-label="Draft ready" className="shrink-0">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                </span>
+              ) : null}
+            </span>
+            <span
+              title={previewText || undefined}
+              className="min-w-0 truncate text-xs text-muted-foreground"
+            >
+              {previewText || "\u00a0"}
+            </span>
+          </span>
+
+          <span className="hidden min-w-0 flex-col justify-center gap-0.5 lg:flex">
+            <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  LIFECYCLE_DOT_STYLES[lifecycleStatus] || "bg-muted-foreground",
+                )}
+              />
+              <span title={lifecycleLabel} className="truncate">
+                {lifecycleLabel}
+              </span>
+            </span>
+            {statusDetail ? (
+              <span className={cn("min-w-0 truncate pl-3 text-[11px]", statusDetail.className)}>
+                {statusDetail.text}
+              </span>
+            ) : null}
+          </span>
+
+          <span className="hidden min-w-0 items-center gap-2 xl:flex">
+            {assigneeDisplay ? (
+              <>
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-[9px] font-semibold text-muted-foreground">
+                  {assigneeDisplay}
+                </span>
+                <span title={assigneeLabel} className="min-w-0 truncate text-xs text-foreground/85">
+                  {assigneeLabel}
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground/60">Unassigned</span>
+            )}
+          </span>
+
+          <span className="hidden text-xs tabular-nums text-muted-foreground xl:inline">
+            {ticketNumberLabel || "—"}
+          </span>
+
+          <span
+            className={cn(
+              "text-right text-xs tabular-nums",
+              isUnread ? "font-semibold text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {formatMessageTime(timestamp)}
+          </span>
+        </button>
+        {showApproveCloseActions ? (
+          <div className="flex shrink-0 items-center gap-3 pr-5">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onApproveClose?.();
+              }}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onKeepWaiting?.();
+              }}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Keep waiting
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     // Task 9, Plan 2: the outer element used to be a bare <button> — approve
@@ -264,5 +483,7 @@ export const TicketListItem = memo(
     prev.isExiting === next.isExiting &&
     prev.isNew === next.isNew &&
     prev.mountIndex === next.mountIndex &&
+    prev.variant === next.variant &&
+    prev.showDivider === next.showDivider &&
     prev.showApproveCloseActions === next.showApproveCloseActions,
 );
