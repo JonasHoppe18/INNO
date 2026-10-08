@@ -295,8 +295,8 @@ it("a dimension fact cannot satisfy a requested composition obligation", () => {
   const ctx = context([evidence([record("Size: 130 × 180 cm.")])], { turnIR: { actions: [], answerRequests: [{ kind: "product_property", propertyKey: "composition", sourceText: "wool", subject: "Willow" }] } });
   const result = complete(ctx);
   expect(result.coverage.supported).toEqual([]);
-  expect(result.coverage.unknown).toEqual(["product.properties.composition"]);
-  expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("does not establish its material composition");
+  expect(result.coverage.unknown).toEqual(["answer.0.material_composition"]);
+  expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("does not establish the requested material composition");
 });
 
 it("a full recovered procedure replaces its validated partial projection", () => {

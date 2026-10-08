@@ -1,4 +1,5 @@
-import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence } from "./response-contract";
+import { compilePreciseAnswerRequests, facetReadQuery } from "./answer-facets";
+import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
@@ -160,7 +161,7 @@ function modelOutputDiagnostics(output: unknown) {
   const parsed = StructuredResponseSchema.safeParse(output);
   const segments = parsed.success ? parsed.data.segments : [];
   const knowledgeSegments = segments.filter((segment) => segment.type === "knowledge_guidance");
-  const answerSegments = segments.filter((segment) => ["fact", "source_content", "source_comparison", "evidence_limitation", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
+  const answerSegments = segments.filter((segment) => ["fact", "source_content", "source_comparison", "evidence_limitation", "facet_limit", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
   const clarificationRequested = segments.some((segment) => segment.type === "question");
   const fallbackLikeContent = segments.some((segment) => "text" in segment && looksLikeFallbackText(segment.text));
   const hasAnswer = answerSegments.length > 0 && !fallbackLikeContent;
@@ -376,6 +377,9 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "turn_ir_unavailable",
       message: "Semantic interpretation is unavailable. Proposal-only actions are blocked for this turn." }, now());
   }
+  const preciseRequests = compilePreciseAnswerRequests(turnIR?.answerRequests ?? []);
+  const preciseReadResults: Record<string, string[]> = {};
+  let preciseReadBudget = 6;
   let providerCustomer = await options.capabilities.commerce.getCustomer().catch(() => null);
   const identityMismatch = Boolean(options.tenant.customerEmail && providerCustomer?.email
     && options.tenant.customerEmail.toLowerCase() !== providerCustomer.email.trim().toLowerCase());
@@ -485,7 +489,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }, now());
   }
   preloadedResults.push(...orderContextResults);
-  const preload = async (toolName: "search_policy", query: string) => {
+  const preload = async (toolName: "search_policy" | "search_product_knowledge" | "get_product", query: string) => {
     const startedPreload = Date.now();
     pushEvent(trace, "tool_call", {
       call_id: `preloaded_${toolName}`,
@@ -502,7 +506,35 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       preloaded: true,
     }, now());
     preloadedResults.push({ tool: toolName, result });
+    return result;
   };
+  const preciseContext = () => ({ ...registry, evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, operationalScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" }, preciseRequests, preciseReadResults, turnIR: turnIR ?? undefined, customerMessage: options.message, customerProvidedContext, caseState: conversationContext.caseState });
+  const recoverPreciseReads = async () => {
+    const subject = verifiedAnswerSubject(preciseContext());
+    if (!subject) return;
+    for (const request of missingPreciseEvidence(preciseContext())) {
+      if (!missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) continue;
+      if (preciseReadBudget <= 0) break;
+      const query = `${subject.title}: ${facetReadQuery(request.facet)}`;
+      preciseReadBudget -= 1;
+      const result = await preload("search_product_knowledge", query);
+      if (result.resultId) (preciseReadResults[request.id] ??= []).push(result.resultId);
+      // Retry the verified catalog alias, never a different product or an invented value.
+      if (subject.handle && preciseReadBudget > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
+        preciseReadBudget -= 1;
+        const retry = await preload("search_product_knowledge", `${subject.handle}: ${facetReadQuery(request.facet)}`);
+        if (retry.resultId) (preciseReadResults[request.id] ??= []).push(retry.resultId);
+      }
+    }
+  };
+  if (preciseRequests.length && preciseRequests.some(request => request.subject)) {
+    preciseReadBudget -= 1;
+    const lookupSubject = preciseRequests.find(request => request.subject)?.subject;
+    // A semantic label is only a lookup query; the returned provider identity still gates recovery.
+    const read = await preload("get_product", lookupSubject ?? options.message);
+    if (read.resultId) for (const request of preciseRequests) (preciseReadResults[request.id] ??= []).push(read.resultId);
+    await recoverPreciseReads();
+  }
   conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());
   const effectiveTurnIR = caseActionIntents(conversationContext, turnIR, currentReferences.length > 0);
   const operationalOutcome = options.operational ? await resolveOperationalAction({ tenant: options.tenant,
@@ -678,6 +710,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       operationalScope: options.operational ? { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" } : undefined,
       turnIR: effectiveTurnIR ?? undefined,
       caseState: conversationContext.caseState,
+      evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, preciseRequests, preciseReadResults,
       knownCaseArguments: [...(conversationContext.activeOrder ? ["order_id"] : []),
         ...(conversationContext.caseState?.scope.customerEmail ? ["customer_email"] : []),
         ...(conversationContext.caseState?.address?.complete ? ["address"] : []),
@@ -721,7 +754,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         evidence: [{ result_id: evidence.resultId, field_paths: ["fulfillmentStatus"] }] }] }, responseContext);
     }
     // Completeness recovery cannot replace an action-boundary decision with an ineligible action path.
-    const validation = preserveMaterialPolicyEvidence(boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext), responseContext);
+    if (!boundaryOutput) await recoverPreciseReads();
+    let validation = preserveMaterialPolicyEvidence(boundaryOutput ? validatedOutput : ensureAnswerCompleteness(validatedOutput, responseContext), responseContext);
+    const renderedCoverage = renderWithAnswerCoverage(validation, { ...responseContext, locale: inferResponseLocale(options.message), customerDisplayName, firstResponse: !(options.history?.length) && !(conversationContext?.turn) });
+    validation = renderedCoverage.validation;
     const useAuthoritativeFallback = !boundaryOutput && shouldPreferAuthoritativeEvidenceFallback(validation, responseContext);
     if (options.enableDevDiagnostics && modelDiagnostics) {
       const evidence = evidenceDiagnostics(registry);
@@ -762,13 +798,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     });
     for (const execution of actionExecutions) pushEvent(trace, "action_execution", execution, now());
     const responseWithoutSignature = validation.approvedSegments.length && !useAuthoritativeFallback
-      ? renderResponseSegments(validation.approvedSegments, {
-          ...responseContext,
-          locale: inferResponseLocale(options.message),
-          customerDisplayName,
-          firstResponse: !(options.history?.length) && !(conversationContext?.turn),
-          proposedActions,
-        })
+      ? renderedCoverage.response
       : fallbackResponse({
           activeOrder: responseContext.activeOrder,
           locale: inferResponseLocale(options.message),

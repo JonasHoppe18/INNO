@@ -118,6 +118,7 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     expect(segmentSchemas.map((schema) => schema.properties.type.const)).toEqual([
       "evidence_limitation",
       "source_content",
+      "facet_limit",
       "source_comparison",
       "operational_result",
       "fact",

@@ -496,13 +496,13 @@ function boundaryIds(value, pattern) {
 }
 function safeBoundaryCoverage(value) {
   if (!isRecord(value)) return null;
-  const ids = values => boundaryIds(values, /^(?:order\.(?:amount|lines|line_timing|line\.\d+)|product\.(?:care|properties(?:\.(?:composition|dimensions))?)|policy\.[a-z_]+\.[a-z_]+|damage\.photo_channel|shipping\.threshold_comparison|provider\.shipping_charge_and_coupon)$/);
+  const ids = values => boundaryIds(values, /^(?:order\.(?:amount|lines|line_timing|line\.\d+)|product\.(?:care|properties(?:\.(?:composition|dimensions))?)|policy\.[a-z_]+\.[a-z_]+|damage\.photo_channel|shipping\.threshold_comparison|provider\.shipping_charge_and_coupon|answer\.\d+\.[a-z_]+)$/);
   return { requested: ids(value.requested), supported: ids(value.supported), satisfied: ids(value.satisfied), missing: ids(value.missing), unknown: ids(value.unknown),
     obligations: Array.isArray(value.obligations) ? value.obligations.slice(0, 48).flatMap(item => {
       const id = ids([item?.id])[0];
       if (!id) return [];
-      return [{ id, kind: boundaryCode(item.kind), status: ["supported", "unavailable"].includes(item.status) ? item.status : null,
-        satisfied: item.satisfied === true, recovery: ["not_needed", "recovered", "rejected", "unavailable"].includes(item.recovery) ? item.recovery : null,
+      return [{ id, kind: boundaryCode(item.kind), status: ["supported", "unavailable", "unknown", "missing"].includes(item.status) ? item.status : null,
+        satisfied: item.satisfied === true, rendered: item.rendered === true, facet: boundaryCode(item.facet), recovery: ["not_needed", "recovered", "rejected", "unavailable"].includes(item.recovery) ? item.recovery : null,
         rejectionCodes: Array.isArray(item.rejectionCodes) ? item.rejectionCodes.slice(0, 16).map(boundaryCode).filter(Boolean) : [],
         resultIds: boundaryIds(item.resultIds, /^tool_result_\d+$/), sourceIds: boundaryIds(item.sourceIds, /^[0-9a-f]{8}-[0-9a-f-]{27}$/i) }];
     }) : [] };

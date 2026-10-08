@@ -1,3 +1,4 @@
+import { ANSWER_FACETS, compilePreciseAnswerRequests, documentedUnknown, internalAnswerInstruction, sourceSupportsFacet, sourceDomainSupportsFacet, type CoveredAnswerFacet, type PreciseAnswerRequest } from "./answer-facets";
 import { isVerifiedOperationalOutcome, operationalReply } from "./operational-execution";
 import type { OperationalOutcome } from "./operational-types";
 import type { TurnIR } from "./turn-ir";
@@ -93,7 +94,8 @@ const AcknowledgementSchema = z.object({
 
 export const ResponseSegmentSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("evidence_limitation"), kind: z.enum(["photo_channel", "charged_shipping", "line_timing", "product_care", "product_property", "line_fulfillment", "shipping_qualification"]), property_key: z.enum(["composition", "dimensions", "general"]).optional(), basis: BasisSchema }).strict(),
-  z.object({ type: z.literal("source_content"), kind: z.enum(["product_property", "care_constraint", "policy_condition"]), basis: BasisSchema }).strict(),
+  z.object({ type: z.literal("source_content"), kind: z.enum(["product_property", "care_constraint", "policy_condition", "product_constraint"]), facet: z.enum([...ANSWER_FACETS, "qualified_next_step"]).optional(), basis: BasisSchema }).strict(),
+  z.object({ type: z.literal("facet_limit"), facet: z.enum([...ANSWER_FACETS, "qualified_next_step"]), request_index: z.number().int().min(0).max(7), basis: BasisSchema }).strict(),
   z.object({ type: z.literal("source_comparison"), kind: z.literal("shipping_threshold"), order: BasisSchema, policy: BasisSchema }).strict(),
   z.object({ type: z.literal("operational_result"), basis: BasisSchema }).strict(),
   FactSchema,
@@ -202,9 +204,12 @@ export interface ResponseValidationContext {
   };
   /** Server-owned channel context used to adapt source instructions to the current interaction. */
   interactionChannel?: GreenfieldInteractionChannel;
+  evidenceScope?: { workspaceId: string; shopId: string };
   operationalScope?: { workspaceId: string; shopId: string; caseId?: string; customerEmail?: string };
   knownCaseArguments?: string[];
   caseState?: ConversationContext["caseState"];
+  preciseRequests?: PreciseAnswerRequest[];
+  preciseReadResults?: Record<string, string[]>;
   confirmedAction?: (capability: string) => boolean;
   /** Server-owned identity availability; never inferred from untrusted message text. */
   trustedCustomerIdentity?: {
@@ -1563,7 +1568,10 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
 
 function validateSegment(segment: ResponseSegment, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
   switch (segment.type) {
-    case "evidence_limitation": return validateEvidenceLimitation(segment, context, index);
+    case "facet_limit": return validateFacetLimit(segment, context, index);
+    case "evidence_limitation":
+      if (preciseRequests(context).length && ["product_care", "product_property"].includes(segment.kind)) return [{ index, code: "answer_facet_binding_required", message: "A broad product limitation cannot satisfy a precise requested facet." }];
+      return validateEvidenceLimitation(segment, context, index);
     case "source_content": return validateSourceContent(segment, context, index);
     case "source_comparison": return shippingComparison(segment, context)
       ? [] : [{ index, code: "comparison_inputs_not_verified", message: "The comparison requires verified compatible inputs and applicability." }];
@@ -1606,6 +1614,9 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       const evidence = resultFor(segment.basis, context);
       if (!evidence) return [{ index, code: "unknown_result_id", message: "The limitation references a tool result from outside this run." }];
       const issues = validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
+      if (!issues.length && preciseRequests(context).length && (evidence.toolName.includes("product") || modernProductBasis(segment.basis, context))) {
+        issues.push({ index, code: "answer_facet_binding_required", message: "Precise product limitations require a source-bound facet or a validated typed uncertainty, not arbitrary model prose." });
+      }
       if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
         issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
       }
@@ -5263,7 +5274,7 @@ function isRedundantPolicyQuestion(
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const hasOperationalTracking = context.operationalScope && segments.some(segment => segment.type === "fact" && segment.evidence.some(basis => resultFor(basis, context)?.toolName === "get_tracking"));
-  const actionableComposition = hasOperationalTracking || segments.some(segment => segment.type === "evidence_limitation" || segment.type === "source_content" || segment.type === "source_comparison" || segment.type === "fact" && ["order_amount", "line_fulfillment"].includes(segment.fact_kind)) ? null : composeActionableResponse(segments, context);
+  const actionableComposition = hasOperationalTracking || segments.some(segment => segment.type === "facet_limit" || segment.type === "evidence_limitation" || segment.type === "source_content" || segment.type === "source_comparison" || segment.type === "fact" && ["order_amount", "line_fulfillment"].includes(segment.fact_kind)) ? null : composeActionableResponse(segments, context);
   if (actionableComposition) return normalizeMerchantPolicyAttribution(actionableComposition);
 
   const rendered: string[] = [];
@@ -5329,6 +5340,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       return;
     }
     if (segment.type === "evidence_limitation") rendered.push(renderEvidenceLimitation(segment, context));
+    else if (segment.type === "facet_limit") rendered.push(renderFacetLimit(segment, context));
     else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).map(section => normalizeMerchantPolicyAttribution(section.text)).join("\n\n"));
     else if (segment.type === "source_comparison") {
       const comparison = shippingComparison(segment, context);
@@ -5451,9 +5463,10 @@ export function normalizedEvidenceKind(evidence: ResponseEvidenceRecord): string
 }
 
 function evidenceScopeIssues(evidence: ResponseEvidenceRecord, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
+  const scope = context.evidenceScope ?? context.operationalScope;
   const data = objectValue(evidence.result.data);
-  if (context.caseState && context.operationalScope && (context.caseState.scope.workspaceId !== context.operationalScope.workspaceId
-    || context.caseState.scope.shopId !== context.operationalScope.shopId)) {
+  if (context.caseState && scope && (context.caseState.scope.workspaceId !== scope.workspaceId
+    || context.caseState.scope.shopId !== scope.shopId)) {
     return [{ index, code: "case_scope_mismatch", message: "CaseState is not scoped to the current evidence boundary." }];
   }
   const records = Array.isArray(data?.results) ? data.results.map(objectValue) : [data];
@@ -5463,8 +5476,8 @@ function evidenceScopeIssues(evidence: ResponseEvidenceRecord, context: Response
       if (!candidate) continue;
       const workspace = candidate.workspaceId ?? candidate.workspace_id;
       const shop = candidate.shopId ?? candidate.shop_id;
-      if (context.operationalScope && ((workspace && workspace !== context.operationalScope.workspaceId)
-        || (shop && shop !== context.operationalScope.shopId))) {
+      if (scope && ((workspace && workspace !== scope.workspaceId)
+        || (shop && shop !== scope.shopId))) {
         return [{ index, code: "evidence_scope_mismatch", message: "The evidence belongs to a different tenant scope." }];
       }
     }
@@ -5523,6 +5536,8 @@ function productScopeSupported(record: JsonObject, context: ResponseValidationCo
     const tokens = subject.split(" ").filter(token => token.length > 2 && !["guide", "care", "textile", "support", "instructions", "product"].includes(token));
     return tokens.length > 0 && question.split(" ").includes(tokens[0]);
   });
+  const verified = verifiedAnswerSubject(context);
+  if (verified) return ids.length === 1 && ids[0] === verified.id;
   const expectedIds = new Set(matched.flatMap(candidate => {
     const applies = objectValue(objectValue(candidate.structured_data)?.applicability);
     return Array.isArray(applies?.product_ids) ? applies.product_ids.map(String) : [];
@@ -5541,7 +5556,7 @@ function validateSourceContent(segment: Extract<ResponseSegment, { type: "source
   for (const { record, path } of sections) {
     const sectionMatch = normalizedDataPath(path).match(/evidence_sections\[(\d+)\]/);
     const section = sectionMatch && Array.isArray(record.evidence_sections) ? objectValue(record.evidence_sections[Number(sectionMatch[1])]) : null;
-    if (/\b(?:evidence boundary|internal instructions|agent instructions)\b/i.test(`${record.title ?? ""} ${section?.heading ?? ""}`)) {
+    if (/\b(?:internal instructions|agent instructions)\b/i.test(`${record.title ?? ""} ${section?.heading ?? ""}`) || internalAnswerInstruction(String(section?.content ?? section?.text ?? ""))) {
       return [{ index, code: "non_answer_source_role", message: "Internal evidence boundaries cannot substitute for customer answer facts." }];
     }
     const structured = objectValue(record.structured_data);
@@ -5559,6 +5574,9 @@ function validateSourceContent(segment: Extract<ResponseSegment, { type: "source
     } else {
       if (record.knowledge_type !== "product" || !productScopeSupported(record, context)) {
         return [{ index, code: "product_scope_mismatch", message: "The cited content is not bound to the current product." }];
+      }
+      if (segment.kind === "product_constraint" && (!segment.facet || !["GUIDANCE", "FACT"].includes(String(structured?.semantic_type)) || !sourceDomainSupportsFacet(String(structured?.support_domain), segment.facet) || !sourceSupportsFacet(String(section?.content ?? section?.text ?? ""), segment.facet))) {
+        return [{ index, code: "answer_facet_source_mismatch", message: "The source does not establish the requested facet." }];
       }
       if (segment.kind === "product_property" && structured?.semantic_type !== "FACT") {
         return [{ index, code: "product_property_kind_mismatch", message: "A static product property requires a source-authored fact." }];
@@ -5649,7 +5667,10 @@ function shippingComparison(segment: Extract<ResponseSegment, { type: "source_co
 export interface AnswerObligation {
   id: string;
   kind: string;
-  status: "supported" | "unavailable";
+  status: "supported" | "unavailable" | "unknown" | "missing";
+  facet?: CoveredAnswerFacet;
+  subjectIds?: string[];
+  rendered?: boolean;
   satisfied: boolean;
   resultIds: string[];
   sourceIds: string[];
@@ -5669,9 +5690,10 @@ export interface AnswerCoverage {
  * plan or an authorization layer. Only validator-approved projections recover. */
 function preserveRequiredAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
   const records = (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length);
-  const requests = new Set(context.turnIR?.answerRequests?.map(request => request.kind) ?? []);
+  const requests = new Set(context.turnIR?.answerRequests?.filter(request => !request.facets?.length && request.propertyKey !== "composition").map(request => request.kind) ?? []);
   // Existing callers without TurnIR use the existing care-request semantics.
-  if (productCareRequest(context)) requests.add("product_care");
+  if (!preciseRequests(context).length && (productCareRequest(context)
+    || validation.approvedSegments.some(segment => segment.type === "source_content" && segment.kind === "care_constraint"))) requests.add("product_care");
   if (!context.turnIR?.answerRequests && records.some(evidence => {
     const results = objectValue(evidence.result.data)?.results;
     return Array.isArray(results) && results.some(value => { const record = objectValue(value);
@@ -5834,11 +5856,11 @@ function preserveRequiredAnswers(validation: ResponseValidationResult, context: 
   const canonicalApproved = approved.filter((candidate, index) => !approved.some((other, otherIndex) => otherIndex !== index
     && segmentCovers(other, candidate, context) && (!segmentCovers(candidate, other, context) || otherIndex < index)));
   const safeApproved = coverage.missing.length && canonicalApproved.every(segment => segment.type === "acknowledgement") ? [] : canonicalApproved;
-  return { ...validation, approvedSegments: safeApproved, coverage, completenessDiagnostics: {
+  return preservePreciseAnswers({ ...validation, approvedSegments: safeApproved, coverage, completenessDiagnostics: {
     entered: true, cues: validation.completenessDiagnostics?.cues ?? [],
     ...validation.completenessDiagnostics,
     recovery: [...(validation.completenessDiagnostics?.recovery ?? []), ...obligations.map(obligation => ({ type: obligation.id, result: obligation.recovery === "not_needed" ? "skipped" as const : obligation.recovery === "recovered" ? "recovered" as const : "unavailable" as const }))], intent_resolved_by_approved_segment: obligations.length ? coverage.missing.length === 0
-      : validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? approved.some(segment => !["acknowledgement", "question"].includes(segment.type)) } };
+      : validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? approved.some(segment => !["acknowledgement", "question"].includes(segment.type)) } }, context);
 }
 
 function validateEvidenceLimitation(segment: Extract<ResponseSegment, { type: "evidence_limitation" }>, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
@@ -5951,7 +5973,12 @@ function projectedProductContent(basis: KnowledgeBasis, context: ResponseValidat
       return typeof section?.[field] === "string" ? [`results[${match[1]}].evidence_sections[${index}].${field}`] : [];
     });
   });
-  const candidate: Extract<ResponseSegment, { type: "source_content" }> = { type: "source_content", kind: productCareRequest(context) ? "care_constraint" : "product_property",
+  const facet = preciseRequests(context).find(request => paths.length && paths.every(path => sourceSections({ result_id: basis.result_id, field_paths: [path] }, context).some(section => sourceSupportsFacet(section.text, request.facet))))?.facet;
+  const sourceCare = paths.length > 0 && sourceSections({ result_id: basis.result_id, field_paths: paths }, context).every(section => {
+    const structured = objectValue(section.record.structured_data);
+    return structured?.support_domain === "care" && ["GUIDANCE", "FACT"].includes(String(structured.semantic_type));
+  });
+  const candidate: Extract<ResponseSegment, { type: "source_content" }> = { type: "source_content", ...(facet ? { kind: "product_constraint", facet } : { kind: sourceCare || productCareRequest(context) ? "care_constraint" : "product_property" }),
     basis: { result_id: basis.result_id, field_paths: [...new Set(paths)] } };
   return paths.length && paths.length <= 32 && !validateSourceContent(candidate, context, -1).length ? candidate : null;
 }
@@ -5991,7 +6018,7 @@ function standaloneMappedQuantity(evidence: ResponseEvidenceRecord, mapped: Json
 
 /** Parse the role of source-authored fields; this never supplies a model value. */
 function sourcePropertyKey(text: string): "composition" | "dimensions" | "general" {
-  if (/\d+(?:[.,]\d+)?\s*%|\b(?:composition|material|made (?:of|from))\b/i.test(text)) return "composition";
+  if (/\d+(?:[.,]\d+)?\s*%|\b(?:composition|material|made (?:of|from)|veneer|engineered wood core)\b/i.test(text)) return "composition";
   if (/\b(?:size|dimensions|width|height|length)\b|\d+\s*(?:×|x)\s*\d+\s*(?:cm|mm|m|inches)/i.test(text)) return "dimensions";
   return "general";
 }
@@ -6022,4 +6049,173 @@ function segmentCovers(existing: ResponseSegment, required: ResponseSegment, con
   if (existing.type === "evidence_limitation" && required.type === "evidence_limitation") return existing.kind === required.kind
     && existing.property_key === required.property_key && existing.basis.result_id === required.basis.result_id;
   return JSON.stringify(existing) === JSON.stringify(required);
+}
+
+function preciseRequests(context: ResponseValidationContext): PreciseAnswerRequest[] {
+  return context.preciseRequests ?? compilePreciseAnswerRequests(context.turnIR?.answerRequests ?? []);
+}
+function requestedProductMatches(title: string, context: ResponseValidationContext): boolean {
+  const first = normalizedPhrase(title).split(" ")[0];
+  return Boolean(first?.length > 2 && normalizedPhrase(`${context.customerMessage ?? ""} ${context.customerProvidedContext?.product ?? ""}`).split(" ").includes(first));
+}
+export function verifiedAnswerSubject(context: ResponseValidationContext): { id: string; title: string; handle?: string } | null {
+  const subjects = (context.getResults?.() ?? []).filter(record => record.toolName === "get_product" && record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
+    const data = objectValue(record.result.data);
+    const products = Array.isArray(data?.products) ? data.products.map(objectValue) : [data];
+    // Both supported catalog envelopes are normalized here; never select one of multiple returned products.
+    if (products.length !== 1) return [];
+    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
+  });
+  const ids = new Set(subjects.map(subject => subject.id));
+  return ids.size === 1 ? subjects[0] : null;
+}
+function requestSubjectMatches(request: PreciseAnswerRequest, title: string): boolean {
+  if (!request.subject) return true;
+  const subject = normalizedPhrase(request.subject).split(" ").find(token => token.length > 2);
+  return Boolean(subject && normalizedPhrase(title).split(" ").includes(subject));
+}
+function facetCandidates(request: PreciseAnswerRequest, context: ResponseValidationContext): ResponseSegment[] {
+  return (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(evidence => {
+    const results = objectValue(evidence.result.data)?.results;
+    return Array.isArray(results) ? results.flatMap((value, index) => {
+      const record = objectValue(value);
+      if (!record || !requestSubjectMatches(request, careSubject(record)) || !productScopeSupported(record, context) || !Array.isArray(record.evidence_sections)) return [];
+      return record.evidence_sections.flatMap((value, sectionIndex) => {
+        const section = objectValue(value); const field = typeof section?.content === "string" ? "content" : "text";
+        return typeof section?.[field] === "string" && sourceSupportsFacet(String(section[field]), request.facet)
+          ? [{ type: "source_content" as const, kind: "product_constraint" as const, facet: request.facet,
+            basis: { result_id: evidence.resultId, field_paths: [`results[${index}].evidence_sections[${sectionIndex}].${field}`] } }] : [];
+      });
+    }) : [];
+  });
+}
+function facetSourceText(segment: ResponseSegment, context: ResponseValidationContext): string[] {
+  return segment.type === "source_content" ? sourceSections(segment.basis, context).map(section => section.text) : [];
+}
+function facetEvidenceIsUnknown(segment: ResponseSegment, context: ResponseValidationContext): boolean {
+  return segment.type === "facet_limit" || (segment.type !== "source_content" || !["qualified_next_step", "cleaning_alternative"].includes(segment.facet ?? "")) && facetSourceText(segment, context).some(documentedUnknown);
+}
+function validateFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit" }>, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
+  const issues = validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
+  if (issues.length) return issues;
+  const request = preciseRequests(context).find(request => request.facet === segment.facet && request.requestIndex === segment.request_index);
+  if (!request) return [{ index, code: "answer_facet_not_requested", message: "The bounded limitation is not a registered request." }];
+  const evidence = resultFor(segment.basis, context)!;
+  const explicitlyRead = context.preciseReadResults?.[request.id]?.includes(evidence.resultId);
+  const subject = verifiedAnswerSubject(context);
+  if (subject && !requestSubjectMatches(request, subject.title) && !(explicitlyRead && evidence.toolName === "search_product_knowledge")) return [{ index, code: "answer_facet_scope_unverified", message: "The current product does not bind this requested subject." }];
+  const matchingSource = objectValue(evidence.result.data)?.results;
+  const scopedSource = Array.isArray(matchingSource) && matchingSource.some(value => { const record = objectValue(value); return record && productScopeSupported(record, context); });
+  if (!explicitlyRead && !(subject && evidence.toolName === "get_product" && verifiedAnswerSubject({ ...context, getResults: () => [evidence] })?.id === subject.id) && !scopedSource) {
+    return [{ index, code: "answer_facet_scope_unverified", message: "A specific uncertainty requires a current scoped read." }];
+  }
+  const checked = facetCandidates(request, context).flatMap(candidate => validateStructuredResponse({ segments: [candidate] }, context).approvedSegments);
+  if (checked.length) return [{ index, code: "answer_facet_available", message: "A verified source already establishes this facet." }];
+  return [];
+}
+function renderFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit" }>, context: ResponseValidationContext): string {
+  const copy: Record<CoveredAnswerFacet, string> = {
+    material_composition: "The current scoped evidence does not establish the requested material composition.",
+    load_capacity: "I cannot verify an approved load capacity from the current documentation; do not assume the proposed load is safe.",
+    weight_limit: "I cannot verify the supported weight limit from the current documentation.",
+    electrical_safety: "The available evidence does not establish safe electrical repair or continued use when electrical parts are damaged.",
+    repair_boundary: "I cannot verify an approved customer repair or replacement procedure from the current documentation.",
+    certification: "I cannot verify the requested safety certification from the current evidence; do not assume the product is certified.",
+    placement: "I cannot verify safe placement near heat or the requested placement conditions; no safe distance is established here.",
+    cleaning_method: "The current evidence does not establish that the requested cleaning method is safe.",
+    prohibited_method: "I cannot verify all applicable cleaning restrictions from the current documentation.",
+    cleaning_alternative: "No approved alternative cleaning method was found in the current scoped evidence; use only a method verified for this product.",
+    dimension_width: "The available dimensional values do not establish a labeled width; an unlabeled tuple is not an axis mapping.",
+    dimension_depth: "The available dimensional values do not establish a labeled depth; an unlabeled tuple is not an axis mapping.",
+    dimension_height: "The available dimensional values do not establish a labeled height; an unlabeled tuple is not an axis mapping.",
+    dimension_values: "I cannot verify documented dimensional values for this product.",
+    qualified_next_step: "Get verified guidance from the store or a qualified professional before relying on an unverified safety property or attempting a repair.",
+  };
+  if (segment.facet === "qualified_next_step") {
+    const dependencies = preciseRequests(context).find(request => request.facet === segment.facet && request.requestIndex === segment.request_index)?.requiredFor ?? [];
+    if (dependencies.some(facet => ["electrical_safety", "repair_boundary"].includes(facet))) return "Contact the store or a qualified professional for verified guidance about the damaged electrical part; an approved customer repair method is not established.";
+    if (dependencies.some(facet => ["certification", "placement"].includes(facet))) return "Ask the store or manufacturer for verified certification and placement guidance before relying on the product near heat.";
+    if (dependencies.some(facet => ["load_capacity", "weight_limit"].includes(facet))) return "Ask the store or manufacturer to verify the load rating and applicable installation conditions before loading or installing it.";
+  }
+  return copy[segment.facet];
+}
+function preciseFacetSegments(request: PreciseAnswerRequest, validation: ResponseValidationResult, context: ResponseValidationContext): ResponseSegment[] {
+  return validation.approvedSegments.filter(segment => segment.type === "facet_limit" ? segment.facet === request.facet && segment.request_index === request.requestIndex
+    : segment.type === "source_content" && segment.facet === request.facet && facetSourceText(segment, context).every(text => sourceSupportsFacet(text, request.facet)));
+}
+function preservePreciseAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
+  const requests = preciseRequests(context);
+  if (!requests.length) return validation;
+  let result = { ...validation, approvedSegments: [...validation.approvedSegments], rejectedSegments: [...validation.rejectedSegments], issues: [...validation.issues] };
+  const obligations: AnswerObligation[] = [];
+  for (const request of requests) {
+    const priorCount = result.approvedSegments.length;
+    const candidates = facetCandidates(request, context);
+    const checked = candidates.map(candidate => validateStructuredResponse({ segments: [candidate] }, context));
+    const accepted = checked.flatMap(value => value.approvedSegments);
+    const obligation: AnswerObligation = { id: request.id, kind: request.facet, facet: request.facet, status: "missing", satisfied: false,
+      subjectIds: verifiedAnswerSubject(context) ? [verifiedAnswerSubject(context)!.id] : [], resultIds: [], sourceIds: [], rejectionCodes: checked.flatMap(value => value.issues.map(issue => issue.code)), recovery: "not_needed" };
+    // A qualified next step is conditional on unresolved safety, not an extra ask for known limits.
+    const unknownSafety = obligations.some(obligation => request.requiredFor.includes(obligation.facet as any) && obligation.status !== "supported");
+    if (request.facet === "qualified_next_step" && !unknownSafety) { obligation.status = "supported"; obligation.satisfied = true; obligations.push(obligation); continue; }
+    for (const segment of accepted) {
+      if (!result.approvedSegments.some(existing => JSON.stringify(existing) === JSON.stringify(segment))) result.approvedSegments.push(segment);
+    }
+    if (!accepted.length) {
+      const records = (context.getResults?.() ?? []).filter(record => context.preciseReadResults?.[request.id]?.includes(record.resultId) || record.toolName === "get_product" || Array.isArray(objectValue(record.result.data)?.results));
+      for (const record of records) {
+        const candidate: ResponseSegment = { type: "facet_limit", facet: request.facet, request_index: request.requestIndex, basis: { result_id: record.resultId, field_paths: ["status"] } };
+        const checked = validateStructuredResponse({ segments: [candidate] }, context);
+        if (!checked.approvedSegments.length) continue;
+        if (!result.approvedSegments.some(existing => JSON.stringify(existing) === JSON.stringify(candidate))) result.approvedSegments.push(candidate);
+        break;
+      }
+    }
+    const segments = preciseFacetSegments(request, result, context);
+    obligation.satisfied = segments.length > 0;
+    obligation.status = segments.length ? segments.some(segment => facetEvidenceIsUnknown(segment, context)) ? "unknown" : "supported" : "missing";
+    obligation.recovery = segments.length ? result.approvedSegments.length > priorCount ? "recovered" : "not_needed" : "unavailable";
+    for (const segment of segments) if ("basis" in segment && segment.basis) {
+      obligation.resultIds.push(segment.basis.result_id);
+      const source = segmentBoundaryDiagnostic(segment, context, -1, []); obligation.sourceIds.push(...source.sourceIds);
+    }
+    obligation.resultIds = [...new Set(obligation.resultIds)]; obligation.sourceIds = [...new Set(obligation.sourceIds)];
+    obligations.push(obligation);
+  }
+  const all = [...(validation.coverage?.obligations ?? []), ...obligations];
+  result.coverage = { requested: all.map(value => value.id), supported: all.filter(value => value.status === "supported").map(value => value.id), satisfied: all.filter(value => value.satisfied).map(value => value.id),
+    missing: all.filter(value => !value.satisfied).map(value => value.id), unknown: all.filter(value => ["unknown", "unavailable"].includes(value.status)).map(value => value.id), obligations: all };
+  return result;
+}
+/** Checks actual rendered content, and restores only validator-approved source projections.
+ * It does not change an eligibility result or generate a model answer pass. */
+export function renderWithAnswerCoverage(validation: ResponseValidationResult, context: ResponseValidationContext): { response: string; validation: ResponseValidationResult } {
+  let response = renderResponseSegments(validation.approvedSegments, context);
+  const obligations = validation.coverage?.obligations.map(value => ({ ...value })) ?? [];
+  for (const request of preciseRequests(context)) {
+    const obligation = obligations.find(value => value.id === request.id);
+    if (!obligation || !obligation.satisfied) continue;
+    const segments = preciseFacetSegments(request, validation, context);
+    if (!segments.length) { obligation.rendered = request.facet === "qualified_next_step" && obligation.status === "supported"; continue; }
+    const pieces = segments.map(segment => renderResponseSegments([segment], { ...context, firstResponse: false }));
+    const missing = pieces.filter(piece => !normalizedPhrase(response).includes(normalizedPhrase(piece)));
+    if (missing.length) response = [response, ...missing].filter(Boolean).join("\n\n");
+    obligation.rendered = pieces.every(piece => normalizedPhrase(response).includes(normalizedPhrase(piece)));
+    if (!obligation.rendered) obligation.satisfied = false;
+  }
+  if (!validation.coverage) return { response, validation };
+  const coverage = { ...validation.coverage, obligations, satisfied: obligations.filter(value => value.satisfied).map(value => value.id), missing: obligations.filter(value => !value.satisfied).map(value => value.id) };
+  return { response, validation: { ...validation, coverage } };
+}
+
+export function missingPreciseEvidence(context: ResponseValidationContext): PreciseAnswerRequest[] {
+  const requests = preciseRequests(context);
+  return requests.filter(request => {
+    if (request.facet === "qualified_next_step" && !requests.some(primary => request.requiredFor.includes(primary.facet as any)
+      && !facetCandidates(primary, context).some(candidate => {
+        const accepted = validateStructuredResponse({ segments: [candidate] }, context).approvedSegments;
+        return accepted.length && !accepted.some(segment => facetEvidenceIsUnknown(segment, context));
+      }))) return false;
+    return !facetCandidates(request, context).some(candidate => validateStructuredResponse({ segments: [candidate] }, context).approvedSegments.length > 0);
+  });
 }
