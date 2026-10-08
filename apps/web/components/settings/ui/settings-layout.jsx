@@ -17,7 +17,7 @@ export function SettingsPage({ title, description, actions = null, width = "form
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </header>
-      <div className="space-y-10">{children}</div>
+      <div className="space-y-9">{children}</div>
     </section>
   );
 }
@@ -26,7 +26,7 @@ export function SettingsGroup({ title, description, action = null, footer = null
   return (
     <section>
       {title || description || action ? (
-        <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="mb-1 flex items-end justify-between gap-3">
           <div className="min-w-0">
             {title ? <h3 className="text-section-heading font-semibold text-foreground">{title}</h3> : null}
             {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
@@ -34,7 +34,7 @@ export function SettingsGroup({ title, description, action = null, footer = null
           {action}
         </div>
       ) : null}
-      <div className="divide-y divide-border/60 border-y border-border/60">{children}</div>
+      <div className="divide-y divide-border/60">{children}</div>
       {footer ? <div className="mt-2 text-xs text-muted-foreground">{footer}</div> : null}
     </section>
   );

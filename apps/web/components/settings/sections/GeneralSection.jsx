@@ -112,12 +112,14 @@ function GeneralTab({
 
       <SettingsGroup
         title="Test mode"
-        description="Simulate actions without writing to Shopify, shipping providers or other integrations."
         footer={hasWorkspaceScope ? null : (
           <span className="text-warning-foreground">Test mode settings require an organization workspace.</span>
         )}
       >
-        <SettingsRow label="Test mode" description="Actions are simulated while this is on.">
+        <SettingsRow
+          label="Enable test mode"
+          description="Simulate actions without writing to Shopify, shipping providers or other integrations."
+        >
           <SettingsSwitch
             aria-label="Test mode"
             checked={Boolean(testMode)}
