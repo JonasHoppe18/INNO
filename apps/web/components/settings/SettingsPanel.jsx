@@ -69,6 +69,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import {
+  DEFAULT_EMAIL_SECTION,
+  EMAIL_SECTIONS,
+  SETTINGS_NAV,
+  parseSettingsPathname,
+  settingsPath,
+  withSearchParams,
+} from "@/lib/settings/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DEFAULT_THEME,
@@ -76,46 +84,18 @@ import {
   normalizeThemePreference,
 } from "@/lib/theme-options";
 
-const MENU_SECTIONS = [
-  {
-    label: "WORKSPACE",
-    items: [
-      { key: "general", label: "General", icon: Building2 },
-      { key: "members", label: "Members", icon: Users2 },
-      { key: "mailboxes", label: "Channels & mailboxes", icon: Inbox },
-      { key: "tags", label: "Tags", icon: Tag },
-    ],
-  },
-  {
-    label: "AI & AUTOMATION",
-    items: [
-      { key: "ai", label: "AI instructions", icon: Bot },
-      { key: "automation", label: "Actions & automation", icon: Zap },
-    ],
-  },
-  {
-    label: "COMMUNICATION",
-    items: [
-      { key: "email", label: "Email", icon: Mail },
-      { key: "customer-satisfaction", label: "Customer satisfaction", icon: Star },
-    ],
-  },
-  {
-    label: "ACCOUNT",
-    items: [
-      { key: "profile", label: "Profile & appearance", icon: User },
-      { key: "billing", label: "Billing", icon: CreditCard },
-    ],
-  },
-];
-
-const EMAIL_SECTIONS = [
-  { key: "auto-reply", label: "Customer confirmation" },
-  { key: "routing", label: "Routing" },
-  { key: "sender-rules", label: "Sender rules" },
-  { key: "blocklist", label: "Blocklist" },
-  { key: "signatures", label: "Signatures" },
-];
+const SETTINGS_NAV_ICONS = {
+  general: Building2,
+  members: Users2,
+  mailboxes: Inbox,
+  tags: Tag,
+  ai: Bot,
+  automation: Zap,
+  email: Mail,
+  "customer-satisfaction": Star,
+  profile: User,
+  billing: CreditCard,
+};
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -3079,8 +3059,9 @@ export function SettingsPanel() {
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
   const { orgId, orgRole } = useAuth();
-  const [activeTab, setActiveTab] = useState("general");
-  const [emailSection, setEmailSection] = useState("auto-reply");
+  const route = parseSettingsPathname(pathname) || { section: "general", emailSection: null };
+  const activeTab = route.section;
+  const emailSection = route.emailSection || DEFAULT_EMAIL_SECTION;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [workspaceId, setWorkspaceId] = useState(null);
@@ -3152,20 +3133,6 @@ export function SettingsPanel() {
   const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState([]);
   const [initialEmailBlocklistRows, setInitialEmailBlocklistRows] = useState([]);
 
-  useEffect(() => {
-    const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
-    if (!requestedTab) return;
-    const isValidTab = MENU_SECTIONS.some((section) =>
-      section.items.some((item) => item.key === requestedTab)
-    );
-    if (isValidTab) {
-      setActiveTab(requestedTab);
-    }
-    const requestedSection = String(searchParams?.get("section") || "").trim().toLowerCase();
-    if (EMAIL_SECTIONS.some((section) => section.key === requestedSection)) {
-      setEmailSection(requestedSection);
-    }
-  }, [searchParams]);
   const settingsLoadRef = useRef(0);
   const loadData = useCallback(async () => {
     const loadToken = ++settingsLoadRef.current;
@@ -4455,16 +4422,9 @@ export function SettingsPanel() {
 
   const updateSettingsUrl = useCallback(
     (tab, section = null) => {
-      const params = new URLSearchParams(searchParams?.toString() || "");
-      params.set("tab", tab);
-      if (tab === "email") {
-        params.set("section", section || emailSection || "auto-reply");
-      } else {
-        params.delete("section");
-      }
-      window.history.pushState(null, "", `${pathname}?${params.toString()}`);
+      window.history.pushState(null, "", withSearchParams(settingsPath(tab, section), searchParams, ["tab", "section"]));
     },
-    [emailSection, pathname, searchParams]
+    [searchParams]
   );
 
   const handleSelectTab = useCallback(
@@ -4473,7 +4433,6 @@ export function SettingsPanel() {
       if (hasCurrentTabChanges && !window.confirm("Discard your unsaved changes?")) return;
       if (activeTab === "general" && canSave) handleResetGeneral();
       if (activeTab === "email" && canSaveEmailSettings) handleDiscardEmailSettings();
-      setActiveTab(nextTab);
       updateSettingsUrl(nextTab);
     },
     [
@@ -4490,7 +4449,6 @@ export function SettingsPanel() {
   const handleSelectEmailSection = useCallback(
     (nextSection) => {
       if (!EMAIL_SECTIONS.some((section) => section.key === nextSection)) return;
-      setEmailSection(nextSection);
       updateSettingsUrl("email", nextSection);
     },
     [updateSettingsUrl]
@@ -4648,7 +4606,7 @@ export function SettingsPanel() {
           onChange={(event) => handleSelectTab(event.target.value)}
           className="ml-auto h-9 min-w-0 max-w-[220px] rounded-md border border-input bg-background px-3 text-input md:text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          {MENU_SECTIONS.map((section) => (
+          {SETTINGS_NAV.map((section) => (
             <optgroup key={section.label} label={section.label}>
               {section.items.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
             </optgroup>
@@ -4660,7 +4618,7 @@ export function SettingsPanel() {
           <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Settings</h1>
         </div>
         <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-          {MENU_SECTIONS.map((section) => (
+          {SETTINGS_NAV.map((section) => (
             <div key={section.label}>
               {section.label ? (
                 <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
@@ -4670,6 +4628,7 @@ export function SettingsPanel() {
               <div className="space-y-1">
                 {section.items.map((item) => {
                   const active = activeTab === item.key;
+                  const Icon = SETTINGS_NAV_ICONS[item.key];
                   return (
                     <button
                       key={item.key}
@@ -4683,7 +4642,7 @@ export function SettingsPanel() {
                           : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
-                      <item.icon
+                      <Icon
                         className={cn(
                           "h-4 w-4 shrink-0 transition-colors duration-150",
                           active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"

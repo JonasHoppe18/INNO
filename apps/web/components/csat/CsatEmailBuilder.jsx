@@ -15,7 +15,7 @@ const config = {
   description:
     "Build the published survey email customers receive after support.",
   apiBase: "/api/settings/csat/email",
-  backHref: "/settings?tab=customer-satisfaction",
+  backHref: "/settings/customer-satisfaction",
   thankYouHref: "/settings/csat/thank-you",
   palette: CSAT_PALETTE_BLOCKS,
   block: CSAT_RATING_BLOCK_DEFINITION,
