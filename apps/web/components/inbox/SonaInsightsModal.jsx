@@ -15,14 +15,22 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { Activity, Ban, Banknote, ChevronLeft, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
+import { AlertTriangle, Ban, Banknote, ChevronLeft, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
-import { TrackingCard } from "@/components/inbox/TrackingCard";
+import { CarrierLogo, TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
 import { CORE_ACTIONS } from "@/lib/action-modes";
 import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { MANUAL_ACTION_TYPES, resolveMatchedOrder } from "@/lib/inbox/manual-actions";
+import { formatMessageTime } from "@/components/inbox/inbox-utils";
+import {
+  CustomerAvatar,
+  PanelLinkButton,
+  PanelSection,
+  PropertyRow,
+  ticketStatusLabel,
+} from "@/components/inbox/panel-primitives";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
@@ -131,13 +139,17 @@ const buildShopifyOrderUrl = (order, shopDomain) => {
   return `https://${normalizedDomain}/admin/orders/${encodeURIComponent(normalizedAdminId)}`;
 };
 
-function SidebarSectionLabel({ children }) {
-  return (
-    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
-      {children}
-    </div>
-  );
-}
+const formatPanelDateTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: DISPLAY_TIMEZONE,
+  });
+};
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -358,6 +370,7 @@ export function SonaInsightsModal({
   onCustomerRefresh,
   customerLookupParams,
   onOpenTicket,
+  ticketThread = null,
   returnTrackingActionState = null,
   onSeedPendingOrderUpdate,
   onOrderUpdateDecision,
@@ -387,16 +400,39 @@ export function SonaInsightsModal({
   });
 
   const effectiveLookup = customerLookup ?? internalLookup;
+  const lookupOrders = Array.isArray(effectiveLookup?.orders) ? effectiveLookup.orders : [];
+  const lookupCustomer = effectiveLookup?.customer || null;
+  // Only a customer derived from the sender's own Shopify orders counts as
+  // "in Shopify"; otherwise the ticket's sender is the customer.
+  const customerInShopify =
+    lookupCustomer?.source === "shopify_orders" ||
+    lookupCustomer?.source === "shopify_profile" ||
+    (!lookupCustomer?.source &&
+      Boolean(lookupCustomer?.name) &&
+      lookupOrders.some((order) => order?.ownedBySender !== false));
+  const customerEmail = lookupCustomer?.email || ticketThread?.customer_email || "";
   const customerDisplayName = getCustomerDisplayName({
-    customer: effectiveLookup?.customer,
-    fallbackEmail: effectiveLookup?.customer?.email,
+    customer: customerInShopify ? lookupCustomer : { name: ticketThread?.customer_name },
+    fallbackEmail: customerEmail,
   });
+  const customerFacts = [
+    customerInShopify && Number.isFinite(lookupCustomer?.lifetimeOrders)
+      ? `${lookupCustomer.lifetimeOrders} order${lookupCustomer.lifetimeOrders === 1 ? "" : "s"}`
+      : null,
+    customerInShopify ? lookupCustomer?.country : null,
+    customerInShopify ? lookupCustomer?.phone : null,
+  ].filter(Boolean);
   const effectiveLookupLoading = customerLookup != null ? customerLookupLoading : internalLookupLoading;
   const effectiveLookupError = customerLookup != null ? customerLookupError : internalLookupError;
   const effectiveRefresh = onCustomerRefresh ?? internalLookupRefresh;
   const trackingOrder = useMemo(() => {
     const orders = Array.isArray(effectiveLookup?.orders) ? effectiveLookup.orders : [];
-    return orders.find((order) => order?.tracking?.number || order?.tracking?.url) || null;
+    return (
+      orders.find(
+        (order) =>
+          order?.ownedBySender !== false && (order?.tracking?.number || order?.tracking?.url),
+      ) || null
+    );
   }, [effectiveLookup?.orders]);
   const matchedOrder = useMemo(
     () => resolveMatchedOrder(effectiveLookup?.orders),
@@ -406,17 +442,6 @@ export function SonaInsightsModal({
     effectiveLookup?.shopDomain ||
       effectiveLookup?.shop?.domain ||
       effectiveLookup?.shop?.shop_domain,
-  );
-  const matchedOrderUrl = useMemo(
-    () => buildShopifyOrderUrl(matchedOrder, shopDomain),
-    [matchedOrder, shopDomain],
-  );
-  const matchedOrderItems = useMemo(
-    () =>
-      (Array.isArray(matchedOrder?.items) ? matchedOrder.items : [])
-        .map((item) => String(item || "").trim())
-        .filter(Boolean),
-    [matchedOrder?.items],
   );
   const isMatchedOrderFulfilled = useMemo(() => {
     const status = String(
@@ -554,6 +579,17 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(gapLog.step_detail);
     return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
   }, [logs]);
+  // The insights route always returns a diagnostic object; it only reflects a
+  // real Sona run once an intent was assessed or retrieval/gaps were logged.
+  const hasSonaAnalysis = Boolean(
+    diagnostic?.intent ||
+      (Array.isArray(diagnostic?.kb_chunks) && diagnostic.kb_chunks.length) ||
+      knowledgeGaps.length,
+  );
+  // Declared after trackingInfo (useMemo below the logs effect) to avoid a TDZ.
+  const hasTrackingContent = Boolean(
+    trackingOrder || trackingInfo || returnTrackingOrder || returnTrackingActionState?.error,
+  );
   const previousTickets = Array.isArray(effectiveLookup?.previousTickets)
     ? effectiveLookup.previousTickets
     : [];
@@ -596,7 +632,7 @@ export function SonaInsightsModal({
     >
       {open ? (
       <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background lg:bg-muted/[0.12]">
-        <div className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
           <div className="min-w-0">
             <h2 className="text-section-heading font-semibold tracking-[-0.015em]">Ticket details</h2>
           </div>
@@ -618,102 +654,124 @@ export function SonaInsightsModal({
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3 lg:p-2.5">
           <TabsContent value="overview" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="space-y-2.5 px-0.5 pb-2.5">
-              <section className="space-y-1.5 border-b border-border/70 pb-2">
-                <SidebarSectionLabel>Customer</SidebarSectionLabel>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-foreground">
-                    {customerDisplayName}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {effectiveLookup?.customer?.email || "No email available"}
-                  </div>
-                </div>
-              </section>
-
-              {matchedOrder ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2">
-                  <SidebarSectionLabel>Order</SidebarSectionLabel>
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                      {matchedOrderUrl ? (
+            <div className="px-1 pb-2">
+              <PanelSection>
+                <div className="flex items-start gap-3">
+                  <CustomerAvatar name={customerDisplayName} email={customerEmail} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-foreground" title={customerDisplayName}>
+                        {customerDisplayName}
+                      </span>
+                      {customerInShopify && lookupCustomer?.adminUrl ? (
                         <a
-                          href={matchedOrderUrl}
+                          href={lookupCustomer.adminUrl}
                           target="_blank"
                           rel="noreferrer"
-                          aria-label={`Open order #${matchedOrder.id} in Shopify`}
-                          className="group/order inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
+                          aria-label="Open customer in Shopify"
+                          title="Open in Shopify"
+                          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                         >
-                          <span className="truncate">#{matchedOrder.id}</span>
-                          <ExternalLink
-                            aria-hidden="true"
-                            className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover/order:text-violet-600 dark:group-hover/order:text-violet-300"
-                          />
+                          <ExternalLink className="h-3.5 w-3.5" />
                         </a>
-                      ) : (
-                        <div className="truncate text-sm font-medium text-foreground">
-                          #{matchedOrder.id}
-                        </div>
-                      )}
-                      <OrderStatusPill
-                        status={
-                          matchedOrder.fulfillmentStatus ||
-                          matchedOrder.fulfillment_status ||
-                          matchedOrder.status
-                        }
-                      />
+                      ) : null}
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {formatOrderTotal(matchedOrder) || "Amount unavailable"}
-                    </div>
-                    {matchedOrderItems.length ? (
-                      <div className="mt-2 border-t border-border/60 pt-2">
-                        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
-                          Order items
-                        </div>
-                        <div className="space-y-1">
-                          {matchedOrderItems.slice(0, 2).map((item, index) => (
-                            <div
-                              key={`${matchedOrder.id}-item-${index}`}
-                              title={item}
-                              className="flex min-w-0 items-start gap-1.5 text-xs leading-4 text-muted-foreground"
-                            >
-                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                              <span className="line-clamp-2 min-w-0">{item}</span>
+                    {customerDisplayName.includes("@") ? null : (
+                      <div className="truncate text-xs text-muted-foreground" title={customerEmail || undefined}>
+                        {customerEmail || "No email available"}
+                      </div>
+                    )}
+                    {effectiveLookupLoading && !lookupCustomer ? (
+                      <Skeleton className="mt-1.5 h-3 w-32" />
+                    ) : customerFacts.length ? (
+                      <div className="mt-1 truncate text-xs text-muted-foreground">{customerFacts.join(" · ")}</div>
+                    ) : hasShopifyShop && !customerInShopify ? (
+                      <div className="mt-1 text-xs text-muted-foreground/80">No Shopify orders for this email</div>
+                    ) : null}
+                  </div>
+                  <PanelLinkButton onClick={() => setActiveTab("customer")}>Profile</PanelLinkButton>
+                </div>
+              </PanelSection>
+
+              {lookupOrders.length || hasTrackingContent ? (
+                <PanelSection
+                  title={
+                    lookupOrders.length ? (lookupOrders.length === 1 ? "Order" : "Orders") : "Tracking"
+                  }
+                  action={
+                    hasShopifyShop ? (
+                      <PanelLinkButton onClick={() => setActiveTab("manual-actions")}>Actions</PanelLinkButton>
+                    ) : null
+                  }
+                >
+                  {lookupOrders.length ? (
+                  <div className="space-y-2.5">
+                    {lookupOrders.slice(0, 3).map((order, index) => {
+                      const orderUrl = buildShopifyOrderUrl(order, shopDomain);
+                      const items = (Array.isArray(order?.items) ? order.items : []).filter(Boolean);
+                      return (
+                        <div key={`${order?.id || "order"}-${index}`} className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            {orderUrl ? (
+                              <a
+                                href={orderUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={`Open order #${order.id} in Shopify`}
+                                className="group/order inline-flex min-w-0 items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-violet-700 dark:hover:text-violet-300"
+                              >
+                                <span className="truncate">#{order.id}</span>
+                                <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground group-hover/order:text-violet-600" />
+                              </a>
+                            ) : (
+                              <span className="truncate text-sm font-medium text-foreground">#{order?.id}</span>
+                            )}
+                            <OrderStatusPill status={order?.fulfillmentStatus || order?.fulfillment_status || order?.status} />
+                            <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {formatOrderTotal(order)}
+                            </span>
+                          </div>
+                          {items.length ? (
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground" title={items.join(", ")}>
+                              {items[0]}
+                              {items.length > 1 ? ` +${items.length - 1} more` : ""}
                             </div>
-                          ))}
-                          {matchedOrderItems.length > 2 ? (
-                            <div className="pl-2.5 text-xs text-muted-foreground/70">
-                              +{matchedOrderItems.length - 2} more
+                          ) : null}
+                          {order?.ownedBySender !== false && order?.tracking?.number && order !== trackingOrder ? (
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                              <CarrierLogo carrier={order.tracking.company} className="h-4 w-4 shrink-0" />
+                              <span className="truncate">
+                                {order.tracking.company ? `${order.tracking.company} · ` : ""}
+                                {order.tracking.url ? (
+                                  <a
+                                    href={order.tracking.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="hover:text-foreground hover:underline"
+                                  >
+                                    {order.tracking.number}
+                                  </a>
+                                ) : (
+                                  order.tracking.number
+                                )}
+                              </span>
+                            </div>
+                          ) : null}
+                          {order?.ownedBySender === false ? (
+                            <div className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-warning-foreground">
+                              <AlertTriangle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+                              <span>
+                                Placed with {order?.customerEmail || "a different email"}, not the sender. Verify before acting.
+                              </span>
                             </div>
                           ) : null}
                         </div>
-                      </div>
-                    ) : null}
+                      );
+                    })}
                   </div>
-                </section>
-              ) : null}
-
-              <section className="space-y-1.5 border-b border-border/70 pb-2">
-                <TicketMetadataPanel threadId={threadId} />
-              </section>
-
-              {suggestedContext.intent || returnTrackingCandidate || returnTrackingActionState?.error ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2">
-                  <SidebarSectionLabel>Suggested context</SidebarSectionLabel>
-                  <div className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left">
-                    <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
-                      <span className="truncate">
-                        {suggestedContext.intent || "Tracking"}
-                        {suggestedContext.confidence ? ` · ${suggestedContext.confidence}` : ""}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground/60">
-                      Detected
-                    </span>
-                  </div>
-
+                  ) : null}
+                {hasTrackingContent ? (
+                  <div className={cn("space-y-2", lookupOrders.length && "mt-3")}>
                   {trackingOrder ? (
                     <div className="pt-0.5">
                       <TrackingCard order={trackingOrder} threadId={threadId} fullWidth compact direction="outbound" />
@@ -780,56 +838,89 @@ export function SonaInsightsModal({
                   {returnTrackingActionState?.error ? (
                     <div className="text-xs text-destructive">{returnTrackingActionState.error}</div>
                   ) : null}
-                </section>
+                  </div>
+                ) : null}
+                </PanelSection>
               ) : null}
 
-              {knowledgeGaps.length > 0 ? (
-                <section className="space-y-1.5 border-b border-border/70 pb-2">
-                  <SidebarSectionLabel>Needs knowledge</SidebarSectionLabel>
-                  <div className="space-y-1 text-xs leading-snug text-muted-foreground">
-                    {knowledgeGaps.map((gap, i) => (
-                      <div key={i}>{gap.suggested_title || gap.gap_type}</div>
+              <PanelSection
+                title="Sona"
+                action={<PanelLinkButton onClick={() => setSonaLogOpen(true)}>Activity</PanelLinkButton>}
+              >
+                {logsLoading && !diagnostic ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : hasSonaAnalysis ? (
+                  <div>
+                    {suggestedContext.intent ? (
+                      <PropertyRow label="Intent">
+                        {suggestedContext.intent}
+                        {suggestedContext.confidence ? (
+                          <span className="text-muted-foreground"> · {suggestedContext.confidence}</span>
+                        ) : null}
+                      </PropertyRow>
+                    ) : null}
+                    {diagnostic?.language ? (
+                      <PropertyRow label="Language">{String(diagnostic.language).toUpperCase()}</PropertyRow>
+                    ) : null}
+                    {diagnostic?.intent ? (
+                      <PropertyRow label="Knowledge">
+                        {Array.isArray(diagnostic.kb_chunks) && diagnostic.kb_chunks.length
+                          ? `${diagnostic.kb_chunks.length} source${diagnostic.kb_chunks.length === 1 ? "" : "s"} used`
+                          : <span className="text-muted-foreground">No sources used</span>}
+                      </PropertyRow>
+                    ) : null}
+                    {knowledgeGaps.length ? (
+                      <PropertyRow label="Missing">
+                        <span className="text-warning-foreground">
+                          {knowledgeGaps.map((gap) => gap.suggested_title || gap.gap_type).filter(Boolean).join(", ")}
+                        </span>
+                      </PropertyRow>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Sona hasn&apos;t analysed this ticket yet.</p>
+                )}
+              </PanelSection>
+
+              <PanelSection title="Ticket">
+                <TicketMetadataPanel threadId={threadId} />
+                {ticketThread?.created_at ? (
+                  <div className="mt-1.5">
+                    <PropertyRow label="Created">{formatPanelDateTime(ticketThread.created_at)}</PropertyRow>
+                  </div>
+                ) : null}
+              </PanelSection>
+
+              {previousTickets.length ? (
+                <PanelSection
+                  title={`Previous tickets (${previousTickets.length})`}
+                  action={
+                    previousTickets.length > 3 ? (
+                      <PanelLinkButton onClick={() => setActiveTab("customer")}>View all</PanelLinkButton>
+                    ) : null
+                  }
+                >
+                  <div className="-mx-2">
+                    {previousTickets.slice(0, 3).map((ticket) => (
+                      <button
+                        key={ticket.thread_id}
+                        type="button"
+                        onClick={() => onOpenTicket?.(ticket.thread_id)}
+                        className={SIDEBAR_ROW_CLASS}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-foreground">{ticket.subject}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {ticketStatusLabel(ticket.status)}
+                            {ticket.last_message_at ? ` · ${formatMessageTime(ticket.last_message_at)}` : ""}
+                          </span>
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+                      </button>
                     ))}
                   </div>
-                </section>
+                </PanelSection>
               ) : null}
-
-              <section className="space-y-1.5 border-b border-border/70 pb-2">
-                <SidebarSectionLabel>Customer history</SidebarSectionLabel>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("customer")}
-                  className={SIDEBAR_ROW_CLASS}
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    {previousTickets.length} previous ticket{previousTickets.length === 1 ? "" : "s"}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-                </button>
-              </section>
-
-              <section className="space-y-1.5 border-b border-border/70 pb-2">
-                <SidebarSectionLabel>More actions</SidebarSectionLabel>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("manual-actions")}
-                  className={SIDEBAR_ROW_CLASS}
-                >
-                  <span className="text-sm font-medium text-foreground">View available actions</span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSonaLogOpen(true)}
-                  className={SIDEBAR_ROW_CLASS}
-                >
-                  <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                    View Sona activity
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-                </button>
-              </section>
 
               <Dialog open={sonaLogOpen} onOpenChange={setSonaLogOpen}>
                 <DialogContent className="flex max-h-[90vh] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden border-border/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-w-[720px]">
@@ -892,6 +983,8 @@ export function SonaInsightsModal({
               onRefresh={effectiveRefresh}
               lookupParams={customerLookupParams}
               onOpenTicket={onOpenTicket}
+              customerName={customerDisplayName}
+              customerEmail={customerEmail}
             />
           </TabsContent>
           <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
@@ -931,12 +1024,21 @@ export function SonaInsightsModal({
                         }
                       />
                     </div>
-                  ) : (
+                  ) : null}
+                  {matchedOrder?.ownedBySender === false ? (
+                    <div className="flex items-start gap-2 rounded-xl border border-warning-foreground/30 bg-warning-foreground/[0.06] px-3 py-2.5 text-xs leading-snug text-warning-foreground">
+                      <AlertTriangle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Order {matchedOrder.id} was placed with {matchedOrder.customerEmail || "a different email"}, not the sender of this ticket. Confirm the customer owns it before changing it.
+                      </span>
+                    </div>
+                  ) : null}
+                  {!matchedOrder ? (
                     <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
                       <p className="font-medium text-foreground/80">No order found</p>
                       <p className="mt-1 text-xs leading-relaxed">Find the customer or order under the Customer tab.</p>
                     </div>
-                  )}
+                  ) : null}
                   <p className="px-1 pt-1 text-xs font-semibold uppercase tracking-widest text-slate-400/80">
                     Order actions
                   </p>

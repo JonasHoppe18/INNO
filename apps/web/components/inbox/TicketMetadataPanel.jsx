@@ -8,14 +8,20 @@ const assignedTagsCache = new Map();
 let availableTagsCache = null;
 
 function SectionLabel({ children }) {
+  return <span className="text-xs text-muted-foreground">{children}</span>;
+}
+
+// Label-left property row; matches PropertyRow in the ticket details panel.
+function InlineField({ label, children }) {
   return (
-    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">
-      {children}
-    </span>
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2">
+      <span className="pt-1 text-xs text-muted-foreground">{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
   );
 }
 
-function EditableTextField({ label, value, onSave, placeholder = "—", compact = false }) {
+function EditableTextField({ label, value, onSave, placeholder = "—", compact = false, inline = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const textareaRef = useRef(null);
@@ -45,45 +51,48 @@ function EditableTextField({ label, value, onSave, placeholder = "—", compact 
     }
   };
 
+  const field = editing ? (
+    <textarea
+      ref={textareaRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      aria-label={`Edit ${label.toLowerCase()}`}
+      rows={compact ? 2 : 3}
+      className={`w-full rounded-md border border-input bg-background px-2 py-1.5 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none ${compact ? "text-xs" : "text-sm"}`}
+    />
+  ) : (
+    <div className="group/field relative">
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Edit ${label.toLowerCase()}`}
+        className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${compact ? "text-xs leading-[1.45]" : "text-sm leading-5"} ${
+          value ? "text-foreground" : "text-muted-foreground"
+        }`}
+      >
+        {value ? (
+          value
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <Plus aria-hidden="true" className="h-3 w-3 text-muted-foreground/70" />
+            {placeholder}
+          </span>
+        )}
+      </button>
+      <Pencil
+        aria-hidden="true"
+        className="pointer-events-none absolute right-1 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/field:opacity-100"
+      />
+    </div>
+  );
+
+  if (inline) return <InlineField label={label}>{field}</InlineField>;
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <SectionLabel>{label}</SectionLabel>
-      {editing ? (
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          aria-label={`Edit ${label.toLowerCase()}`}
-          rows={compact ? 2 : 3}
-          className={`w-full rounded-md border border-input bg-background px-2 py-1.5 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none ${compact ? "text-xs" : "text-sm"}`}
-        />
-      ) : (
-        <div className="group/field relative">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            aria-label={`Edit ${label.toLowerCase()}`}
-            className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${compact ? "text-xs leading-[1.45]" : "text-sm leading-5"} ${
-              value ? "text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            {value ? (
-              value
-            ) : (
-              <span className="inline-flex items-center gap-1.5">
-                <Plus aria-hidden="true" className="h-3 w-3 text-muted-foreground/70" />
-                {placeholder}
-              </span>
-            )}
-          </button>
-          <Pencil
-            aria-hidden="true"
-            className="pointer-events-none absolute right-1 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/field:opacity-100"
-          />
-        </div>
-      )}
+      {field}
     </div>
   );
 }
@@ -107,14 +116,13 @@ function ProductField({ value, availableProducts, onSave }) {
   );
 
   return (
-    <div className="space-y-1.5">
-      <SectionLabel>Ticket product</SectionLabel>
+    <InlineField label="Product">
       <div className="group/field relative" ref={dropdownRef}>
         <button
           type="button"
           onClick={() => { setOpen((v) => !v); setSearch(""); }}
           aria-label="Edit ticket product"
-          className={`block min-h-[28px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-sm leading-5 transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
+          className={`block min-h-[26px] w-full rounded-md px-2 -mx-2 py-1 pr-7 text-left text-xs leading-[1.45] transition-[transform,background-color] duration-150 ease-out hover:bg-muted/55 active:scale-[0.99] ${
             value ? "text-foreground" : "text-muted-foreground"
           }`}
         >
@@ -123,7 +131,7 @@ function ProductField({ value, availableProducts, onSave }) {
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <Plus aria-hidden="true" className="h-3 w-3 text-muted-foreground/70" />
-              Add ticket product
+              Add
             </span>
           )}
         </button>
@@ -167,7 +175,7 @@ function ProductField({ value, availableProducts, onSave }) {
           </div>
         )}
       </div>
-    </div>
+    </InlineField>
   );
 }
 
@@ -284,9 +292,8 @@ function TagsSection({ threadId }) {
   const unassigned = availableTags.filter((t) => !assignedIds.has(t.id));
 
   return (
-    <div className="space-y-1.5">
-      <SectionLabel>Tags</SectionLabel>
-      <div className="flex items-center gap-1.5 flex-wrap min-h-[28px]">
+    <InlineField label="Tags">
+      <div className="flex min-h-[26px] flex-wrap items-center gap-1.5">
         {assignedTags.map((tag) => (
           <Tag
             key={tag.id}
@@ -303,7 +310,7 @@ function TagsSection({ threadId }) {
               className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-[3px] text-xs font-medium text-muted-foreground transition-[transform,color,border-color,background-color] duration-150 ease-out hover:border-violet-300 hover:bg-violet-50/70 hover:text-violet-700 active:scale-[0.97] dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
             >
               <Plus className="w-3 h-3" />
-              Add tag
+              Add
             </button>
             {dropdownOpen && (
               <div className="absolute left-0 top-full z-50 mt-1 max-h-48 min-w-[160px] overflow-y-auto rounded-lg border border-border bg-background py-1 shadow-lg">
@@ -324,10 +331,10 @@ function TagsSection({ threadId }) {
           </div>
         )}
         {assignedTags.length === 0 && unassigned.length === 0 ? (
-          <span className="py-1 text-xs text-muted-foreground">No tags yet</span>
+          <span className="py-1 text-xs text-muted-foreground">—</span>
         ) : null}
       </div>
-    </div>
+    </InlineField>
   );
 }
 
@@ -517,11 +524,11 @@ export function TicketMetadataPanel({ threadId }) {
   }, [threadId]);
 
   if (loading) {
-    return <div className="py-5 text-center text-xs text-muted-foreground">Loading…</div>;
+    return <div className="h-24 animate-pulse rounded-md bg-muted/40" aria-label="Loading ticket metadata" />;
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       <EditableTextField
         label="Summary"
         value={metadata?.issue_summary}
@@ -529,19 +536,22 @@ export function TicketMetadataPanel({ threadId }) {
         placeholder="Add a short summary"
         compact
       />
-      <ProductField
-        value={metadata?.detected_product}
-        availableProducts={metadata?.available_products ?? []}
-        onSave={(productId) => handleSave("detected_product_id", productId)}
-      />
-      <TagsSection threadId={threadId} />
-      <EditableTextField
-        label="Solution"
-        value={metadata?.solution_summary}
-        onSave={(v) => handleSave("solution_summary", v)}
-        placeholder="Add a solution summary"
-        compact
-      />
+      <div className="space-y-0.5">
+        <ProductField
+          value={metadata?.detected_product}
+          availableProducts={metadata?.available_products ?? []}
+          onSave={(productId) => handleSave("detected_product_id", productId)}
+        />
+        <TagsSection threadId={threadId} />
+        <EditableTextField
+          label="Solution"
+          value={metadata?.solution_summary}
+          onSave={(v) => handleSave("solution_summary", v)}
+          placeholder="Add"
+          compact
+          inline
+        />
+      </div>
     </div>
   );
 }

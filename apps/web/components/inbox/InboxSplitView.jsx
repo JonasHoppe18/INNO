@@ -3636,8 +3636,10 @@ export function InboxSplitView({
         draftText: draftValue,
         aiDraftText: aiDraft,
         threadMessages: rawThreadMessages,
+        // Never complete an address from an order that belongs to another email.
         orderShippingAddress:
-          customerLookup?.orders?.[0]?.shippingAddress || null,
+          (customerLookup?.orders || []).find((order) => order?.ownedBySender !== false)
+            ?.shippingAddress || null,
       }),
     };
   }, [
@@ -3937,6 +3939,7 @@ export function InboxSplitView({
           customerLookupError={customerLookupError}
           onCustomerRefresh={refreshCustomerLookup}
           customerLookupParams={customerLookupParams}
+          ticketThread={selectedThread}
           onOpenTicket={handleOpenPreviousTicket}
           onSeedPendingOrderUpdate={setPendingOrderUpdateByThread}
           onOrderUpdateDecision={handleOrderUpdateDecision}

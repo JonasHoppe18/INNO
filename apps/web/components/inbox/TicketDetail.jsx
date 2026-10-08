@@ -818,8 +818,10 @@ function TicketDetailComponent({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-conversation lg:min-w-0 dark:lg:bg-muted/30">
-      <header className="flex min-h-[3.25rem] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[3.5rem] sm:px-3 lg:px-2.5">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      {/* Fixed 56px on desktop so the bottom border lines up with the ticket
+          details panel header; a long subject truncates instead of wrapping. */}
+      <header className="flex min-h-[3.25rem] shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/70 bg-background/95 px-2.5 py-1.5 shadow-[0_1px_0_hsl(var(--border)/0.25)] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:min-h-[3.5rem] sm:px-3 lg:h-14 lg:min-h-0 lg:flex-nowrap lg:px-2.5 lg:py-0">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 lg:flex-nowrap">
           {onBackToInbox ? (
             <button
               type="button"
@@ -842,12 +844,15 @@ function TicketDetailComponent({
           </span>
           {headerActions ? (
             <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">{headerActions}</div>
+              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5 lg:flex-nowrap">{headerActions}</div>
             </TicketRenderBoundary>
           ) : null}
           {threadSubject ? (
-            <span className="hidden min-w-0 items-center gap-2 2xl:inline-flex">
-              <span className="min-w-0 max-w-[min(38vw,360px)] truncate text-xs font-semibold tracking-[-0.01em] text-foreground">
+            <span className="hidden min-w-0 flex-1 items-center gap-2 2xl:inline-flex">
+              <span
+                title={threadSubject}
+                className="min-w-0 max-w-[min(38vw,360px)] truncate text-xs font-semibold tracking-[-0.01em] text-foreground"
+              >
                 {threadSubject}
               </span>
             </span>
