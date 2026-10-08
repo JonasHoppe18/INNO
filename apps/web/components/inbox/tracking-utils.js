@@ -338,6 +338,10 @@ function buildSnapshotEvents(snapshot, carrier) {
     const item = {
       id: `snapshot-event-${index}-${event?.occurredAt || index}`,
       title,
+      // label/time keep description and timestamp apart for layouts that
+      // show the time in its own column (the tracking dialog).
+      label: description,
+      time: ts,
       meta: metaParts.join(" • "),
       detail: "",
       timestamp: event?.occurredAt || null,

@@ -1,178 +1,104 @@
 import { memo, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, RefreshCw, ShoppingBag, Truck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { formatTicketReference } from "@/lib/tickets/reference";
-import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
+import {
+  CustomerAvatar,
+  PanelSection,
+  PropertyRow,
+  ticketStatusLabel,
+} from "@/components/inbox/panel-primitives";
 
 const DISPLAY_LOCALE = "en-GB";
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 
-const getDateKey = (date) => {
-  const parts = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
-    timeZone: DISPLAY_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${values.year}-${values.month}-${values.day}`;
-};
-
-const getCalendarDayDistance = (fromKey, toKey) => {
-  const [fromYear, fromMonth, fromDay] = String(fromKey).split("-").map(Number);
-  const [toYear, toMonth, toDay] = String(toKey).split("-").map(Number);
-  if (![fromYear, fromMonth, fromDay, toYear, toMonth, toDay].every(Number.isFinite)) {
-    return null;
-  }
-  return Math.round(
-    (Date.UTC(fromYear, fromMonth - 1, fromDay) - Date.UTC(toYear, toMonth - 1, toDay)) /
-      (24 * 60 * 60 * 1000),
-  );
-};
-
-const formatHistoryTimestamp = (value) => {
-  if (!value) return null;
+const formatDate = (value, { withYear = true } = {}) => {
+  if (!value) return "";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const daysAgo = getCalendarDayDistance(getDateKey(new Date()), getDateKey(date));
-  if (daysAgo === 0) return "Today";
-  if (daysAgo === 1) return "Yesterday";
-  if (daysAgo > 1 && daysAgo < 7) return `${daysAgo} days ago`;
+  if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString(DISPLAY_LOCALE, {
     timeZone: DISPLAY_TIMEZONE,
     day: "numeric",
     month: "short",
-    year: "numeric",
+    ...(withYear ? { year: "numeric" } : {}),
   });
 };
 
-const getTicketTimeGroup = (value) => {
-  if (!value) return "Earlier";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Earlier";
-  const daysAgo = getCalendarDayDistance(getDateKey(new Date()), getDateKey(date));
-  if (daysAgo === 0) return "Today";
-  if (daysAgo === 1) return "Yesterday";
-  if (daysAgo > 1 && daysAgo < 7) return "This week";
-  return "Earlier";
-};
-
-const parseAmount = (value) => {
-  if (value === null || value === undefined) return null;
-  const num = Number(String(value).replace(",", "."));
-  return Number.isFinite(num) ? num : null;
-};
-
-const formatCurrency = (value, currency) => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value !== "number") return String(value);
-  if (!currency) return value.toLocaleString(DISPLAY_LOCALE);
+const formatMoney = (amount, currency) => {
+  const value = typeof amount === "number" ? amount : Number(String(amount ?? "").replace(",", "."));
+  if (!Number.isFinite(value)) return "";
   try {
-    return new Intl.NumberFormat(DISPLAY_LOCALE, { style: "currency", currency }).format(value);
+    return new Intl.NumberFormat("da-DK", { style: "currency", currency: currency || "DKK" }).format(value);
   } catch {
-    return `${currency} ${value.toLocaleString(DISPLAY_LOCALE)}`;
+    return `${value.toLocaleString("da-DK")} ${currency || ""}`.trim();
   }
 };
 
-const getInitials = (name, email) => {
-  const base = name || email || "";
-  const parts = base
-    .replace(/[^a-zA-Z0-9\s]/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!parts.length) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
+const orderNumberKey = (value) => String(value ?? "").replace(/\D/g, "");
 
-const getTicketStatusMeta = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "solved" || normalized === "resolved") {
-    return {
-      label: "Resolved",
-      className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
-      dotClassName: "bg-emerald-500",
-    };
-  }
-  if (normalized === "pending" || normalized === "waiting") {
-    return {
-      label: normalized === "pending" ? "Pending" : "Waiting",
-      className: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-      dotClassName: "bg-amber-500",
-    };
-  }
-  if (normalized === "new") {
-    return {
-      label: "New",
-      className: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300",
-      dotClassName: "bg-blue-500",
-    };
-  }
-  return {
-    label: "Open",
-    className: "bg-muted text-muted-foreground",
-    dotClassName: "bg-muted-foreground/60",
-  };
-};
-
-const formatTicketRef = (ticketNumber) => formatTicketReference(ticketNumber);
-
-function SectionHeading({ title, description, count }) {
+function FulfillmentPill({ status }) {
+  const raw = String(status || "").toLowerCase();
+  if (!raw) return null;
+  const done = raw === "fulfilled";
+  const label = raw.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h3 className="text-section-heading font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
-        {description ? <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p> : null}
-      </div>
-      {count !== undefined ? (
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-          {count}
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-medium",
+        done
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+      )}
+    >
+      <span className={cn("size-1.5 rounded-full", done ? "bg-emerald-500" : "bg-amber-500")} />
+      {label}
+    </span>
+  );
+}
+
+function OrderRow({ order, isCurrent = false, warning = null }) {
+  const orderUrl = order?.adminUrl || "";
+  return (
+    <div className="py-1.5">
+      <div className="flex min-w-0 items-center gap-2">
+        {orderUrl ? (
+          <a
+            href={orderUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open order #${order.id} in Shopify`}
+            className="group/order inline-flex min-w-0 items-center gap-1 text-xs font-medium text-foreground hover:text-violet-700 dark:hover:text-violet-300"
+          >
+            <span className="truncate">#{order.id}</span>
+            <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground group-hover/order:text-violet-600" />
+          </a>
+        ) : (
+          <span className="truncate text-xs font-medium text-foreground">#{order?.id}</span>
+        )}
+        <FulfillmentPill status={order?.fulfillmentStatus || order?.fulfillment_status || order?.status} />
+        {isCurrent ? (
+          <span className="shrink-0 rounded-full bg-violet-50 px-1.5 py-px text-[11px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+            This ticket
+          </span>
+        ) : null}
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+          {formatMoney(order?.total, order?.currency)}
         </span>
+      </div>
+      {order?.placedAt ? (
+        <div className="mt-0.5 text-xs text-muted-foreground">{formatDate(order.placedAt)}</div>
+      ) : null}
+      {warning ? (
+        <div className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-warning-foreground">
+          <AlertTriangle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>{warning}</span>
+        </div>
       ) : null}
     </div>
   );
 }
 
-function PreviousTicketCard({ ticket, onOpenTicket }) {
-  const threadId = String(ticket?.thread_id || "").trim();
-  const ticketRef = formatTicketRef(ticket?.ticket_number);
-  const subject = String(ticket?.subject || "").trim() || "Untitled ticket";
-  const status = getTicketStatusMeta(ticket?.status);
-  const timestamp = formatHistoryTimestamp(ticket?.last_message_at);
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (threadId) onOpenTicket?.(threadId);
-      }}
-      disabled={!threadId}
-      className="group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-background/80 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 disabled:cursor-default disabled:opacity-70"
-    >
-      <span className={`h-2 w-2 shrink-0 rounded-full ${status.dotClassName}`} />
-      <div className="min-w-0 flex-1">
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
-          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{subject}</div>
-          <span className="shrink-0 text-right text-xs text-muted-foreground/70">{timestamp || "—"}</span>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}>
-            {status.label}
-          </span>
-          <span className="truncate text-xs font-mono tracking-[0.04em] text-muted-foreground/70">
-            {ticketRef}
-          </span>
-        </div>
-      </div>
-      {threadId ? (
-        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-      ) : null}
-    </button>
-  );
-}
-
-function PreviousTicketsSection({ tickets, onOpenTicket }) {
+function PreviousTickets({ tickets, onOpenTicket }) {
   const [visibleCount, setVisibleCount] = useState(5);
   const firstTicketId = String(tickets[0]?.thread_id || "").trim();
 
@@ -180,284 +106,194 @@ function PreviousTicketsSection({ tickets, onOpenTicket }) {
     setVisibleCount(5);
   }, [tickets.length, firstTicketId]);
 
-  const visibleTickets = tickets.slice(0, visibleCount);
-  const groups = visibleTickets.reduce((result, ticket) => {
-    const label = getTicketTimeGroup(ticket?.last_message_at);
-    const existingGroup = result.find((group) => group.label === label);
-    if (existingGroup) {
-      existingGroup.tickets.push(ticket);
-    } else {
-      result.push({ label, tickets: [ticket] });
-    }
-    return result;
-  }, []);
+  if (!tickets.length) {
+    return <p className="text-xs text-muted-foreground">No previous conversations with this customer.</p>;
+  }
 
   return (
-    <section className="space-y-2.5 border-t border-border/70 pt-5">
-      <SectionHeading
-        title="Previous conversations"
-        description="Previous conversations with this customer."
-        count={tickets.length}
-      />
-      {tickets.length ? (
-        <div className="space-y-3">
-          {groups.map((group) => (
-            <div key={group.label} className="space-y-1.5">
-              <div className="px-1 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
-                {group.label}
-              </div>
-              <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
-                {group.tickets.map((ticket) => (
-                  <PreviousTicketCard
-                    key={
-                      String(ticket?.thread_id || "").trim() ||
-                      `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`
-                    }
-                    ticket={ticket}
-                    onOpenTicket={onOpenTicket}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          {visibleCount < tickets.length ? (
-            <button
-              type="button"
-              onClick={() => setVisibleCount((count) => Math.min(count + 5, tickets.length))}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
-            >
-              <span>Load more conversations</span>
-              <span className="tabular-nums text-muted-foreground/70">{tickets.length - visibleCount} remaining</span>
-            </button>
-          ) : null}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-xs text-muted-foreground">
-          No previous tickets found.
-        </div>
-      )}
-    </section>
-  );
-}
-
-function OrderCard({ order, shopDomain }) {
-  const orderUrl = order?.adminUrl || (shopDomain && order?.adminId)
-    ? order?.adminUrl || `https://${shopDomain}/admin/orders/${order.adminId}`
-    : "";
-  const total = order?.total ? formatCurrency(parseAmount(order.total) ?? order.total, order.currency) : "—";
-  const items = Array.isArray(order?.items) ? order.items : [];
-  const visibleItems = items.slice(0, 2);
-  const remainingItemCount = items.length - visibleItems.length;
-
-  return (
-    <div className="px-3.5 py-3 transition-colors duration-150 hover:bg-background/80">
-      <div className="flex items-start gap-2.5">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-          <ShoppingBag className="size-3.5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 text-sm font-semibold text-foreground">
-              {orderUrl ? (
-                <a
-                  href={orderUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group/order inline-flex max-w-full items-center gap-1 hover:text-violet-700 dark:hover:text-violet-300"
-                >
-                  <span className="truncate">Order #{order.id}</span>
-                  <ExternalLink className="size-3 shrink-0 text-muted-foreground transition-colors group-hover/order:text-violet-600" />
-                </a>
-              ) : (
-                <>Order #{order.id}</>
-              )}
-            </div>
-            <div className="flex shrink-0 flex-wrap justify-end gap-1">
-              {order?.financialStatus ? (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  order.financialStatus === "paid"
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-                    : "bg-muted text-muted-foreground"
-                }`}>
-                  {order.financialStatus === "paid" ? "Paid" : "Refunded"}
-                </span>
-              ) : null}
-              {order?.fulfillmentStatus ? (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  order.fulfillmentStatus === "fulfilled"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-                    : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-                }`}>
-                  {order.fulfillmentStatus === "fulfilled" ? "Fulfilled" : "Unfulfilled"}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{total}</div>
-        </div>
-      </div>
-
-      {visibleItems.length ? (
-        <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
-          <span className="truncate">
-            {visibleItems.join(" · ")}
-            {remainingItemCount > 0 ? ` · +${remainingItemCount} more` : ""}
-          </span>
-        </div>
-      ) : null}
-
-      {order?.tracking?.url && order?.tracking?.number ? (
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Truck className="size-3.5 shrink-0" />
-          <a href={order.tracking.url} target="_blank" rel="noreferrer" className="truncate hover:text-foreground hover:underline">
-            Tracking {order.tracking.number}
-          </a>
-        </div>
+    <div className="-mx-2">
+      {tickets.slice(0, visibleCount).map((ticket) => {
+        const threadId = String(ticket?.thread_id || "").trim();
+        const ticketRef = formatTicketReference(ticket?.ticket_number);
+        return (
+          <button
+            key={threadId || `${ticket?.ticket_number}-${ticket?.subject}`}
+            type="button"
+            disabled={!threadId}
+            onClick={() => threadId && onOpenTicket?.(threadId)}
+            className="group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/45 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500/30 disabled:cursor-default"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-foreground">
+                {String(ticket?.subject || "").trim() || "Untitled ticket"}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {[
+                  ticketStatusLabel(ticket?.status),
+                  formatDate(ticket?.last_message_at, { withYear: false }),
+                  ticketRef !== "No ticket ID" ? `#${ticketRef.replace(/^T-/, "")}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </span>
+            {threadId ? (
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+            ) : null}
+          </button>
+        );
+      })}
+      {visibleCount < tickets.length ? (
+        <button
+          type="button"
+          onClick={() => setVisibleCount((count) => Math.min(count + 5, tickets.length))}
+          className="mt-1 w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
+        >
+          Show {Math.min(5, tickets.length - visibleCount)} more
+        </button>
       ) : null}
     </div>
   );
 }
 
-function CustomerTabComponent({ data, loading, error, onRefresh, onOpenTicket }) {
+function CustomerTabComponent({
+  data,
+  loading,
+  error,
+  onRefresh,
+  onOpenTicket,
+  customerName = "",
+  customerEmail = "",
+}) {
+  const customer = data?.customer || null;
+  const profile = customer?.profile || null;
   const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
-  const orders = Array.isArray(data?.orders) ? data.orders : [];
-  const customer = data?.customer || {};
-  const shopDomain = data?.shopDomain || data?.shop?.domain || data?.shop?.shop_domain || null;
-  const totals = orders
-    .map((order) => parseAmount(order?.total))
-    .filter((value) => value !== null);
-  const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
-  const currency = orders.find((order) => order?.currency)?.currency || null;
-  const customerDisplayName = getCustomerDisplayName({
-    customer,
-    fallbackEmail: customer?.email,
-  });
-  const initials = getInitials(customerDisplayName, customer?.email);
-  const hasCustomerData = Boolean(data?.customer || orders.length);
-
-  if (loading) {
-    return (
-      <div className="space-y-5 px-0.5" aria-label="Loading customer history">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
-          </div>
-          <Button variant="outline" size="sm" disabled>Refresh</Button>
-        </div>
-        <div className="space-y-3">
-          <div className="h-16 animate-pulse rounded-xl bg-muted" />
-          <div className="h-20 animate-pulse rounded-xl bg-muted" />
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-5 px-0.5">
-        <div>
-          <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
-        </div>
-        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-3.5">
-          <p className="text-sm font-medium text-foreground">Couldn’t load customer history</p>
-          <p className="mt-1 text-xs leading-4 text-muted-foreground">
-            {error.message || "Something went wrong while loading this customer."}
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={onRefresh}>Try again</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!hasCustomerData) {
-    return (
-      <div className="space-y-5 px-0.5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>
-        </div>
-        <div className="rounded-xl border border-dashed border-border bg-background/40 p-4">
-          <p className="text-sm font-medium text-foreground">No customer profile found</p>
-          <p className="mt-1 text-xs leading-4 text-muted-foreground">
-            We couldn’t match this ticket to a customer or order.
-          </p>
-        </div>
-        <PreviousTicketsSection tickets={previousTickets} onOpenTicket={onOpenTicket} />
-      </div>
-    );
-  }
+  // Orders matched only by number can belong to another email; they are listed
+  // separately and never counted as this customer's.
+  const lookupOrders = Array.isArray(data?.orders) ? data.orders : [];
+  const ownLookupOrders = lookupOrders.filter((order) => order?.ownedBySender !== false);
+  const foreignOrders = lookupOrders.filter((order) => order?.ownedBySender === false);
+  // Lifetime profile orders when Shopify gave us a profile; otherwise only the
+  // orders this ticket's lookup found.
+  const orders = profile?.recentOrders?.length ? profile.recentOrders : ownLookupOrders;
+  const currentOrderKey = orderNumberKey(data?.matchedOrderNumber);
+  const inShopify = Boolean(profile) || customer?.source === "shopify_orders";
+  const lifetimeOrders = Number.isFinite(profile?.lifetimeOrders) ? profile.lifetimeOrders : null;
+  const location = [profile?.city, profile?.country || customer?.country].filter(Boolean).join(", ");
 
   return (
-    <div className="space-y-5 px-0.5 pb-2">
-      <section className="border-b border-border/70 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-section-heading font-semibold tracking-[-0.015em] text-foreground">Customer history</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">Orders and previous conversations.</p>
+    <div className="px-1 pb-2">
+      <PanelSection>
+        <div className="flex items-start gap-3">
+          <CustomerAvatar name={customerName} email={customerEmail} />
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-sm font-semibold text-foreground" title={customerName}>
+                {customerName || "Unknown customer"}
+              </span>
+              {customer?.adminUrl ? (
+                <a
+                  href={customer.adminUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Open customer in Shopify"
+                  title="Open in Shopify"
+                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ) : null}
+            </div>
+            {customerEmail && customerEmail !== customerName ? (
+              <div className="truncate text-xs text-muted-foreground">{customerEmail}</div>
+            ) : null}
           </div>
           <button
             type="button"
             onClick={onRefresh}
-            title="Refresh customer history"
-            aria-label="Refresh customer history"
-            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
+            disabled={loading}
+            aria-label="Refresh customer"
+            title="Refresh"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
         </div>
-        <div className="mt-4 flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
-            <span className="text-sm font-semibold">{initials}</span>
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {customerDisplayName}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">{customer?.email || "No email available"}</div>
-          </div>
-        </div>
-      </section>
 
-      <section className="grid grid-cols-[1.35fr_0.825fr_0.825fr] gap-2">
-        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Spent</div>
-          <div className="mt-1 whitespace-nowrap text-xs font-semibold tabular-nums tracking-[-0.01em] text-foreground">
-            {totalSpent !== null ? formatCurrency(totalSpent, currency) : "—"}
+        {loading && !customer ? (
+          <div className="mt-3 space-y-1.5" aria-label="Loading customer">
+            <div className="h-3 w-40 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-32 animate-pulse rounded bg-muted" />
           </div>
-        </div>
-        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Orders</div>
-          <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{orders.length}</div>
-        </div>
-        <div className="min-w-0 rounded-xl border border-border/70 bg-background/60 px-2.5 py-2.5">
-          <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground/75">Tickets</div>
-          <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{previousTickets.length}</div>
-        </div>
-      </section>
-
-      <section className="space-y-2.5">
-        <SectionHeading title="Recent orders" description="Orders linked to this customer." count={orders.length} />
-        {orders.length ? (
-          <div className="overflow-hidden rounded-xl border border-border/70 bg-background/45 divide-y divide-border/70">
-            {orders.map((order, index) => (
-              <OrderCard key={order.id || `order-${index}`} order={order} shopDomain={shopDomain} />
-            ))}
+        ) : error ? (
+          <p className="mt-3 text-xs text-destructive">{error.message || "Couldn’t load this customer."}</p>
+        ) : inShopify ? (
+          <div className="mt-3">
+            {lifetimeOrders !== null ? <PropertyRow label="Orders">{lifetimeOrders}</PropertyRow> : null}
+            {profile?.amountSpent ? (
+              <PropertyRow label="Spent">
+                {formatMoney(profile.amountSpent.amount, profile.amountSpent.currency)}
+              </PropertyRow>
+            ) : null}
+            {profile?.createdAt ? (
+              <PropertyRow label="Customer since">{formatDate(profile.createdAt)}</PropertyRow>
+            ) : null}
+            {location ? <PropertyRow label="Location">{location}</PropertyRow> : null}
+            {customer?.phone ? <PropertyRow label="Phone">{customer.phone}</PropertyRow> : null}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-3 text-xs text-muted-foreground">
-            No orders found.
-          </div>
+          <p className="mt-3 text-xs text-muted-foreground">No Shopify customer with this email.</p>
         )}
-      </section>
+      </PanelSection>
 
-      <PreviousTicketsSection tickets={previousTickets} onOpenTicket={onOpenTicket} />
+      {orders.length ? (
+        <PanelSection
+          title={lifetimeOrders !== null ? `Orders (${lifetimeOrders})` : "Orders"}
+          action={
+            customer?.adminUrl && lifetimeOrders !== null && lifetimeOrders > orders.length ? (
+              <a
+                href={customer.adminUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              >
+                All in Shopify
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null
+          }
+        >
+          <div className="divide-y divide-border/50">
+            {orders.map((order, index) => (
+              <OrderRow
+                key={`${order?.id || "order"}-${index}`}
+                order={order}
+                isCurrent={Boolean(currentOrderKey) && orderNumberKey(order?.id) === currentOrderKey}
+              />
+            ))}
+          </div>
+        </PanelSection>
+      ) : null}
+
+      {foreignOrders.length ? (
+        <PanelSection title="Mentioned orders">
+          <div className="divide-y divide-border/50">
+            {foreignOrders.map((order, index) => (
+              <OrderRow
+                key={`${order?.id || "foreign"}-${index}`}
+                order={order}
+                warning={`Placed with ${order?.customerEmail || "a different email"}, not the sender. Verify before acting.`}
+              />
+            ))}
+          </div>
+        </PanelSection>
+      ) : null}
+
+      <PanelSection
+        title={previousTickets.length ? `Previous conversations (${previousTickets.length})` : "Previous conversations"}
+      >
+        <PreviousTickets tickets={previousTickets} onOpenTicket={onOpenTicket} />
+      </PanelSection>
     </div>
   );
 }

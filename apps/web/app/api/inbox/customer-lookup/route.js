@@ -5,6 +5,8 @@ import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
 import { getCustomerDisplayName } from "@/lib/inbox/customer-display";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
+import { selectLookupOrders } from "@/lib/server/customer-lookup-selection";
+import { fetchShopifyCustomerProfile } from "@/lib/server/shopify-customer-profile";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -113,8 +115,10 @@ function extractOrderNumber(subject) {
   return hashMatch?.[1] || null;
 }
 
+// v3: payloads carry order ownership (ownedBySender / orderOwnership) and the
+// sender's Shopify profile (customer.profile).
 function buildCacheKey({ platform, email, orderNumber }) {
-  const parts = [platform];
+  const parts = [platform, "v3"];
   const emailKey = normalizeEmailForKey(email);
   if (orderNumber) parts.push(`order:${orderNumber}`);
   if (emailKey) parts.push(`email:${emailKey}`);
@@ -229,6 +233,7 @@ function mapOrder(order) {
   return {
     id: order?.order_number ?? order?.name ?? order?.id ?? "Unknown",
     adminId: order?.id ?? null,
+    customerEmail: order?.email || order?.customer?.email || null,
     status: order?.fulfillment_status ?? order?.financial_status ?? "unknown",
     financialStatus: financialStatus.includes("refund") ? "refunded" : "paid",
     fulfillmentStatus: fulfillmentStatus === "fulfilled" ? "fulfilled" : "unfulfilled",
@@ -266,6 +271,8 @@ function mapCustomer(orders, fallbackEmail) {
     email: primary?.email || customer?.email || fallbackEmail || null,
     phone: shipping?.phone || customer?.phone || null,
     tags: customer?.tags || null,
+    shopifyId: customer?.id ?? null,
+    country: shipping?.country || null,
   };
 }
 
@@ -377,9 +384,9 @@ export async function POST(request) {
         },
       });
       const cachedCustomerEmail =
+        effectiveInputEmail ||
         normalizeEmail(cached?.data?.customer?.email) ||
-        normalizeEmail(cached?.data?.email) ||
-        effectiveInputEmail;
+        normalizeEmail(cached?.data?.email);
       // Always refresh previous tickets from DB to avoid stale ticket numbers in cached payloads.
       const cachedPreviousTickets = await loadPreviousTickets(serviceClient, scope, {
         customerEmail: cachedCustomerEmail,
@@ -578,11 +585,14 @@ export async function POST(request) {
   const orderMatchesWithEmail = effectiveInputEmail
     ? orderMatches.filter((order) => matchesCustomerEmail(order, effectiveInputEmail))
     : orderMatches;
-  const ordersToUse = derivedOrderNumber
-    ? orderMatchesWithEmail.length
-      ? orderMatchesWithEmail
-      : orderMatches
-    : emailFilteredOrders;
+  const selection = selectLookupOrders({
+    rawOrders,
+    senderEmail: effectiveInputEmail,
+    orderNumber: derivedOrderNumber,
+    matchesEmail: matchesCustomerEmail,
+    matchesNumber: matchesOrderNumber,
+  });
+  const ordersToUse = selection.orders.map((row) => row.order);
   const { data: shopRow } = await serviceClient
     .from("shops")
     .select("shop_domain")
@@ -594,16 +604,51 @@ export async function POST(request) {
     ? String(shopRow.shop_domain).replace(/^https?:\/\//, "").replace(/\/+$/, "")
     : shopDomain;
 
-  const mappedOrders = ordersToUse.map((order) => {
-    const mapped = mapOrder(order);
+  const mappedOrders = selection.orders.map(({ order, ownedBySender }) => {
+    const mapped = { ...mapOrder(order), ownedBySender };
     if (finalShopDomain && mapped?.adminId) {
       mapped.adminUrl = `https://${finalShopDomain}/admin/orders/${mapped.adminId}`;
     }
     return mapped;
   });
-  const customer = ordersToUse.length ? mapCustomer(ordersToUse, effectiveInputEmail) : null;
+  // Identity only ever comes from orders the sender owns; a matched order that
+  // belongs to another email must not rename the customer or pull in their
+  // ticket history. Without an owned order the panel falls back to the sender.
+  const customer = selection.ownedOrders.length
+    ? { ...mapCustomer(selection.ownedOrders, effectiveInputEmail), source: "shopify_orders" }
+    : effectiveInputEmail
+      ? { name: null, email: effectiveInputEmail, phone: null, tags: null, source: "sender" }
+      : null;
+  // Lifetime profile for the sender's own email (never a mismatched order's
+  // email). Best effort: the panel omits whatever Shopify can't provide.
+  if (customer?.email) {
+    try {
+      const profile = await fetchShopifyCustomerProfile(shopCreds, normalizeEmailForKey(customer.email));
+      if (profile) {
+        const adminBase = finalShopDomain ? `https://${finalShopDomain}/admin` : "";
+        customer.profile = {
+          ...profile,
+          recentOrders: profile.recentOrders.map((order) => ({
+            ...order,
+            adminUrl: adminBase && order.adminId ? `${adminBase}/orders/${order.adminId}` : null,
+          })),
+        };
+        customer.lifetimeOrders = profile.lifetimeOrders;
+        customer.shopifyId = customer.shopifyId || profile.shopifyId;
+        if (!customer.name && profile.name) customer.name = profile.name;
+        if (!customer.country && profile.country) customer.country = profile.country;
+        // A Shopify customer without a matched order is still a Shopify customer.
+        if (customer.source === "sender") customer.source = "shopify_profile";
+      }
+    } catch {
+      // Leave the profile unset.
+    }
+  }
+  if (customer?.shopifyId && finalShopDomain && customer.source !== "sender") {
+    customer.adminUrl = `https://${finalShopDomain}/admin/customers/${customer.shopifyId}`;
+  }
   const previousTickets = await loadPreviousTickets(serviceClient, scope, {
-    customerEmail: customer?.email || effectiveInputEmail,
+    customerEmail: effectiveInputEmail || customer?.email,
     currentThreadId: threadId,
   });
 
@@ -612,6 +657,7 @@ export async function POST(request) {
     orders: mappedOrders,
     previousTickets,
     matchedOrderNumber: derivedOrderNumber,
+    orderOwnership: selection.ownership,
     source: platform,
     shopDomain: finalShopDomain,
     ...(debug

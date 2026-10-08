@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, ExternalLink, Loader2, Truck, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Copy, ExternalLink, Loader2, Truck, X } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,7 @@ import bringLogo from "../../../../assets/Bring logo.png";
 import glsLogo from "../../../../assets/GLS logo.png";
 import postNordLogo from "../../../../assets/PostNord_logo.png";
 
-function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
+export function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
   const lower = String(carrier || "").toLowerCase();
 
   if (lower.includes("gls")) {
@@ -59,8 +59,8 @@ function CarrierLogo({ carrier = "", className = "h-8 w-8" }) {
   }
   // Fallback: truck icon
   return (
-    <div className={`${className} flex-none flex items-center justify-center rounded-xl bg-slate-100 text-slate-500`}>
-      <Truck className="h-5 w-5" />
+    <div className={`${className} flex-none flex items-center justify-center rounded-[25%] bg-slate-100 text-slate-500`}>
+      <Truck className="h-[60%] w-[60%]" />
     </div>
   );
 }
@@ -94,6 +94,26 @@ function getStatusDotClasses(status = "") {
   if (lower.includes("delay") || lower.includes("exception")) return "bg-red-500";
   return "bg-slate-400";
 }
+
+// 24h, Copenhagen time, matching the rest of the ticket panel ("6 Oct, 19:05").
+// A fixed format keeps the timestamp column aligned.
+function formatTimelineTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Copenhagen",
+  });
+}
+
+// Events an agent should notice: failed delivery attempts, exceptions, delays.
+const EXCEPTION_EVENT_PATTERN =
+  /not possible|could not|unable|failed|exception|delay|returned to sender|ikke muligt|kunne ikke|forsink|retur til afsender/i;
 
 function getCarrierLabel(value = "") {
   const text = String(value || "").trim();
@@ -247,14 +267,64 @@ export function TrackingCard({
   }, [direction, threadId, trackingNumber, effectiveTrackingUrl, tracking?.company]);
 
   useEffect(() => {
-    if (open) fetchLive();
+    // The compact row already loaded live data; don't blank and refetch it.
+    if (open && !liveDetail) fetchLive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only (re)fetch when the dialog opens.
   }, [open, fetchLive]);
+
+  // The panel row shows the carrier's live status, not Shopify's fulfillment
+  // fallback, so it matches the dialog. The refresh route serves its
+  // tracking_snapshots cache while fresh, so this rarely hits the carrier.
+  useEffect(() => {
+    if (compact) fetchLive();
+  }, [compact, fetchLive]);
+
+  const [copied, setCopied] = useState(false);
+  const copyTrackingNumber = useCallback(async () => {
+    if (!trackingNumber) return;
+    try {
+      await navigator.clipboard.writeText(trackingNumber);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (permissions/insecure context); nothing to do.
+    }
+  }, [trackingNumber]);
 
   if (!trackingNumber && !trackingUrl) return null;
 
   return (
     <>
-      {/* Inline card in ticket thread */}
+      {compact ? (
+        // Panel row: borderless like the rest of the ticket details panel.
+        // A wide logo frame keeps wordmarks (PostNord, GLS, Bring) legible.
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="group -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-muted/50 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+        >
+          <span className="flex h-7 w-12 flex-none items-center justify-center overflow-hidden rounded-md border border-border/70 bg-white px-1 dark:bg-white/95">
+            <CarrierLogo carrier={carrier} className="h-full w-full" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 items-center gap-1.5 text-xs">
+              {direction === "return" ? (
+                <span className="shrink-0 text-muted-foreground">Return ·</span>
+              ) : null}
+              <span className="shrink-0 font-medium text-foreground">{carrier}</span>
+              <span className={`size-1.5 shrink-0 rounded-full ${getStatusDotClasses(statusLabel)}`} aria-hidden="true" />
+              <span className={`truncate font-medium ${getStatusTextColor(statusLabel)}`}>
+                {statusLabel.split(" · ")[0]}
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-xs tabular-nums text-muted-foreground">
+              {trackingNumber || "No tracking number"}
+            </span>
+          </span>
+          <ChevronRight className="h-3.5 w-3.5 flex-none text-muted-foreground/60 transition-[color,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-foreground" />
+        </button>
+      ) : (
+        // Inline card in ticket thread
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -283,122 +353,149 @@ export function TrackingCard({
         <ChevronRight className="h-4 w-4 flex-none text-muted-foreground/45 transition-[color,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
       </button>
 
+      )}
+
       {/* Detail modal */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[520px] [&>button]:hidden">
+        <DialogContent className="gap-5 sm:max-w-[520px] [&>button]:hidden">
           <DialogHeader className="space-y-0">
-            <div className="flex items-center justify-between gap-3">
-              <DialogTitle className="flex items-center gap-2.5 text-lg font-semibold text-slate-900">
-                <CarrierLogo carrier={carrier} className="h-8 w-8" />
-                <span>{carrier}</span>
-              </DialogTitle>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClasses(statusLabel)}`}>
-                  {statusLabel}
-                </span>
-                <DialogClose className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
-                  <X className="h-4 w-4" />
-                </DialogClose>
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-16 flex-none items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-white px-1.5 dark:bg-white/95">
+                <CarrierLogo carrier={carrier} className="h-full w-full" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="text-base font-semibold text-foreground">
+                  {orderLabel ? `Order #${orderLabel}` : carrier}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  {direction === "return" ? "Return shipment" : "Shipment"} with {carrier}
+                </DialogDescription>
               </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClasses(statusLabel)}`}>
+                {statusLabel.split(" · ")[0]}
+              </span>
+              <DialogClose className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogClose>
             </div>
-            <DialogDescription className="text-xs text-slate-400 mt-1">
-              {descriptionPrefix} {orderLabel ? `#${orderLabel}` : ""}
-            </DialogDescription>
           </DialogHeader>
 
-          {/* Tracking number + order */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tracking #</div>
-                <div className="mt-1 font-mono text-sm font-medium text-slate-800 break-all">
-                  {trackingNumber || "–"}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Order</div>
-                <div className="mt-1 text-sm font-medium text-slate-800">
-                  {orderLabel ? `#${orderLabel}` : "–"}
-                </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-xs text-muted-foreground">Tracking number</div>
+              <div className="mt-0.5 truncate text-sm font-medium tabular-nums text-foreground">
+                {trackingNumber || "–"}
               </div>
             </div>
+            {trackingNumber ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0 gap-1.5"
+                onClick={copyTrackingNumber}
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            ) : null}
           </div>
 
-          {/* Pickup point */}
           {pickupPoint && (
-            <div className="rounded-lg border border-purple-100 bg-purple-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-purple-400 mb-1">Pickup point</div>
-              <div className="text-sm font-semibold text-slate-900">{pickupPoint.name}</div>
-              {pickupPoint.address && (
-                <div className="text-xs text-slate-500 mt-0.5">{pickupPoint.address}</div>
-              )}
-              {pickupPoint.city && (
-                <div className="text-xs text-slate-500">{pickupPoint.city}</div>
-              )}
+            <div className="rounded-lg border border-purple-200/70 bg-purple-50/60 px-3 py-2.5 dark:border-purple-500/20 dark:bg-purple-500/10">
+              <div className="text-xs text-purple-700 dark:text-purple-300">Pickup point</div>
+              <div className="mt-0.5 text-sm font-medium text-foreground">{pickupPoint.name}</div>
+              {pickupPoint.address || pickupPoint.city ? (
+                <div className="text-xs text-muted-foreground">
+                  {[pickupPoint.address, pickupPoint.city].filter(Boolean).join(", ")}
+                </div>
+              ) : null}
             </div>
           )}
 
-          {/* Timeline */}
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Timeline</div>
+            <div className="mb-3 text-sm font-semibold text-foreground">Timeline</div>
             {loading ? (
-              <div className="flex items-center gap-2 py-4 text-sm text-slate-400">
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading tracking events...
               </div>
             ) : timeline.length === 0 ? (
-              <div className="py-4 text-sm text-slate-400">No tracking events available.</div>
+              <div className="py-4 text-sm text-muted-foreground">No tracking events available.</div>
             ) : (
-              <div className="space-y-0">
-                {timeline.map((event, index) => (
-                  <div key={event.id} className="flex gap-3">
-                    {/* Dot + line */}
-                    <div className="flex w-5 flex-col items-center pt-1">
-                      <div className={`h-2.5 w-2.5 flex-none rounded-full ${event.isCurrent ? getStatusDotClasses(statusLabel) : "bg-slate-200"}`} />
-                      {index < timeline.length - 1 && (
-                        <div className="mt-1 w-px flex-1 bg-slate-100 min-h-[20px]" />
-                      )}
-                    </div>
-                    {/* Content */}
-                    <div className="min-w-0 pb-4">
-                      <div className={`text-sm font-semibold ${event.isCurrent ? "text-slate-900" : "text-slate-500"}`}>
-                        {event.title}
+              <ol className="max-h-[50vh] overflow-y-auto pr-1">
+                {timeline.map((event, index) => {
+                  const label = event.label || event.title;
+                  const isException = EXCEPTION_EVENT_PATTERN.test(String(label || ""));
+                  return (
+                    <li key={event.id} className="flex gap-3">
+                      <div className="flex w-4 shrink-0 flex-col items-center pt-1.5">
+                        <div
+                          className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                            event.isCurrent
+                              ? getStatusDotClasses(statusLabel)
+                              : isException
+                                ? "bg-amber-500"
+                                : "bg-border"
+                          }`}
+                        />
+                        {index < timeline.length - 1 && <div className="mt-1 min-h-[20px] w-px flex-1 bg-border/70" />}
                       </div>
-                      {event.meta ? (
-                        <div className="mt-0.5 text-xs text-slate-400">{event.meta}</div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                      <div className="min-w-0 flex-1 pb-4">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <div
+                            className={`min-w-0 text-sm ${
+                              event.isCurrent
+                                ? "font-semibold text-foreground"
+                                : isException
+                                  ? "font-medium text-warning-foreground"
+                                  : "text-foreground/80"
+                            }`}
+                          >
+                            {isException && !event.isCurrent ? (
+                              <AlertTriangle aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
+                            ) : null}
+                            {label}
+                          </div>
+                          {event.timestamp || event.time ? (
+                            <span className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                              {formatTimelineTime(event.timestamp) || event.time}
+                            </span>
+                          ) : null}
+                        </div>
+                        {event.meta ? (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{event.meta}</div>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
             )}
           </div>
 
-          {/* Footer: carrier link */}
           {(effectiveTrackingUrl || trackingNumber) && (
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+            <div className="flex justify-end gap-2 border-t border-border/70 pt-3">
               {trackingNumber && (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   disabled={loading}
                   onClick={() => fetchLive(true)}
                 >
-                  {loading ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : null}
+                  {loading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
                   Refresh
                 </Button>
               )}
               {effectiveTrackingUrl && (
-              <Button asChild size="sm" className="bg-slate-900 text-white hover:bg-slate-700">
-                <a href={effectiveTrackingUrl} target="_blank" rel="noreferrer">
-                  Open carrier tracking
-                  <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-                </a>
-              </Button>
+                <Button asChild size="sm">
+                  <a href={effectiveTrackingUrl} target="_blank" rel="noreferrer">
+                    Open carrier tracking
+                    <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                  </a>
+                </Button>
               )}
             </div>
           )}
