@@ -3,10 +3,15 @@
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import { TabSkeleton } from "@/components/settings/TabSkeleton";
+import {
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+  SettingsSaveBar,
+} from "@/components/settings/ui/settings-layout";
 import { DEFAULT_THEME, THEME_OPTIONS, normalizeThemePreference } from "@/lib/theme-options";
 import { cn } from "@/lib/utils";
-import { Lock } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   useCallback,
@@ -166,151 +171,107 @@ function ProfileTab({ user, isLoaded }) {
   };
 
   if (!isLoaded) {
-    return (
-      <section className="max-w-2xl rounded-lg bg-card p-6">
-        <div className="h-8 w-44 animate-pulse rounded bg-muted" />
-        <div className="mt-2 h-4 w-64 animate-pulse rounded bg-muted" />
-        <div className="mt-8 h-20 w-20 animate-pulse rounded-full bg-muted" />
-      </section>
-    );
+    return <TabSkeleton />;
   }
 
   return (
-    <>
-      <section className="w-full space-y-5">
-        <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-primary">PROFILE</p>
-          <h2 className="mt-1 text-page-heading font-semibold tracking-tight text-foreground">Personal Profile</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Manage your account details and preferences.</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex flex-wrap items-center gap-3">
-          {user?.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={user.imageUrl}
-              alt={user.fullName || "Profile avatar"}
-              className="h-20 w-20 rounded-full object-cover ring-1 ring-border"
-            />
-          ) : (
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-2xl font-semibold text-muted-foreground">
-              {`${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U"}
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="truncate text-2xl font-semibold text-foreground">
-              {user?.fullName || `${firstName} ${lastName}`.trim() || "User"}
-            </p>
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">{email || "No email"}</p>
-          </div>
-          <Button type="button" variant="outline" className="ml-auto h-9 rounded-lg px-3.5 text-sm">
-            Change Avatar
-          </Button>
-        </div>
-
-        <div className="my-6 h-px bg-border" />
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="profile-first-name" className="text-sm font-medium text-foreground">
-                First Name
-              </label>
-              <Input
-                id="profile-first-name"
-                value={firstName}
-                onChange={(event) => setFirstName(event.target.value)}
-                placeholder="Enter first name"
-                className="h-11"
+    <SettingsPage title="Profile & appearance" description="Manage your account details and preferences.">
+      <SettingsGroup title="Profile">
+        <SettingsRow label="Avatar" description={user?.fullName || `${firstName} ${lastName}`.trim() || "User"}>
+          <div className="flex items-center gap-3">
+            {user?.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={user.imageUrl}
+                alt={user.fullName || "Profile avatar"}
+                className="h-8 w-8 rounded-full object-cover ring-1 ring-border"
               />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="profile-last-name" className="text-sm font-medium text-foreground">
-                Last Name
-              </label>
-              <Input
-                id="profile-last-name"
-                value={lastName}
-                onChange={(event) => setLastName(event.target.value)}
-                placeholder="Enter last name"
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="profile-email" className="text-sm font-medium text-foreground">
-                Email Address
-              </label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="profile-email"
-                  value={email}
-                  disabled
-                  readOnly
-                  className="h-11 bg-muted pl-9 text-muted-foreground"
-                />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                {`${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U"}
               </div>
-              <p className="text-xs text-muted-foreground">This is your login email and cannot be changed.</p>
-            </div>
+            )}
+            <Button type="button" variant="outline" size="sm">
+              Change avatar
+            </Button>
           </div>
+        </SettingsRow>
+        <SettingsRow label="First name" htmlFor="profile-first-name">
+          <Input
+            id="profile-first-name"
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            placeholder="Enter first name"
+            className="h-8 text-input text-foreground md:text-sm"
+          />
+        </SettingsRow>
+        <SettingsRow label="Last name" htmlFor="profile-last-name">
+          <Input
+            id="profile-last-name"
+            value={lastName}
+            onChange={(event) => setLastName(event.target.value)}
+            placeholder="Enter last name"
+            className="h-8 text-input text-foreground md:text-sm"
+          />
+        </SettingsRow>
+        <SettingsRow label="Email address" description="This is your login email and cannot be changed.">
+          <span className="truncate text-sm text-muted-foreground">{email || "No email"}</span>
+        </SettingsRow>
+      </SettingsGroup>
 
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-foreground">Theme</label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {THEME_OPTIONS.map((option) => {
-                const selected = themePreference === option.id;
-                const isDarkOption = option.id === "dark";
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    disabled={themeLoading || savingProfile}
-                    onClick={() => {
-                      hasThemeInteractionRef.current = true;
-                      const nextTheme = normalizeThemePreference(option.id, DEFAULT_THEME);
-                      setThemePreference(nextTheme);
-                      setTheme(nextTheme);
-                    }}
+      <SettingsGroup title="Appearance">
+        <SettingsRow stacked label="Theme" description="Applies to the logged-in app only.">
+          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3">
+            {THEME_OPTIONS.map((option) => {
+              const selected = themePreference === option.id;
+              const isDarkOption = option.id === "dark";
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  disabled={themeLoading || savingProfile}
+                  onClick={() => {
+                    hasThemeInteractionRef.current = true;
+                    const nextTheme = normalizeThemePreference(option.id, DEFAULT_THEME);
+                    setThemePreference(nextTheme);
+                    setTheme(nextTheme);
+                  }}
+                  className={cn(
+                    "rounded-lg border bg-card p-2 text-left transition-colors duration-150",
+                    selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-muted",
+                    themeLoading || savingProfile ? "cursor-not-allowed opacity-60" : ""
+                  )}
+                >
+                  <div
                     className={cn(
-                      "rounded-xl border p-3 text-left transition-colors",
-                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-muted",
-                      themeLoading || savingProfile ? "cursor-not-allowed opacity-60" : ""
+                      "h-14 rounded-md border",
+                      isDarkOption ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"
                     )}
                   >
-                    <div
-                      className={cn(
-                        "h-20 rounded-lg border",
-                        isDarkOption ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"
-                      )}
-                    >
-                      <div className="flex h-full items-start gap-2 p-2">
-                        <div className={cn("h-full w-5 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
-                        <div className="flex-1 space-y-2">
-                          <div className={cn("h-4 w-20 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
-                          <div className={cn("h-3 w-16 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
-                        </div>
+                    <div className="flex h-full items-start gap-1.5 p-1.5">
+                      <div className={cn("h-full w-4 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
+                      <div className="flex-1 space-y-1.5">
+                        <div className={cn("h-3 w-16 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
+                        <div className={cn("h-2.5 w-12 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
                       </div>
                     </div>
-                    <p className="mt-2 text-sm font-semibold text-foreground">{option.label}</p>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">Applies to the logged-in app only.</p>
+                  </div>
+                  <p className="mt-1.5 text-sm font-medium text-foreground">{option.label}</p>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </SettingsRow>
+      </SettingsGroup>
 
-        </div>
-      </section>
-      <StickySaveBar
-        isVisible={hasChanges}
-        isSaving={savingProfile || themeLoading}
+      <SettingsSaveBar
+        visible={hasChanges}
+        saving={savingProfile || themeLoading}
         onSave={handleSaveProfile}
         onDiscard={handleDiscardProfile}
       />
-    </>
+    </SettingsPage>
   );
 }
 
