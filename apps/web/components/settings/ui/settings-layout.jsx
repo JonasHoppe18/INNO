@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 export function SettingsPage({ title, description, actions = null, width = "form", children }) {
   return (
-    <section className={cn("w-full pb-24", width === "wide" ? "max-w-[960px]" : "max-w-[720px]")}>
+    <section className={cn("mx-auto w-full pb-24", width === "wide" ? "max-w-[960px]" : "max-w-[720px]")}>
       <header className="mb-6 flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-page-heading font-semibold text-foreground">{title}</h2>
@@ -17,7 +17,7 @@ export function SettingsPage({ title, description, actions = null, width = "form
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </header>
-      <div className="space-y-8">{children}</div>
+      <div className="space-y-10">{children}</div>
     </section>
   );
 }
@@ -26,7 +26,7 @@ export function SettingsGroup({ title, description, action = null, footer = null
   return (
     <section>
       {title || description || action ? (
-        <div className="mb-2.5 flex items-end justify-between gap-3 px-0.5">
+        <div className="mb-3 flex items-end justify-between gap-3">
           <div className="min-w-0">
             {title ? <h3 className="text-section-heading font-semibold text-foreground">{title}</h3> : null}
             {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
@@ -34,15 +34,15 @@ export function SettingsGroup({ title, description, action = null, footer = null
           {action}
         </div>
       ) : null}
-      <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card">{children}</div>
-      {footer ? <div className="mt-2 px-0.5 text-xs text-muted-foreground">{footer}</div> : null}
+      <div className="divide-y divide-border/60 border-y border-border/60">{children}</div>
+      {footer ? <div className="mt-2 text-xs text-muted-foreground">{footer}</div> : null}
     </section>
   );
 }
 
 export function SettingsRow({ label, description, htmlFor, children, controlClassName }) {
   return (
-    <div className="flex flex-col gap-2.5 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+    <div className="flex flex-col gap-2.5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
       <div className="min-w-0 flex-1">
         <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
           {label}
