@@ -75,7 +75,7 @@ Eksponerer: `{ loading, error, workspaceId, shopId, shopDomain, supabaseUserId, 
 
 Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi `SettingsWorkspace` ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
 
-Sektionerne læser via `useSettingsResource(url)`, som returnerer data synkront fra kortet. Hvis ressourcen mangler eller fejlede i bootstrap, henter hooken den via `readResponse` og lægger den i kortet. Efter et vellykket gem kalder sektionen `refreshResource(url)`. Den henter GET-ressourcen i baggrunden og erstatter værdien i kortet, så den næste visning af sektionen viser det gemte uden skeleton. Den mountede sektion bliver ved med at vise sin egen kladde.
+Hvis bootstrap mangler en ressource, henter provideren den direkte under første load (parallelt, som i dag). En ressource, der fejlede i bootstrap, behandles som fejlet, ligesom i dag. Sektionerne læser `resources` synkront fra `useSettingsWorkspace()` og initialiserer deres kladde én gang pr. mount via rene funktioner (`initialGeneralState`, `initialEmailState`). Efter et vellykket gem kalder sektionen `refreshResource(url)`. Den henter GET-ressourcen i baggrunden og erstatter værdien i kortet, så den næste visning af sektionen viser det gemte uden skeleton. Den mountede sektion bliver ved med at vise sin egen kladde.
 
 `scopedReadCache` (TTL 15 s) bruges ikke til settings, fordi dens udløb ville give skeleton-blink ved sektionsskift.
 
