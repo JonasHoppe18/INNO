@@ -6,10 +6,18 @@ import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsWorkspaceProvider, useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
 import { TabSkeleton } from "@/components/settings/TabSkeleton";
 import { SettingsRouteContext } from "@/components/settings/SettingsRouteContext";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
 import { AiInstructionsSection } from "@/components/settings/sections/AiInstructionsSection";
 import { EmailSection } from "@/components/settings/sections/email/EmailSection";
+import { MembersSection } from "@/components/settings/sections/MembersSection";
+import { ProfileSection } from "@/components/settings/sections/ProfileSection";
+import { BillingSection } from "@/components/settings/sections/BillingSection";
+import {
+  AutomationSection,
+  CustomerSatisfactionSection,
+  MailboxesSection,
+  TagsSection,
+} from "@/components/settings/sections/SimpleSections";
 import {
   DEFAULT_EMAIL_SECTION,
   parseSettingsPathname,
@@ -17,18 +25,24 @@ import {
   withSearchParams,
 } from "@/lib/settings/navigation";
 
-// Sections that have moved out of SettingsPanel.
 const SECTION_COMPONENTS = {
   general: GeneralSection,
+  members: MembersSection,
+  mailboxes: MailboxesSection,
+  tags: TagsSection,
   ai: AiInstructionsSection,
+  automation: AutomationSection,
   email: EmailSection,
+  "customer-satisfaction": CustomerSatisfactionSection,
+  profile: ProfileSection,
+  billing: BillingSection,
 };
 
 function SettingsContent({ section }) {
   const { loading } = useSettingsWorkspace();
   if (loading) return <TabSkeleton />;
-  const Section = SECTION_COMPONENTS[section];
-  return Section ? <Section /> : <SettingsPanel />;
+  const Section = SECTION_COMPONENTS[section] || GeneralSection;
+  return <Section />;
 }
 
 export function SettingsWorkspace() {
