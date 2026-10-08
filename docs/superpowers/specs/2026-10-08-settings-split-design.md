@@ -8,7 +8,9 @@ Settings-oprydningen kører i tre trin: **(1) split** → (2) visuelt redesign �
 
 Målet er at dele `apps/web/components/settings/SettingsPanel.jsx` (4.711 linjer) op i selvstændige sektioner med hver sin rute, data og kladde. Så kan trin 2 og 3 laves som små PR'er pr. sektion, og nye indstillinger (SLA, auto-mode) kan tilføjes som nye sektioner uden at røre resten.
 
-**Succeskriterium:** ingen synlige ændringer. Hver sektion ser ud og opfører sig som før: indlæsning, redigering, gem, fortryd, advarsel om ugemte ændringer og deep links. Den eneste synlige forskel er, at URL'en bliver `/settings/<sektion>` i stedet for `/settings?tab=<sektion>`.
+**Primært krav: siden skal føles hurtig.** Et sektionsskift må ikke vise skeleton eller vente på netværk. Første visning må ikke være langsommere end i dag. Menuen vises med det samme.
+
+**Succeskriterium i øvrigt:** ingen synlige ændringer. Hver sektion ser ud og opfører sig som før: indlæsning, redigering, gem, fortryd, advarsel om ugemte ændringer og deep links. Den eneste synlige forskel er, at URL'en bliver `/settings/<sektion>` i stedet for `/settings?tab=<sektion>`.
 
 ## Ikke i scope
 
@@ -78,9 +80,11 @@ Ejer kun *hvem er jeg* og bruges af flere sektioner. Den indeholder den nuværen
 
 Eksponerer: `{ loading, error, workspaceId, shopId, shopDomain, supabaseUserId, workspaceName, currentRole, canManageMembers, members, reload, setWorkspaceName }`.
 
-Den kalder `/api/settings/bootstrap` én gang og seeder hver vellykket ressource i `scopedReadCache` under sin egen URL, via `scopedReadCache.load(scope, url, () => payload)`. Cachen har intet `set`, og en ny API er ikke nødvendig. Fejlede ressourcer seedes ikke, og sektionen henter dem direkte. Sektionerne læser via `useScopedReadResource().readJson`. Første visning giver derfor samme ene request som i dag.
+Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi layoutet ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
 
-Cachen har en TTL på 15 s. Et sektionsskift senere end det henter sektionens egen ressource igen (ét lille kald). Det er en bevidst mindre afvigelse: i dag hentes intet igen, før siden reloades. Cachen invalideres for en URL, når en sektion gemmer til den.
+Sektionerne læser via `useSettingsResource(url)`, som returnerer data synkront fra kortet. Hvis ressourcen mangler eller fejlede i bootstrap, henter hooken den via `readResponse` og lægger den i kortet. Efter et vellykket gem opdaterer sektionen kortet med det persisterede resultat (`setResource(url, payload)`), så den næste visning er korrekt uden et nyt kald.
+
+`scopedReadCache` (TTL 15 s) bruges ikke til settings, fordi dens udløb ville give skeleton-blink ved sektionsskift.
 
 ### Sektionerne
 
@@ -100,7 +104,7 @@ Hver sektion er en komponent i `components/settings/sections/` med sit eget stat
 
 `SettingsPanel.jsx` slettes, når alle sektioner er flyttet.
 
-### Bevidst ændring: AI-prompt gemmes ikke længere via General
+### Bevidst ændring: AI-prompt gemmes ikke længere via General (godkendt)
 
 I dag tæller `aiPrompt` med i Generals dirty-tjek, og `handleSaveGeneral` poster `/api/persona`. AI-sektionen gemmer selv via sin modal. Efter splittet ejer kun AI-sektionen prompten. Det er en kobling uden selvstændig funktion. Effekten er kun synlig, hvis man har redigeret prompten uden at gemme i modalen og derefter trykker gem i General.
 
@@ -124,14 +128,15 @@ Skift mellem email-undersektioner advarer ikke (som i dag). Browserens tilbage-k
 **Unit (vitest):**
 - `legacySettingsPath`: alle tabs, email-sections, `mailbox_id`, ukendte værdier.
 - `isSettingsSectionPath`: sektioner sand, builders falsk.
-- Bootstrap → cache-seed: ressourcer lander under deres URL, og fejlende ressourcer seedes ikke.
+- Ressource-map: bootstrap-ressourcer kan læses synkront under deres URL. En manglende eller fejlet ressource hentes én gang. `setResource` erstatter værdien.
 
 **Manuelt på localhost mod dev (evidens i PR):**
 - Screenshots før og efter af hver sektion og email-undersektion (desktop + mobilbredde), taget lokalt og ikke uploadet.
 - Pr. sektion: indlæsning, redigér → gem → reload viser gemt værdi → sæt tilbage. Redigér → fortryd.
 - Ugemte ændringer: advarsel ved skift af sektion og ved reload. Email-kladden overlever et skift af undersektion.
 - Gamle links: `/settings?tab=email&section=routing`, `/settings?tab=customer-satisfaction`, builder-back-links.
-- Network: første visning laver ét bootstrap-kald, ikke ét pr. ressource.
+- Network: første visning laver ét bootstrap-kald, ikke ét pr. ressource. Et sektionsskift laver nul kald og viser ingen skeleton (bekræftes i Network-fanen og visuelt).
+- Hurtighed: tid fra klik til færdigrenderet sektion måles før og efter (Performance-fanen eller `performance.now()` omkring navigation). Efter må ikke være langsommere.
 
 `npm test` og `npm run build` i `apps/web` skal være grønne.
 
