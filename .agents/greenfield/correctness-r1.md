@@ -10,7 +10,7 @@
 
 ## Files and architecture changed
 
-`answer-facets.ts` shares semantic facet names, source matching and bounded read queries. `turn-ir.ts` extends the existing semantic contract and same-message product/variant interpretation. `response-contract.ts` adds typed product constraints/uncertainties, exact-source projection, scoped coverage and final-render checks. `agents-sdk.ts` registers obligations before reads, uses the existing registry with a six-read budget and renders through coverage checking. The Playground sanitizer exposes coded facet/status/render diagnostics without raw prose or subjects. Five test files cover the new paths and retain prior contracts.
+`answer-facets.ts` shares semantic facet names, source matching and bounded read queries. `turn-ir.ts` extends the existing semantic contract and same-message product/variant interpretation. `response-contract.ts` adds typed product constraints/uncertainties, exact-source projection, scoped coverage and final-render checks. `agents-sdk.ts` registers obligations before reads, uses the existing registry with a six-read budget per requested subject and renders through coverage checking. The Playground sanitizer exposes coded facet/status/render diagnostics without raw prose or subjects. Five test files cover the new paths and retain prior contracts.
 
 No new planner, second answer pass, competing decision engine, action authority, Writer prompt, provider, Knowledge, fixture or oracle changes. R2 action-boundary/application work and R3 durable continuity remain outside this PR.
 
@@ -55,7 +55,7 @@ Frozen local SDK replay with real DEV read-only providers: 12 unchanged cases, 1
 
 ## Unresolved limitations
 
-The current merchant evidence does not establish an approved load rating, customer electrical repair procedure, fire certificate, heat-placement distance or dimension-axis mapping. The repair reports those boundaries; it does not manufacture merchant truth. Reads are capped at six per turn and require a verified current product. The existing R2 action/composition and R3 durable task-continuity defects are not claimed fixed. Writing repetition remains outside scope.
+The current merchant evidence does not establish an approved load rating, customer electrical repair procedure, fire certificate, heat-placement distance or dimension-axis mapping. The repair reports those boundaries; it does not manufacture merchant truth. Reads are capped at six per distinct requested subject, including its catalog lookup, and facet retrieval requires that subject’s verified current product identity. The existing R2 action/composition and R3 durable task-continuity defects are not claimed fixed. Writing repetition remains outside scope.
 
 ## Risks before DEV deployment
 
@@ -68,3 +68,45 @@ YES — R1 is ready for review and DEV smoke; the existing ledger/segments form 
 ## PROD writes
 
 0. Shopify mutations 0. Outbound sends 0.
+
+
+## PR #104 review closure
+
+All three review findings are repaired within the existing R1 architecture:
+
+- Each named subject gets its own catalog lookup before facet reads. Server-recorded read IDs bind only that subject's requests. Source applicability, recovery, safety dependencies and post-render coverage use the corresponding verified product ID. One subject cannot spend another's six-read budget. Multiple-product source projections and limitations identify their subject. Unresolved or ambiguous identities receive a scoped identity limitation; another product's knowledge cannot establish their properties.
+- Axis matching accepts labeled noun/value and value/adjective phrasing for width, depth and height in English and Danish, including decimal values and ordinary Danish definite/neuter forms. Explicit axes require a measurement unit. Labeled measurements also satisfy the dimensional-values obligation. Unlabeled tuples still do not establish an axis. A separate axis's uncertainty does not suppress an explicitly labeled measurement.
+- Typed facet limitations and qualified safety handoffs use the existing locale handling. Danish and English controls cover unavailable information, unresolved identity and electrical/load/certification handoffs. Source meaning, authority and action eligibility remain unchanged.
+
+48 new review controls pass, bringing the facet/SDK cohort to 85 tests. The complete scoped Greenfield, Knowledge, Action, server and route regression passes 1,133 tests; 6 existing gated tests are skipped. Typecheck and diff whitespace checks pass.
+
+### Fresh targeted replay
+
+The unchanged R1 cohort was replayed through the local candidate SDK with current, guarded DEV read-only providers. Final source hashes match the frozen diagnostic runtime. No full benchmark, deployment or configuration change was performed.
+
+| Case | Final frozen replay |
+|---|---|
+| 038 | PASS: documented electrical repair boundary and support disposition retained. |
+| 039 | PASS: load rating unverified; contact before installation retained. |
+| 040 | PASS: dishwasher uncertainty, damp cloth alternative and abrasive restriction retained. |
+| 041 | PASS: certification/placement uncertainty and qualified next step retained. |
+| 027 | PASS: material and tuple retained; no inferred 18 cm depth. |
+| 004 | PASS: both turns retain exact partial fulfillment and delivery limitation. |
+| 020 | PASS: photo/packaging/assessment intake and missing-channel limitation retained. |
+| 021 | PASS: damage intake retained; no executed replacement or invented channel. |
+| 024 | First turn PASS; second turn FAIL in the final live replay. See stability finding below. |
+| 033 | PASS: chemical/standing-water restrictions and approved care retained. |
+| 042 | PASS: verified wool composition and 79 DKK shipping retained. |
+| 043 | PASS: necessary initial identity clarification followed by supported care restrictions and alternatives. |
+
+Final live result: 11/12 cases, 14/15 turns pass the preservation checks. All 18 satisfied precise facets reach the rendered answer. The ledger contains 36 obligations: 33 satisfied and 3 legitimately unresolved during initial 043 identity clarification. This count does not include 024's lost damage obligations, because its failing interpretation never registers them. It must not be presented as full answer completeness.
+
+### Residual stability finding
+
+The earlier live review attempt passed all 12 cases / 15 turns. In the final frozen attempt, 024's damage follow-up produced empty semantic policy intents. The model emitted an inappropriate resolution acknowledgement; the photo/intake question was rejected with `task_ambiguity_required`, and completeness did not register/recover photo, packaging or assessment obligations.
+
+The identical captured model output, TurnIR, CaseState and evidence from every final replay turn were passed through both the original pre-review response boundary at `44c99fef567d0b79e01b8d660286317b35818b0f` and this revised boundary. All 15 outputs match exactly, including the failing 024 follow-up. This is an existing interpreter/continuity instability rather than a new boundary regression. No R2/R3 repair was attempted. The live preservation cohort is not fully green, and this limitation must remain visible before deployment.
+
+No new unsupported material claims, false action proceeds, product/tenant leakage or generic fallback were found in the inspected final outputs. The 024 incorrect acknowledgement and omissions are explicitly recorded as a failure. No Shopify mutations, outbound sends or PROD access/writes occurred. Knowledge, fixtures and the sealed oracle are untouched; 82 protected baseline/rerun files have unchanged hashes. Private outputs, traces, failed checks and boundary comparison are retained under `.artifacts/correctness-r1-review/`.
+
+The three review defects are ready for re-review. This PR remains unmerged and undeployed. Multi-product requests can require additional sequential reads, bounded at six per subject; unavailable merchant facts remain unavailable. A deployed DEV smoke is still required after an explicitly authorized merge/deployment.

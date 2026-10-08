@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compilePreciseAnswerRequests } from "../answer-facets";
+import { compilePreciseAnswerRequests, sourceSupportsFacet } from "../answer-facets";
 import { ensureAnswerCompleteness, validateStructuredResponse, renderWithAnswerCoverage, missingPreciseEvidence } from "../response-contract";
 const scope = { workspaceId: "w1", shopId: "s1" };
 function setup(facets, texts = [], overrides = {}) {
@@ -168,5 +168,116 @@ describe("precise request coverage", () => {
       const result = recover(ctx, { segments: [{ type: "knowledge_guidance", text, basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } }] });
       expect(result.response).not.toContain(text);
     }
+  });
+});
+
+describe("PR 104 dimension semantics and localized limitations", () => {
+  it.each([
+    ["dimension_width", "Width: 60 cm"], ["dimension_width", "Width is 60 cm"], ["dimension_width", "The shelf is 60 cm wide"],
+    ["dimension_depth", "Depth: 18 cm"], ["dimension_depth", "Depth is 18 cm"], ["dimension_depth", "The shelf is 18 cm deep"],
+    ["dimension_height", "Height: 2.5 cm"], ["dimension_height", "Height is 2.5 cm"], ["dimension_height", "The shelf is 2.5 cm high"],
+    ["dimension_width", "Bredde: 60 cm"], ["dimension_width", "Bredde er 60 cm"], ["dimension_width", "Hylden er 60 cm bred"],
+    ["dimension_depth", "Dybde: 18 cm"], ["dimension_depth", "Dybde er 18 cm"], ["dimension_depth", "Hylden er 18 cm dyb"],
+    ["dimension_height", "Højde: 2,5 cm"], ["dimension_height", "Højde er 2,5 cm"], ["dimension_height", "Hylden er 2,5 cm høj"],
+    ["dimension_width", "Bordet er 60 cm bredt"], ["dimension_depth", "Bordet er 18 cm dybt"], ["dimension_height", "Bordet er 2,5 cm højt"],
+    ["dimension_width", "Bredden er 60 cm"], ["dimension_depth", "Dybden er 18 cm"], ["dimension_height", "Højden er 2,5 cm"],
+  ])("recovers a source-authored %s from %s", (facet, text) => {
+    const result = recover(setup([facet], [text]).ctx);
+    expect(sourceSupportsFacet(text, facet)).toBe(true);
+    expect(result.response).toContain(text);
+    expect(result.response).not.toContain("do not establish a labeled");
+    expect(result.response).not.toContain("cannot verify documented dimensional values");
+    expect(result.validation.coverage.obligations.find(o => o.facet === facet)).toMatchObject({ status: "supported", rendered: true });
+  });
+  it("another axis's uncertainty does not discard a verified labeled width", () => {
+    expect(sourceSupportsFacet("Width is 60 cm. Depth is not established.", "dimension_width")).toBe(true);
+    expect(sourceSupportsFacet("Width is 60 cm but is not established.", "dimension_width")).toBe(false);
+  });
+  it.each(["dimension_width", "dimension_depth", "dimension_height"])("unlabeled tuples do not establish %s", facet => {
+    for (const text of ["60×18×2.5 cm", "Dimensions: 60 × 18 × 2.5 cm", "Width is unknown; dimensions: 60×18×2.5 cm"]) expect(sourceSupportsFacet(text, facet)).toBe(false);
+    expect(sourceSupportsFacet("Depth: 18 cm", "dimension_width")).toBe(false);
+  });
+  it.each([
+    ["en", "certification", "cannot verify the requested safety certification", "Ask the store or manufacturer"],
+    ["da", "certification", "kan ikke bekræfte den ønskede sikkerhedscertificering", "Bed butikken eller producenten"],
+    ["en", "repair_boundary", "cannot verify an approved customer repair", "Contact the store or a qualified professional"],
+    ["da", "repair_boundary", "kan ikke bekræfte en godkendt fremgangsmåde", "Kontakt butikken eller en kvalificeret fagperson"],
+    ["en", "load_capacity", "cannot verify an approved load capacity", "Ask the store or manufacturer"],
+    ["da", "load_capacity", "kan ikke bekræfte en godkendt bæreevne", "Bed butikken eller producenten"],
+  ])("uses %s for unavailable %s and qualified next steps", (locale, facet, limitation, handoff) => {
+    const result = recover(setup([facet], [], { locale }).ctx);
+    expect(result.response).toContain(limitation);
+    expect(result.response).toContain(handoff);
+    expect(result.validation.coverage.missing).toEqual([]);
+    if (locale === "da") expect(result.response).not.toMatch(/I cannot|Ask the store|Contact the store/);
+  });
+});
+function mixedSetup(secondFacet = "load_capacity", unresolved = false) {
+  const { ctx, records, sources } = setup(["load_capacity"], ["Maximum load capacity: 5 kg."]);
+  ctx.customerMessage = "What are the Vale Shelf load capacity and Luna Lamp specifications?";
+  ctx.turnIR.answerRequests.push({ kind: "product_property", subject: "Luna Lamp", sourceText: ctx.customerMessage, facets: [secondFacet] });
+  records.push({ resultId: "catalog-luna", toolName: "get_product", result: unresolved ? { status: "not_found", data: null } : { status: "ok", data: { id: "p2", title: "Luna Lamp" } } });
+  sources.push({ ...sources[0], title: "Luna Lamp", provenance: { source_id: "source-luna", source_kind: "knowledge_v2_release" },
+    structured_data: { ...sources[0].structured_data, applicability: { kind: "products", product_ids: ["p2"] } },
+    evidence_sections: [{ heading: "Evidence boundary", content: secondFacet === "load_capacity" ? "Maximum load capacity: 2 kg." : "Certification: verified standard ABC." }] });
+  ctx.preciseReadResults = Object.fromEntries(compilePreciseAnswerRequests(ctx.turnIR.answerRequests).map(r => [r.id, [r.requestIndex ? "catalog-luna" : "catalog"]]));
+  return { ctx, records, sources };
+}
+describe("PR 104 per-subject evidence and coverage", () => {
+  it.each([false, true])("binds same-facet recovery to both verified products, reordered=%s", reordered => {
+    const { ctx, records, sources } = mixedSetup();
+    if (reordered) { records.reverse(); sources.reverse(); }
+    const result = recover(ctx);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    expect(result.response).toContain("Luna Lamp: Maximum load capacity: 2 kg");
+    expect(result.validation.coverage.missing).toEqual([]);
+    for (const [index, id] of [[0,"p1"],[1,"p2"]]) expect(result.validation.coverage.obligations.find(o => o.id === `answer.${index}.load_capacity`)).toMatchObject({ status: "supported", subjectIds: [id], rendered: true });
+  });
+  it("preserves different requested facets without a first-product limitation", () => {
+    const result = recover(mixedSetup("certification").ctx);
+    expect(result.response).toContain("Luna Lamp: Certification: verified standard ABC");
+    expect(result.response).not.toContain("cannot verify the requested safety certification");
+    expect(result.validation.coverage.missing).toEqual([]);
+  });
+  it("one product's available facet cannot complete the other's missing facet", () => {
+    const { ctx, sources } = mixedSetup(); sources.pop();
+    const result = recover(ctx);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    expect(result.response).toContain("Luna Lamp: I cannot verify an approved load capacity");
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.1.load_capacity")).toMatchObject({ status: "unknown", subjectIds: ["p2"], rendered: true });
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.0.qualified_next_step")).toMatchObject({ status: "supported" });
+  });
+  it.each(["en", "da"])("unverified second identity receives only its own %s limitation", locale => {
+    const { ctx } = mixedSetup("load_capacity", true); ctx.locale = locale;
+    const result = recover(ctx);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    expect(result.response).not.toContain("2 kg");
+    expect(result.response).toContain(locale === "da" ? "Luna Lamp: Jeg kan ikke bekræfte produktets identitet" : "Luna Lamp: I cannot verify this product's identity");
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.1.load_capacity")).toMatchObject({ status: "unknown", subjectIds: [], rendered: true });
+    const wrongLimit = { type: "facet_limit", request_index: 1, facet: "load_capacity", basis: { result_id: "catalog", field_paths: ["status"] } };
+    expect(validateStructuredResponse({ segments: [wrongLimit] }, ctx).issues.map(i => i.code)).toContain("answer_facet_scope_unverified");
+  });
+  it("unverified identities cannot be repaired by a care segment from returned knowledge", () => {
+    const { ctx, records } = mixedSetup("cleaning_method", true);
+    records.find(r => r.resultId === "catalog").result = { status: "not_found", data: null };
+    const output = { segments: [{ ...sourceSegment("load_capacity"), kind: "care_constraint" }] };
+    expect(validateStructuredResponse(output, ctx).issues.map(i => i.code)).toContain("product_scope_mismatch");
+    expect(recover(ctx, output).response).not.toContain("5 kg");
+  });
+  it("rejects a facet assigned to the wrong requested product", () => {
+    const { ctx, sources } = mixedSetup("certification");
+    sources[0].evidence_sections[0].content = "Certification: verified standard WRONG.";
+    const validation = validateStructuredResponse({ segments: [sourceSegment("certification")] }, ctx);
+    expect(validation.issues.map(i => i.code)).toContain("answer_facet_scope_unverified");
+    expect(recover(ctx).response).not.toContain("standard WRONG");
+  });
+  it("does not merge distinct variants sharing their first title token", () => {
+    const { ctx, records } = mixedSetup();
+    ctx.customerMessage = "Compare Vale Shelf and Vale Cabinet load capacity.";
+    ctx.turnIR.answerRequests[1].subject = "Vale Cabinet";
+    records.find(r => r.resultId === "catalog-luna").result.data = { id: "p1", title: "Vale Shelf" };
+    const result = recover(ctx);
+    expect(result.validation.coverage.obligations.find(o => o.id === "answer.1.load_capacity")).toMatchObject({ subjectIds: [], status: "unknown" });
+    expect(result.response).toContain("Vale Cabinet: I cannot verify this product's identity");
   });
 });

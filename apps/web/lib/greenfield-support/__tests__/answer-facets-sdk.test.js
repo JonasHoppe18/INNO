@@ -62,3 +62,86 @@ describe("SDK precise read recovery without model tools", () => {
     expect(result.response).not.toContain("safely complete that lookup");
   });
 });
+
+describe("PR 104 SDK per-product reads", () => {
+  it.each([false, true])("resolves both subjects before facet reads; unknown second=%s", async unknown => {
+    const dependencies = await createDemoDependencies();
+    const lookups = [], reads = [];
+    dependencies.commerce.getProduct = async query => {
+      lookups.push(query);
+      if (query === "Luna Lamp" && unknown) return { products: [] };
+      return { products: [{ id: query === "Vale Shelf" ? "p1" : "p2", title: query }] };
+    };
+    dependencies.knowledge.search = async request => {
+      reads.push(request.query);
+      const luna = request.query.startsWith("Luna Lamp:");
+      const result = hit(luna ? "Certification: verified standard ABC." : "Maximum load capacity: 5 kg.");
+      if (luna) {
+        result.record.title = "Luna Lamp";
+        result.record.sourceId = "luna-source";
+        result.record.structuredData.applicability.product_ids = ["p2"];
+      }
+      return [result];
+    };
+    const message = "What is Vale Shelf's load capacity, and is Luna Lamp certified?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      enableDevDiagnostics: true, turnInterpreter: async () => ({ actions: [], answerRequests: [
+        { kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"] },
+        { kind: "product_property", sourceText: message, subject: "Luna Lamp", facets: ["certification"] },
+      ] }) });
+    model.assertComplete();
+    expect(lookups).toEqual(["Vale Shelf", "Luna Lamp"]);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    if (unknown) {
+      expect(reads.every(query => query.startsWith("Vale Shelf:"))).toBe(true);
+      expect(result.response).toContain("Luna Lamp: I cannot verify this product's identity");
+      expect(result.response).not.toContain("standard ABC");
+    } else {
+      expect(reads.some(query => query.startsWith("Luna Lamp:"))).toBe(true);
+      expect(result.response).toContain("Luna Lamp: Certification: verified standard ABC");
+    }
+    expect(result.proposedActions).toEqual([]);
+    expect(result.actionExecutions).toEqual([]);
+    expect(result.trace.diagnostics.fallback_reason).toBeNull();
+  });
+  it("keeps facet reads available for the second subject when the first exhausts its budget", async () => {
+    const dependencies = await createDemoDependencies();
+    dependencies.commerce.getProduct = async query => ({ products: [{ id: query === "Vale Shelf" ? "p1" : "p2", title: query, handle: query === "Vale Shelf" ? "vale-shelf" : "luna-lamp" }] });
+    const reads = [];
+    dependencies.knowledge.search = async request => {
+      reads.push(request.query);
+      if (!request.query.startsWith("Luna Lamp:")) return [];
+      const result = hit("Certification: verified standard ABC.");
+      result.record.title = "Luna Lamp"; result.record.sourceId = "luna-source";
+      result.record.structuredData.applicability.product_ids = ["p2"];
+      return [result];
+    };
+    const message = "Vale Shelf load, placement and electrical safety; Luna Lamp certification?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [
+        { kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity", "placement", "electrical_safety"] },
+        { kind: "product_property", sourceText: message, subject: "Luna Lamp", facets: ["certification"] },
+      ] }) });
+    model.assertComplete();
+    expect(reads.filter(query => /^(?:Vale Shelf|vale-shelf):/.test(query))).toHaveLength(5);
+    expect(reads.some(query => query.startsWith("Luna Lamp:"))).toBe(true);
+    expect(result.response).toContain("Luna Lamp: Certification: verified standard ABC");
+    expect(result.response).not.toContain("Luna Lamp: I cannot verify the requested safety certification");
+  });
+  it.each([
+    ["da", "Kan Vale Shelf bære den vægt?", "kan ikke bekræfte en godkendt bæreevne", "Bed butikken eller producenten"],
+    ["en", "Can Vale Shelf hold that weight?", "cannot verify an approved load capacity", "Ask the store or manufacturer"],
+  ])("normal locale handling renders %s limitations without model tools", async (_locale, message, limitation, handoff) => {
+    const dependencies = await createDemoDependencies();
+    dependencies.commerce.getProduct = async () => ({ products: [{ id: "p1", title: "Vale Shelf" }] });
+    dependencies.knowledge.search = async () => [];
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"] }] }) });
+    model.assertComplete();
+    expect(result.response).toContain(limitation);
+    expect(result.response).toContain(handoff);
+  });
+});

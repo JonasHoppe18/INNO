@@ -379,7 +379,8 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   }
   const preciseRequests = compilePreciseAnswerRequests(turnIR?.answerRequests ?? []);
   const preciseReadResults: Record<string, string[]> = {};
-  let preciseReadBudget = 6;
+  // Identity reads precede facet reads so one subject cannot consume another's lookup.
+  const preciseReadBudgets = new Map(preciseRequests.map(request => [request.subject, 6]));
   let providerCustomer = await options.capabilities.commerce.getCustomer().catch(() => null);
   const identityMismatch = Boolean(options.tenant.customerEmail && providerCustomer?.email
     && options.tenant.customerEmail.toLowerCase() !== providerCustomer.email.trim().toLowerCase());
@@ -510,29 +511,31 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   const preciseContext = () => ({ ...registry, evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, operationalScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" }, preciseRequests, preciseReadResults, turnIR: turnIR ?? undefined, customerMessage: options.message, customerProvidedContext, caseState: conversationContext.caseState });
   const recoverPreciseReads = async () => {
-    const subject = verifiedAnswerSubject(preciseContext());
-    if (!subject) return;
     for (const request of missingPreciseEvidence(preciseContext())) {
+      const subject = verifiedAnswerSubject(preciseContext(), request);
+      if (!subject) continue;
       if (!missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) continue;
-      if (preciseReadBudget <= 0) break;
+      const budget = preciseReadBudgets.get(request.subject) ?? 0;
+      if (budget <= 0) continue;
       const query = `${subject.title}: ${facetReadQuery(request.facet)}`;
-      preciseReadBudget -= 1;
+      preciseReadBudgets.set(request.subject, budget - 1);
       const result = await preload("search_product_knowledge", query);
       if (result.resultId) (preciseReadResults[request.id] ??= []).push(result.resultId);
       // Retry the verified catalog alias, never a different product or an invented value.
-      if (subject.handle && preciseReadBudget > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
-        preciseReadBudget -= 1;
+      if (subject.handle && (preciseReadBudgets.get(request.subject) ?? 0) > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
+        preciseReadBudgets.set(request.subject, (preciseReadBudgets.get(request.subject) ?? 0) - 1);
         const retry = await preload("search_product_knowledge", `${subject.handle}: ${facetReadQuery(request.facet)}`);
         if (retry.resultId) (preciseReadResults[request.id] ??= []).push(retry.resultId);
       }
     }
   };
   if (preciseRequests.length && preciseRequests.some(request => request.subject)) {
-    preciseReadBudget -= 1;
-    const lookupSubject = preciseRequests.find(request => request.subject)?.subject;
-    // A semantic label is only a lookup query; the returned provider identity still gates recovery.
-    const read = await preload("get_product", lookupSubject ?? options.message);
-    if (read.resultId) for (const request of preciseRequests) (preciseReadResults[request.id] ??= []).push(read.resultId);
+    for (const lookupSubject of new Set(preciseRequests.map(request => request.subject).filter((subject): subject is string => Boolean(subject)))) {
+      preciseReadBudgets.set(lookupSubject, (preciseReadBudgets.get(lookupSubject) ?? 0) - 1);
+      // A semantic label is only a query. Each returned identity binds its own requests.
+      const read = await preload("get_product", lookupSubject);
+      if (read.resultId) for (const request of preciseRequests.filter(request => request.subject === lookupSubject)) (preciseReadResults[request.id] ??= []).push(read.resultId);
+    }
     await recoverPreciseReads();
   }
   conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());

@@ -34,10 +34,10 @@ const topics: Record<CoveredAnswerFacet, RegExp> = {
   cleaning_method: /\b(?:clean\w*|wash\w*|wipe|dishwasher|damp cloth|dry\w*)\b/i,
   prohibited_method: /\b(?:avoid|do not|don't|no|not|never)\b.*\b(?:wash\w*|wipe|cloth|tumble|bleach|abrasive\w*|chemical\w*|water|dishwasher)\b/i,
   cleaning_alternative: /\b(?:clean.*(?:cloth|water)|wipe|spot clean|air.*regularly|professional dry cleaning|wash at|reshape|air dry)\b/i,
-  dimension_width: /\b(?:width|wide)\s*[:=]?\s*\d/i,
-  dimension_depth: /\b(?:depth|deep)\s*[:=]?\s*\d/i,
-  dimension_height: /\b(?:height|high)\s*[:=]?\s*\d/i,
-  dimension_values: /\b(?:dimensions|width|depth|height)\b|\d\s*[×x]\s*\d/i,
+  dimension_width: /(?:\b(?:width|bredde(?:n)?)\s*(?::|=|is|er)?\s*\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\b|\b\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\s+(?:wide|bredt?)\b)/i,
+  dimension_depth: /(?:\b(?:depth|dybde(?:n)?)\s*(?::|=|is|er)?\s*\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\b|\b\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\s+(?:deep|dybt?)\b)/i,
+  dimension_height: /(?:\b(?:height|højde(?:n)?)\s*(?::|=|is|er)?\s*\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\b|\b\d+(?:[.,]\d+)?\s*(?:cm|mm|m|inches?|in)\s+(?:high|tall|højt?)\b)/i,
+  dimension_values: /\b(?:dimensions|width|depth|height|bredde|dybde|højde)\b|\d\s*[×x]\s*\d/i,
   qualified_next_step: /\b(?:contact|consult|seek|check|ask)\b.*\b(?:support|merchant|store|before installation|manufacturer|professional|documentation|safety label)\b/i,
 };
 export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): boolean {
@@ -46,6 +46,8 @@ export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): bo
   if (facet === "cleaning_alternative") return text.split(/[.;\n]/).some(clause => topics.cleaning_alternative.test(clause)
     && !documentedUnknown(clause) && !/\b(?:not recommended|not approved|not allowed|not permitted|prohibited|forbidden)\b/i.test(clause) && !/\b(?:do not|don't|never|avoid)\s+(?:clean\w*|wipe|wash\w*|spot clean|air)\b/i.test(clause));
   if (facet === "cleaning_method" && documentedUnknown(text) && /dishwasher/i.test(text)) return true;
+  if (facet === "dimension_values") return topics.dimension_values.test(text) || [topics.dimension_width, topics.dimension_depth, topics.dimension_height].some(pattern => pattern.test(text));
+  if (["dimension_width", "dimension_depth", "dimension_height"].includes(facet)) return text.split(/[;\n]|[.!?]\s+/).some(clause => !documentedUnknown(clause) && topics[facet].test(clause));
   return topics[facet].test(text);
 }
 export function facetReadQuery(facet: CoveredAnswerFacet): string {

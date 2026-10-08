@@ -5341,7 +5341,13 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     if (segment.type === "evidence_limitation") rendered.push(renderEvidenceLimitation(segment, context));
     else if (segment.type === "facet_limit") rendered.push(renderFacetLimit(segment, context));
-    else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).map(section => normalizeMerchantPolicyAttribution(section.text)).join("\n\n"));
+    else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).map(section => {
+      const requests = preciseRequests(context);
+      const request = requests.find(request => sourceMatchesRequest(section.record, request, context));
+      const subject = request && verifiedAnswerSubject(context, request);
+      const prefix = subject && new Set(requests.map(request => request.subject).filter(Boolean)).size > 1 ? `${subject.title}: ` : "";
+      return prefix + normalizeMerchantPolicyAttribution(section.text);
+    }).join("\n\n"));
     else if (segment.type === "source_comparison") {
       const comparison = shippingComparison(segment, context);
       if (comparison) rendered.push(localeFor(context) === "da"
@@ -5536,7 +5542,10 @@ function productScopeSupported(record: JsonObject, context: ResponseValidationCo
     const tokens = subject.split(" ").filter(token => token.length > 2 && !["guide", "care", "textile", "support", "instructions", "product"].includes(token));
     return tokens.length > 0 && question.split(" ").includes(tokens[0]);
   });
+  const verifiedSubjects = preciseRequests(context).map(request => verifiedAnswerSubject(context, request)).filter(subject => subject !== null);
   const verified = verifiedAnswerSubject(context);
+  const identityReadsAttempted = preciseRequests(context).some(request => context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product"));
+  if (verifiedSubjects.length || identityReadsAttempted) return ids.length === 1 && verifiedSubjects.some(subject => subject.id === ids[0]);
   if (verified) return ids.length === 1 && ids[0] === verified.id;
   const expectedIds = new Set(matched.flatMap(candidate => {
     const applies = objectValue(objectValue(candidate.structured_data)?.applicability);
@@ -5577,6 +5586,9 @@ function validateSourceContent(segment: Extract<ResponseSegment, { type: "source
       }
       if (segment.kind === "product_constraint" && (!segment.facet || !["GUIDANCE", "FACT"].includes(String(structured?.semantic_type)) || !sourceDomainSupportsFacet(String(structured?.support_domain), segment.facet) || !sourceSupportsFacet(String(section?.content ?? section?.text ?? ""), segment.facet))) {
         return [{ index, code: "answer_facet_source_mismatch", message: "The source does not establish the requested facet." }];
+      }
+      if (segment.kind === "product_constraint" && preciseRequests(context).length && !preciseRequests(context).some(request => request.facet === segment.facet && sourceMatchesRequest(record, request, context))) {
+        return [{ index, code: "answer_facet_scope_unverified", message: "The source does not bind a requested facet for this subject." }];
       }
       if (segment.kind === "product_property" && structured?.semantic_type !== "FACT") {
         return [{ index, code: "product_property_kind_mismatch", message: "A static product property requires a source-authored fact." }];
@@ -6058,28 +6070,38 @@ function requestedProductMatches(title: string, context: ResponseValidationConte
   const first = normalizedPhrase(title).split(" ")[0];
   return Boolean(first?.length > 2 && normalizedPhrase(`${context.customerMessage ?? ""} ${context.customerProvidedContext?.product ?? ""}`).split(" ").includes(first));
 }
-export function verifiedAnswerSubject(context: ResponseValidationContext): { id: string; title: string; handle?: string } | null {
-  const subjects = (context.getResults?.() ?? []).filter(record => record.toolName === "get_product" && record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
+export function verifiedAnswerSubject(context: ResponseValidationContext, request?: PreciseAnswerRequest): { id: string; title: string; handle?: string } | null {
+  const subjects = (context.getResults?.() ?? []).filter(record => record.toolName === "get_product" && record.result.status === "ok" && (!request || !context.preciseReadResults?.[request.id] || context.preciseReadResults[request.id].includes(record.resultId)) && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
     const data = objectValue(record.result.data);
     const products = Array.isArray(data?.products) ? data.products.map(objectValue) : [data];
     // Both supported catalog envelopes are normalized here; never select one of multiple returned products.
     if (products.length !== 1) return [];
-    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
+    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context) && (!request || requestSubjectMatches(request, product.title)) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
   });
   const ids = new Set(subjects.map(subject => subject.id));
   return ids.size === 1 ? subjects[0] : null;
 }
 function requestSubjectMatches(request: PreciseAnswerRequest, title: string): boolean {
   if (!request.subject) return true;
-  const subject = normalizedPhrase(request.subject).split(" ").find(token => token.length > 2);
-  return Boolean(subject && normalizedPhrase(title).split(" ").includes(subject));
+  const tokens = normalizedPhrase(request.subject).split(" ").filter(token => token.length > 2);
+  const titleTokens = normalizedPhrase(title).split(" ");
+  return tokens.length > 0 && tokens.every(token => titleTokens.includes(token));
+}
+function sourceMatchesRequest(record: JsonObject, request: PreciseAnswerRequest, context: ResponseValidationContext): boolean {
+  const subject = verifiedAnswerSubject(context, request);
+  const ids = objectValue(objectValue(record.structured_data)?.applicability)?.product_ids;
+  if (subject) return Array.isArray(ids) && ids.length === 1 && String(ids[0]) === subject.id;
+  // Once a subject-specific catalog read was attempted, an unresolved identity cannot
+  // be supplied by a different product's knowledge or a coincidental title match.
+  if (context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product")) return false;
+  return requestSubjectMatches(request, careSubject(record)) && productScopeSupported(record, context);
 }
 function facetCandidates(request: PreciseAnswerRequest, context: ResponseValidationContext): ResponseSegment[] {
   return (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(evidence => {
     const results = objectValue(evidence.result.data)?.results;
     return Array.isArray(results) ? results.flatMap((value, index) => {
       const record = objectValue(value);
-      if (!record || !requestSubjectMatches(request, careSubject(record)) || !productScopeSupported(record, context) || !Array.isArray(record.evidence_sections)) return [];
+      if (!record || !sourceMatchesRequest(record, request, context) || !productScopeSupported(record, context) || !Array.isArray(record.evidence_sections)) return [];
       return record.evidence_sections.flatMap((value, sectionIndex) => {
         const section = objectValue(value); const field = typeof section?.content === "string" ? "content" : "text";
         return typeof section?.[field] === "string" && sourceSupportsFacet(String(section[field]), request.facet)
@@ -6102,18 +6124,23 @@ function validateFacetLimit(segment: Extract<ResponseSegment, { type: "facet_lim
   if (!request) return [{ index, code: "answer_facet_not_requested", message: "The bounded limitation is not a registered request." }];
   const evidence = resultFor(segment.basis, context)!;
   const explicitlyRead = context.preciseReadResults?.[request.id]?.includes(evidence.resultId);
-  const subject = verifiedAnswerSubject(context);
-  if (subject && !requestSubjectMatches(request, subject.title) && !(explicitlyRead && evidence.toolName === "search_product_knowledge")) return [{ index, code: "answer_facet_scope_unverified", message: "The current product does not bind this requested subject." }];
+  const subject = verifiedAnswerSubject(context, request);
   const matchingSource = objectValue(evidence.result.data)?.results;
-  const scopedSource = Array.isArray(matchingSource) && matchingSource.some(value => { const record = objectValue(value); return record && productScopeSupported(record, context); });
-  if (!explicitlyRead && !(subject && evidence.toolName === "get_product" && verifiedAnswerSubject({ ...context, getResults: () => [evidence] })?.id === subject.id) && !scopedSource) {
-    return [{ index, code: "answer_facet_scope_unverified", message: "A specific uncertainty requires a current scoped read." }];
+  const scopedSource = Array.isArray(matchingSource) && matchingSource.some(value => { const record = objectValue(value); return record && sourceMatchesRequest(record, request, context) && productScopeSupported(record, context); });
+  const matchingCatalog = subject && evidence.toolName === "get_product" && verifiedAnswerSubject({ ...context, getResults: () => [evidence] }, request)?.id === subject.id;
+  // An unsuccessful identity lookup supports only that requested subject's uncertainty.
+  // Only server-recorded reads can establish this case; model labels are not authority.
+  const identityRead = explicitlyRead && evidence.toolName === "get_product";
+  const scopedEmptyRead = explicitlyRead && subject && evidence.toolName === "search_product_knowledge";
+  if (!identityRead && !scopedEmptyRead && !matchingCatalog && !scopedSource) {
+    return [{ index, code: "answer_facet_scope_unverified", message: "A specific uncertainty requires a current subject-scoped read." }];
   }
   const checked = facetCandidates(request, context).flatMap(candidate => validateStructuredResponse({ segments: [candidate] }, context).approvedSegments);
   if (checked.length) return [{ index, code: "answer_facet_available", message: "A verified source already establishes this facet." }];
   return [];
 }
 function renderFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit" }>, context: ResponseValidationContext): string {
+  const da = localeFor(context) === "da";
   const copy: Record<CoveredAnswerFacet, string> = {
     material_composition: "The current scoped evidence does not establish the requested material composition.",
     load_capacity: "I cannot verify an approved load capacity from the current documentation; do not assume the proposed load is safe.",
@@ -6131,17 +6158,41 @@ function renderFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit
     dimension_values: "I cannot verify documented dimensional values for this product.",
     qualified_next_step: "Get verified guidance from the store or a qualified professional before relying on an unverified safety property or attempting a repair.",
   };
+  const danish: Record<CoveredAnswerFacet, string> = {
+    material_composition: "De tilgængelige oplysninger dokumenterer ikke den ønskede materialesammensætning.",
+    load_capacity: "Jeg kan ikke bekræfte en godkendt bæreevne ud fra dokumentationen; antag ikke, at den foreslåede belastning er sikker.",
+    weight_limit: "Jeg kan ikke bekræfte den tilladte vægtgrænse ud fra dokumentationen.",
+    electrical_safety: "De tilgængelige oplysninger dokumenterer ikke sikker reparation eller fortsat brug, når elektriske dele er beskadigede.",
+    repair_boundary: "Jeg kan ikke bekræfte en godkendt fremgangsmåde til reparation eller udskiftning, som kunden selv kan udføre.",
+    certification: "Jeg kan ikke bekræfte den ønskede sikkerhedscertificering; antag ikke, at produktet er certificeret.",
+    placement: "Jeg kan ikke bekræfte sikker placering nær varme eller de ønskede placeringsforhold; en sikker afstand er ikke dokumenteret her.",
+    cleaning_method: "De tilgængelige oplysninger dokumenterer ikke, at den ønskede rengøringsmetode er sikker.",
+    prohibited_method: "Jeg kan ikke bekræfte alle relevante begrænsninger for rengøring ud fra dokumentationen.",
+    cleaning_alternative: "Der er ikke fundet en godkendt alternativ rengøringsmetode; brug kun en metode, der er bekræftet for dette produkt.",
+    dimension_width: "De tilgængelige mål angiver ikke en entydig bredde; mål uden aksebetegnelser fastlægger ikke bredden.",
+    dimension_depth: "De tilgængelige mål angiver ikke en entydig dybde; mål uden aksebetegnelser fastlægger ikke dybden.",
+    dimension_height: "De tilgængelige mål angiver ikke en entydig højde; mål uden aksebetegnelser fastlægger ikke højden.",
+    dimension_values: "Jeg kan ikke bekræfte dokumenterede mål for dette produkt.",
+    qualified_next_step: "Få bekræftet vejledning fra butikken eller en kvalificeret fagperson, før du stoler på en ubekræftet sikkerhedsegenskab eller forsøger en reparation.",
+  };
+  const request = preciseRequests(context).find(request => request.facet === segment.facet && request.requestIndex === segment.request_index);
+  const multipleSubjects = new Set(preciseRequests(context).map(request => request.subject).filter(Boolean)).size > 1;
+  const prefix = multipleSubjects && request?.subject ? `${request.subject}: ` : "";
+  if (request && !verifiedAnswerSubject(context, request) && context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product")) {
+    return prefix + (da ? "Jeg kan ikke bekræfte produktets identitet ud fra de tilgængelige oplysninger. Butikken kan hjælpe med at identificere det, før produktets egenskaber eller sikkerhed vurderes." : "I cannot verify this product's identity from the available information. The store can help identify it before its properties or safety are assessed.");
+  }
+  let text = da ? danish[segment.facet] : copy[segment.facet];
   if (segment.facet === "qualified_next_step") {
     const dependencies = preciseRequests(context).find(request => request.facet === segment.facet && request.requestIndex === segment.request_index)?.requiredFor ?? [];
-    if (dependencies.some(facet => ["electrical_safety", "repair_boundary"].includes(facet))) return "Contact the store or a qualified professional for verified guidance about the damaged electrical part; an approved customer repair method is not established.";
-    if (dependencies.some(facet => ["certification", "placement"].includes(facet))) return "Ask the store or manufacturer for verified certification and placement guidance before relying on the product near heat.";
-    if (dependencies.some(facet => ["load_capacity", "weight_limit"].includes(facet))) return "Ask the store or manufacturer to verify the load rating and applicable installation conditions before loading or installing it.";
+    if (dependencies.some(facet => ["electrical_safety", "repair_boundary"].includes(facet))) text = da ? "Kontakt butikken eller en kvalificeret fagperson for bekræftet vejledning om den beskadigede elektriske del; en godkendt reparationsmetode for kunden er ikke dokumenteret." : "Contact the store or a qualified professional for verified guidance about the damaged electrical part; an approved customer repair method is not established.";
+    else if (dependencies.some(facet => ["certification", "placement"].includes(facet))) text = da ? "Bed butikken eller producenten om bekræftet vejledning om certificering og placering, før du stoler på produktet nær varme." : "Ask the store or manufacturer for verified certification and placement guidance before relying on the product near heat.";
+    else if (dependencies.some(facet => ["load_capacity", "weight_limit"].includes(facet))) text = da ? "Bed butikken eller producenten om at bekræfte bæreevnen og de relevante monteringsforhold, før du belaster eller monterer produktet." : "Ask the store or manufacturer to verify the load rating and applicable installation conditions before loading or installing it.";
   }
-  return copy[segment.facet];
+  return prefix + text;
 }
 function preciseFacetSegments(request: PreciseAnswerRequest, validation: ResponseValidationResult, context: ResponseValidationContext): ResponseSegment[] {
   return validation.approvedSegments.filter(segment => segment.type === "facet_limit" ? segment.facet === request.facet && segment.request_index === request.requestIndex
-    : segment.type === "source_content" && segment.facet === request.facet && facetSourceText(segment, context).every(text => sourceSupportsFacet(text, request.facet)));
+    : segment.type === "source_content" && segment.facet === request.facet && sourceSections(segment.basis, context).every(section => sourceMatchesRequest(section.record, request, context)) && facetSourceText(segment, context).every(text => sourceSupportsFacet(text, request.facet)));
 }
 function preservePreciseAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
   const requests = preciseRequests(context);
@@ -6154,9 +6205,9 @@ function preservePreciseAnswers(validation: ResponseValidationResult, context: R
     const checked = candidates.map(candidate => validateStructuredResponse({ segments: [candidate] }, context));
     const accepted = checked.flatMap(value => value.approvedSegments);
     const obligation: AnswerObligation = { id: request.id, kind: request.facet, facet: request.facet, status: "missing", satisfied: false,
-      subjectIds: verifiedAnswerSubject(context) ? [verifiedAnswerSubject(context)!.id] : [], resultIds: [], sourceIds: [], rejectionCodes: checked.flatMap(value => value.issues.map(issue => issue.code)), recovery: "not_needed" };
+      subjectIds: verifiedAnswerSubject(context, request) ? [verifiedAnswerSubject(context, request)!.id] : [], resultIds: [], sourceIds: [], rejectionCodes: checked.flatMap(value => value.issues.map(issue => issue.code)), recovery: "not_needed" };
     // A qualified next step is conditional on unresolved safety, not an extra ask for known limits.
-    const unknownSafety = obligations.some(obligation => request.requiredFor.includes(obligation.facet as any) && obligation.status !== "supported");
+    const unknownSafety = obligations.some(obligation => obligation.id.startsWith(`answer.${request.requestIndex}.`) && request.requiredFor.includes(obligation.facet as any) && obligation.status !== "supported");
     if (request.facet === "qualified_next_step" && !unknownSafety) { obligation.status = "supported"; obligation.satisfied = true; obligations.push(obligation); continue; }
     for (const segment of accepted) {
       if (!result.approvedSegments.some(existing => JSON.stringify(existing) === JSON.stringify(segment))) result.approvedSegments.push(segment);
@@ -6211,7 +6262,7 @@ export function renderWithAnswerCoverage(validation: ResponseValidationResult, c
 export function missingPreciseEvidence(context: ResponseValidationContext): PreciseAnswerRequest[] {
   const requests = preciseRequests(context);
   return requests.filter(request => {
-    if (request.facet === "qualified_next_step" && !requests.some(primary => request.requiredFor.includes(primary.facet as any)
+    if (request.facet === "qualified_next_step" && !requests.some(primary => primary.requestIndex === request.requestIndex && request.requiredFor.includes(primary.facet as any)
       && !facetCandidates(primary, context).some(candidate => {
         const accepted = validateStructuredResponse({ segments: [candidate] }, context).approvedSegments;
         return accepted.length && !accepted.some(segment => facetEvidenceIsUnknown(segment, context));
