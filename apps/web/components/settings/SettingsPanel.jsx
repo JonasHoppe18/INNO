@@ -3,26 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Bot,
-  Building2,
   Clock,
-  CreditCard,
   Globe,
-  Inbox,
   Mail,
   Lock,
   PenLine,
   Settings,
   SlidersHorizontal,
-  Star,
-  Tag,
   Trash2,
   User,
   Users2,
-  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +27,6 @@ import { TagsSettings } from "@/components/settings/TagsSettings";
 import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
-import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   normalizeSignatureImageUrl,
@@ -80,77 +73,17 @@ import {
   routingSnapshot,
   senderRulesSnapshot,
 } from "@/lib/settings/email-rows";
-import { normalizeAutoCloseMode } from "@/lib/settings/general";
-import {
-  DEFAULT_EMAIL_SECTION,
-  EMAIL_SECTIONS,
-  SETTINGS_NAV,
-  parseSettingsPathname,
-  settingsPath,
-  withSearchParams,
-} from "@/lib/settings/navigation";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
+import { initialGeneralState, normalizeAutoCloseMode } from "@/lib/settings/general";
+import { initialEmailState } from "@/lib/settings/email-state";
+import { resourcePayload } from "@/lib/settings/resource-map";
+import { useSettingsDirty, useSettingsRoute } from "@/components/settings/SettingsRouteContext";
+import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
 import {
   DEFAULT_THEME,
   THEME_OPTIONS,
   normalizeThemePreference,
 } from "@/lib/theme-options";
-
-const SETTINGS_NAV_ICONS = {
-  general: Building2,
-  members: Users2,
-  mailboxes: Inbox,
-  tags: Tag,
-  ai: Bot,
-  automation: Zap,
-  email: Mail,
-  "customer-satisfaction": Star,
-  profile: User,
-  billing: CreditCard,
-};
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function TabSkeleton() {
-  return (
-    <section
-      className="w-full space-y-5"
-      aria-busy="true"
-      aria-label="Loading settings"
-    >
-      <div className="mb-6 space-y-2">
-        <Skeleton className="h-8 w-32 bg-muted" />
-        <Skeleton className="h-4 w-80 max-w-full bg-muted/70" />
-      </div>
-
-      {["details", "lifecycle", "test-mode"].map((section) => (
-        <div key={section} className="rounded-xl border border-border/90 bg-card">
-          <div className="space-y-2 px-6 pb-2 pt-5">
-            <Skeleton className="h-5 w-40 bg-muted" />
-            <Skeleton className="h-4 w-72 max-w-full bg-muted/70" />
-          </div>
-          <div className="space-y-0 px-6 pb-2">
-            {["primary", "secondary"].map((row) => (
-              <div
-                key={row}
-                className="flex items-center gap-4 border-b border-border/80 py-5 last:border-b-0"
-              >
-                <Skeleton className="h-10 w-10 shrink-0 rounded-full bg-muted" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-32 bg-muted" />
-                  <Skeleton className="h-3 w-56 max-w-full bg-muted/70" />
-                </div>
-                <Skeleton className="h-9 w-40 max-w-[35%] bg-muted" />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      <span className="sr-only">Loading settings</span>
-    </section>
-  );
-}
 
 function StoreTeamRow({ icon: Icon, label, description, value, editing, children }) {
   return (
@@ -2927,512 +2860,79 @@ function ProfileTab({ user, isLoaded }) {
 }
 
 export function SettingsPanel() {
-  const { ready: readsReady, readResponse } = useScopedReadResource();
   const searchParams = useSearchParams();
   const requestedConfirmationMailboxRef = useRef(searchParams?.get("mailbox_id") || "");
-  const pathname = usePathname();
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
-  const { orgId, orgRole } = useAuth();
-  const route = parseSettingsPathname(pathname) || { section: "general", emailSection: null };
-  const activeTab = route.section;
-  const emailSection = route.emailSection || DEFAULT_EMAIL_SECTION;
-  const [loading, setLoading] = useState(true);
+  const { orgRole } = useAuth();
+  const { section: activeTab, emailSection, navigate } = useSettingsRoute();
+  const {
+    workspace,
+    resources,
+    members,
+    setMembers,
+    currentRole: workspaceCurrentRole,
+    canManageMembers: canManageWorkspaceMembers,
+    reloadMembers,
+    refreshResource,
+  } = useSettingsWorkspace();
+  const { workspaceId, shopId, shopDomain } = workspace;
+  // Drafts initialize once per mount from the loaded resources.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const generalInit = useMemo(() => initialGeneralState(workspace, resources), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const emailInit = useMemo(() => initialEmailState(resources, requestedConfirmationMailboxRef.current), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const aiInit = useMemo(() => String(resourcePayload(resources, "/api/persona")?.persona?.instructions || "").trim(), []);
   const [saving, setSaving] = useState(false);
-  const [workspaceId, setWorkspaceId] = useState(null);
-  const [shopId, setShopId] = useState(null);
-  const [shopDomain, setShopDomain] = useState("");
-  const [teamName, setTeamName] = useState("Sona Team");
-  const [initialTeamName, setInitialTeamName] = useState("Sona Team");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [initialAiPrompt, setInitialAiPrompt] = useState("");
-  const [testMode, setTestMode] = useState(false);
-  const [initialTestMode, setInitialTestMode] = useState(false);
-  const [testEmail, setTestEmail] = useState("");
-  const [initialTestEmail, setInitialTestEmail] = useState("");
-  const [supportLanguage, setSupportLanguage] = useState("en");
-  const [initialSupportLanguage, setInitialSupportLanguage] = useState("en");
-  const [autoCloseMode, setAutoCloseMode] = useState("approve");
-  const [initialAutoCloseMode, setInitialAutoCloseMode] = useState("approve");
-  const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(
-    String(DEFAULT_STALE_DAYS)
-  );
-  const [initialNeedsAttentionStaleDays, setInitialNeedsAttentionStaleDays] = useState(
-    String(DEFAULT_STALE_DAYS)
-  );
-  const [members, setMembers] = useState([]);
-  const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
-  const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
-  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
-  const [autoReplyIncludeTicketNumber, setAutoReplyIncludeTicketNumber] = useState(true);
-  const [autoReplySubjectTemplate, setAutoReplySubjectTemplate] = useState("We've received your message");
-  const [autoReplyBodyTextTemplate, setAutoReplyBodyTextTemplate] = useState(
-    "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}"
-  );
-  const [autoReplyBodyHtmlTemplate, setAutoReplyBodyHtmlTemplate] = useState("");
-  const [autoReplyTemplateId, setAutoReplyTemplateId] = useState(null);
-  const [autoReplyTemplateName, setAutoReplyTemplateName] = useState("Default template");
-  const [autoReplyTemplateHtml, setAutoReplyTemplateHtml] = useState(
-    "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
-  );
-  const [signatureIsActive, setSignatureIsActive] = useState(true);
-  const [signatureTemplateHtml, setSignatureTemplateHtml] = useState("");
+  const [teamName, setTeamName] = useState(generalInit.teamName);
+  const [initialTeamName, setInitialTeamName] = useState(generalInit.teamName);
+  const [testMode, setTestMode] = useState(generalInit.testMode);
+  const [initialTestMode, setInitialTestMode] = useState(generalInit.testMode);
+  const [testEmail, setTestEmail] = useState(generalInit.testEmail);
+  const [initialTestEmail, setInitialTestEmail] = useState(generalInit.testEmail);
+  const [supportLanguage, setSupportLanguage] = useState(generalInit.supportLanguage);
+  const [initialSupportLanguage, setInitialSupportLanguage] = useState(generalInit.supportLanguage);
+  const [autoCloseMode, setAutoCloseMode] = useState(generalInit.autoCloseMode);
+  const [initialAutoCloseMode, setInitialAutoCloseMode] = useState(generalInit.autoCloseMode);
+  const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(generalInit.needsAttentionStaleDays);
+  const [initialNeedsAttentionStaleDays, setInitialNeedsAttentionStaleDays] = useState(generalInit.needsAttentionStaleDays);
+  const [aiPrompt, setAiPrompt] = useState(aiInit);
+  const [initialAiPrompt, setInitialAiPrompt] = useState(aiInit);
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(emailInit.autoReplyEnabled);
+  const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(emailInit.autoReplyEnabled);
+  const [autoReplyIncludeTicketNumber, setAutoReplyIncludeTicketNumber] = useState(emailInit.autoReplyIncludeTicketNumber);
+  const [initialAutoReplyIncludeTicketNumber, setInitialAutoReplyIncludeTicketNumber] = useState(emailInit.autoReplyIncludeTicketNumber);
+  const [autoReplyInheritsWorkspace, setAutoReplyInheritsWorkspace] = useState(emailInit.autoReplyInheritsWorkspace);
+  const [initialAutoReplyInheritsWorkspace, setInitialAutoReplyInheritsWorkspace] = useState(emailInit.autoReplyInheritsWorkspace);
+  const [autoReplySubjectTemplate, setAutoReplySubjectTemplate] = useState(emailInit.autoReplySubjectTemplate);
+  const [initialAutoReplySubjectTemplate, setInitialAutoReplySubjectTemplate] = useState(emailInit.autoReplySubjectTemplate);
+  const [autoReplyBodyTextTemplate, setAutoReplyBodyTextTemplate] = useState(emailInit.autoReplyBodyTextTemplate);
+  const [initialAutoReplyBodyTextTemplate, setInitialAutoReplyBodyTextTemplate] = useState(emailInit.autoReplyBodyTextTemplate);
+  const [autoReplyBodyHtmlTemplate, setAutoReplyBodyHtmlTemplate] = useState(emailInit.autoReplyBodyHtmlTemplate);
+  const [initialAutoReplyBodyHtmlTemplate, setInitialAutoReplyBodyHtmlTemplate] = useState(emailInit.autoReplyBodyHtmlTemplate);
+  const [autoReplyTemplateId, setAutoReplyTemplateId] = useState(emailInit.autoReplyTemplateId);
+  const [initialAutoReplyTemplateId, setInitialAutoReplyTemplateId] = useState(emailInit.autoReplyTemplateId);
+  const [autoReplyTemplateName, setAutoReplyTemplateName] = useState(emailInit.autoReplyTemplateName);
+  const [initialAutoReplyTemplateName, setInitialAutoReplyTemplateName] = useState(emailInit.autoReplyTemplateName);
+  const [autoReplyTemplateHtml, setAutoReplyTemplateHtml] = useState(emailInit.autoReplyTemplateHtml);
+  const [initialAutoReplyTemplateHtml, setInitialAutoReplyTemplateHtml] = useState(emailInit.autoReplyTemplateHtml);
+  const [signatureIsActive, setSignatureIsActive] = useState(emailInit.signatureIsActive);
+  const [initialSignatureIsActive, setInitialSignatureIsActive] = useState(emailInit.signatureIsActive);
+  const [signatureTemplateHtml, setSignatureTemplateHtml] = useState(emailInit.signatureTemplateHtml);
+  const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState(emailInit.signatureTemplateHtml);
+  const [confirmationConfiguration, setConfirmationConfiguration] = useState(emailInit.confirmationConfiguration);
+  const [selectedConfirmationMailboxId, setSelectedConfirmationMailboxId] = useState(emailInit.selectedConfirmationMailboxId);
+  const [workspaceInboxesForRules] = useState(emailInit.workspaceInboxesForRules);
+  const [emailRoutingRows, setEmailRoutingRows] = useState(emailInit.emailRoutingRows);
+  const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState(emailInit.emailRoutingRows);
+  const [emailSenderRuleRows, setEmailSenderRuleRows] = useState(emailInit.emailSenderRuleRows);
+  const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState(emailInit.emailSenderRuleRows);
+  const [emailBlocklistRows, setEmailBlocklistRows] = useState(emailInit.emailBlocklistRows);
+  const [initialEmailBlocklistRows, setInitialEmailBlocklistRows] = useState(emailInit.emailBlocklistRows);
   const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
-  const [confirmationConfiguration, setConfirmationConfiguration] = useState(null);
-  const [selectedConfirmationMailboxId, setSelectedConfirmationMailboxId] = useState("");
-  const [autoReplyInheritsWorkspace, setAutoReplyInheritsWorkspace] = useState(false);
-  const [emailRoutingRows, setEmailRoutingRows] = useState([]);
-  const [emailSenderRuleRows, setEmailSenderRuleRows] = useState([]);
-  const [emailBlocklistRows, setEmailBlocklistRows] = useState([]);
-  const [workspaceInboxesForRules, setWorkspaceInboxesForRules] = useState([]);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
-  const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(false);
-  const [initialAutoReplyIncludeTicketNumber, setInitialAutoReplyIncludeTicketNumber] = useState(true);
-  const [initialAutoReplyInheritsWorkspace, setInitialAutoReplyInheritsWorkspace] = useState(false);
-  const [initialAutoReplySubjectTemplate, setInitialAutoReplySubjectTemplate] = useState(
-    "We've received your message"
-  );
-  const [initialAutoReplyBodyTextTemplate, setInitialAutoReplyBodyTextTemplate] = useState(
-    "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}"
-  );
-  const [initialAutoReplyBodyHtmlTemplate, setInitialAutoReplyBodyHtmlTemplate] = useState("");
-  const [initialAutoReplyTemplateId, setInitialAutoReplyTemplateId] = useState(null);
-  const [initialAutoReplyTemplateName, setInitialAutoReplyTemplateName] = useState("Default template");
-  const [initialAutoReplyTemplateHtml, setInitialAutoReplyTemplateHtml] = useState(
-    "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
-  );
-  const [initialSignatureIsActive, setInitialSignatureIsActive] = useState(true);
-  const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState("");
-  const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
-  const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState([]);
-  const [initialEmailBlocklistRows, setInitialEmailBlocklistRows] = useState([]);
-
-  const settingsLoadRef = useRef(0);
-  const loadData = useCallback(async () => {
-    const loadToken = ++settingsLoadRef.current;
-    if (!readsReady) return;
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
-      const bootstrapResponse = await readResponse("/api/settings/bootstrap", fetchOptions).catch(() => null);
-      const bootstrap = bootstrapResponse?.ok ? await bootstrapResponse.json() : null;
-      if (loadToken !== settingsLoadRef.current) return;
-      const fetchSetting = (url, options) => {
-        const entry = bootstrap?.resources?.[url];
-        return entry ? Promise.resolve({ ...entry, json: async () => entry.payload }) : readResponse(url, options);
-      };
-      let serverMembersResponse = null;
-      let serverMembersPayload = {};
-      if (user?.id) {
-        const response = await fetchSetting("/api/settings/members", fetchOptions).catch(() => null);
-        if (response && [401, 403, 404].includes(response.status)) {
-          throw new Error("Workspace settings are not available for this session.");
-        }
-        if (response?.ok) {
-          serverMembersResponse = response;
-          serverMembersPayload = await response.json().catch(() => ({}));
-        }
-      }
-
-      if (loadToken !== settingsLoadRef.current) return;
-      let supabaseUserId = serverMembersPayload?.supabase_user_id || null;
-      const metadataUuid = user?.publicMetadata?.supabase_uuid;
-      if (!supabaseUserId && typeof metadataUuid === "string" && UUID_REGEX.test(metadataUuid)) {
-        supabaseUserId = metadataUuid;
-      }
-
-      if (!supabaseUserId && user?.id) {
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("user_id")
-          .eq("clerk_user_id", user.id)
-          .maybeSingle();
-        if (loadToken !== settingsLoadRef.current) return;
-        if (profileError) throw profileError;
-        supabaseUserId = profile?.user_id ?? null;
-      }
-
-      let workspaceId = serverMembersPayload?.workspace_id || null;
-      let workspaceName = serverMembersPayload?.workspace_name || null;
-      if (workspaceId) {
-        setSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
-        setInitialSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
-      }
-      if (orgId && !workspaceId) {
-        let workspaceLookup = await supabase
-          .from("workspaces")
-          .select("id, name, support_language")
-          .eq("clerk_org_id", orgId)
-          .maybeSingle();
-        if (workspaceLookup.error?.code === "42703") {
-          workspaceLookup = await supabase
-            .from("workspaces")
-            .select("id, name")
-            .eq("clerk_org_id", orgId)
-            .maybeSingle();
-        }
-        if (loadToken !== settingsLoadRef.current) return;
-        const workspaceRow = workspaceLookup.data;
-        const workspaceError = workspaceLookup.error;
-        if (workspaceError) throw workspaceError;
-        workspaceId = workspaceRow?.id ?? null;
-        workspaceName = workspaceRow?.name ?? null;
-        setSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
-        setInitialSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
-      }
-      if (!workspaceId && !orgId && user?.id) {
-        const { data: membership, error: membershipError } = await supabase
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("clerk_user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (!membershipError) {
-          workspaceId = membership?.workspace_id ?? null;
-        }
-        if (workspaceId) {
-          let workspaceLookup = await supabase
-            .from("workspaces")
-            .select("id, name, support_language")
-            .eq("id", workspaceId)
-            .maybeSingle();
-          if (workspaceLookup.error?.code === "42703") {
-            workspaceLookup = await supabase
-              .from("workspaces")
-              .select("id, name")
-              .eq("id", workspaceId)
-              .maybeSingle();
-          }
-          if (loadToken !== settingsLoadRef.current) return;
-        const workspaceRow = workspaceLookup.data;
-          const workspaceError = workspaceLookup.error;
-          if (!workspaceError) {
-            workspaceName = workspaceRow?.name ?? null;
-            setSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
-            setInitialSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
-          }
-        }
-      }
-
-      // The server resolves the scope with Clerk's session directly. This is
-      // the authoritative fallback when the browser-side Supabase token has
-      // not refreshed its workspace claims yet.
-      if (!supabaseUserId && serverMembersPayload?.supabase_user_id) {
-        supabaseUserId = serverMembersPayload.supabase_user_id;
-      }
-      if (!workspaceId && serverMembersPayload?.workspace_id) {
-        workspaceId = serverMembersPayload.workspace_id;
-        workspaceName = serverMembersPayload.workspace_name || null;
-        setSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
-        setInitialSupportLanguage(normalizeSupportLanguage(serverMembersPayload.support_language || "en"));
-      }
-
-      let shopRow = serverMembersPayload?.shop || null;
-      let shopError = null;
-      let latestShop = null;
-      if (!serverMembersResponse && !shopRow && workspaceId) {
-        latestShop = await supabase
-          .from("shops")
-          .select("id, owner_user_id, shop_domain")
-          .eq("workspace_id", workspaceId)
-          .is("uninstalled_at", null)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        shopRow = latestShop?.data ?? null;
-        shopError = latestShop?.error ?? null;
-      } else if (!serverMembersResponse && !shopRow && supabaseUserId) {
-        latestShop = await supabase
-          .from("shops")
-          .select("id, owner_user_id, shop_domain")
-          .eq("owner_user_id", supabaseUserId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        shopRow = latestShop?.data ?? null;
-        shopError = latestShop?.error ?? null;
-      } else if (!shopRow) {
-        latestShop = { data: null, error: null };
-        shopRow = null;
-        shopError = null;
-      }
-
-      if (loadToken !== settingsLoadRef.current) return;
-      if (shopError) throw shopError;
-
-      if (!workspaceId && !supabaseUserId) {
-        setWorkspaceId(null);
-        setShopId(null);
-        setShopDomain("");
-        setTeamName("Sona Team");
-        setInitialTeamName("Sona Team");
-        setTestMode(false);
-        setInitialTestMode(false);
-        setTestEmail("");
-        setInitialTestEmail("");
-        setSupportLanguage("en");
-        setInitialSupportLanguage("en");
-        setAutoCloseMode("approve");
-        setInitialAutoCloseMode("approve");
-        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-        setMembers([]);
-        setWorkspaceCurrentRole("");
-        setCanManageWorkspaceMembers(false);
-        setEmailRoutingRows(normalizeRoutingRows([]));
-        setInitialEmailRoutingRows(normalizeRoutingRows([]));
-        setEmailSenderRuleRows(normalizeSenderRuleRows([]));
-        setInitialEmailSenderRuleRows(normalizeSenderRuleRows([]));
-        setEmailBlocklistRows(normalizeBlocklistRows([]));
-        setInitialEmailBlocklistRows(normalizeBlocklistRows([]));
-        setWorkspaceInboxesForRules([]);
-        return;
-      }
-
-      const resolvedTeamName =
-        String(workspaceName || "").trim() ||
-        String(shopRow?.shop_domain || "").replace(".myshopify.com", "") ||
-        "Sona Team";
-
-      setWorkspaceId(workspaceId ?? null);
-      setShopId(shopRow?.id ?? null);
-      setShopDomain(shopRow?.shop_domain ?? "");
-      setTeamName(resolvedTeamName);
-      setInitialTeamName(resolvedTeamName);
-      setTestMode(false);
-      setInitialTestMode(false);
-      setTestEmail("");
-      setInitialTestEmail("");
-      setAutoCloseMode("approve");
-      setInitialAutoCloseMode("approve");
-      setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-      setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-      if (!workspaceId) {
-        setSupportLanguage("en");
-        setInitialSupportLanguage("en");
-        setAutoCloseMode("approve");
-        setInitialAutoCloseMode("approve");
-        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-      }
-
-      const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
-
-      // Fire all independent fetches in parallel
-      const [
-        membersResponse,
-        testModeResponse,
-        personaResponse,
-        autoReplyResponse,
-        emailSignatureResponse,
-        emailRoutingResponse,
-        emailSenderRulesResponse,
-        emailBlocklistResponse,
-        inboxesResponse,
-        profileRowsResult,
-      ] = await Promise.all([
-        serverMembersResponse || (workspaceId ? fetchSetting("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null)),
-        workspaceId ? fetchSetting("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
-        workspaceId ? fetchSetting("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
-        fetchSetting("/api/settings/auto-reply", fetchOptions).catch(() => null),
-        fetchSetting("/api/settings/email-signature", fetchOptions).catch(() => null),
-        fetchSetting("/api/settings/email-routing", fetchOptions).catch(() => null),
-        fetchSetting("/api/settings/email-sender-rules", fetchOptions).catch(() => null),
-        fetchSetting("/api/settings/email-blocklist", fetchOptions).catch(() => null),
-        fetchSetting("/api/inboxes", fetchOptions).catch(() => null),
-        !workspaceId && memberOwnerId
-          ? supabase
-              .from("profiles")
-              .select("user_id, first_name, last_name, email, image_url, signature")
-              .eq("user_id", memberOwnerId)
-              .order("created_at", { ascending: true })
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-
-      // Parse all JSON responses in parallel
-      const [
-        membersPayload,
-        testModePayload,
-        personaPayload,
-        autoReplyPayload,
-        emailSignaturePayload,
-        emailRoutingPayload,
-        emailSenderRulesPayload,
-        emailBlocklistPayload,
-        inboxesPayload,
-      ] = await Promise.all([
-        serverMembersResponse
-          ? Promise.resolve(serverMembersPayload)
-          : membersResponse?.ok
-            ? membersResponse.json().catch(() => ({}))
-            : Promise.resolve({}),
-        testModeResponse?.ok ? testModeResponse.json().catch(() => ({})) : Promise.resolve({}),
-        personaResponse?.ok ? personaResponse.json().catch(() => ({})) : Promise.resolve({}),
-        autoReplyResponse?.ok ? autoReplyResponse.json().catch(() => ({})) : Promise.resolve({}),
-        emailSignatureResponse?.ok ? emailSignatureResponse.json().catch(() => ({})) : Promise.resolve({}),
-        emailRoutingResponse?.ok ? emailRoutingResponse.json().catch(() => ({})) : Promise.resolve({}),
-        emailSenderRulesResponse?.ok ? emailSenderRulesResponse.json().catch(() => ({})) : Promise.resolve({}),
-        emailBlocklistResponse?.ok ? emailBlocklistResponse.json().catch(() => ({})) : Promise.resolve({}),
-        inboxesResponse?.ok ? inboxesResponse.json().catch(() => ({})) : Promise.resolve({}),
-      ]);
-
-      if (loadToken !== settingsLoadRef.current) return;
-
-      // Apply members state
-      if (workspaceId) {
-        if (!membersResponse?.ok) throw new Error("Could not load workspace members.");
-        setMembers(Array.isArray(membersPayload?.members) ? membersPayload.members : []);
-        setWorkspaceCurrentRole(String(membersPayload?.current_role || ""));
-        setCanManageWorkspaceMembers(Boolean(membersPayload?.can_manage_members));
-      } else {
-        if (profileRowsResult.error) throw profileRowsResult.error;
-        setMembers(Array.isArray(profileRowsResult.data) ? profileRowsResult.data : []);
-        setWorkspaceCurrentRole("");
-        setCanManageWorkspaceMembers(false);
-      }
-
-      // Apply test-mode + persona state
-      if (workspaceId && testModeResponse?.ok) {
-        const resolvedTestMode = Boolean(testModePayload?.test_mode);
-        const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
-        const resolvedSupportLanguage = normalizeSupportLanguage(testModePayload?.support_language || "en");
-        const resolvedAutoCloseMode = normalizeAutoCloseMode(testModePayload?.auto_close_mode);
-        const resolvedNeedsAttentionStaleDays = String(
-          normalizeStaleDays(testModePayload?.needs_attention_stale_days)
-        );
-        setTestMode(resolvedTestMode);
-        setInitialTestMode(resolvedTestMode);
-        setTestEmail(resolvedTestEmail);
-        setInitialTestEmail(resolvedTestEmail);
-        setSupportLanguage(resolvedSupportLanguage);
-        setInitialSupportLanguage(resolvedSupportLanguage);
-        setAutoCloseMode(resolvedAutoCloseMode);
-        setInitialAutoCloseMode(resolvedAutoCloseMode);
-        setNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
-        setInitialNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
-      }
-      if (workspaceId && personaResponse?.ok) {
-        // GET /api/persona wraps the payload: { persona: { instructions } }
-        const resolved = String(personaPayload?.persona?.instructions || "").trim();
-        setAiPrompt(resolved);
-        setInitialAiPrompt(resolved);
-      }
-
-      // Apply customer-confirmation workspace default.
-      if (autoReplyResponse?.ok) {
-        const requestedMailbox = (autoReplyPayload?.mailboxes || []).find(
-          (mailbox) => mailbox.id === requestedConfirmationMailboxRef.current
-        );
-        const setting = requestedMailbox?.effective || autoReplyPayload?.workspace_setting || autoReplyPayload?.setting || {};
-        const template = requestedMailbox?.template || autoReplyPayload?.workspace_template || autoReplyPayload?.template || {};
-        setConfirmationConfiguration(autoReplyPayload || null);
-        setSelectedConfirmationMailboxId(requestedMailbox?.id || "");
-        setAutoReplyInheritsWorkspace(Boolean(requestedMailbox?.inherits_workspace));
-        setInitialAutoReplyInheritsWorkspace(Boolean(requestedMailbox?.inherits_workspace));
-        setAutoReplyEnabled(Boolean(setting?.enabled));
-        setInitialAutoReplyEnabled(Boolean(setting?.enabled));
-        setAutoReplyIncludeTicketNumber(setting?.include_ticket_number !== false);
-        setInitialAutoReplyIncludeTicketNumber(setting?.include_ticket_number !== false);
-        setAutoReplySubjectTemplate(String(setting?.subject_template || "We've received your message"));
-        setInitialAutoReplySubjectTemplate(String(setting?.subject_template || "We've received your message"));
-        setAutoReplyBodyTextTemplate(
-          String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}")
-        );
-        setInitialAutoReplyBodyTextTemplate(
-          String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}")
-        );
-        setAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
-        setInitialAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
-        setAutoReplyTemplateId(template?.id || setting?.template_id || null);
-        setInitialAutoReplyTemplateId(template?.id || setting?.template_id || null);
-        setAutoReplyTemplateName(String(template?.name || "Default template"));
-        setInitialAutoReplyTemplateName(String(template?.name || "Default template"));
-        setAutoReplyTemplateHtml(
-          String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>")
-        );
-        setInitialAutoReplyTemplateHtml(
-          String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>")
-        );
-      }
-
-      // Apply email-signature state
-      if (emailSignatureResponse?.ok) {
-        const signature = emailSignaturePayload?.signature || {};
-        setSignatureIsActive(signature?.is_active !== false);
-        setInitialSignatureIsActive(signature?.is_active !== false);
-        setSignatureTemplateHtml(String(signature?.template_html || ""));
-        setInitialSignatureTemplateHtml(String(signature?.template_html || ""));
-      } else {
-        setSignatureIsActive(true);
-        setInitialSignatureIsActive(true);
-        setSignatureTemplateHtml("");
-        setInitialSignatureTemplateHtml("");
-      }
-
-      // Apply email-routing state
-      if (emailRoutingResponse?.ok) {
-        const rows = Array.isArray(emailRoutingPayload?.routes) ? emailRoutingPayload.routes : [];
-        const normalized = normalizeRoutingRows(rows);
-        setEmailRoutingRows(normalized);
-        setInitialEmailRoutingRows(normalized);
-      } else {
-        const fallbackRoutes = normalizeRoutingRows([]);
-        setEmailRoutingRows(fallbackRoutes);
-        setInitialEmailRoutingRows(fallbackRoutes);
-      }
-
-      // Apply email-sender-rules state
-      if (emailSenderRulesResponse?.ok) {
-        const rows = Array.isArray(emailSenderRulesPayload?.rules) ? emailSenderRulesPayload.rules : [];
-        const normalized = normalizeSenderRuleRows(rows);
-        setEmailSenderRuleRows(normalized);
-        setInitialEmailSenderRuleRows(normalized);
-      } else {
-        const fallbackRules = normalizeSenderRuleRows([]);
-        setEmailSenderRuleRows(fallbackRules);
-        setInitialEmailSenderRuleRows(fallbackRules);
-      }
-
-      // Apply email-blocklist state
-      if (emailBlocklistResponse?.ok) {
-        const rows = Array.isArray(emailBlocklistPayload?.blocks) ? emailBlocklistPayload.blocks : [];
-        const normalized = normalizeBlocklistRows(rows);
-        setEmailBlocklistRows(normalized);
-        setInitialEmailBlocklistRows(normalized);
-      } else {
-        const fallbackBlocks = normalizeBlocklistRows([]);
-        setEmailBlocklistRows(fallbackBlocks);
-        setInitialEmailBlocklistRows(fallbackBlocks);
-      }
-
-      // Apply inboxes state
-      if (inboxesResponse?.ok) {
-        const inboxes = Array.isArray(inboxesPayload?.inboxes) ? inboxesPayload.inboxes : [];
-        setWorkspaceInboxesForRules(inboxes);
-      } else {
-        setWorkspaceInboxesForRules([]);
-      }
-
-    } catch (error) {
-      if (loadToken !== settingsLoadRef.current) return;
-      console.error("Settings load failed:", error);
-      toast.error("Could not load settings.");
-    } finally {
-      if (loadToken === settingsLoadRef.current) setLoading(false);
-    }
-  }, [readsReady, readResponse, orgId, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
-
-  useEffect(() => {
-    loadData().catch(() => null);
-    return () => { settingsLoadRef.current += 1; };
-  }, [loadData]);
 
   const canSave = useMemo(
     () =>
@@ -3544,6 +3044,7 @@ export function SettingsPanel() {
         setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
+      if (workspaceId) refreshResource("/api/settings/test-mode");
       toast.success("Settings saved.");
     } catch (error) {
       if (error?.code === "42703") {
@@ -3568,6 +3069,7 @@ export function SettingsPanel() {
     testEmail,
     testMode,
     workspaceId,
+    refreshResource,
   ]);
 
   const handleResetGeneral = useCallback(() => {
@@ -4247,6 +3749,15 @@ export function SettingsPanel() {
         setEmailBlocklistRows(persistedBlocks);
       }
 
+      [
+        [hasAutoReplyChanges, "/api/settings/auto-reply"],
+        [hasSignatureTemplateChanges, "/api/settings/email-signature"],
+        [hasRoutingChanges, "/api/settings/email-routing"],
+        [hasSenderRulesChanges, "/api/settings/email-sender-rules"],
+        [hasBlocklistChanges, "/api/settings/email-blocklist"],
+      ].forEach(([changed, url]) => {
+        if (changed) refreshResource(url);
+      });
       toast.success("Email settings saved.");
     } catch (error) {
       toast.error(error?.message || "Could not save email settings.");
@@ -4279,61 +3790,23 @@ export function SettingsPanel() {
     signatureTemplateHtml,
     savingAutoReply,
     savingEmailRouting,
+    refreshResource,
   ]);
 
-  const hasCurrentTabChanges =
+  useSettingsDirty(
     (activeTab === "general" && canSave) ||
-    (activeTab === "email" && canSaveEmailSettings);
-
-  useEffect(() => {
-    if (!hasCurrentTabChanges) return undefined;
-    const handleBeforeUnload = (event) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasCurrentTabChanges]);
-
-  const updateSettingsUrl = useCallback(
-    (tab, section = null) => {
-      window.history.pushState(null, "", withSearchParams(settingsPath(tab, section), searchParams, ["tab", "section"]));
-    },
-    [searchParams]
-  );
-
-  const handleSelectTab = useCallback(
-    (nextTab) => {
-      if (nextTab === activeTab) return;
-      if (hasCurrentTabChanges && !window.confirm("Discard your unsaved changes?")) return;
-      if (activeTab === "general" && canSave) handleResetGeneral();
-      if (activeTab === "email" && canSaveEmailSettings) handleDiscardEmailSettings();
-      updateSettingsUrl(nextTab);
-    },
-    [
-      activeTab,
-      canSave,
-      canSaveEmailSettings,
-      handleDiscardEmailSettings,
-      handleResetGeneral,
-      hasCurrentTabChanges,
-      updateSettingsUrl,
-    ]
+    (activeTab === "email" && canSaveEmailSettings)
   );
 
   const handleSelectEmailSection = useCallback(
     (nextSection) => {
       if (!EMAIL_SECTIONS.some((section) => section.key === nextSection)) return;
-      updateSettingsUrl("email", nextSection);
+      navigate("email", nextSection);
     },
-    [updateSettingsUrl]
+    [navigate]
   );
 
   const renderContent = () => {
-    if (loading) {
-      return <TabSkeleton />;
-    }
-
     switch (activeTab) {
       case "ai":
         return (
@@ -4350,6 +3823,7 @@ export function SettingsPanel() {
               });
               if (!response.ok) throw new Error("Could not save AI instructions.");
               setInitialAiPrompt(String(newPrompt || ""));
+              refreshResource("/api/persona");
               toast.success("AI instructions saved.");
             }}
           />
@@ -4367,8 +3841,8 @@ export function SettingsPanel() {
               String(orgRole || "").toLowerCase().includes("admin") ||
               String(orgRole || "").toLowerCase().includes("owner")
             }
-            onInviteCreated={loadData}
-            onMembersChanged={loadData}
+            onInviteCreated={reloadMembers}
+            onMembersChanged={reloadMembers}
             onSignatureSaved={(userId, signature) => {
               setMembers((prev) =>
                 prev.map((member) =>
@@ -4471,75 +3945,5 @@ export function SettingsPanel() {
     }
   };
 
-  return (
-    <main className="settings-theme flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background md:flex-row">
-      <div className="flex items-center gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
-        <span className="text-sm font-semibold text-foreground">Settings</span>
-        <select
-          aria-label="Settings section"
-          value={activeTab}
-          onChange={(event) => handleSelectTab(event.target.value)}
-          className="ml-auto h-9 min-w-0 max-w-[220px] rounded-md border border-input bg-background px-3 text-input md:text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-        >
-          {SETTINGS_NAV.map((section) => (
-            <optgroup key={section.label} label={section.label}>
-              {section.items.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-            </optgroup>
-          ))}
-        </select>
-      </div>
-      <aside className="hidden h-full w-[224px] shrink-0 flex-col border-r border-border bg-background md:flex">
-        <div className="px-5 pb-5 pt-8">
-          <h1 className="text-page-heading font-semibold tracking-tight text-foreground">Settings</h1>
-        </div>
-        <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-          {SETTINGS_NAV.map((section) => (
-            <div key={section.label}>
-              {section.label ? (
-                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                  {section.label}
-                </p>
-              ) : null}
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const active = activeTab === item.key;
-                  const Icon = SETTINGS_NAV_ICONS[item.key];
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => handleSelectTab(item.key)}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
-                        active
-                          ? "bg-accent font-semibold text-accent-foreground"
-                          : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-4 w-4 shrink-0 transition-colors duration-150",
-                          active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                        )}
-                      />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-      </aside>
-
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background">
-        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
-          <div className="min-w-0">
-            {renderContent()}
-          </div>
-        </div>
-      </div>
-    </main>
-  );
+  return renderContent();
 }

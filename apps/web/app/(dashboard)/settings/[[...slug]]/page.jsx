@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { SettingsWorkspace } from "@/components/settings/SettingsWorkspace";
 import {
   legacySettingsPath,
   parseSettingsSlug,
@@ -22,5 +22,5 @@ export default async function SettingsPage({ params, searchParams }) {
   const canonical = settingsPath(route.section, route.emailSection);
   if (`/settings/${slug.join("/")}` !== canonical) redirect(withSearchParams(canonical, searchParams));
 
-  return <SettingsPanel />;
+  return <SettingsWorkspace />;
 }
