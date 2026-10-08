@@ -6,9 +6,6 @@ import { useTheme } from "next-themes";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Bot,
-  Clock,
-  Globe,
   Mail,
   Lock,
   PenLine,
@@ -27,17 +24,10 @@ import { TagsSettings } from "@/components/settings/TagsSettings";
 import { CustomerSatisfactionSettings } from "@/components/settings/CustomerSatisfactionSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   normalizeSignatureImageUrl,
   uploadEmailSignatureImage,
 } from "@/lib/email-signature-image";
-import {
-  SUPPORTED_SUPPORT_LANGUAGE_CODES,
-  SUPPORT_LANGUAGE_LABELS,
-  normalizeSupportLanguage,
-} from "@/lib/translation/languages";
-import { normalizeStaleDays, DEFAULT_STALE_DAYS } from "@/lib/inbox/stale-days";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -74,9 +64,7 @@ import {
   senderRulesSnapshot,
 } from "@/lib/settings/email-rows";
 import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
-import { initialGeneralState, normalizeAutoCloseMode } from "@/lib/settings/general";
 import { initialEmailState } from "@/lib/settings/email-state";
-import { resourcePayload } from "@/lib/settings/resource-map";
 import { useSettingsDirty, useSettingsRoute } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
 import {
@@ -84,328 +72,6 @@ import {
   THEME_OPTIONS,
   normalizeThemePreference,
 } from "@/lib/theme-options";
-
-function StoreTeamRow({ icon: Icon, label, description, value, editing, children }) {
-  return (
-    <div className="flex items-center gap-4 border-b border-border/80 py-5 last:border-b-0">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-        <Icon className="h-4 w-4 text-primary" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      {editing ? (
-        <div className="w-56 shrink-0">{children}</div>
-      ) : (
-        <span className="shrink-0 text-sm font-medium text-muted-foreground">{value}</span>
-      )}
-    </div>
-  );
-}
-
-function AiPromptModal({ value, onChange, onSave, saving }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  const handleOpen = () => {
-    setDraft(value);
-    setOpen(true);
-  };
-
-  const handleSave = async () => {
-    onChange(draft);
-    await onSave(draft);
-    setOpen(false);
-  };
-
-  return (
-    <>
-      <div className="py-5">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <Bot className="h-4 w-4 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">AI Prompt</p>
-            <p className="text-xs text-muted-foreground">The shared instruction Sona reads before drafting every reply.</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleOpen}
-            className="shrink-0 gap-1.5 transition-transform duration-150 active:scale-[0.97]"
-          >
-            <PenLine className="h-3.5 w-3.5" />
-            {value ? "Edit" : "Add prompt"}
-          </Button>
-        </div>
-
-        <div className="mt-4 rounded-lg bg-muted/40 px-4 py-3.5">
-          {value ? (
-            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
-              {value}
-            </p>
-          ) : (
-            <div>
-              <p className="text-sm font-medium text-foreground">No prompt configured</p>
-              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                Add brand context, tone of voice and reply guidelines for Sona.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>AI Prompt</DialogTitle>
-            <DialogDescription>
-              Describe your brand and how your AI support agent should sound. This is the primary instruction the AI reads before every reply.
-            </DialogDescription>
-          </DialogHeader>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={`Example:\nWe are [brand], a Danish webshop selling [products]. Our tone is friendly and direct — we get to the point fast. Replies should be max 4 sentences. We always write in the customer's language.`}
-            rows={8}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-input md:text-sm leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-function GeneralTab({
-  shopDomain,
-  teamName,
-  onTeamNameChange,
-  testMode,
-  onTestModeChange,
-  testEmail,
-  onTestEmailChange,
-  supportLanguage,
-  onSupportLanguageChange,
-  autoCloseMode,
-  onAutoCloseModeChange,
-  needsAttentionStaleDays,
-  onNeedsAttentionStaleDaysChange,
-  hasWorkspaceScope,
-  onSave,
-  onReset,
-  saving,
-  canSave,
-}) {
-  const langLabel = SUPPORT_LANGUAGE_LABELS[supportLanguage] || supportLanguage;
-
-  return (
-    <section className="w-full space-y-5">
-      <div className="mb-6">
-        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">General</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Manage workspace details and ticket lifecycle defaults.</p>
-      </div>
-
-      <div className="rounded-xl border border-border/90 bg-card">
-        <div className="px-6 pb-2 pt-5">
-          <div>
-            <h3 className="text-section-heading font-semibold text-foreground">Workspace details</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">Your connected store and shared workspace preferences.</p>
-          </div>
-        </div>
-        <div className="px-6 pb-2">
-          <StoreTeamRow
-            icon={Lock}
-            label="Store URL"
-            description="Connected Shopify store (read-only)"
-            value={shopDomain || "No shop connected"}
-            editing={false}
-          />
-          <StoreTeamRow
-            icon={User}
-            label="Team name"
-            description="This is your team's visible name within Sona."
-            value={teamName}
-            editing
-          >
-            <Input
-              value={teamName}
-              onChange={(e) => onTeamNameChange(e.target.value)}
-              placeholder="Team name"
-              className="h-9 text-input md:text-sm"
-            />
-          </StoreTeamRow>
-          <StoreTeamRow
-            icon={Globe}
-            label="Support language"
-            description="The language your team prefers to read messages in."
-            value={langLabel}
-            editing
-          >
-            <Select value={supportLanguage} onValueChange={onSupportLanguageChange} disabled={!hasWorkspaceScope}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="Select language" />
-              </SelectTrigger>
-              <SelectContent>
-                {SUPPORTED_SUPPORT_LANGUAGE_CODES.map((code) => (
-                  <SelectItem key={code} value={code}>
-                    {SUPPORT_LANGUAGE_LABELS[code]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </StoreTeamRow>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border/90 bg-card">
-        <div className="px-6 pb-2 pt-5">
-          <h3 className="text-section-heading font-semibold text-foreground">Ticket lifecycle</h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">Choose when inactive tickets should move forward automatically.</p>
-        </div>
-        <div className="px-6 pb-2">
-          <StoreTeamRow
-            icon={Clock}
-            label="Allow automatic closing"
-            description="When on, Sona closes resolved/acknowledged tickets automatically. When off (default) it only flags them for one-click approval."
-            editing
-          >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoCloseMode === "auto"}
-              onClick={() => onAutoCloseModeChange(autoCloseMode === "auto" ? "approve" : "auto")}
-              disabled={!hasWorkspaceScope}
-              className={cn(
-                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
-                autoCloseMode === "auto" ? "bg-primary/80" : "bg-input",
-                !hasWorkspaceScope && "cursor-not-allowed opacity-70"
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                  autoCloseMode === "auto" ? "translate-x-6" : "translate-x-1"
-                )}
-              />
-            </button>
-          </StoreTeamRow>
-          <StoreTeamRow
-            icon={Clock}
-            label="Auto-resolve inbox tickets"
-            description="Inbox tickets with no new customer activity for this many days move to Resolved automatically. Set to 0 to disable."
-            value={
-              Number(needsAttentionStaleDays) === 0
-                ? "Disabled"
-                : `${needsAttentionStaleDays} days`
-            }
-            editing
-          >
-            <Input
-              type="number"
-              min={0}
-              max={365}
-              step={1}
-              value={needsAttentionStaleDays}
-              onChange={(e) => onNeedsAttentionStaleDaysChange(e.target.value)}
-              placeholder="7"
-              className="h-9 text-input md:text-sm"
-              disabled={!hasWorkspaceScope}
-            />
-          </StoreTeamRow>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border/90 bg-card">
-        <div className="flex items-center justify-between px-6 py-5">
-          <div>
-            <h3 className="text-section-heading font-semibold text-foreground">Test Mode</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Simulate actions without writing to Shopify, shipping providers, or other integrations.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={Boolean(testMode)}
-            onClick={() => onTestModeChange(!Boolean(testMode))}
-            disabled={!hasWorkspaceScope}
-            className={cn(
-              "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
-              testMode ? "bg-primary/80" : "bg-input",
-              !hasWorkspaceScope && "cursor-not-allowed opacity-70"
-            )}
-          >
-            <span
-              className={cn(
-                "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                testMode ? "translate-x-6" : "translate-x-1"
-              )}
-            />
-          </button>
-        </div>
-
-        <div className="border-t border-border px-6 py-4">
-          <div className="flex flex-wrap items-center gap-4 lg:flex-nowrap">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <Mail className="h-4 w-4 text-primary" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">Test email address</p>
-              <p className="text-xs text-muted-foreground">All outgoing emails will be redirected here while Test Mode is active.</p>
-            </div>
-            <Input
-              type="email"
-              value={testEmail}
-              onChange={(e) => onTestEmailChange(e.target.value)}
-              placeholder="qa@company.com"
-              className="h-11 w-full max-w-[520px] shrink-0 lg:w-1/2 text-input md:text-sm"
-              disabled={!hasWorkspaceScope}
-            />
-          </div>
-        </div>
-        {!hasWorkspaceScope && (
-          <p className="px-6 pb-4 text-xs text-warning-foreground">Test Mode settings require an organization workspace.</p>
-        )}
-      </div>
-
-      <StickySaveBar
-        isVisible={canSave}
-        isSaving={saving}
-        onSave={onSave}
-        onDiscard={onReset}
-      />
-    </section>
-  );
-}
-
-function AiInstructionsTab({ value, onChange, onSave, saving }) {
-  return (
-    <section className="w-full space-y-5">
-      <div className="mb-6">
-        <h2 className="text-page-heading font-semibold tracking-tight text-foreground">AI instructions</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Define the shared brand context and tone Sona uses when drafting replies.
-        </p>
-      </div>
-      <div className="overflow-hidden rounded-xl border border-border bg-card px-6">
-        <AiPromptModal value={value} onChange={onChange} onSave={onSave} saving={saving} />
-      </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        Automation-specific behavior is configured separately under Automation.
-      </p>
-    </section>
-  );
-}
 
 function getDisplayName(member) {
   const first = String(member?.first_name || "").trim();
@@ -2862,7 +2528,6 @@ function ProfileTab({ user, isLoaded }) {
 export function SettingsPanel() {
   const searchParams = useSearchParams();
   const requestedConfirmationMailboxRef = useRef(searchParams?.get("mailbox_id") || "");
-  const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
   const { orgRole } = useAuth();
   const { section: activeTab, emailSection, navigate } = useSettingsRoute();
@@ -2876,29 +2541,9 @@ export function SettingsPanel() {
     reloadMembers,
     refreshResource,
   } = useSettingsWorkspace();
-  const { workspaceId, shopId, shopDomain } = workspace;
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const generalInit = useMemo(() => initialGeneralState(workspace, resources), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const emailInit = useMemo(() => initialEmailState(resources, requestedConfirmationMailboxRef.current), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const aiInit = useMemo(() => String(resourcePayload(resources, "/api/persona")?.persona?.instructions || "").trim(), []);
-  const [saving, setSaving] = useState(false);
-  const [teamName, setTeamName] = useState(generalInit.teamName);
-  const [initialTeamName, setInitialTeamName] = useState(generalInit.teamName);
-  const [testMode, setTestMode] = useState(generalInit.testMode);
-  const [initialTestMode, setInitialTestMode] = useState(generalInit.testMode);
-  const [testEmail, setTestEmail] = useState(generalInit.testEmail);
-  const [initialTestEmail, setInitialTestEmail] = useState(generalInit.testEmail);
-  const [supportLanguage, setSupportLanguage] = useState(generalInit.supportLanguage);
-  const [initialSupportLanguage, setInitialSupportLanguage] = useState(generalInit.supportLanguage);
-  const [autoCloseMode, setAutoCloseMode] = useState(generalInit.autoCloseMode);
-  const [initialAutoCloseMode, setInitialAutoCloseMode] = useState(generalInit.autoCloseMode);
-  const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(generalInit.needsAttentionStaleDays);
-  const [initialNeedsAttentionStaleDays, setInitialNeedsAttentionStaleDays] = useState(generalInit.needsAttentionStaleDays);
-  const [aiPrompt, setAiPrompt] = useState(aiInit);
-  const [initialAiPrompt, setInitialAiPrompt] = useState(aiInit);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(emailInit.autoReplyEnabled);
   const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(emailInit.autoReplyEnabled);
   const [autoReplyIncludeTicketNumber, setAutoReplyIncludeTicketNumber] = useState(emailInit.autoReplyIncludeTicketNumber);
@@ -2933,164 +2578,6 @@ export function SettingsPanel() {
   const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
-
-  const canSave = useMemo(
-    () =>
-      String(teamName || "").trim() !== String(initialTeamName || "").trim() ||
-      Boolean(testMode) !== Boolean(initialTestMode) ||
-      String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
-      normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
-      normalizeAutoCloseMode(autoCloseMode) !== normalizeAutoCloseMode(initialAutoCloseMode) ||
-      normalizeStaleDays(needsAttentionStaleDays) !== normalizeStaleDays(initialNeedsAttentionStaleDays) ||
-      String(aiPrompt || "").trim() !== String(initialAiPrompt || "").trim(),
-    [
-      autoCloseMode,
-      initialAutoCloseMode,
-      needsAttentionStaleDays,
-      initialNeedsAttentionStaleDays,
-      initialAiPrompt,
-      initialSupportLanguage,
-      initialTeamName,
-      teamName,
-      initialTestMode,
-      testMode,
-      initialTestEmail,
-      testEmail,
-      aiPrompt,
-      supportLanguage,
-    ]
-  );
-
-  const handleSaveGeneral = useCallback(async () => {
-    if (!supabase || !canSave || saving) return;
-
-    setSaving(true);
-    try {
-      const nextTeamName = String(teamName || "").trim() || "Sona Team";
-      const nextAiPrompt = String(aiPrompt || "").trim();
-      const nextTestMode = Boolean(testMode);
-      const nextTestEmail = String(testEmail || "").trim() || null;
-      const nextSupportLanguage = normalizeSupportLanguage(supportLanguage, "en");
-      const nextAutoCloseMode = normalizeAutoCloseMode(autoCloseMode);
-      const nextNeedsAttentionStaleDays = normalizeStaleDays(needsAttentionStaleDays);
-      if (workspaceId) {
-        const { error: workspaceNameError } = await supabase
-          .from("workspaces")
-          .update({ name: nextTeamName })
-          .eq("id", workspaceId);
-        if (workspaceNameError) throw workspaceNameError;
-
-        const testModeResponse = await fetch("/api/settings/test-mode", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            test_mode: nextTestMode,
-            test_email: nextTestEmail,
-            support_language: nextSupportLanguage,
-            auto_close_mode: nextAutoCloseMode,
-            needs_attention_stale_days: nextNeedsAttentionStaleDays,
-          }),
-        });
-        const testModePayload = await testModeResponse.json().catch(() => ({}));
-        if (!testModeResponse.ok) {
-          throw new Error(testModePayload?.error || "Could not save test mode settings.");
-        }
-        const persistedSupportLanguage = normalizeSupportLanguage(
-          testModePayload?.support_language || nextSupportLanguage
-        );
-        const persistedAutoCloseMode = normalizeAutoCloseMode(
-          testModePayload?.auto_close_mode,
-          nextAutoCloseMode
-        );
-        const persistedNeedsAttentionStaleDays = normalizeStaleDays(
-          testModePayload?.needs_attention_stale_days ?? nextNeedsAttentionStaleDays
-        );
-        setSupportLanguage(persistedSupportLanguage);
-        setInitialSupportLanguage(persistedSupportLanguage);
-        setAutoCloseMode(persistedAutoCloseMode);
-        setInitialAutoCloseMode(persistedAutoCloseMode);
-        setNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
-        setInitialNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
-      } else if (shopId) {
-        const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
-        if (error) throw error;
-      } else {
-        throw new Error("No workspace or shop found to save team name.");
-      }
-      // Save AI Prompt if changed
-      if (nextAiPrompt !== String(initialAiPrompt || "").trim()) {
-        await fetch("/api/persona", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ instructions: nextAiPrompt }),
-        });
-        setAiPrompt(nextAiPrompt);
-        setInitialAiPrompt(nextAiPrompt);
-      }
-
-      setTeamName(nextTeamName);
-      setInitialTeamName(nextTeamName);
-      setTestMode(nextTestMode);
-      setInitialTestMode(nextTestMode);
-      setTestEmail(nextTestEmail || "");
-      setInitialTestEmail(nextTestEmail || "");
-      if (!workspaceId) {
-        setSupportLanguage(nextSupportLanguage);
-        setInitialSupportLanguage(nextSupportLanguage);
-        setAutoCloseMode("approve");
-        setInitialAutoCloseMode("approve");
-        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
-      }
-      if (workspaceId) refreshResource("/api/settings/test-mode");
-      toast.success("Settings saved.");
-    } catch (error) {
-      if (error?.code === "42703") {
-        toast.error("A required settings column is missing. Run the latest SQL schema updates.");
-      } else {
-        toast.error(error?.message || "Could not save settings.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    aiPrompt,
-    canSave,
-    initialAiPrompt,
-    saving,
-    shopId,
-    supabase,
-    supportLanguage,
-    autoCloseMode,
-    needsAttentionStaleDays,
-    teamName,
-    testEmail,
-    testMode,
-    workspaceId,
-    refreshResource,
-  ]);
-
-  const handleResetGeneral = useCallback(() => {
-    setTeamName(String(initialTeamName || "Sona Team"));
-    setTestMode(Boolean(initialTestMode));
-    setTestEmail(String(initialTestEmail || ""));
-    setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
-    setAutoCloseMode(normalizeAutoCloseMode(initialAutoCloseMode));
-    setNeedsAttentionStaleDays(
-      String(normalizeStaleDays(initialNeedsAttentionStaleDays))
-    );
-    setAiPrompt(String(initialAiPrompt || ""));
-  }, [
-    initialAiPrompt,
-    initialAutoCloseMode,
-    initialNeedsAttentionStaleDays,
-    initialSupportLanguage,
-    initialTeamName,
-    initialTestEmail,
-    initialTestMode,
-  ]);
 
   const applyConfirmationScope = useCallback((mailboxId, configuration = confirmationConfiguration) => {
     const normalizedMailboxId = String(mailboxId || "");
@@ -3793,10 +3280,7 @@ export function SettingsPanel() {
     refreshResource,
   ]);
 
-  useSettingsDirty(
-    (activeTab === "general" && canSave) ||
-    (activeTab === "email" && canSaveEmailSettings)
-  );
+  useSettingsDirty(activeTab === "email" && canSaveEmailSettings);
 
   const handleSelectEmailSection = useCallback(
     (nextSection) => {
@@ -3808,26 +3292,6 @@ export function SettingsPanel() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case "ai":
-        return (
-          <AiInstructionsTab
-            value={aiPrompt}
-            onChange={setAiPrompt}
-            saving={saving}
-            onSave={async (newPrompt) => {
-              const response = await fetch("/api/persona", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ instructions: newPrompt }),
-              });
-              if (!response.ok) throw new Error("Could not save AI instructions.");
-              setInitialAiPrompt(String(newPrompt || ""));
-              refreshResource("/api/persona");
-              toast.success("AI instructions saved.");
-            }}
-          />
-        );
       case "profile":
         return <ProfileTab user={user} isLoaded={isLoaded} />;
       case "members":
@@ -3917,31 +3381,9 @@ export function SettingsPanel() {
           />
         );
       case "customer-satisfaction":
-        return <CustomerSatisfactionSettings workspaceName={teamName} />;
-      case "general":
+        return <CustomerSatisfactionSettings workspaceName={workspace.workspaceName} />;
       default:
-        return (
-          <GeneralTab
-            shopDomain={shopDomain}
-            teamName={teamName}
-            onTeamNameChange={setTeamName}
-            testMode={testMode}
-            onTestModeChange={setTestMode}
-            testEmail={testEmail}
-            onTestEmailChange={setTestEmail}
-            supportLanguage={supportLanguage}
-            onSupportLanguageChange={setSupportLanguage}
-            autoCloseMode={autoCloseMode}
-            onAutoCloseModeChange={setAutoCloseMode}
-            needsAttentionStaleDays={needsAttentionStaleDays}
-            onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
-            hasWorkspaceScope={Boolean(workspaceId)}
-            onSave={handleSaveGeneral}
-            onReset={handleResetGeneral}
-            saving={saving}
-            canSave={canSave}
-          />
-        );
+        return null;
     }
   };
 

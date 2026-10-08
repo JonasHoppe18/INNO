@@ -7,6 +7,8 @@ import { SettingsWorkspaceProvider, useSettingsWorkspace } from "@/components/se
 import { TabSkeleton } from "@/components/settings/TabSkeleton";
 import { SettingsRouteContext } from "@/components/settings/SettingsRouteContext";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { GeneralSection } from "@/components/settings/sections/GeneralSection";
+import { AiInstructionsSection } from "@/components/settings/sections/AiInstructionsSection";
 import {
   DEFAULT_EMAIL_SECTION,
   parseSettingsPathname,
@@ -15,7 +17,10 @@ import {
 } from "@/lib/settings/navigation";
 
 // Sections that have moved out of SettingsPanel.
-const SECTION_COMPONENTS = {};
+const SECTION_COMPONENTS = {
+  general: GeneralSection,
+  ai: AiInstructionsSection,
+};
 
 function SettingsContent({ section }) {
   const { loading } = useSettingsWorkspace();
