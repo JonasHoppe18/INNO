@@ -17,6 +17,8 @@ const FactKindSchema = z.enum([
   "order_item",
   "order_financial_status",
   "order_fulfillment_status",
+  "order_amount",
+  "line_fulfillment",
   "shipment_item",
   "product_value",
   "product_availability",
@@ -90,6 +92,9 @@ const AcknowledgementSchema = z.object({
 }).strict();
 
 export const ResponseSegmentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("evidence_limitation"), kind: z.enum(["photo_channel", "charged_shipping", "line_timing", "product_care", "product_property", "line_fulfillment", "shipping_qualification"]), property_key: z.enum(["composition", "dimensions", "general"]).optional(), basis: BasisSchema }).strict(),
+  z.object({ type: z.literal("source_content"), kind: z.enum(["product_property", "care_constraint", "policy_condition"]), basis: BasisSchema }).strict(),
+  z.object({ type: z.literal("source_comparison"), kind: z.literal("shipping_threshold"), order: BasisSchema, policy: BasisSchema }).strict(),
   z.object({ type: z.literal("operational_result"), basis: BasisSchema }).strict(),
   FactSchema,
   QuestionSchema,
@@ -155,6 +160,8 @@ export interface ResponseValidationResult {
   issues: ResponseValidationIssue[];
   parsed: StructuredResponse | null;
   completenessDiagnostics?: ResponseCompletenessDiagnostics;
+  coverage?: AnswerCoverage;
+  segmentDiagnostics?: SegmentBoundaryDiagnostic[];
 }
 
 export type ResponseFailureClass =
@@ -181,6 +188,7 @@ export interface ResponseValidationContext {
   proposedActions?: ProposedAction[];
   /** Server-owned active order focus used to avoid re-asking a known order id. */
   activeOrder?: ConversationContext["activeOrder"];
+  getActiveOrderFocus?: () => ConversationContext["activeOrder"];
   /** Current customer message used only to avoid repeating a supplied lookup reference. */
   customerMessage?: string;
   /** Customer-supplied continuity hints; never treated as verified operational evidence. */
@@ -196,6 +204,7 @@ export interface ResponseValidationContext {
   interactionChannel?: GreenfieldInteractionChannel;
   operationalScope?: { workspaceId: string; shopId: string; caseId?: string; customerEmail?: string };
   knownCaseArguments?: string[];
+  caseState?: ConversationContext["caseState"];
   confirmedAction?: (capability: string) => boolean;
   /** Server-owned identity availability; never inferred from untrusted message text. */
   trustedCustomerIdentity?: {
@@ -287,7 +296,7 @@ function validateBasis(
   if (options.requireMeaningfulFields && !basis.field_paths.length) {
     return [{ index, code: "field_path_required", message: "A fact or guidance segment must cite at least one returned field." }];
   }
-  const issues: ResponseValidationIssue[] = [];
+  const issues: ResponseValidationIssue[] = evidenceScopeIssues(evidence, context, index);
   for (const path of basis.field_paths) {
     const field = options.scope === "data"
       ? dataFieldValue(evidence.result, path)
@@ -320,9 +329,9 @@ function validateKnowledgeBasis(
     if (!record) return false;
     const authority = String(record.authority ?? "");
     if (["authoritative", "operational", "guidance"].includes(authority)) return true;
-    return evidence?.toolName === "search_product_knowledge"
-      && record.knowledge_type === "product"
-      && authority === "reference";
+    return record.knowledge_type === "product" && authority === "reference"
+      && (evidence?.toolName === "search_product_knowledge" || (meaningful(objectValue(record.provenance)?.source_id)
+        && objectValue(record.structured_data)?.semantic_type === "FACT" && objectValue(record.structured_data)?.support_domain === "product"));
   });
   if (!supported) {
     return [{ index, code: "knowledge_authority_insufficient", message: "The cited knowledge source cannot support this guidance." }];
@@ -708,8 +717,8 @@ function validateProcedureGuidance(
 ): ResponseValidationIssue[] {
   const issues = validateKnowledgeBasis(segment.basis, context, index);
   const evidence = resultFor(segment.basis, context);
-  if (!evidence || evidence.toolName !== "search_procedures") {
-    issues.push({ index, code: "procedure_source_required", message: "Procedure guidance must cite a successful search_procedures result." });
+  if (!semanticProcedureSource(evidence)) {
+    issues.push({ index, code: "procedure_source_required", message: "Procedure guidance requires verified procedural evidence and authority." });
     return issues;
   }
   const results = objectValue(evidence.result.data)?.results;
@@ -728,8 +737,12 @@ function validateProcedureGuidance(
   }
   const citedResultIndex = Array.from(citedIndexes)[0];
   const citedRecord = objectValue(results[citedResultIndex]);
-  if (citedRecord?.knowledge_type !== "procedural") {
+  if (citedRecord?.knowledge_type !== "procedural" || !["authoritative", "operational"].includes(String(citedRecord.authority))) {
     issues.push({ index, code: "procedure_source_required", message: "Procedure guidance must cite a procedural knowledge record." });
+  }
+  const applies = objectValue(objectValue(citedRecord?.structured_data)?.applicability);
+  if (applies?.kind === "products" && citedRecord && !productScopeSupported(citedRecord, context)) {
+    issues.push({ index, code: "procedure_product_mismatch", message: "The selected procedure is not bound to the current product." });
   }
   const blockIds = segment.block_ids?.length ? segment.block_ids : null;
   const availableBlocks = procedureBlocks(evidence.result, citedResultIndex);
@@ -743,6 +756,9 @@ function validateProcedureGuidance(
       if (!foundIds.has(blockId)) {
         issues.push({ index, code: "procedure_block_missing", message: "A cited procedure block was not returned by the tool." });
       }
+    }
+    if (new Set(availableBlocks.map(entry => entry.blockId)).size !== availableBlocks.length) {
+      issues.push({ index, code: "procedure_block_identity_ambiguous", message: "Returned procedure block identifiers are not unique." });
     }
     for (const entry of references) {
       if (!meaningful(entry.block.text)) {
@@ -787,7 +803,7 @@ function citesProceduralKnowledge(
   context: ResponseValidationContext,
 ): boolean {
   const evidence = resultFor(basis, context);
-  if (!evidence || evidence.toolName !== "search_procedures") return false;
+  if (!semanticProcedureSource(evidence)) return false;
   const data = objectValue(evidence.result.data);
   const results = Array.isArray(data?.results) ? data.results : [];
   return citedKnowledgeRecords(results, basis.field_paths).some((item) => objectValue(item)?.knowledge_type === "procedural");
@@ -913,6 +929,10 @@ function siblingItemValue(evidence: ResponseEvidenceRecord | undefined, path: st
 
 function fieldPathMatchesFactKind(factKind: FactKind, path: string): boolean {
   switch (factKind) {
+    case "order_amount":
+      return ["total", "currency"].includes(normalizedDataPath(path));
+    case "line_fulfillment":
+      return /^items\[\d+\]$/.test(normalizedDataPath(path));
     case "order_reference":
       return pathHasAnySuffix(path, ["orderNumber", "order_number"]);
     case "order_financial_status":
@@ -993,6 +1013,19 @@ function verifiedAmbiguousAvailability(
 }
 
 function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext, index: number) {
+  if (segment.fact_kind === "line_fulfillment") {
+    return segment.evidence.length === 1 && lineDisposition(segment.evidence[0], context)
+      ? [] : [{ index, code: "line_mapping_not_verified", message: "Line disposition requires a complete scoped order and matching quantities." }];
+  }
+  if (segment.fact_kind === "order_amount") {
+    const basis = segment.evidence[0];
+    const evidence = basis && resultFor(basis, context);
+    const data = objectValue(evidence?.result.data);
+    return segment.evidence.length === 1 && verifiedOrderSource(evidence, context)
+      && basis.field_paths.length === 2 && ["total", "currency"].every(path => basis.field_paths.map(normalizedDataPath).includes(path))
+      && meaningful(data?.total) && Number.isFinite(Number(data?.total)) && Number(data?.total) >= 0 && /^[A-Z]{3}$/.test(String(data?.currency))
+      ? [] : [{ index, code: "order_amount_binding_required", message: "Order amount requires matching verified total and currency fields." }];
+  }
   const issues = segment.evidence.flatMap((basis) => {
     const states = basis.field_paths.filter(safeLiveProductAvailabilityFieldPath);
     const boundAmbiguity = segment.fact_kind === "product_availability" && states.length > 0
@@ -1105,12 +1138,34 @@ function validateFact(segment: Extract<ResponseSegment, { type: "fact" }>, conte
     if (!bindings.length || !firstBinding?.fulfillmentIndex || !firstBinding.index || bindingKeys.size !== 1 || itemResultIds.size !== 1 || !hasTitle || !hasQuantity) {
       return [{ index, code: "shipment_item_fields_required", message: "A shipment item fact must bind one fulfillment item with its title and quantity." }];
     }
-    if (itemEvidence?.toolName !== "inspect_fulfillment") {
+    if (!verifiedFulfillmentSource(itemEvidence, context) && !verifiedOrderSource(itemEvidence, context)) {
       return [{ index, code: "shipment_item_source_required", message: "A shipment item fact must cite an inspect_fulfillment result." }];
     }
     const fulfillmentId = dataFieldValue(itemEvidence.result, `fulfillments[${firstBinding.fulfillmentIndex}].id`).value;
     if (!meaningful(fulfillmentId)) {
       return [{ index, code: "shipment_item_fulfillment_id_required", message: "A shipment item fact must bind to a returned fulfillment ID." }];
+    }
+    {
+      const fulfillment = objectValue(dataFieldValue(itemEvidence.result, `fulfillments[${firstBinding.fulfillmentIndex}]`).value);
+      const mapped = objectValue(dataFieldValue(itemEvidence.result, `fulfillments[${firstBinding.fulfillmentIndex}].items[${firstBinding.index}]`).value);
+      const mappingOrder = verifiedOrderSource(itemEvidence, context) ? itemEvidence : (context.getResults?.() ?? []).find(record => verifiedOrderSource(record, context));
+      const active = context.activeOrder ?? context.getActiveOrderFocus?.();
+      const activeData = active?.state === "verified" ? objectValue(active.order) : null;
+      const sourceData = objectValue(mappingOrder?.result.data) ?? (activeData
+        && String(objectValue(itemEvidence.result.data)?.order_id ?? objectValue(itemEvidence.result.data)?.orderId) === String(activeData.id) ? activeData : null);
+      const orderItems = sourceData?.items;
+      const currentFulfillments = Array.isArray(sourceData?.fulfillments) ? sourceData.fulfillments : [];
+      const currentFulfillment = currentFulfillments.map(objectValue).find(value => String(value?.id) === String(fulfillment?.id));
+      const currentItems = Array.isArray(currentFulfillment?.items) ? currentFulfillment.items : [];
+      const currentItem = currentItems.map(objectValue).find(value => String(value?.orderLineItemId) === String(mapped?.orderLineItemId));
+      const exactMapping = currentItem && currentItem.title === mapped?.title && Number(currentItem.quantity) === Number(mapped?.quantity)
+        && String(currentItem.variantId ?? "") === String(mapped?.variantId ?? "");
+      const originalIndex = Array.isArray(orderItems) ? orderItems.findIndex(value => String(objectValue(value)?.id) === String(mapped?.orderLineItemId)) : -1;
+      const standaloneMapping = (!Array.isArray(orderItems) || !orderItems.length) && verifiedFulfillmentSource(itemEvidence, context)
+        && exactMapping && standaloneMappedQuantity(itemEvidence, mapped);
+      if (fulfillment?.itemMappingStatus !== "verified" || (!standaloneMapping && (originalIndex < 0 || !sourceData || !exactMapping || !lineDispositionFromOrder(sourceData, `items[${originalIndex}]`)))) {
+        return [{ index, code: "shipment_item_mapping_required", message: "Shipment items require verified line and quantity mappings." }];
+      }
     }
     const trackingBases = segment.evidence.filter((basis) => resultFor(basis, context)?.toolName === "get_tracking");
     if (trackingBases.length) {
@@ -1508,6 +1563,10 @@ function validateQuestion(segment: Extract<ResponseSegment, { type: "question" }
 
 function validateSegment(segment: ResponseSegment, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
   switch (segment.type) {
+    case "evidence_limitation": return validateEvidenceLimitation(segment, context, index);
+    case "source_content": return validateSourceContent(segment, context, index);
+    case "source_comparison": return shippingComparison(segment, context)
+      ? [] : [{ index, code: "comparison_inputs_not_verified", message: "The comparison requires verified compatible inputs and applicability." }];
     case "operational_result": {
       const evidence = resultFor(segment.basis, context);
       const outcome = (evidence?.result.data as JsonObject)?.operation as unknown as OperationalOutcome;
@@ -1532,6 +1591,12 @@ function validateSegment(segment: ResponseSegment, context: ResponseValidationCo
       }
       if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
         issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
+      }
+      if (!issues.length && /\b(?:refund|replacement|return)\s+(?:has been|was|is already|already)\s+(?:approved|completed|issued|sent)\b|\b(?:we|i)\s+(?:have|already)\s+(?:refunded|replaced|sent|submitted)\b/i.test(segment.text)) {
+        issues.push({ index, code: "unverified_remedy_outcome", message: "A completed remedy requires a verified operational result." });
+      }
+      if (!issues.length && modernProductBasis(segment.basis, context) && !projectedProductContent(segment.basis, context)) {
+        issues.push({ index, code: "product_content_binding_required", message: "Product guidance requires current scoped source content, not free-form value substitution." });
       }
       return issues;
     }
@@ -1594,6 +1659,7 @@ function containsUnvalidatedOperationalCommitment(value: string): boolean {
 }
 
 function productCareRequest(context: ResponseValidationContext): boolean {
+  if (context.turnIR?.answerRequests?.some(request => request.kind === "product_care")) return true;
   const pattern = /\b(?:wash\w*|dishwasher|clean\w*|dry\w*|care|bleach|vask\w*|tør\w*|rengør\w*)\b/i;
   if (pattern.test(context.customerMessage ?? "")) return true;
   // Follow-up intent may be carried by the current read query. It selects
@@ -1622,7 +1688,7 @@ function careRecords(context: ResponseValidationContext) {
       const sections = Array.isArray(record.evidence_sections) ? record.evidence_sections : [];
       return sections.flatMap((section, sectionIndex) => {
         const text = objectValue(section)?.content ?? objectValue(section)?.text;
-        return typeof text === "string" && /\b(?:wash\w*|dishwasher|clean\w*|dry\w*|bleach|reshape|abrasive\w*|damp cloth)\b/i.test(text)
+        return typeof text === "string" && (["care", "product"].includes(String(objectValue(record.structured_data)?.support_domain)) && objectValue(record.structured_data)?.semantic_type === "GUIDANCE" || /\b(?:wash\w*|dishwasher|clean\w*|dry\w*|bleach|reshape|abrasive\w*|damp cloth)\b/i.test(text))
           ? [{ evidence, resultIndex, sectionIndex, subject: careSubject(record), text, textField: typeof objectValue(section)?.content === "string" ? "content" : "text" }] : [];
       });
     }) : [];
@@ -1852,6 +1918,13 @@ export function recoverSupportedProductResponse(
 }
 
 function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseValidationContext): ResponseSegment {
+  if (segment.type === "limitation") {
+    const evidence = resultFor(segment.basis, context);
+    if (verifiedOrderSource(evidence, context) && /\b(?:shipping|coupon|discount code|fragt|rabatkode)\b/i.test(segment.text)) {
+      const candidate: ResponseSegment = { type: "evidence_limitation", kind: "charged_shipping", basis: { result_id: segment.basis.result_id, field_paths: ["data"] } };
+      if (!validateEvidenceLimitation(candidate, context, -1).length) return candidate;
+    }
+  }
   if (segment.type === "question" && ["clarify_item", "clarify_task", "disambiguate_entity"].includes(segment.purpose)
     && productCareRequest(context) && !segment.basis && !context.turnIR?.actions.length
     && !meaningful(context.customerProvidedContext?.product) && !selectedCareSubject(context)
@@ -1908,6 +1981,10 @@ function canonicalSemanticSegment(segment: ResponseSegment, context: ResponseVal
       else if (segment.type === "fact") segment = { ...segment, evidence: [basis] };
     }
   }
+  if (segment.type === "fact" && segment.fact_kind === "product_value" && segment.evidence.length === 1) {
+    const candidate: ResponseSegment = { type: "source_content", kind: productCareRequest(context) ? "care_constraint" : "product_property", basis: segment.evidence[0] };
+    if (!validateSourceContent(candidate, context, -1).length) return candidate;
+  }
   // A static care value cited as a live product fact is a semantic kind error.
   // Render only the actual cited source content, never model-written prose.
   if (segment.type === "fact" && segment.fact_kind === "product_value" && productCareRequest(context)
@@ -1930,17 +2007,22 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
   }
 
   const approvedSegments: ResponseSegment[] = [];
+  const segmentDiagnostics: SegmentBoundaryDiagnostic[] = [];
   const rejectedSegments: Array<{ index: number; type?: string; issues: ResponseValidationIssue[] }> = [];
   for (let index = 0; index < parsed.data.segments.length; index += 1) {
     const canonical = canonicalSemanticSegment(parsed.data.segments[index], context);
     const segment = canonical.type === "knowledge_guidance"
       ? { ...canonical, text: normalizeMerchantPolicyAttribution(canonical.text) } : canonical;
     const issues = validateSegment(segment, context, index);
+    segmentDiagnostics.push(segmentBoundaryDiagnostic(segment, context, index, issues));
     if (issues.length) rejectedSegments.push({ index, type: segment.type, issues });
     else {
       const careContent = segment.type === "knowledge_guidance" && productCareRequest(context)
         ? citedCareText(segment.basis, context) : null;
-      approvedSegments.push(careContent && segment.type === "knowledge_guidance" ? { ...segment, text: careContent } : segment);
+      const sourceCandidate: ResponseSegment | null = segment.type === "knowledge_guidance"
+        ? projectedProductContent(segment.basis, context) : null;
+      approvedSegments.push(sourceCandidate && !validateSourceContent(sourceCandidate, context, index).length ? sourceCandidate
+        : careContent && segment.type === "knowledge_guidance" ? { ...segment, text: careContent } : segment);
     }
   }
   return {
@@ -1950,6 +2032,7 @@ export function validateStructuredResponse(input: unknown, context: ResponseVali
     rejectedSegments,
     issues: rejectedSegments.flatMap((item) => item.issues),
     parsed: parsed.data,
+    segmentDiagnostics,
   };
 }
 
@@ -1961,6 +2044,8 @@ export function summarizeResponseValidation(
     schema_valid: result.schemaValid,
     all_valid: result.allValid,
     approved_count: result.approvedSegments.length,
+    required_answer_coverage: result.coverage ?? null,
+    segment_diagnostics: result.segmentDiagnostics ?? [],
     rejected_segments: result.rejectedSegments.map(({ index, type, issues }) => ({
       index,
       type: type ?? null,
@@ -2944,6 +3029,17 @@ function renderShipmentItemFacts(facts: Extract<ResponseSegment, { type: "fact" 
 function renderSingleFact(segment: Extract<ResponseSegment, { type: "fact" }>, context: ResponseValidationContext) {
   const values = factEvidenceValues(segment, context);
   switch (segment.fact_kind) {
+    case "order_amount": {
+      const data = objectValue(resultFor(segment.evidence[0], context)?.result.data);
+      return localeFor(context) === "da" ? `Ordretotalen er ${data?.total} ${data?.currency}.` : `The order total is ${data?.total} ${data?.currency}.`;
+    }
+    case "line_fulfillment": {
+      const line = lineDisposition(segment.evidence[0], context);
+      if (!line) return "";
+      return localeFor(context) === "da"
+        ? `${line.title}: ${line.fulfilled} af ${line.quantity} er opfyldt; ${line.remaining} er endnu ikke afsendt. Opfyldelse bekræfter ikke levering.`
+        : `${line.title}: ${line.fulfilled} of ${line.quantity} fulfilled; ${line.remaining} not yet dispatched. Fulfillment does not confirm delivery.`;
+    }
     case "product_value": {
       return Array.from(new Set(values.filter((candidate) => safeLiveProductFieldPath(candidate.path)).map((item) => {
       const locale = localeFor(context);
@@ -4158,7 +4254,7 @@ function approvedSegmentsResolveIntent(
   cues: AnswerBearingCue[],
   plan: ActionablePolicyPlan | null = actionablePolicyPlan(context),
 ) {
-  if (!cues.length) return true;
+  if (!cues.length) return validation.approvedSegments.some(segment => segment.type !== "acknowledgement");
   return cues.every((cue) => validation.approvedSegments.some((segment) => approvedSegmentResolvesCue(segment, cue, context)))
     && actionablePolicyPlanComplete(validation, context, plan);
 }
@@ -4173,6 +4269,8 @@ export function shouldPreferAuthoritativeEvidenceFallback(
   validation: Pick<ResponseValidationResult, "approvedSegments">,
   context: ResponseValidationContext,
 ) {
+  if (validation.approvedSegments.some(segment => ["source_content", "source_comparison", "evidence_limitation"].includes(segment.type)
+    || segment.type === "fact" && ["order_amount", "line_fulfillment"].includes(segment.fact_kind))) return false;
   const focus = customerKnowledgeFocus(context.customerMessage);
   const cues = answerCompletenessMessageCues(context.customerMessage ?? "", focus);
   const plan = actionablePolicyPlan(context);
@@ -4216,13 +4314,13 @@ function recoverProcedureAnswer(context: ResponseValidationContext): ProcedureRe
     context.customerProvidedContext?.platform,
     context.customerProvidedContext?.issue,
   ].filter(Boolean).join(" ");
-  for (const evidence of successfulKnowledgeResults(context, "search_procedures").reverse()) {
+  for (const evidence of (context.getResults?.() ?? []).filter(semanticProcedureSource).reverse()) {
     const data = objectValue(evidence.result.data);
     if (data?.task_specificity !== "sufficient" || data?.procedure_evidence_quality !== "usable") continue;
     const results = Array.isArray(data.results) ? data.results : [];
     const matches = results.flatMap((value, resultIndex) => {
       const record = objectValue(value);
-      if (!record || String(record.authority ?? "") !== "authoritative" || String(record.knowledge_type ?? "") !== "procedural") return [];
+      if (!record || !["authoritative", "operational"].includes(String(record.authority ?? "")) || String(record.knowledge_type ?? "") !== "procedural") return [];
       const blocks = procedureBlocks(evidence.result, resultIndex);
       if (!blocks.length || blocks.length > 32 || blocks.some((entry) => !meaningful(entry.block.text))) return [];
       if (procedureProductMismatch(results, customerMessage, resultIndex, -1).length) return [];
@@ -4271,23 +4369,15 @@ function recoveredPolicySegment(recovery: EvidenceRecovery): ResponseSegment | n
 }
 
 /**
- * Recovered policy text is copied from an already selected authoritative
- * candidate. Keep grounding and operational-safety validation, but do not run
- * model-claim policy conflict detection over that source text a second time.
+ * Recovery enters the same validator as model segments. Source selection
+ * cannot grant a bypass for truth, values, or operational commitments.
  */
 function validateRecoveredPolicySegment(
   segment: Extract<ResponseSegment, { type: "knowledge_guidance" }>,
   context: ResponseValidationContext,
   index: number,
 ) {
-  const issues = validateKnowledgeBasis(segment.basis, context, index);
-  if (!issues.length && citesProceduralKnowledge(segment.basis, context)) {
-    issues.push({ index, code: "procedure_binding_required", message: "Procedural guidance must cite source-bound procedure steps." });
-  }
-  if (!issues.length && containsUnvalidatedOperationalCommitment(segment.text)) {
-    issues.push({ index, code: "unsupported_operational_commitment", message: "Operational commitments must use a validated proposal-only capability." });
-  }
-  return issues;
+  return validateSegment(segment, context, index);
 }
 
 function recoveredProcedureSegment(recovery: ProcedureRecovery): ResponseSegment | null {
@@ -4336,7 +4426,11 @@ function restoreAnswerCompletenessValue(value: string, focus: CustomerKnowledgeF
  * repair its own output. Server-recorded evidence may be used when the model
  * emitted a generic fallback instead of citing the result itself.
  */
-export function ensureAnswerCompleteness(
+export function ensureAnswerCompleteness(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
+  return preserveRequiredAnswers(ensureLegacyAnswerCompleteness(validation, context), context);
+}
+
+function ensureLegacyAnswerCompleteness(
   validation: ResponseValidationResult,
   context: ResponseValidationContext,
 ): ResponseValidationResult {
@@ -4997,6 +5091,7 @@ function renderProcedureGuidance(
   const sourceSteps = procedureStepValues(segment, context);
   const title = sourceTitleForProcedure(segment, context);
   const steps = focusedProcedureSteps(sourceSteps, context.customerMessage)
+    .filter(step => !(hasKnownOrderReference(context) && /\b(?:order identification|order (?:number|reference|id))\b/i.test(step.text)))
     .filter((step) => !isDuplicateProcedureTitle(step, title) && step.kind !== "heading");
   if (!steps.length) return "";
   if (steps.length === 1 && steps[0].kind === "instruction") return sentence(steps[0].text);
@@ -5168,7 +5263,7 @@ function isRedundantPolicyQuestion(
 /** Renders only segments accepted by the deterministic validator, then composes related facts. */
 export function renderResponseSegments(segments: ResponseSegment[], context: ResponseValidationContext): string {
   const hasOperationalTracking = context.operationalScope && segments.some(segment => segment.type === "fact" && segment.evidence.some(basis => resultFor(basis, context)?.toolName === "get_tracking"));
-  const actionableComposition = hasOperationalTracking ? null : composeActionableResponse(segments, context);
+  const actionableComposition = hasOperationalTracking || segments.some(segment => segment.type === "evidence_limitation" || segment.type === "source_content" || segment.type === "source_comparison" || segment.type === "fact" && ["order_amount", "line_fulfillment"].includes(segment.fact_kind)) ? null : composeActionableResponse(segments, context);
   if (actionableComposition) return normalizeMerchantPolicyAttribution(actionableComposition);
 
   const rendered: string[] = [];
@@ -5233,7 +5328,15 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
       consumed.add(index);
       return;
     }
-    if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
+    if (segment.type === "evidence_limitation") rendered.push(renderEvidenceLimitation(segment, context));
+    else if (segment.type === "source_content") rendered.push(sourceSections(segment.basis, context).map(section => normalizeMerchantPolicyAttribution(section.text)).join("\n\n"));
+    else if (segment.type === "source_comparison") {
+      const comparison = shippingComparison(segment, context);
+      if (comparison) rendered.push(localeFor(context) === "da"
+        ? `Den verificerede ordretotal på ${comparison.amount} ${comparison.currency} er ${comparison.amount > comparison.threshold || !comparison.above && comparison.amount === comparison.threshold ? "over eller på" : "under"} grænsen på ${comparison.threshold} ${comparison.currency}. Det bekræfter ikke den faktisk opkrævede fragt eller rabatkoden; de oplysninger er ikke tilgængelige i ordreopslaget.`
+        : `The verified order total of ${comparison.amount} ${comparison.currency} is ${comparison.amount > comparison.threshold || !comparison.above && comparison.amount === comparison.threshold ? "at or above" : "below"} the ${comparison.threshold} ${comparison.currency} threshold. This does not confirm the shipping actually charged or coupon treatment; those fields are unavailable in the order lookup.`);
+    }
+    else if (segment.type === "fact") rendered.push(renderSingleFact(segment, context));
     else if (segment.type === "procedure_guidance") rendered.push(renderProcedureGuidance(segment, context));
     else if (segment.type === "knowledge_guidance") rendered.push(adaptCustomerFacingKnowledgeText(
       segment.text,
@@ -5255,7 +5358,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     else if (segment.type === "question" && segment.purpose === "disambiguate_variant") {
       rendered.push(renderGroundedQuestion(segment, context));
     }
-    else if (segment.type === "question" && segment.purpose === "enable_capability") {
+    else if (segment.type === "question" && ["enable_capability", "resolve_required_argument"].includes(segment.purpose)) {
       const repeatedByAction = segments.some((candidate) => candidate.type === "action_offer"
         && candidate.capability === segment.capability
         && sameArguments(candidate.missing_arguments, segment.missing_arguments));
@@ -5269,7 +5372,7 @@ export function renderResponseSegments(segments: ResponseSegment[], context: Res
     }
     else rendered.push(renderTextSegment(segment.text));
   });
-  const response = rendered.filter(Boolean).join("\n\n");
+  const response = [...new Set(rendered.filter(Boolean))].join("\n\n");
   const hasSubstantiveSegment = segments.some((segment) => segment.type !== "acknowledgement");
   const greeting = hasSubstantiveSegment ? greetingFor(context) : null;
   return normalizeMerchantPolicyAttribution(greeting && response ? `${greeting}\n\n${response}` : response);
@@ -5331,4 +5434,592 @@ function validateMaterialPolicyValues(segment: Extract<ResponseSegment, { type: 
     return [{ index, code: "unsupported_material_policy_value", message: "Material policy values must be supported by the selected applicable source evidence." }];
   }
   return [];
+}
+
+/** Current-run evidence only. Scope is inherited from the scoped registry;
+ * any explicit conflicting scope or expired provenance fails closed. */
+export function normalizedEvidenceKind(evidence: ResponseEvidenceRecord): string {
+  const data = objectValue(evidence.result.data);
+  if (Array.isArray(data?.results)) {
+    const kinds = new Set(data.results.map(value => String(objectValue(objectValue(value)?.structured_data)?.semantic_type ?? objectValue(value)?.knowledge_type ?? "").toLowerCase()));
+    return kinds.size === 1 ? [...kinds][0] : "mixed_knowledge";
+  }
+  if (Array.isArray(data?.items) && Array.isArray(data?.fulfillments)) return "order_state";
+  if (Array.isArray(data?.fulfillments)) return "fulfillment_mapping";
+  if (data?.live_tracking) return "live_tracking";
+  return "operational_result";
+}
+
+function evidenceScopeIssues(evidence: ResponseEvidenceRecord, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
+  const data = objectValue(evidence.result.data);
+  if (context.caseState && context.operationalScope && (context.caseState.scope.workspaceId !== context.operationalScope.workspaceId
+    || context.caseState.scope.shopId !== context.operationalScope.shopId)) {
+    return [{ index, code: "case_scope_mismatch", message: "CaseState is not scoped to the current evidence boundary." }];
+  }
+  const records = Array.isArray(data?.results) ? data.results.map(objectValue) : [data];
+  for (const record of records) {
+    const provenance = objectValue(record?.provenance);
+    for (const candidate of [data, record, provenance, objectValue(record?.scope)]) {
+      if (!candidate) continue;
+      const workspace = candidate.workspaceId ?? candidate.workspace_id;
+      const shop = candidate.shopId ?? candidate.shop_id;
+      if (context.operationalScope && ((workspace && workspace !== context.operationalScope.workspaceId)
+        || (shop && shop !== context.operationalScope.shopId))) {
+        return [{ index, code: "evidence_scope_mismatch", message: "The evidence belongs to a different tenant scope." }];
+      }
+    }
+    if (provenance?.expires_at && (!Number.isFinite(Date.parse(String(provenance.expires_at)))
+      || Date.parse(String(provenance.expires_at)) <= Date.now())) {
+      return [{ index, code: "evidence_expired", message: "The cited source provenance has expired." }];
+    }
+  }
+  return [];
+}
+
+function semanticProcedureSource(evidence: ResponseEvidenceRecord | undefined): boolean {
+  if (!evidence || evidence.result.status !== "ok") return false;
+  const data = objectValue(evidence.result.data);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results.some(value => {
+    const record = objectValue(value);
+    const structured = objectValue(record?.structured_data);
+    // Keep the legacy procedural contract; new transports must carry verified
+    // semantic provenance, not merely name themselves a procedure tool.
+    return record?.knowledge_type === "procedural"
+      && ["authoritative", "operational"].includes(String(record.authority))
+      && (evidence.toolName === "search_procedures" || (structured?.semantic_type === "PROCEDURE"
+        && meaningful(objectValue(record.provenance)?.source_id)
+        && data?.task_specificity === "sufficient" && data.procedure_evidence_quality === "usable"));
+  });
+}
+
+function sourceSections(basis: KnowledgeBasis, context: ResponseValidationContext) {
+  const evidence = resultFor(basis, context);
+  const results = objectValue(evidence?.result.data)?.results;
+  if (!Array.isArray(results)) return [];
+  return basis.field_paths.flatMap(path => {
+    const match = normalizedDataPath(path).match(/^results\[(\d+)\]\.evidence_sections\[(\d+)\]\.(content|text)$/);
+    if (!match) return [];
+    const record = objectValue(results[Number(match[1])]);
+    const sections = record?.evidence_sections;
+    const section = Array.isArray(sections) ? objectValue(sections[Number(match[2])]) : null;
+    const text = section?.[match[3]];
+    return record && typeof text === "string" && text.trim() ? [{ record, text, path }] : [];
+  });
+}
+
+function productScopeSupported(record: JsonObject, context: ResponseValidationContext): boolean {
+  const structured = objectValue(record.structured_data);
+  const applicability = objectValue(structured?.applicability);
+  const ids = Array.isArray(applicability?.product_ids) ? applicability.product_ids.map(String) : [];
+  if (!ids.length) return false;
+  const currentRecords = (context.getResults?.() ?? []).flatMap(evidence => {
+    const data = objectValue(evidence.result.data);
+    return Array.isArray(data?.results) ? data.results.map(objectValue).filter((r): r is JsonObject => Boolean(r?.knowledge_type === "product")) : [];
+  });
+  const question = normalizedPhrase([context.customerMessage, context.customerProvidedContext?.product].filter(Boolean).join(" "));
+  const matched = currentRecords.filter(candidate => {
+    const subject = careSubject(candidate);
+    const tokens = subject.split(" ").filter(token => token.length > 2 && !["guide", "care", "textile", "support", "instructions", "product"].includes(token));
+    return tokens.length > 0 && question.split(" ").includes(tokens[0]);
+  });
+  const expectedIds = new Set(matched.flatMap(candidate => {
+    const applies = objectValue(objectValue(candidate.structured_data)?.applicability);
+    return Array.isArray(applies?.product_ids) ? applies.product_ids.map(String) : [];
+  }));
+  // Ambiguous product references are not repaired by choosing the first source.
+  return expectedIds.size === 1 && ids.length === 1 && expectedIds.has(ids[0]);
+}
+
+function validateSourceContent(segment: Extract<ResponseSegment, { type: "source_content" }>, context: ResponseValidationContext, index: number) {
+  const issues = validateKnowledgeBasis(segment.basis, context, index);
+  if (issues.length) return issues;
+  const sections = sourceSections(segment.basis, context);
+  if (!sections.length || sections.length !== segment.basis.field_paths.length) {
+    return [{ index, code: "source_content_path_required", message: "Source content must bind exact returned section text fields." }];
+  }
+  for (const { record, path } of sections) {
+    const sectionMatch = normalizedDataPath(path).match(/evidence_sections\[(\d+)\]/);
+    const section = sectionMatch && Array.isArray(record.evidence_sections) ? objectValue(record.evidence_sections[Number(sectionMatch[1])]) : null;
+    if (/\b(?:evidence boundary|internal instructions|agent instructions)\b/i.test(`${record.title ?? ""} ${section?.heading ?? ""}`)) {
+      return [{ index, code: "non_answer_source_role", message: "Internal evidence boundaries cannot substitute for customer answer facts." }];
+    }
+    const structured = objectValue(record.structured_data);
+    const provenance = objectValue(record.provenance);
+    if (!meaningful(provenance?.source_id) || !meaningful(structured?.semantic_type)) {
+      return [{ index, code: "source_provenance_required", message: "Typed content requires verified semantic source provenance." }];
+    }
+    if (segment.kind === "policy_condition") {
+      if (objectValue(structured?.applicability)?.kind === "products" && !productScopeSupported(record, context)) {
+        return [{ index, code: "policy_product_scope_mismatch", message: "The policy condition does not apply to the current product." }];
+      }
+      if (record.knowledge_type !== "policy" || !["authoritative", "operational"].includes(String(record.authority))) {
+        return [{ index, code: "policy_source_required", message: "A policy condition requires a verified policy source." }];
+      }
+    } else {
+      if (record.knowledge_type !== "product" || !productScopeSupported(record, context)) {
+        return [{ index, code: "product_scope_mismatch", message: "The cited content is not bound to the current product." }];
+      }
+      if (segment.kind === "product_property" && structured?.semantic_type !== "FACT") {
+        return [{ index, code: "product_property_kind_mismatch", message: "A static product property requires a source-authored fact." }];
+      }
+      if (segment.kind === "care_constraint" && !(structured?.semantic_type === "GUIDANCE" && ["care", "product"].includes(String(structured.support_domain))
+        || structured?.semantic_type === "FACT" && structured.support_domain === "care")) {
+        return [{ index, code: "care_source_required", message: "A care constraint requires verified product guidance." }];
+      }
+    }
+  }
+  return [];
+}
+
+function verifiedOrderSource(evidence: ResponseEvidenceRecord | undefined, context: ResponseValidationContext): boolean {
+  const data = objectValue(evidence?.result.data);
+  if (!evidence || evidence.result.status !== "ok" || !meaningful(data?.id)
+    || !Array.isArray(data?.items) || !Array.isArray(data?.fulfillments)) return false;
+  const active = context.activeOrder ?? context.getActiveOrderFocus?.();
+  const activeId = active?.state === "verified" ? active.order?.id : null;
+  const focus = objectValue(data.order_focus);
+  return !evidenceScopeIssues(evidence, context, -1).length && (activeId
+    ? String(data.id) === String(activeId)
+    : focus?.state === "verified" && String(focus.verified_order_id) === String(data.id));
+}
+
+function lineDisposition(basis: KnowledgeBasis, context: ResponseValidationContext) {
+  const evidence = resultFor(basis, context);
+  if (!verifiedOrderSource(evidence, context)) return null;
+  const data = objectValue(evidence!.result.data)!;
+  const path = basis.field_paths.length === 1 ? normalizedDataPath(basis.field_paths[0]) : "";
+  return lineDispositionFromOrder(data, path);
+}
+
+function lineDispositionFromOrder(data: JsonObject, path: string) {
+  const match = path.match(/^items\[(\d+)\]$/);
+  if (!match) return null;
+  const items = data.items as unknown[];
+  if (new Set(items.map(value => String(objectValue(value)?.id ?? ""))).size !== items.length) return null;
+  const item = objectValue(items[Number(match[1])]);
+  const quantity = Number(item?.quantity);
+  const fulfillments = data.fulfillments as unknown[];
+  if (!meaningful(item?.id) || !meaningful(item?.title) || !Number.isInteger(quantity) || quantity <= 0) return null;
+  let fulfilled = 0;
+  const ids = new Set<string>();
+  for (const value of fulfillments) {
+    const fulfillment = objectValue(value);
+    if (!meaningful(fulfillment?.id) || ids.has(String(fulfillment.id)) || fulfillment?.itemMappingStatus !== "verified"
+      || !Array.isArray(fulfillment.items) || fulfillment.status !== "success") return null;
+    ids.add(String(fulfillment.id));
+    for (const entry of fulfillment.items) {
+      const mapped = objectValue(entry);
+      const original = items.map(objectValue).find(candidate => String(candidate?.id) === String(mapped?.orderLineItemId));
+      const count = Number(mapped?.quantity);
+      if (!original || !Number.isInteger(count) || count <= 0 || count > Number(original.quantity)
+        || mapped?.title !== original.title || (mapped?.variantId && original.variantId && String(mapped.variantId) !== String(original.variantId))) return null;
+      if (String(mapped?.orderLineItemId) === String(item.id)) fulfilled += count;
+    }
+  }
+  if (fulfilled > quantity) return null;
+  // An absence is informative only in a complete current order snapshot.
+  return { title: String(item.title), quantity, fulfilled, remaining: quantity - fulfilled };
+}
+
+function shippingComparison(segment: Extract<ResponseSegment, { type: "source_comparison" }>, context: ResponseValidationContext) {
+  const order = resultFor(segment.order, context);
+  if (!verifiedOrderSource(order, context) || segment.order.field_paths.length !== 2
+    || !["total", "currency"].every(path => segment.order.field_paths.map(normalizedDataPath).includes(path))) return null;
+  const data = objectValue(order!.result.data)!;
+  const amount = Number(data.total), currency = String(data.currency ?? "");
+  if (!meaningful(data.total) || !Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(Math.round(amount * 100)) || !/^[A-Z]{3}$/.test(currency)) return null;
+  const source = sourceSections(segment.policy, context);
+  if (source.length !== 1 || validateKnowledgeBasis(segment.policy, context, -1).length) return null;
+  const record = source[0].record;
+  const structured = objectValue(record.structured_data);
+  const coverage = Array.isArray(structured?.policy_coverage) ? structured.policy_coverage : [];
+  const country = String(objectValue(data.shippingAddress)?.countryCode ?? "");
+  if (!country || record.knowledge_type !== "policy" || record.authority !== "authoritative"
+    || structured?.semantic_type !== "POLICY" || !meaningful(objectValue(record.provenance)?.source_id)
+    || !coverage.some(value => { const c = objectValue(value); return c?.domain === "shipping" && c.destination === country
+      && Array.isArray(c.available) && c.available.includes("threshold"); })) return null;
+  // Only a source-authored monetary threshold is comparable. No coupon,
+  // charged-shipping or subtotal inference is permitted.
+  const matches = [...source[0].text.matchAll(/(?:free shipping|fri fragt)[^.!?\n]{0,100}?(?:over|above|at least|from|minimum|fra|mindst)\s*(\d+(?:[.,]\d+)?)\s*([A-Z]{3})/gi)];
+  if (matches.length !== 1 || matches[0][2].toUpperCase() !== currency) return null;
+  return { amount, currency, threshold: Number(matches[0][1].replace(",", ".")), above: /\b(?:over|above)\b/i.test(matches[0][0]), country };
+}
+
+export interface AnswerObligation {
+  id: string;
+  kind: string;
+  status: "supported" | "unavailable";
+  satisfied: boolean;
+  resultIds: string[];
+  sourceIds: string[];
+  recovery: "not_needed" | "recovered" | "rejected" | "unavailable";
+  rejectionCodes: string[];
+}
+export interface AnswerCoverage {
+  requested: string[];
+  supported: string[];
+  satisfied: string[];
+  missing: string[];
+  unknown: string[];
+  obligations: AnswerObligation[];
+}
+
+/** Coverage is validation metadata over the existing segments, not an answer
+ * plan or an authorization layer. Only validator-approved projections recover. */
+function preserveRequiredAnswers(validation: ResponseValidationResult, context: ResponseValidationContext): ResponseValidationResult {
+  const records = (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length);
+  const requests = new Set(context.turnIR?.answerRequests?.map(request => request.kind) ?? []);
+  // Existing callers without TurnIR use the existing care-request semantics.
+  if (productCareRequest(context)) requests.add("product_care");
+  if (!context.turnIR?.answerRequests && records.some(evidence => {
+    const results = objectValue(evidence.result.data)?.results;
+    return Array.isArray(results) && results.some(value => { const record = objectValue(value);
+      const structured = objectValue(record?.structured_data);
+      return record && structured?.semantic_type === "FACT" && structured.support_domain === "product" && productScopeSupported(record, context); });
+  })) requests.add("product_property");
+  const approved = [...validation.approvedSegments];
+  const obligations: AnswerObligation[] = [];
+  const add = (id: string, kind: string, candidates: ResponseSegment[]) => {
+    if (obligations.some(obligation => obligation.id === id)) return;
+    const checkedResults = candidates.map(candidate => validateStructuredResponse({ segments: [candidate] }, context));
+    const checked = checkedResults.flatMap(result => result.approvedSegments);
+    const rejectionCodes = [...new Set(checkedResults.flatMap(result => result.issues.map(issue => issue.code)))];
+    const satisfied = checked.length > 0 && checked.every(segment => approved.some(existing => segmentCovers(existing, segment, context)));
+    const bases = checked.flatMap(segment => segment.type === "fact" ? segment.evidence
+      : segment.type === "source_comparison" ? [segment.order, segment.policy]
+      : "basis" in segment && segment.basis ? [segment.basis] : []);
+    const resultIds = [...new Set(bases.map(basis => basis.result_id))];
+    const sourceIds = [...new Set(bases.flatMap(basis => {
+      const results = objectValue(resultFor(basis, context)?.result.data)?.results;
+      const paths = basis.field_paths.map(path => normalizedDataPath(path) === "results" ? "results" : path);
+      return Array.isArray(results) ? citedKnowledgeRecords(results, paths).map(value => String(objectValue(objectValue(value)?.provenance)?.source_id ?? "")).filter(Boolean) : [];
+    }))];
+    obligations.push({ id, kind, status: checked.length ? "supported" : "unavailable", satisfied: checked.length > 0,
+      resultIds, sourceIds, rejectionCodes, recovery: satisfied ? "not_needed" : checked.length ? "recovered" : candidates.length ? "rejected" : "unavailable" });
+    for (const segment of checked) {
+      if (approved.some(existing => segmentCovers(existing, segment, context))) continue;
+      // A validated full source projection replaces its partial projection.
+      // Keep one canonical segment instead of rendering both copies.
+      for (let i = approved.length - 1; i >= 0; i -= 1) if (segmentCovers(segment, approved[i], context)) approved.splice(i, 1);
+      approved.push(segment);
+    }
+  };
+  const order = records.find(record => verifiedOrderSource(record, context));
+  const orderData = objectValue(order?.result.data);
+  const orderBasis = order ? { result_id: order.resultId, field_paths: ["total", "currency"] } : null;
+  const qualificationIntentConsistent = !context.turnIR?.policyIntents || context.turnIR.policyIntents.some(intent => intent.domain === "shipping" && intent.facets.some(facet => facet === "price" || facet === "threshold"));
+  const shippingQualification = Boolean(order || context.turnIR?.orderContext) && requests.has("shipping_qualification") && qualificationIntentConsistent || (Boolean(order) && (context.turnIR?.policyIntents ?? []).some(intent => intent.domain === "shipping" && intent.facets.includes("threshold")));
+  if (requests.has("order_amount") || shippingQualification) add("order.amount", "order_amount", orderBasis ? [{ type: "fact", fact_kind: "order_amount", evidence: [orderBasis] }] : []);
+  const partial = orderData?.fulfillmentStatus === "partial";
+  const statusRequested = context.turnIR?.orderContext === "status" || context.turnIR?.answerRequests?.some(request => request.kind === "line_fulfillment")
+    || (partial && context.turnIR?.confirmation?.confirmed);
+  if (requests.has("line_fulfillment") || (partial && statusRequested)) {
+    const items = Array.isArray(orderData?.items) ? orderData.items : [];
+    if (!items.length) add("order.lines", "line_fulfillment", []);
+    items.forEach((_, index) => add(`order.line.${index}`, "line_fulfillment", [{ type: "fact", fact_kind: "line_fulfillment", evidence: [{ result_id: order!.resultId, field_paths: [`items[${index}]`] }] }]));
+  }
+  const propertyKeys = [...new Set(context.turnIR?.answerRequests?.filter(request => request.kind === "product_property").map(request => request.propertyKey ?? "general") ?? [])];
+  const productRequests = [...(requests.has("product_property") ? (propertyKeys.length ? propertyKeys : ["general"]).map(key => ({ request: "product_property" as const, key })) : []),
+    ...(requests.has("product_care") ? [{ request: "product_care" as const, key: "general" }] : [])];
+  for (const { request, key } of productRequests) {
+    const sections = records.flatMap(evidence => {
+      const results = objectValue(evidence.result.data)?.results;
+      return Array.isArray(results) ? results.flatMap((value, index) => {
+        const record = objectValue(value);
+        const structured = objectValue(record?.structured_data);
+        if (!record || !productScopeSupported(record, context)) return [];
+        const relevant = request === "product_property" ? structured?.semantic_type === "FACT" && structured.support_domain === "product"
+          : structured?.semantic_type === "GUIDANCE" && ["care", "product"].includes(String(structured.support_domain));
+        if (!relevant || !Array.isArray(record.evidence_sections)) return [];
+        return record.evidence_sections.flatMap((value, sectionIndex) => {
+          const section = objectValue(value); const field = typeof section?.content === "string" ? "content" : "text";
+          return typeof section?.[field] === "string" && (key === "general" || sourcePropertyKey(String(section[field])) === key) ? [{ type: "source_content" as const, kind: request === "product_property" ? "product_property" as const : "care_constraint" as const,
+            basis: { result_id: evidence.resultId, field_paths: [`results[${index}].evidence_sections[${sectionIndex}].${field}`] } }] : [];
+        });
+      }) : [];
+    });
+    add(request === "product_care" ? "product.care" : key === "general" ? "product.properties" : `product.properties.${key}`, request, sections);
+  }
+  const policyIntents = context.turnIR?.policyIntents ?? [];
+  for (const intent of policyIntents) {
+    for (const facet of intent.facets) {
+      const candidates: ResponseSegment[] = [];
+      for (const evidence of records) {
+        const data = objectValue(evidence.result.data);
+        const results = Array.isArray(data?.results) ? data.results : [];
+        results.forEach((value, index) => {
+          const record = objectValue(value); const structured = objectValue(record?.structured_data);
+          const coverage = Array.isArray(structured?.policy_coverage) ? structured.policy_coverage : [];
+          const applicable = coverage.some(value => { const c = objectValue(value); return c?.domain === intent.domain
+            && (!intent.destinationCountryCode || c.destination === intent.destinationCountryCode)
+            && Array.isArray(c.available) && c.available.includes(facet); });
+          if (!record || !applicable) return;
+          if (record.knowledge_type === "procedural" && ["intake", "assessment"].includes(facet)) {
+            const blocks = procedureBlocks(evidence.result, index);
+            if (blocks.length && blocks.length <= 32) candidates.push({ type: "procedure_guidance", text: "Source-bound procedure", basis: { result_id: evidence.resultId, field_paths: [`results[${index}]`] }, block_ids: blocks.map(block => block.blockId) });
+          } else if (record.knowledge_type === "policy" && Array.isArray(record.evidence_sections)) {
+            record.evidence_sections.forEach((value, sectionIndex) => {
+              const section = objectValue(value); const field = typeof section?.content === "string" ? "content" : "text";
+              const relevantChunks = coverage.flatMap(value => {
+                const c = objectValue(value); const byFacet = objectValue(c?.evidenceByFacet);
+                return c?.domain === intent.domain && (!intent.destinationCountryCode || c.destination === intent.destinationCountryCode)
+                  && Array.isArray(byFacet?.[facet]) ? byFacet[facet] as unknown[] : [];
+              }).map(String);
+              const chunks = Array.isArray(section?.chunk_ids) ? section.chunk_ids.map(String) : [];
+              if (relevantChunks.length && !chunks.some(chunk => relevantChunks.includes(chunk))) return;
+              if (typeof section?.[field] === "string") candidates.push({ type: "source_content", kind: "policy_condition", basis: { result_id: evidence.resultId, field_paths: [`results[${index}].evidence_sections[${sectionIndex}].${field}`] } });
+            });
+          }
+        });
+      }
+      add(`policy.${intent.domain}.${facet}`, facet, candidates);
+    }
+  }
+  if (policyIntents.some(intent => intent.domain === "damaged_item" && intent.facets.includes("intake"))) {
+    const procedure = records.find(semanticProcedureSource);
+    if (procedure) {
+      const candidate: ResponseSegment = { type: "evidence_limitation", kind: "photo_channel", basis: { result_id: procedure.resultId, field_paths: ["data.results"] } };
+      if (!validateEvidenceLimitation(candidate, context, -1).length) {
+        add("damage.photo_channel", "photo_channel", [candidate]);
+        const obligation = obligations.find(obligation => obligation.id === "damage.photo_channel")!;
+        obligation.status = "unavailable";
+      }
+    }
+  }
+  if (shippingQualification) {
+    const candidates: ResponseSegment[] = records.flatMap(evidence => {
+      const results = objectValue(evidence.result.data)?.results;
+      return Array.isArray(results) && orderBasis ? results.flatMap((value, index) => {
+        const sections = objectValue(value)?.evidence_sections;
+        return Array.isArray(sections) ? sections.map((_, sectionIndex) => ({ type: "source_comparison" as const, kind: "shipping_threshold" as const,
+          order: orderBasis, policy: { result_id: evidence.resultId, field_paths: [`results[${index}].evidence_sections[${sectionIndex}].content`] } })) : [];
+      }) : [];
+    });
+    add("shipping.threshold_comparison", "shipping_qualification", candidates);
+    if (order) {
+      const candidate: ResponseSegment = { type: "evidence_limitation", kind: "charged_shipping", basis: { result_id: order.resultId, field_paths: ["data"] } };
+      if (!validateEvidenceLimitation(candidate, context, -1).length) {
+        add("provider.shipping_charge_and_coupon", "charged_shipping", [candidate]);
+        obligations.find(obligation => obligation.id === "provider.shipping_charge_and_coupon")!.status = "unavailable";
+      }
+    }
+  }
+  if (partial && statusRequested && policyIntents.some(intent => intent.domain === "shipping" && intent.facets.includes("timing")) && order) {
+    const candidate: ResponseSegment = { type: "evidence_limitation", kind: "line_timing", basis: { result_id: order.resultId, field_paths: ["data"] } };
+    if (!validateEvidenceLimitation(candidate, context, -1).length) {
+      add("order.line_timing", "line_timing", [candidate]);
+      obligations.find(obligation => obligation.id === "order.line_timing")!.status = "unavailable";
+    }
+  }
+  for (const obligation of obligations.filter(obligation => obligation.status === "unavailable")) {
+    const kind = obligation.kind === "product_property" ? "product_property" : obligation.kind === "product_care" ? "product_care"
+      : obligation.kind === "line_fulfillment" ? "line_fulfillment" : obligation.kind === "shipping_qualification" ? "shipping_qualification" : null;
+    if (!kind) continue;
+    for (const record of (context.getResults?.() ?? [])) {
+      const candidate: ResponseSegment = { type: "evidence_limitation", kind, ...(kind === "product_property" && obligation.id.endsWith(".composition") ? { property_key: "composition" as const } : kind === "product_property" && obligation.id.endsWith(".dimensions") ? { property_key: "dimensions" as const } : {}), basis: { result_id: record.resultId, field_paths: ["data"] } };
+      const checked = validateStructuredResponse({ segments: [candidate] }, context);
+      if (checked.approvedSegments.length) {
+        if (!approved.some(segment => JSON.stringify(segment) === JSON.stringify(candidate))) approved.push(candidate);
+        obligation.satisfied = true;
+        obligation.recovery = "unavailable";
+        obligation.resultIds = [record.resultId];
+        break;
+      }
+    }
+  }
+  const coverage: AnswerCoverage = { requested: obligations.map(o => o.id), supported: obligations.filter(o => o.status === "supported").map(o => o.id),
+    satisfied: obligations.filter(o => o.satisfied).map(o => o.id), missing: obligations.filter(o => !o.satisfied).map(o => o.id),
+    unknown: obligations.filter(o => o.status === "unavailable").map(o => o.id), obligations };
+  const canonicalApproved = approved.filter((candidate, index) => !approved.some((other, otherIndex) => otherIndex !== index
+    && segmentCovers(other, candidate, context) && (!segmentCovers(candidate, other, context) || otherIndex < index)));
+  const safeApproved = coverage.missing.length && canonicalApproved.every(segment => segment.type === "acknowledgement") ? [] : canonicalApproved;
+  return { ...validation, approvedSegments: safeApproved, coverage, completenessDiagnostics: {
+    entered: true, cues: validation.completenessDiagnostics?.cues ?? [],
+    ...validation.completenessDiagnostics,
+    recovery: [...(validation.completenessDiagnostics?.recovery ?? []), ...obligations.map(obligation => ({ type: obligation.id, result: obligation.recovery === "not_needed" ? "skipped" as const : obligation.recovery === "recovered" ? "recovered" as const : "unavailable" as const }))], intent_resolved_by_approved_segment: obligations.length ? coverage.missing.length === 0
+      : validation.completenessDiagnostics?.intent_resolved_by_approved_segment ?? approved.some(segment => !["acknowledgement", "question"].includes(segment.type)) } };
+}
+
+function validateEvidenceLimitation(segment: Extract<ResponseSegment, { type: "evidence_limitation" }>, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
+  const issues = validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);
+  if (issues.length) return issues;
+  const evidence = resultFor(segment.basis, context)!;
+  const data = objectValue(evidence.result.data);
+  if (segment.kind === "photo_channel" && semanticProcedureSource(evidence)) {
+    const records = Array.isArray(data?.results) ? data.results.map(objectValue) : [];
+    const text = JSON.stringify(records.map(record => objectValue(record?.structured_data)?.procedure));
+    if (records.some(record => objectValue(record?.structured_data)?.support_domain === "damaged_item")
+      && !/(?:https?:|mailto:|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|upload_url|submission_channel)/i.test(text)) return [];
+  }
+  if (segment.kind === "charged_shipping" && verifiedOrderSource(evidence, context)
+    && !["shippingPrice", "shipping_price", "shipping_lines", "discount_codes"].some(key => data && key in data)) return [];
+  if (segment.kind === "line_timing" && verifiedOrderSource(evidence, context)) {
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (items.some((item, itemIndex) => {
+      const line = lineDisposition({ result_id: evidence.resultId, field_paths: [`items[${itemIndex}]`] }, context);
+      return line && line.remaining > 0 && !["estimatedDelivery", "estimatedDispatch", "deliveryDate", "dispatchDate"].some(key => meaningful(objectValue(item)?.[key]));
+    })) return [];
+  }
+  if (segment.kind === "line_fulfillment" && verifiedOrderSource(evidence, context)) {
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (items.length && items.some((_, itemIndex) => !lineDisposition({ result_id: evidence.resultId, field_paths: [`items[${itemIndex}]`] }, context))) return [];
+  }
+  if (segment.kind === "shipping_qualification" && verifiedOrderSource(evidence, context)
+    && context.turnIR?.answerRequests?.some(request => request.kind === "shipping_qualification")) {
+    const alternatives = (context.getResults?.() ?? []).flatMap(record => {
+      const results = objectValue(record.result.data)?.results;
+      return Array.isArray(results) ? results.flatMap((value, recordIndex) => {
+        const sections = objectValue(value)?.evidence_sections;
+        return Array.isArray(sections) ? sections.map((_, sectionIndex) => ({ type: "source_comparison" as const, kind: "shipping_threshold" as const,
+          order: { result_id: evidence.resultId, field_paths: ["total", "currency"] }, policy: { result_id: record.resultId, field_paths: [`results[${recordIndex}].evidence_sections[${sectionIndex}].content`] } })) : [];
+      }) : [];
+    });
+    if (!alternatives.some(candidate => shippingComparison(candidate, context))) return [];
+  }
+  if (["product_care", "product_property"].includes(segment.kind) && Array.isArray(data?.results)) {
+    const matching = data.results.map(objectValue).filter((record): record is JsonObject => Boolean(record?.knowledge_type === "product" && productScopeSupported(record!, context)));
+    const relevant = matching.filter(record => {
+      const structured = objectValue(record.structured_data);
+      return segment.kind === "product_property" ? structured?.semantic_type === "FACT" && structured.support_domain === "product"
+        && (!segment.property_key || segment.property_key === "general" || (Array.isArray(record.evidence_sections) && record.evidence_sections.some(value => sourcePropertyKey(String(objectValue(value)?.content ?? objectValue(value)?.text ?? "")) === segment.property_key)))
+        : structured?.semantic_type === "GUIDANCE" && ["care", "product"].includes(String(structured.support_domain));
+    });
+    if (matching.length && !relevant.length) return [];
+  }
+  if (["not_found", "unavailable", "unknown", "error"].includes(evidence.result.status)
+    && (segment.kind.startsWith("product_") ? evidence.toolName.includes("product") : segment.kind === "line_fulfillment" ? ["get_order", "inspect_fulfillment"].includes(evidence.toolName) : false)) return [];
+  return [{ index, code: "limitation_not_established", message: "The requested limitation is not established by current evidence." }];
+}
+
+function renderEvidenceLimitation(segment: Extract<ResponseSegment, { type: "evidence_limitation" }>, context: ResponseValidationContext): string {
+  const da = localeFor(context) === "da";
+  if (segment.kind === "photo_channel") return da
+    ? "Den verificerede procedure angiver ikke en kanal til indsendelse af billeder. Klargjorte billeder er ikke det samme som modtagne filer. Sagen kræver billeder og vurdering; der er endnu ikke bekræftet en løsning."
+    : "The verified procedure does not specify a photo submission channel. Having photos ready does not establish that files have been received. Photos and assessment are required; no remedy has been confirmed.";
+  if (segment.kind === "line_timing") return da ? "Der er ikke en verificeret afsendelses- eller leveringsdato for de varer, der endnu ikke er afsendt. Generelle leveringstider fastlægger ikke denne dato." : "No verified dispatch or delivery date is available for the items not yet dispatched. General delivery estimates do not establish that date.";
+  if (segment.kind === "charged_shipping") return da ? "Ordreopslaget viser ikke den faktisk opkrævede fragt eller rabatkoden." : "The order lookup does not expose the shipping actually charged or coupon details.";
+  if (segment.kind === "line_fulfillment") return da ? "Jeg kan bekræfte ordren, men ikke knytte alle varer og mængder til forsendelserne. Jeg kan derfor ikke bekræfte status for den enkelte vare." : "I can verify the order, but cannot map all items and quantities to shipments. I therefore cannot verify the individual item's shipment status.";
+  if (segment.kind === "shipping_qualification") return da ? "Ordretotalen kan bekræftes, men jeg kan ikke bekræfte, om den opfylder betingelserne for fri fragt, ud fra de tilgængelige vilkår." : "The order total can be verified, but the available terms do not establish whether it qualifies for free shipping.";
+  if (segment.kind === "product_property" && segment.property_key === "composition") return da ? "Den tilgængelige produktdokumentation fastlægger ikke materialesammensætningen." : "The available product information does not establish its material composition.";
+  if (segment.kind === "product_property" && segment.property_key === "dimensions") return da ? "Den tilgængelige produktdokumentation fastlægger ikke dimensionerne." : "The available product information does not establish its dimensions.";
+  return da ? "Jeg kan ikke bekræfte den ønskede oplysning ud fra den tilgængelige dokumentation." : "I cannot verify that requested detail from the available evidence.";
+}
+
+export interface SegmentBoundaryDiagnostic {
+  index: number;
+  type: string;
+  evidenceKinds: string[];
+  resultIds: string[];
+  sourceIds: string[];
+  rejectionCodes: string[];
+}
+function segmentBoundaryDiagnostic(segment: ResponseSegment, context: ResponseValidationContext, index: number, issues: ResponseValidationIssue[]): SegmentBoundaryDiagnostic {
+  const bases = segment.type === "fact" ? segment.evidence : segment.type === "source_comparison" ? [segment.order, segment.policy]
+    : "basis" in segment && segment.basis ? [segment.basis] : [];
+  const records = bases.map(basis => resultFor(basis, context)).filter((evidence): evidence is ResponseEvidenceRecord => Boolean(evidence));
+  const sourceIds = bases.flatMap(basis => {
+    const results = objectValue(resultFor(basis, context)?.result.data)?.results;
+    return Array.isArray(results) ? citedKnowledgeRecords(results, basis.field_paths).map(record => String(objectValue(objectValue(record)?.provenance)?.source_id ?? "")).filter(Boolean) : [];
+  });
+  return { index, type: segment.type, evidenceKinds: [...new Set(records.map(normalizedEvidenceKind))],
+    resultIds: [...new Set(records.map(record => record.resultId))], sourceIds: [...new Set(sourceIds)], rejectionCodes: issues.map(issue => issue.code) };
+}
+
+function modernProductBasis(basis: KnowledgeBasis, context: ResponseValidationContext): boolean {
+  const results = objectValue(resultFor(basis, context)?.result.data)?.results;
+  return Array.isArray(results) && citedKnowledgeRecords(results, basis.field_paths).some(value => {
+    const record = objectValue(value);
+    return record?.knowledge_type === "product" && meaningful(objectValue(record.provenance)?.source_id)
+      && meaningful(objectValue(record.structured_data)?.semantic_type);
+  });
+}
+function projectedProductContent(basis: KnowledgeBasis, context: ResponseValidationContext): Extract<ResponseSegment, { type: "source_content" }> | null {
+  const evidence = resultFor(basis, context);
+  const results = objectValue(evidence?.result.data)?.results;
+  if (!Array.isArray(results)) return null;
+  const paths = basis.field_paths.flatMap(path => {
+    const normalized = normalizedDataPath(path);
+    const match = normalized.match(/^results\[(\d+)\](?:\.evidence_sections(?:\[(\d+)\](?:\.(content|text))?)?)?$/);
+    if (!match) return [];
+    const sections = objectValue(results[Number(match[1])])?.evidence_sections;
+    if (!Array.isArray(sections)) return [];
+    return sections.flatMap((value, index) => {
+      if (match[2] != null && Number(match[2]) !== index) return [];
+      const section = objectValue(value);
+      const field = match[3] ?? (typeof section?.content === "string" ? "content" : "text");
+      return typeof section?.[field] === "string" ? [`results[${match[1]}].evidence_sections[${index}].${field}`] : [];
+    });
+  });
+  const candidate: Extract<ResponseSegment, { type: "source_content" }> = { type: "source_content", kind: productCareRequest(context) ? "care_constraint" : "product_property",
+    basis: { result_id: basis.result_id, field_paths: [...new Set(paths)] } };
+  return paths.length && paths.length <= 32 && !validateSourceContent(candidate, context, -1).length ? candidate : null;
+}
+
+function verifiedFulfillmentSource(evidence: ResponseEvidenceRecord | undefined, context: ResponseValidationContext): boolean {
+  if (!evidence || evidence.result.status !== "ok" || evidenceScopeIssues(evidence, context, -1).length) return false;
+  const data = objectValue(evidence.result.data);
+  const active = context.activeOrder ?? context.getActiveOrderFocus?.();
+  return active?.state === "verified" && meaningful(active.order?.id)
+    && String(data?.order_id ?? data?.orderId) === String(active.order.id) && Array.isArray(data?.fulfillments);
+}
+
+function standaloneMappedQuantity(evidence: ResponseEvidenceRecord, mapped: JsonObject | null): boolean {
+  if (!meaningful(mapped?.orderLineItemId) || !Number.isInteger(Number(mapped?.orderedQuantity)) || Number(mapped?.orderedQuantity) <= 0
+    || !Number.isInteger(Number(mapped?.quantity)) || Number(mapped?.quantity) <= 0) return false;
+  const fulfillments = objectValue(evidence.result.data)?.fulfillments;
+  if (!Array.isArray(fulfillments)) return false;
+  const ids = new Set<string>();
+  let sum = 0;
+  for (const value of fulfillments) {
+    const fulfillment = objectValue(value);
+    if (!meaningful(fulfillment?.id) || ids.has(String(fulfillment.id)) || fulfillment?.itemMappingStatus !== "verified"
+      || fulfillment.status !== "success" || !Array.isArray(fulfillment.items)) return false;
+    ids.add(String(fulfillment.id));
+    for (const value of fulfillment.items) {
+      const item = objectValue(value);
+      if (String(item?.orderLineItemId) !== String(mapped?.orderLineItemId)) continue;
+      const quantity = Number(item?.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0 || item?.title !== mapped?.title
+        || String(item?.variantId ?? "") !== String(mapped?.variantId ?? "")
+        || Number(item?.orderedQuantity) !== Number(mapped?.orderedQuantity)) return false;
+      sum += quantity;
+    }
+  }
+  return sum > 0 && sum <= Number(mapped?.orderedQuantity) && sum === Number(mapped?.fulfilledQuantity);
+}
+
+/** Parse the role of source-authored fields; this never supplies a model value. */
+function sourcePropertyKey(text: string): "composition" | "dimensions" | "general" {
+  if (/\d+(?:[.,]\d+)?\s*%|\b(?:composition|material|made (?:of|from))\b/i.test(text)) return "composition";
+  if (/\b(?:size|dimensions|width|height|length)\b|\d+\s*(?:×|x)\s*\d+\s*(?:cm|mm|m|inches)/i.test(text)) return "dimensions";
+  return "general";
+}
+
+function basisCovers(existing: KnowledgeBasis, required: KnowledgeBasis): boolean {
+  return existing.result_id === required.result_id && required.field_paths.every(path => existing.field_paths.map(normalizedDataPath).includes(normalizedDataPath(path)));
+}
+function segmentCovers(existing: ResponseSegment, required: ResponseSegment, context: ResponseValidationContext): boolean {
+  if (existing.type === "source_content" && required.type === "knowledge_guidance") {
+    const source = sourceSections(required.basis, context).map(section => section.text).join("\n\n");
+    return source.length > 0 && required.text.trim() === source.trim() && basisCovers(existing.basis, required.basis);
+  }
+  if (existing.type === "knowledge_guidance" && required.type === "source_content") {
+    const source = sourceSections(required.basis, context).map(section => section.text).join("\n\n");
+    return source.length > 0 && existing.text.trim() === source.trim() && basisCovers(existing.basis, required.basis);
+  }
+  if (existing.type !== required.type) return false;
+  if (existing.type === "source_content" && required.type === "source_content") return existing.kind === required.kind && basisCovers(existing.basis, required.basis);
+  if (existing.type === "fact" && required.type === "fact") return existing.fact_kind === required.fact_kind
+    && required.evidence.every(basis => existing.evidence.some(candidate => basisCovers(candidate, basis)));
+  if (existing.type === "procedure_guidance" && required.type === "procedure_guidance") {
+    const existingIds = procedureStepValues(existing, context).map(step => step.blockId);
+    const requiredIds = procedureStepValues(required, context).map(step => step.blockId);
+    return existing.basis.result_id === required.basis.result_id && basisCovers(existing.basis, required.basis)
+      && requiredIds.length > 0 && requiredIds.every(id => existingIds.includes(id));
+  }
+  if (existing.type === "source_comparison" && required.type === "source_comparison") return basisCovers(existing.order, required.order) && basisCovers(existing.policy, required.policy);
+  if (existing.type === "evidence_limitation" && required.type === "evidence_limitation") return existing.kind === required.kind
+    && existing.property_key === required.property_key && existing.basis.result_id === required.basis.result_id;
+  return JSON.stringify(existing) === JSON.stringify(required);
 }

@@ -487,6 +487,35 @@ function traceEventSummary(event) {
   };
 }
 
+// Boundary diagnostics retain identifiers/codes, never customer or model text.
+function boundaryCode(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_.]{0,79}$/.test(value) ? value : null;
+}
+function boundaryIds(value, pattern) {
+  return Array.isArray(value) ? value.slice(0, 48).filter(id => typeof id === "string" && pattern.test(id)) : [];
+}
+function safeBoundaryCoverage(value) {
+  if (!isRecord(value)) return null;
+  const ids = values => boundaryIds(values, /^(?:order\.(?:amount|lines|line_timing|line\.\d+)|product\.(?:care|properties(?:\.(?:composition|dimensions))?)|policy\.[a-z_]+\.[a-z_]+|damage\.photo_channel|shipping\.threshold_comparison|provider\.shipping_charge_and_coupon)$/);
+  return { requested: ids(value.requested), supported: ids(value.supported), satisfied: ids(value.satisfied), missing: ids(value.missing), unknown: ids(value.unknown),
+    obligations: Array.isArray(value.obligations) ? value.obligations.slice(0, 48).flatMap(item => {
+      const id = ids([item?.id])[0];
+      if (!id) return [];
+      return [{ id, kind: boundaryCode(item.kind), status: ["supported", "unavailable"].includes(item.status) ? item.status : null,
+        satisfied: item.satisfied === true, recovery: ["not_needed", "recovered", "rejected", "unavailable"].includes(item.recovery) ? item.recovery : null,
+        rejectionCodes: Array.isArray(item.rejectionCodes) ? item.rejectionCodes.slice(0, 16).map(boundaryCode).filter(Boolean) : [],
+        resultIds: boundaryIds(item.resultIds, /^tool_result_\d+$/), sourceIds: boundaryIds(item.sourceIds, /^[0-9a-f]{8}-[0-9a-f-]{27}$/i) }];
+    }) : [] };
+}
+function safeSegmentDiagnostics(value) {
+  return Array.isArray(value) ? value.slice(0, 48).map(item => ({
+    index: Number.isInteger(item?.index) ? item.index : null, type: boundaryCode(item?.type),
+    evidenceKinds: Array.isArray(item?.evidenceKinds) ? item.evidenceKinds.slice(0, 8).map(boundaryCode).filter(Boolean) : [],
+    resultIds: boundaryIds(item?.resultIds, /^tool_result_\d+$/), sourceIds: boundaryIds(item?.sourceIds, /^[0-9a-f]{8}-[0-9a-f-]{27}$/i),
+    rejectionCodes: Array.isArray(item?.rejectionCodes) ? item.rejectionCodes.slice(0, 16).map(boundaryCode).filter(Boolean) : [],
+  })) : [];
+}
+
 function sanitizeGreenfieldDiagnostics(value) {
   if (!isRecord(value)) return null;
   const modelOutput = isRecord(value.model_output) ? value.model_output : null;
@@ -507,6 +536,12 @@ function sanitizeGreenfieldDiagnostics(value) {
           all_valid: validation.all_valid === true,
           approved_count: Number.isInteger(validation.approved_count) ? validation.approved_count : 0,
           rejected_count: Array.isArray(validation.rejected_segments) ? validation.rejected_segments.length : 0,
+          rejected_segments: Array.isArray(validation.rejected_segments) ? validation.rejected_segments.slice(0, 48).map(item => ({
+            index: Number.isInteger(item?.index) ? item.index : null, type: boundaryCode(item?.type),
+            codes: Array.isArray(item?.issues) ? item.issues.slice(0, 16).map(issue => boundaryCode(issue?.code)).filter(Boolean) : [],
+          })) : [],
+          segment_diagnostics: safeSegmentDiagnostics(validation.segment_diagnostics),
+          required_answer_coverage: safeBoundaryCoverage(validation.required_answer_coverage),
           completeness: isRecord(validation.completeness)
             ? {
                 entered: validation.completeness.entered === true,
