@@ -160,7 +160,7 @@ function modelOutputDiagnostics(output: unknown) {
   const parsed = StructuredResponseSchema.safeParse(output);
   const segments = parsed.success ? parsed.data.segments : [];
   const knowledgeSegments = segments.filter((segment) => segment.type === "knowledge_guidance");
-  const answerSegments = segments.filter((segment) => ["fact", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
+  const answerSegments = segments.filter((segment) => ["fact", "source_content", "source_comparison", "evidence_limitation", "knowledge_guidance", "procedure_guidance", "action_offer", "acknowledgement"].includes(segment.type));
   const clarificationRequested = segments.some((segment) => segment.type === "question");
   const fallbackLikeContent = segments.some((segment) => "text" in segment && looksLikeFallbackText(segment.text));
   const hasAnswer = answerSegments.length > 0 && !fallbackLikeContent;
@@ -677,6 +677,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       ...registry,
       operationalScope: options.operational ? { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" } : undefined,
       turnIR: effectiveTurnIR ?? undefined,
+      caseState: conversationContext.caseState,
       knownCaseArguments: [...(conversationContext.activeOrder ? ["order_id"] : []),
         ...(conversationContext.caseState?.scope.customerEmail ? ["customer_email"] : []),
         ...(conversationContext.caseState?.address?.complete ? ["address"] : []),

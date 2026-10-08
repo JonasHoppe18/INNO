@@ -451,3 +451,20 @@ it("preserves technical TurnIR failure diagnostics without provider details", ()
   expect(trace.events[0].code).toBe("turn_ir_unavailable");
   expect(trace.diagnostics.turn_ir_unavailable).toBe(true);
 });
+
+it("retains boundary identifiers/codes/coverage and strips raw diagnostic prose", () => {
+  const source = "874915ef-e3fc-4b90-8942-54cdbac7c616";
+  const secret = "private.fixture@example.test";
+  const trace = sanitizeGreenfieldTrace({ events: [], diagnostics: { validation: {
+    schema_valid: true, all_valid: false, approved_count: 1,
+    rejected_segments: [{ index: 0, type: "source_content", issues: [{ code: "product_scope_mismatch", message: secret }], text: secret }],
+    segment_diagnostics: [{ index: 0, type: "source_content", evidenceKinds: ["fact", secret], resultIds: ["tool_result_1", secret], sourceIds: [source, secret], rejectionCodes: ["product_scope_mismatch", secret], text: secret }],
+    required_answer_coverage: { requested: ["product.properties", secret], supported: ["product.properties"], satisfied: ["product.properties"], missing: [], unknown: [],
+      obligations: [{ id: "product.properties", kind: "product_property", status: "supported", satisfied: true, resultIds: ["tool_result_1", secret], sourceIds: [source, secret], recovery: "recovered", text: secret }] },
+  } } }, { env: { GREENFIELD_PLAYGROUND_ENABLED: "true", GREENFIELD_DEPLOYMENT_ENV: "development", GREENFIELD_PLAYGROUND_SUPABASE_PROJECT_REF: "zxaoycxzdjrbnzvbullk", NEXT_PUBLIC_SUPABASE_URL: "https://zxaoycxzdjrbnzvbullk.supabase.co" } });
+  const validation = trace.diagnostics.validation;
+  expect(validation.rejected_segments).toEqual([{ index: 0, type: "source_content", codes: ["product_scope_mismatch"] }]);
+  expect(validation.segment_diagnostics[0]).toMatchObject({ resultIds: ["tool_result_1"], sourceIds: [source], evidenceKinds: ["fact"] });
+  expect(validation.required_answer_coverage.satisfied).toEqual(["product.properties"]);
+  expect(JSON.stringify(trace)).not.toContain(secret);
+});

@@ -116,6 +116,9 @@ describe("greenfield OpenAI Agents SDK runtime", () => {
     });
     const segmentSchemas = model.firstCall.request.outputType.schema.properties.segments.items.oneOf;
     expect(segmentSchemas.map((schema) => schema.properties.type.const)).toEqual([
+      "evidence_limitation",
+      "source_content",
+      "source_comparison",
       "operational_result",
       "fact",
       "question",
