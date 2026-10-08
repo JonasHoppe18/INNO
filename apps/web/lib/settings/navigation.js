@@ -101,3 +101,13 @@ export function isSettingsSectionPath(pathname) {
   const path = String(pathname || "").split("?")[0].replace(/\/+$/, "");
   return path === "/settings" || parseSettingsPathname(path) !== null;
 }
+
+// Browser back/forward bypasses navigate(); ask before it drops a dirty section's draft.
+export function decideSettingsPopState({ previousUrl, nextUrl, dirty, confirm, restore }) {
+  const previous = parseSettingsPathname(previousUrl);
+  const next = parseSettingsPathname(nextUrl);
+  if (!dirty || !previous || previous.section === next?.section) return "allow";
+  if (confirm("Discard your unsaved changes?")) return "discard";
+  restore(previousUrl);
+  return "restore";
+}

@@ -20,6 +20,7 @@ import {
 } from "@/components/settings/sections/SimpleSections";
 import {
   DEFAULT_EMAIL_SECTION,
+  decideSettingsPopState,
   parseSettingsPathname,
   settingsPath,
   withSearchParams,
@@ -62,6 +63,26 @@ export function SettingsWorkspace() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
+
+  // Browser back/forward: same unsaved-changes question as the menu.
+  const lastUrlRef = useRef("");
+  useEffect(() => {
+    lastUrlRef.current = `${window.location.pathname}${window.location.search}`;
+  }, [pathname, searchParams]);
+  useEffect(() => {
+    const handlePopState = () => {
+      const decision = decideSettingsPopState({
+        previousUrl: lastUrlRef.current,
+        nextUrl: `${window.location.pathname}${window.location.search}`,
+        dirty: dirtyRef.current,
+        confirm: (message) => window.confirm(message),
+        restore: (url) => window.history.pushState(null, "", url),
+      });
+      if (decision === "discard") setDirty(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Client-side only: pushState keeps section switches instant (no server round trip).
   const navigate = useCallback(

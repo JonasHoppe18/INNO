@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useScopedReadResource } from "@/hooks/useScopedReadResource";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { normalizeSupportLanguage } from "@/lib/translation/languages";
-import { missingResourceUrls, resourcePayload, resourcesFromBootstrap } from "@/lib/settings/resource-map";
+import { missingResourceUrls, resourcePayload, resourcesFromBootstrap, withResource } from "@/lib/settings/resource-map";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -275,10 +275,11 @@ export function SettingsWorkspaceProvider({ children }) {
     return () => { loadRef.current += 1; };
   }, [load]);
 
-  const refreshResource = useCallback(async (url) => {
-    const entry = await readEntry(readResponse, url);
-    if (entry.ok) setResources((current) => ({ ...current, [url]: entry }));
-  }, [readResponse]);
+  // Sections record what they just saved, so their next mount shows it without a refetch.
+  const setResource = useCallback(
+    (url, payload) => setResources((current) => withResource(current, url, payload)),
+    []
+  );
 
   const reloadMembers = useCallback(async () => {
     const entry = await readEntry(readResponse, "/api/settings/members");
@@ -302,10 +303,10 @@ export function SettingsWorkspaceProvider({ children }) {
     setMembers,
     currentRole,
     canManageMembers,
-    refreshResource,
+    setResource,
     reloadMembers,
     setWorkspaceName,
-  }), [loading, workspace, resources, members, currentRole, canManageMembers, refreshResource, reloadMembers, setWorkspaceName]);
+  }), [loading, workspace, resources, members, currentRole, canManageMembers, setResource, reloadMembers, setWorkspaceName]);
 
   return <SettingsWorkspaceContext.Provider value={value}>{children}</SettingsWorkspaceContext.Provider>;
 }

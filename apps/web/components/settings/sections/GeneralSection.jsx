@@ -249,7 +249,7 @@ function GeneralTab({
 
 export function GeneralSection() {
   const supabase = useClerkSupabase();
-  const { workspace, resources, refreshResource, setWorkspaceName } = useSettingsWorkspace();
+  const { workspace, resources, setResource, setWorkspaceName } = useSettingsWorkspace();
   const { workspaceId, shopId, shopDomain } = workspace;
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -342,6 +342,14 @@ export function GeneralSection() {
         setInitialAutoCloseMode(persistedAutoCloseMode);
         setNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
         setInitialNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
+        setResource("/api/settings/test-mode", {
+          ...testModePayload,
+          test_mode: nextTestMode,
+          test_email: nextTestEmail,
+          support_language: persistedSupportLanguage,
+          auto_close_mode: persistedAutoCloseMode,
+          needs_attention_stale_days: persistedNeedsAttentionStaleDays,
+        });
       } else if (shopId) {
         const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
         if (error) throw error;
@@ -362,7 +370,6 @@ export function GeneralSection() {
         setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
-      if (workspaceId) refreshResource("/api/settings/test-mode");
       setWorkspaceName(nextTeamName);
       toast.success("Settings saved.");
     } catch (error) {
@@ -386,7 +393,7 @@ export function GeneralSection() {
     testEmail,
     testMode,
     workspaceId,
-    refreshResource,
+    setResource,
     setWorkspaceName,
   ]);
 

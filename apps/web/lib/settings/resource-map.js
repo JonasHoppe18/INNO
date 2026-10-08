@@ -32,3 +32,8 @@ export function resourcePayload(resources, url) {
   const entry = resources?.[url];
   return entry?.ok ? entry.payload ?? {} : null;
 }
+
+// Records a just-saved payload so the next mount of a section shows it immediately.
+export function withResource(resources, url, payload) {
+  return { ...resources, [url]: { ok: true, status: 200, payload: payload ?? {} } };
+}

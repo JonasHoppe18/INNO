@@ -71,11 +71,11 @@ Interne links opdateres til de nye stier: `CsatEmailBuilder` back-link, `Confirm
 
 Ejer kun *hvem er jeg* og bruges af flere sektioner. Den indeholder den nuværende opslagslogik fra `loadData` (members-respons → workspace-id, navn, rolle, support-sprog; fallback via `profiles`/`workspaces`/`workspace_members`/`shops`), flyttet uændret.
 
-Eksponerer: `{ loading, error, workspaceId, shopId, shopDomain, supabaseUserId, workspaceName, currentRole, canManageMembers, members, reload, setWorkspaceName }`.
+Eksponerer: `{ loading, workspace, resources, members, setMembers, currentRole, canManageMembers, setResource, reloadMembers, setWorkspaceName }`.
 
 Den kalder `/api/settings/bootstrap` én gang og gemmer svaret i et ressource-map i provideren (`resources[url] = { ok, status, payload }`). Kortet lever, så længe man er inde på settings-ruterne, fordi `SettingsWorkspace` ikke unmountes ved sektionsskift. Det har ingen TTL og ingen baggrunds-genhentning, ligesom i dag hvor alt hentes én gang pr. sidevisning.
 
-Hvis bootstrap mangler en ressource, henter provideren den direkte under første load (parallelt, som i dag). En ressource, der fejlede i bootstrap, behandles som fejlet, ligesom i dag. Sektionerne læser `resources` synkront fra `useSettingsWorkspace()` og initialiserer deres kladde én gang pr. mount via rene funktioner (`initialGeneralState`, `initialEmailState`). Efter et vellykket gem kalder sektionen `refreshResource(url)`. Den henter GET-ressourcen i baggrunden og erstatter værdien i kortet, så den næste visning af sektionen viser det gemte uden skeleton. Den mountede sektion bliver ved med at vise sin egen kladde.
+Hvis bootstrap mangler en ressource, henter provideren den direkte under første load (parallelt, som i dag). En ressource, der fejlede i bootstrap, behandles som fejlet, ligesom i dag. Sektionerne læser `resources` synkront fra `useSettingsWorkspace()` og initialiserer deres kladde én gang pr. mount via rene funktioner (`initialGeneralState`, `initialEmailState`). Efter et vellykket gem skriver sektionen den gemte værdi synkront ind i kortet (`setResource(url, payload)`, med svaret fra serveren eller de gemte felter). Den næste visning af sektionen viser derfor det gemte med det samme, uden skeleton og uden et ekstra kald.
 
 `scopedReadCache` (TTL 15 s) bruges ikke til settings, fordi dens udløb ville give skeleton-blink ved sektionsskift.
 
@@ -108,7 +108,7 @@ I dag tæller `aiPrompt` med i Generals dirty-tjek, og `handleSaveGeneral` poste
 - `beforeunload`-advarsel, mens den aktive sektion har ugemte ændringer.
 - Klik på et andet menupunkt (desktop-link eller mobil-select) → `window.confirm("Discard your unsaved changes?")`. Ved ja kaldes `discard()` og der navigeres. Ved nej bliver man.
 
-Skift mellem email-undersektioner advarer ikke (som i dag). Browserens tilbage-knap advarer heller ikke i dag (pushState), og det ændres ikke.
+Skift mellem email-undersektioner advarer ikke (som i dag). Browserens tilbage/frem-knap stiller samme spørgsmål, når man forlader en sektion med ugemte ændringer. Ved nej bliver man stående med kladden intakt. I dag bevarede man kladden, fordi alt lå i én komponent.
 
 ## Fejl og loading
 

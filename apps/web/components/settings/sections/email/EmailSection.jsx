@@ -25,7 +25,7 @@ export function EmailSection() {
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { emailSection, navigate } = useSettingsRoute();
-  const { resources, refreshResource } = useSettingsWorkspace();
+  const { resources, setResource } = useSettingsWorkspace();
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const emailInit = useMemo(() => initialEmailState(resources, searchParams?.get("mailbox_id") || ""), []);
@@ -153,6 +153,7 @@ export function EmailSection() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not save customer confirmation settings.");
       setConfirmationConfiguration(payload);
+      setResource("/api/settings/auto-reply", payload);
       applyConfirmationScope(selectedConfirmationMailboxId, payload);
       if (showToast) {
         toast.success("Customer confirmation settings saved.");
@@ -180,6 +181,7 @@ export function EmailSection() {
     autoReplyTemplateName,
     savingAutoReply,
     selectedConfirmationMailboxId,
+    setResource,
   ]);
 
   const handleUpdateEmailRoutingRow = useCallback((row) => {
@@ -506,6 +508,7 @@ export function EmailSection() {
         setInitialSignatureIsActive(persistedSignature?.is_active !== false);
         setSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
         setInitialSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
+        setResource("/api/settings/email-signature", { signature: persistedSignature });
       }
 
       if (hasRoutingChanges) {
@@ -572,6 +575,7 @@ export function EmailSection() {
           throw new Error(refreshPayload?.error || "Could not reload email routes.");
         }
         const persistedRows = normalizeRoutingRows(refreshPayload?.routes || []);
+        setResource("/api/settings/email-routing", refreshPayload);
         setInitialEmailRoutingRows(persistedRows);
         setEmailRoutingRows(persistedRows);
       }
@@ -648,6 +652,7 @@ export function EmailSection() {
           throw new Error(refreshPayload?.error || "Could not reload sender rules.");
         }
         const persistedRules = normalizeSenderRuleRows(refreshPayload?.rules || []);
+        setResource("/api/settings/email-sender-rules", refreshPayload);
         setInitialEmailSenderRuleRows(persistedRules);
         setEmailSenderRuleRows(persistedRules);
       }
@@ -717,19 +722,11 @@ export function EmailSection() {
           throw new Error(refreshPayload?.error || "Could not reload blocked senders.");
         }
         const persistedBlocks = normalizeBlocklistRows(refreshPayload?.blocks || []);
+        setResource("/api/settings/email-blocklist", refreshPayload);
         setInitialEmailBlocklistRows(persistedBlocks);
         setEmailBlocklistRows(persistedBlocks);
       }
 
-      [
-        [hasAutoReplyChanges, "/api/settings/auto-reply"],
-        [hasSignatureTemplateChanges, "/api/settings/email-signature"],
-        [hasRoutingChanges, "/api/settings/email-routing"],
-        [hasSenderRulesChanges, "/api/settings/email-sender-rules"],
-        [hasBlocklistChanges, "/api/settings/email-blocklist"],
-      ].forEach(([changed, url]) => {
-        if (changed) refreshResource(url);
-      });
       toast.success("Email settings saved.");
     } catch (error) {
       toast.error(error?.message || "Could not save email settings.");
@@ -762,7 +759,7 @@ export function EmailSection() {
     signatureTemplateHtml,
     savingAutoReply,
     savingEmailRouting,
-    refreshResource,
+    setResource,
   ]);
 
   useSettingsDirty(canSaveEmailSettings);

@@ -117,7 +117,7 @@ function AiInstructionsTab({ value, onChange, onSave, saving }) {
 }
 
 export function AiInstructionsSection() {
-  const { resources, refreshResource } = useSettingsWorkspace();
+  const { resources, setResource } = useSettingsWorkspace();
   const [aiPrompt, setAiPrompt] = useState(
     () => String(resourcePayload(resources, "/api/persona")?.persona?.instructions || "").trim()
   );
@@ -135,7 +135,7 @@ export function AiInstructionsSection() {
           body: JSON.stringify({ instructions: newPrompt }),
         });
         if (!response.ok) throw new Error("Could not save AI instructions.");
-        refreshResource("/api/persona");
+        setResource("/api/persona", { persona: { instructions: String(newPrompt || "").trim() } });
         toast.success("AI instructions saved.");
       }}
     />
