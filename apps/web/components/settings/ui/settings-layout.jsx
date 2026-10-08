@@ -1,6 +1,9 @@
 "use client";
 
+import { createContext, useContext } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -40,16 +43,127 @@ export function SettingsGroup({ title, description, action = null, footer = null
   );
 }
 
-export function SettingsRow({ label, description, htmlFor, children, controlClassName }) {
+export function SettingsRow({ label, description, htmlFor, stacked = false, children, controlClassName }) {
   return (
-    <div className="flex flex-col gap-2.5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+    <div
+      className={cn(
+        "flex flex-col gap-2.5 py-3.5",
+        !stacked && "sm:flex-row sm:items-center sm:justify-between sm:gap-8"
+      )}
+    >
       <div className="min-w-0 flex-1">
         <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
           {label}
         </label>
         {description ? <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p> : null}
       </div>
-      <div className={cn("flex shrink-0 items-center sm:w-64 sm:justify-end", controlClassName)}>{children}</div>
+      <div
+        className={cn(
+          "flex items-center",
+          stacked ? "w-full" : "shrink-0 sm:w-64 sm:justify-end",
+          controlClassName
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const TableTemplateContext = createContext("1fr");
+
+export function SettingsTable({ columns, template, minWidth = 640, children }) {
+  return (
+    <TableTemplateContext.Provider value={template}>
+      <div className="overflow-x-auto">
+        <div role="table" style={{ minWidth }}>
+          <div
+            role="row"
+            className="grid items-center gap-4 border-b border-border/60 pb-2 pt-1 text-xs text-muted-foreground"
+            style={{ gridTemplateColumns: template }}
+          >
+            {columns.map((column) => (
+              <div key={column.key} role="columnheader" className={cn(column.align === "right" && "text-right")}>
+                {column.label}
+              </div>
+            ))}
+          </div>
+          <div className="divide-y divide-border/60">{children}</div>
+        </div>
+      </div>
+    </TableTemplateContext.Provider>
+  );
+}
+
+export function SettingsTableRow({ muted = false, children }) {
+  const template = useContext(TableTemplateContext);
+  return (
+    <div
+      role="row"
+      className={cn("grid items-center gap-4 py-3 text-sm", muted && "text-muted-foreground")}
+      style={{ gridTemplateColumns: template }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function SettingsRowMenu({ label = "More actions", disabled = false, title, children }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="ml-auto h-7 w-7 text-muted-foreground hover:text-foreground"
+          disabled={disabled}
+          title={title}
+          aria-label={label}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function SettingsEmptyState({ title, description, action = null }) {
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border px-6 py-10 text-center">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {description ? <p className="max-w-sm text-xs leading-5 text-muted-foreground">{description}</p> : null}
+      {action ? <div className="mt-3">{action}</div> : null}
+    </div>
+  );
+}
+
+export function SettingsTabs({ tabs, value, onChange }) {
+  return (
+    <div role="tablist" className="-mt-2 flex gap-5 overflow-x-auto border-b border-border/60">
+      {tabs.map((tab) => {
+        const active = tab.key === value;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(tab.key)}
+            className={cn(
+              "-mb-px shrink-0 border-b-2 pb-2 text-sm transition-colors duration-150",
+              active
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
