@@ -2,6 +2,15 @@
 
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
+import {
+  SettingsEmptyState,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRowMenu,
+  SettingsTable,
+  SettingsTableRow,
+} from "@/components/settings/ui/settings-layout";
+import { memberRowPermissions } from "@/lib/settings/members";
 import { EditSignatureModal } from "@/components/settings/EditSignatureModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,20 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import {
   Mail,
-  PenLine,
-  Settings,
   Trash2,
   User,
-  Users2,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -330,211 +332,145 @@ function MembersTab({
 
   return (
     <>
-      <section className="w-full space-y-5">
-        <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-primary">TEAM</p>
-          <div className="mt-1 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-            <div>
-              <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Team Members</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Manage who has access to your workspace.</p>
-            </div>
-            <Button
-              type="button"
-              onClick={() => setInviteOpen(true)}
-              disabled={!canManageRoles}
-              className="h-10 gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-transform duration-100"
-            >
-              <Users2 className="h-4 w-4" />
-              Invite Member
-            </Button>
-          </div>
-        </div>
-
-        <div className="w-full overflow-x-auto rounded-2xl border border-border bg-card">
-          <div className="grid min-w-[748px] grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            <p>Member</p>
-            <p>Role</p>
-            <p>Signature</p>
-            <p className="text-right">Actions</p>
-          </div>
-
+      <SettingsPage
+        width="wide"
+        title="Members"
+        description="Manage who has access to your workspace."
+        actions={
+          <Button type="button" size="sm" onClick={() => setInviteOpen(true)} disabled={!canManageRoles}>
+            Invite member
+          </Button>
+        }
+      >
+        <SettingsGroup footer={`${rows.length} ${rows.length === 1 ? "member" : "members"}`}>
           {rows.length ? (
-            rows.map((member) => {
-              const displayName = getDisplayName(member);
-              const initials = displayName
-                .split(" ")
-                .map((part) => part[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase();
-              const role = normalizeOrgRole(member?.workspace_role);
-              const rawRole = String(member?.workspace_role || "").toLowerCase();
-              const isAdminLikeRole = rawRole.includes("admin") || rawRole.includes("owner");
-              const rolePillClassName = isAdminLikeRole
-                ? "bg-accent text-accent-foreground"
-                : "bg-info text-info-foreground";
-              const isOwner = rawRole.includes("owner");
-              const memberUserId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
-              const isSelf =
-                Boolean(memberUserId) &&
-                memberUserId === String(currentClerkUserId || "").trim();
-              const canEditRole =
-                canManageRoles &&
-                Boolean(memberUserId) &&
-                !isOwner &&
-                !isSelf &&
-                (currentIsOwner || !rawRole.includes("admin"));
-              const canEditSignature =
-                Boolean(member?.user_id) && (isSelf || canManageRoles);
-              const canRemoveMember = canEditRole;
-              const isRoleUpdating =
-                roleUpdatingForUserId &&
-                roleUpdatingForUserId === memberUserId;
-              const isInvited = String(member?.status || "") === "invited";
+            <SettingsTable
+              template="minmax(240px,1fr) 110px 120px 40px"
+              columns={[
+                { key: "member", label: "Member" },
+                { key: "role", label: "Role" },
+                { key: "signature", label: "Signature" },
+                { key: "actions", label: "" },
+              ]}
+            >
+              {rows.map((member) => {
+                const displayName = getDisplayName(member);
+                const initials = displayName
+                  .split(" ")
+                  .map((part) => part[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase();
+                const role = normalizeOrgRole(member?.workspace_role);
+                const {
+                  rawRole,
+                  memberUserId,
+                  canEditRole,
+                  canEditSignature,
+                  canRemoveMember,
+                  isInvited,
+                } = memberRowPermissions(member, { canManageRoles, currentClerkUserId, currentIsOwner });
+                const isRoleUpdating = roleUpdatingForUserId && roleUpdatingForUserId === memberUserId;
 
-              return (
-                <div
-                  key={member.user_id || member.clerk_user_id || member.email}
-                  className="grid min-w-[748px] grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-4 last:border-b-0 hover:bg-muted/60 transition-colors duration-150"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    {member.image_url && !isInvited ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={member.image_url}
-                        alt={displayName}
-                        className="h-9 w-9 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/80 text-xs font-semibold text-muted-foreground">
-                        {initials || "U"}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-foreground">{displayName}</p>
-                      <p className="truncate text-sm text-muted-foreground">
-                        {member.email || "No email"}
-                        {isInvited ? " • Invitation sent" : ""}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        "h-7 rounded-md border-0 px-3 text-sm font-semibold",
-                        rolePillClassName
+                return (
+                  <SettingsTableRow key={member.user_id || member.clerk_user_id || member.email}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {member.image_url && !isInvited ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={member.image_url} alt={displayName} className="h-7 w-7 rounded-full object-cover" />
+                      ) : (
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                          {initials || "U"}
+                        </div>
                       )}
-                    >
-                      {role}
-                    </Badge>
-                  </div>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate font-medium text-foreground">{displayName}</p>
+                          {isInvited ? (
+                            <Badge variant="neutral" className="shrink-0">Invited</Badge>
+                          ) : null}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">{member.email || "No email"}</p>
+                      </div>
+                    </div>
 
-                  <div className="shrink-0">
-                    {isInvited ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
-                        onClick={() => handleResendInvite(member)}
-                      >
-                        <Mail className="mr-2 h-[14px] w-[14px]" />
-                        Resend
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-10 rounded-lg px-4 text-sm font-semibold text-foreground hover:bg-muted"
-                        onClick={() => handleOpenSignatureModal(member)}
-                        disabled={!canEditSignature}
-                        title={
-                          !member?.user_id
-                            ? "User profile not synced yet"
-                            : !canEditSignature
-                            ? "You can only edit your own signature."
-                            : ""
-                        }
-                      >
-                        <PenLine className="mr-2 h-[14px] w-[14px]" />
-                        Signature
-                      </Button>
-                    )}
-                  </div>
+                    <p className="text-sm text-foreground">{role}</p>
 
-                  <div className="ml-auto flex shrink-0 justify-end">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                    <div>
+                      {isInvited ? (
+                        <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => handleResendInvite(member)}>
+                          Resend
+                        </Button>
+                      ) : (
                         <Button
                           type="button"
-                          size="icon"
                           variant="ghost"
-                          className="h-10 w-10 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                          disabled={!canManageRoles && !isInvited}
+                          size="sm"
+                          className="-ml-3"
+                          onClick={() => handleOpenSignatureModal(member)}
+                          disabled={!canEditSignature}
                           title={
-                            canManageRoles || isInvited
-                              ? "More actions"
-                              : "Only admins can manage members"
+                            !member?.user_id
+                              ? "User profile not synced yet"
+                              : !canEditSignature
+                              ? "You can only edit your own signature."
+                              : ""
                           }
                         >
-                          <Settings className="h-4 w-4" />
+                          Edit
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        {isInvited ? (
-                          <>
-                            <DropdownMenuItem onSelect={() => handleResendInvite(member)}>
-                              <Mail className="mr-2 h-4 w-4" />
-                              Resend invite
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-danger-foreground focus:text-danger-foreground"
-                              onSelect={() => handleRemoveMember(member)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remove user
-                            </DropdownMenuItem>
-                          </>
-                        ) : (
-                          <>
-                            <DropdownMenuItem
-                              disabled={!canEditRole || Boolean(isRoleUpdating)}
-                              onSelect={() =>
-                                handleRoleChange(
-                                  member,
-                                  rawRole.includes("admin") ? "org:member" : "org:admin"
-                                )
-                              }
-                            >
-                              <User className="mr-2 h-4 w-4" />
-                              {rawRole.includes("admin") ? "Make member" : "Make admin"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-danger-foreground focus:text-danger-foreground"
-                              disabled={!canRemoveMember}
-                              onSelect={() => handleRemoveMember(member)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remove user
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="px-5 py-8 text-sm text-muted-foreground">No members found.</div>
-          )}
-        </div>
+                      )}
+                    </div>
 
-        <p className="px-1 text-sm text-muted-foreground">
-          Showing {rows.length} of {rows.length} members
-        </p>
-      </section>
+                    <SettingsRowMenu
+                      disabled={!canManageRoles && !isInvited}
+                      title={canManageRoles || isInvited ? "More actions" : "Only admins can manage members"}
+                    >
+                      {isInvited ? (
+                        <>
+                          <DropdownMenuItem onSelect={() => handleResendInvite(member)}>
+                            <Mail className="mr-2 h-4 w-4" />
+                            Resend invite
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-danger-foreground focus:text-danger-foreground"
+                            onSelect={() => handleRemoveMember(member)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove user
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <>
+                          <DropdownMenuItem
+                            disabled={!canEditRole || Boolean(isRoleUpdating)}
+                            onSelect={() =>
+                              handleRoleChange(member, rawRole.includes("admin") ? "org:member" : "org:admin")
+                            }
+                          >
+                            <User className="mr-2 h-4 w-4" />
+                            {rawRole.includes("admin") ? "Make member" : "Make admin"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-danger-foreground focus:text-danger-foreground"
+                            disabled={!canRemoveMember}
+                            onSelect={() => handleRemoveMember(member)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove user
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </SettingsRowMenu>
+                  </SettingsTableRow>
+                );
+              })}
+            </SettingsTable>
+          ) : (
+            <SettingsEmptyState title="No members yet" description="Invite your team to start working in Sona." />
+          )}
+        </SettingsGroup>
+      </SettingsPage>
 
       <EditSignatureModal
         open={modalOpen}
