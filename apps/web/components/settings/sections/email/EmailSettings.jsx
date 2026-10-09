@@ -322,22 +322,7 @@ export function EmailSettings({
           </SettingsRow>
         </SettingsGroup>
 
-        <SettingsGroup
-          title="Email design"
-          action={
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setTestConfirmationOpen(true)}>
-                Send test email
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
-                Preview
-              </Button>
-              <Button asChild size="sm">
-                <Link href={designHref}>Edit design</Link>
-              </Button>
-            </div>
-          }
-        >
+        <SettingsGroup title="Email design">
           <SettingsRow
             label={
               <span className="inline-flex items-center gap-2">
@@ -345,8 +330,17 @@ export function EmailSettings({
                 {designStatus ? <Badge variant={designStatus.variant}>{designStatus.label}</Badge> : null}
               </span>
             }
-            description="Message, logo, colors and layout are edited in the email designer. Add the ticket reference variable wherever the ticket number should appear. Publish to update what customers receive."
-          />
+            description="Edit the message, logo, colors and ticket reference in the designer. Publish there to update what customers receive."
+          >
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+                Preview
+              </Button>
+              <Button asChild size="sm">
+                <Link href={designHref}>Edit design</Link>
+              </Button>
+            </div>
+          </SettingsRow>
           <SettingsRow
             label="Subject"
             description="Edited in the email designer under Email settings."
@@ -764,6 +758,19 @@ export function EmailSettings({
               className="block w-full"
             />
           </div>
+          <DialogFooter className="border-t border-border/60 px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPreviewOpen(false);
+                setTestConfirmationOpen(true);
+              }}
+            >
+              Send test email
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
