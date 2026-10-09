@@ -9,6 +9,24 @@ import {
 } from "@/lib/confirmation/email-template";
 import { renderCustomerConfirmation } from "./customer-confirmation";
 
+// The ticket reference is the one variable a design may place outside the message.
+const TICKET_REFERENCE_PATTERN = /{{\s*ticket\.reference\s*}}/gi;
+const withoutTicketReference = (value) => String(value || "").replace(TICKET_REFERENCE_PATTERN, "");
+// Plain marker that survives the shared renderer, which only knows CSAT variables.
+const TICKET_REFERENCE_MARKER = "SONATICKETREFERENCEMARKER";
+const mapStrings = (node, fn) => {
+  if (typeof node === "string") return fn(node);
+  if (Array.isArray(node)) return node.map((item) => mapStrings(item, fn));
+  if (node && typeof node === "object") {
+    return Object.fromEntries(Object.entries(node).map(([key, value]) => [key, mapStrings(value, fn)]));
+  }
+  return node;
+};
+const markTicketReference = (node) =>
+  mapStrings(node, (value) => value.replace(TICKET_REFERENCE_PATTERN, TICKET_REFERENCE_MARKER));
+const unmarkTicketReference = (node) =>
+  mapStrings(node, (value) => value.replaceAll(TICKET_REFERENCE_MARKER, "{{ticket.reference}}"));
+
 function legacyTokens(value) {
   return String(value || "").replace(
     /{{\s*([a-z0-9_.]+)\s*}}/gi,
@@ -29,7 +47,7 @@ function legacyTokens(value) {
 export function normalizeConfirmationContent(content) {
   if (JSON.stringify(content || {}).length > 250000)
     throw new CsatTemplateValidationError("Email design is too large.");
-  const normalized = normalizeCsatTemplateContent(content, {
+  const normalized = normalizeCsatTemplateContent(markTicketReference(content), {
     purpose: "confirmation",
   });
   if (countConfirmationMessageBlocks(normalized) !== 1)
@@ -42,7 +60,7 @@ export function normalizeConfirmationContent(content) {
         legacyTokens(block.fieldValues.message);
       } else {
         for (const value of Object.values(block))
-          if (typeof value === "string" && /{{|}}/.test(value))
+          if (typeof value === "string" && /{{|}}/.test(withoutTicketReference(value)))
             throw new CsatTemplateValidationError(
               "Personalization variables belong in the confirmation message block.",
             );
@@ -51,7 +69,7 @@ export function normalizeConfirmationContent(content) {
     }
   };
   walk(normalized.blocks);
-  return normalized;
+  return unmarkTicketReference(normalized);
 }
 export async function compileConfirmationEmail({
   content,
@@ -74,7 +92,7 @@ export async function compileConfirmationEmail({
     });
   find(normalized.blocks);
   const rendered = await renderCsatEmail({
-    content: normalized,
+    content: markTicketReference(normalized),
     subject: "Confirmation",
     previewText,
     purpose: "confirmation",
@@ -87,7 +105,7 @@ export async function compileConfirmationEmail({
     content: normalized,
     subject: legacyTokens(subject),
     text: legacyTokens(message),
-    html: rendered.html,
+    html: rendered.html.replaceAll(TICKET_REFERENCE_MARKER, "{{ticket_reference}}"),
   };
 }
 export async function previewConfirmationEmail(

@@ -35,7 +35,7 @@ describe("confirmation email design", () => {
     expect(mail.html).toContain("logo.png");
     expect(mail.html).toContain("&lt;script&gt;");
     expect(mail.html).not.toContain("<script>");
-    expect(mail.html).toContain("Ticket reference: T-50001");
+    expect(mail.html).toContain("Your ticket number: T-50001");
     expect(mail.text).toContain("Example");
     expect(mail.html).not.toContain("{{content}}");
   });
@@ -73,6 +73,42 @@ describe("confirmation email design", () => {
       content: "{{customer.first_name}}",
     });
     expect(() => normalizeConfirmationContent(wrongPlace)).toThrow("belong");
+  });
+  it("lets the design place the ticket reference outside the message", async () => {
+    const source = createConfirmationContent();
+    source.blocks[0].children[0].push({
+      id: "footer-ref",
+      type: "paragraph",
+      content: "Your reference: {{ticket.reference}}",
+    });
+    const compiled = await compileConfirmationEmail({ content: source, subject: "Hi" });
+    expect(compiled.html).toContain("{{ticket_reference}}");
+    expect(compiled.html).not.toContain("{{ticket.reference}}");
+    const mail = renderCustomerConfirmation({
+      templateHtml: compiled.html,
+      bodyTextTemplate: compiled.text,
+      subjectTemplate: compiled.subject,
+      ticketNumber: 50001,
+    });
+    expect(mail.html).toContain("Your reference: T-50001");
+    expect(mail.html).not.toContain("Ticket reference: T-50001");
+  });
+  it("lets the message mention the ticket reference", async () => {
+    const source = createConfirmationContent("Hi\nYour ticket number is {{ticket.reference}}.");
+    const compiled = await compileConfirmationEmail({ content: source, subject: "Hi" });
+    expect(compiled.text).toBe("Hi\nYour ticket number is {{ticket_reference}}.");
+    const mail = renderCustomerConfirmation({
+      templateHtml: compiled.html,
+      bodyTextTemplate: compiled.text,
+      subjectTemplate: compiled.subject,
+      ticketNumber: 50001,
+    });
+    expect(mail.html).toContain("Your ticket number is T-50001.");
+    expect(mail.html).not.toContain("Ticket reference: T-50001");
+  });
+  it("starts new designs with the reference in the message", () => {
+    const message = createConfirmationContent().blocks[0].children[0][0].fieldValues.message;
+    expect(message).toContain("{{ticket.reference}}");
   });
   it("keeps CSAT rating requirements intact", () => {
     expect(() =>

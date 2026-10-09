@@ -46,6 +46,10 @@ const client = {
         state.calls.push([key, value]);
         return query;
       },
+      update: (body) => {
+        state.calls.push(["update", body]);
+        return query;
+      },
       upsert: (body, options) => {
         state.calls.push(["upsert", body, options]);
         return query;
@@ -65,6 +69,7 @@ import {
   loadConfirmationDraft,
   saveConfirmationDraft,
   publishConfirmationDraft,
+  syncConfirmationDraftSubject,
 } from "../confirmation-store";
 const context = {
   serviceClient: client,
@@ -128,6 +133,14 @@ describe("confirmation draft scope and publication", () => {
       mailbox_id: "mail-a",
       status: "draft",
     });
+  });
+  it("updates only the subject of an existing draft when Settings changes it", async () => {
+    await syncConfirmationDraftSubject(context, "[{{ticket.reference}}] New subject");
+    const body = state.calls.find(([key]) => key === "update")[1];
+    expect(Object.keys(body).sort()).toEqual(["subject", "updated_at"]);
+    expect(body.subject).toBe("[{{ticket.reference}}] New subject");
+    expect(state.calls).toContainEqual(["workspace_id", "workspace-a"]);
+    expect(state.calls).toContainEqual(["scope_key", "mail-a"]);
   });
   it("publishes the saved draft with its workspace and expected revision", async () => {
     await expect(publishConfirmationDraft(context)).rejects.toThrow("Save");

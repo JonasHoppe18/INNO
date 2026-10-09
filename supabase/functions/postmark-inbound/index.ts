@@ -28,7 +28,7 @@ import { autoTagThread } from "../_shared/autoTagThread.ts";
 import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 import {
-  addTicketReference,
+  composeConfirmation,
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
@@ -756,10 +756,10 @@ async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplyS
     id: selected.id,
     enabled: Boolean(selected.enabled),
     include_ticket_number: selected.include_ticket_number !== false,
-    subject_template: asString(selected.subject_template) || "We've received your message",
+    subject_template: asString(selected.subject_template) || "[{{ticket_reference}}] We've received your message",
     body_text_template:
       asString(selected.body_text_template) ||
-      "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}",
+      "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible.\n\nYour ticket number: {{ticket_reference}}\n\nYou can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}",
     body_html_template: asString(selected.body_html_template) || null,
     template_id: asString(selected.template_id) || null,
   };
@@ -1116,22 +1116,16 @@ async function maybeSendAutoReply(options: {
     team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
     subject: asString(options.subject),
   };
-  const renderedSubject = fillTemplateTokens(setting.subject_template, tokenValues);
-  const renderedText = fillTemplateTokens(setting.body_text_template, tokenValues);
-  const renderedBodyHtml =
-    fillTemplateTokens(setting.body_html_template || "", tokenValues) ||
-    `<p style="white-space:pre-wrap">${renderedText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
-  const rendered = addTicketReference({
-    subject: renderedSubject,
-    text: renderedText,
-    html: renderedBodyHtml,
+  const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
+  const rendered = composeConfirmation({
+    subjectTemplate: fillTemplateTokens(setting.subject_template, tokenValues),
+    bodyText: fillTemplateTokens(setting.body_text_template, tokenValues),
+    bodyHtml: fillTemplateTokens(setting.body_html_template || "", tokenValues),
+    templateHtml,
     ticketNumber: options.ticketNumber,
     includeTicketNumber: setting.include_ticket_number,
   });
-  const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
-  const mergedHtml = templateHtml.includes("{{content}}")
-    ? templateHtml.replace("{{content}}", rendered.html)
-    : `${templateHtml}\n${rendered.html}`;
+  const mergedHtml = rendered.html;
   const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
   const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
   const providerMessageId = await sendPostmarkAutoReply({

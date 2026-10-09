@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { EmailSettings } from "@/components/settings/sections/email/EmailSettings";
 import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
-import { initialEmailState } from "@/lib/settings/email-state";
+import { DEFAULT_CONFIRMATION_BODY_TEXT, DEFAULT_CONFIRMATION_SUBJECT, initialEmailState } from "@/lib/settings/email-state";
+import { toDesignerTokens } from "@/lib/confirmation/email-template";
 import {
   blocklistSnapshot,
   normalizeBlocklistRows,
@@ -23,7 +24,7 @@ import {
 function EmailSection({ mode }) {
   const searchParams = useSearchParams();
   const { user } = useUser();
-  const { resources, setResource } = useSettingsWorkspace();
+  const { resources, setResource, workspace } = useSettingsWorkspace();
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const emailInit = useMemo(() => initialEmailState(resources, searchParams?.get("mailbox_id") || ""), []);
@@ -65,8 +66,8 @@ function EmailSection({ mode }) {
     const setting = mailbox?.effective || configuration?.workspace_setting || configuration?.setting || {};
     const template = mailbox?.template || configuration?.workspace_template || configuration?.template || {};
     const inherits = Boolean(normalizedMailboxId && mailbox?.inherits_workspace);
-    const subject = String(setting?.subject_template || "We've received your message");
-    const bodyText = String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}");
+    const subject = String(setting?.subject_template || DEFAULT_CONFIRMATION_SUBJECT);
+    const bodyText = String(setting?.body_text_template || DEFAULT_CONFIRMATION_BODY_TEXT);
     const bodyHtml = String(setting?.body_html_template || "");
     const templateName = String(template?.name || "Customer confirmation template");
     const templateHtml = String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>");
@@ -392,7 +393,7 @@ function EmailSection({ mode }) {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
     setAutoReplyIncludeTicketNumber(Boolean(initialAutoReplyIncludeTicketNumber));
     setAutoReplyInheritsWorkspace(Boolean(initialAutoReplyInheritsWorkspace));
-    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || "We've received your message"));
+    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || DEFAULT_CONFIRMATION_SUBJECT));
     setAutoReplyBodyTextTemplate(String(initialAutoReplyBodyTextTemplate || ""));
     setAutoReplyBodyHtmlTemplate(String(initialAutoReplyBodyHtmlTemplate || ""));
     setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
@@ -420,6 +421,7 @@ function EmailSection({ mode }) {
     if (!canSaveEmailSettings || savingEmailRouting || savingAutoReply) return;
     setSavingEmailRouting(true);
     try {
+      const subjectChanged = autoReplySubjectTemplate !== initialAutoReplySubjectTemplate;
       if (hasAutoReplyChanges) {
         const autoReplyResult = await handleSaveAutoReply(
           {
@@ -436,6 +438,17 @@ function EmailSection({ mode }) {
         );
         if (!autoReplyResult?.ok) {
           throw new Error(autoReplyResult?.error || "Could not save customer confirmation settings.");
+        }
+        if (subjectChanged) {
+          // Keep a saved designer draft in step so the next publish keeps this subject.
+          const query = selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : "";
+          const sync = await fetch(`/api/settings/confirmation/email${query}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ subject_only: true, subject: toDesignerTokens(autoReplySubjectTemplate) }),
+          }).catch(() => null);
+          if (!sync?.ok) toast.warning("Subject saved, but the email designer still shows the old subject.");
         }
       }
 
@@ -672,6 +685,8 @@ function EmailSection({ mode }) {
     autoReplyTemplateName,
     canSaveEmailSettings,
     mode,
+    initialAutoReplySubjectTemplate,
+    selectedConfirmationMailboxId,
     emailBlocklistRows,
     emailRoutingRows,
     emailSenderRuleRows,
@@ -698,18 +713,16 @@ function EmailSection({ mode }) {
         subjectTemplate={autoReplySubjectTemplate}
         onSubjectTemplateChange={setAutoReplySubjectTemplate}
         bodyTextTemplate={autoReplyBodyTextTemplate}
-        onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
         bodyHtmlTemplate={autoReplyBodyHtmlTemplate}
-        onBodyHtmlTemplateChange={setAutoReplyBodyHtmlTemplate}
         confirmationTemplateHtml={autoReplyTemplateHtml}
         includeTicketNumber={autoReplyIncludeTicketNumber}
-        onIncludeTicketNumberChange={setAutoReplyIncludeTicketNumber}
         confirmationMailboxes={confirmationConfiguration?.mailboxes || []}
         selectedConfirmationMailboxId={selectedConfirmationMailboxId}
         onConfirmationMailboxChange={handleConfirmationMailboxChange}
         inheritsWorkspace={autoReplyInheritsWorkspace}
         onInheritsWorkspaceChange={setAutoReplyInheritsWorkspace}
         currentUserEmail={user?.primaryEmailAddress?.emailAddress || ""}
+        teamName={workspace.workspaceName}
         routingRows={emailRoutingRows}
         onUpdateRoutingRow={handleUpdateEmailRoutingRow}
         onAddRoutingCategory={handleAddEmailRoutingCategory}

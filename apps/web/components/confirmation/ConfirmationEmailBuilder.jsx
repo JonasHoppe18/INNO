@@ -5,6 +5,7 @@ import { EmailTemplateBuilder } from "@/components/email/EmailTemplateBuilder";
 import {
   CONFIRMATION_PALETTE,
   CONFIRMATION_MESSAGE_BLOCK,
+  CONFIRMATION_DESIGN_VARIABLES,
   CONFIRMATION_SAMPLE_DATA,
   createConfirmationContent,
   countConfirmationMessageBlocks,
@@ -32,7 +33,7 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       backHref: `/settings/confirmation-email${mailboxId ? `?mailbox_id=${encodeURIComponent(mailboxId)}` : ""}`,
       palette: CONFIRMATION_PALETTE,
       block: CONFIRMATION_MESSAGE_BLOCK,
-      variables: [],
+      variables: CONFIRMATION_DESIGN_VARIABLES,
       sampleData: CONFIRMATION_SAMPLE_DATA,
       templates,
       countBlocks: countConfirmationMessageBlocks,
@@ -40,7 +41,7 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       createFallbackDraft: () => ({
         id: null,
         name: "Customer confirmation",
-        subject: "We've received your message",
+        subject: "[{{ticket.reference}}] We've received your message",
         preview_text: "Our team will get back to you soon.",
         editor_json: createConfirmationContent(),
         status: "draft",
