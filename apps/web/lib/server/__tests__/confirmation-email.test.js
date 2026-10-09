@@ -157,6 +157,7 @@ describe("full designs without the message block", () => {
     expect(compiled.html).toContain("{{team_name}}");
     expect(compiled.html).toContain("{{ticket_reference}}");
     expect(compiled.html).not.toMatch(/SONAVAR|SONATICKET/);
+    expect(compiled.html).toMatch(/color:\s*#e11d48/);
     expect(compiled.text).toBe("Thanks, {{customer_first_name}}\n\nYour ticket number: {{ticket_reference}}\n\nBest,\n{{team_name}}");
     expect(compiled.subject).toBe("[{{ticket_reference}}] Hi");
   });

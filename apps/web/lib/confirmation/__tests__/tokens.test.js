@@ -17,3 +17,15 @@ describe("confirmation variable syntax", () => {
     expect(toDesignerTokens("Plain subject")).toBe("Plain subject");
   });
 });
+
+describe("designer variables", () => {
+  it("offers every confirmation variable with a readable label and sample", async () => {
+    const { CONFIRMATION_DESIGN_VARIABLES, CONFIRMATION_TOKEN_MAP } = await import("../email-template");
+    expect(CONFIRMATION_DESIGN_VARIABLES.map((variable) => variable.value).sort())
+      .toEqual(Object.keys(CONFIRMATION_TOKEN_MAP).map((path) => `{{${path}}}`).sort());
+    for (const variable of CONFIRMATION_DESIGN_VARIABLES) {
+      expect(variable.label).toBeTruthy();
+      expect(variable.sample).toBeTruthy();
+    }
+  });
+});

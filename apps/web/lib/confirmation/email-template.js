@@ -8,16 +8,15 @@ export const CONFIRMATION_SAMPLE_DATA = {
 };
 // Variables offered in the designer. The ticket reference may sit anywhere in the
 // layout (for example a footer); the message block keeps the customer variables.
+// Variables for any text or headline block in the designer. The sample shows on
+// the canvas and in previews.
 export const CONFIRMATION_DESIGN_VARIABLES = [
-  {
-    label: "Ticket reference",
-    value: "{{ticket.reference}}",
-    sample: "T-50001",
-    group: "Ticket",
-    description:
-      "Use it in the message or any text block, for example the footer. Without it, the reference is added below the message. Lines with it are left out when the reference is turned off.",
-  },
-];
+  ["Customer first name", "customer.first_name", "Alex", "Customer"],
+  ["Customer full name", "customer.full_name", "Alex Johnson", "Customer"],
+  ["Store name", "store.name", "Demo Store", "Store"],
+  ["Conversation subject", "conversation.subject", "A question about my order", "Ticket"],
+  ["Ticket reference", "ticket.reference", "T-50001", "Ticket"],
+].map(([label, path, sample, group]) => ({ label, value: `{{${path}}}`, sample, group }));
 export const CONFIRMATION_VARIABLES = [
   ["Customer first name", "customer.first_name"],
   ["Customer full name", "customer.full_name"],
@@ -143,6 +142,7 @@ const messageBlock = (message) => ({
   id: "confirmation-text",
   type: "paragraph",
   content: messageToParagraphs(message),
+  paragraphSpacing: 16,
   styles: { padding: pad(0, 0, 0, 0) },
 });
 // Without a brand logo the image is empty: the editor shows an upload slot,
