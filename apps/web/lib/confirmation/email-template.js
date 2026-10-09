@@ -127,8 +127,6 @@ export function createConfirmationContent(
 }
 
 const pad = (top = 0, right = 0, bottom = 0, left = 0) => ({ top, right, bottom, left });
-const STARTER_MESSAGE =
-  "Hi {{customer.first_name}},\n\nThanks for reaching out. We've received your message and our support team will get back to you as soon as possible.\n\nYour ticket number is:";
 const messageBlock = (message, color) => ({
   id: "confirmation-message",
   type: "custom",
@@ -155,18 +153,7 @@ const divider = (id, color) => ({
   width: "full",
   styles: { padding: pad(24, 0, 24, 0) },
 });
-const referenceBlock = (color) => ({
-  id: "confirmation-reference",
-  type: "paragraph",
-  content: `<p style="text-align: center; color: ${color}; font-size: 32px; font-weight: 700; letter-spacing: 1px;">{{ticket.reference}}</p>`,
-  styles: { padding: pad(16, 0, 0, 0) },
-});
-const footerBlock = (color) => ({
-  id: "confirmation-footer",
-  type: "paragraph",
-  content: `<p style="text-align: center; color: ${color}; font-size: 13px; line-height: 1.5;">You can reply directly to this email if you would like to add more information.</p>`,
-  styles: { padding: pad(0, 0, 0, 0) },
-});
+const DEFAULT_MESSAGE = CONFIRMATION_MESSAGE_BLOCK.fields[0].default;
 const singleSection = (backgroundColor, children, padding = pad(40, 40, 40, 40)) => ({
   id: "confirmation-section",
   type: "section",
@@ -186,17 +173,14 @@ function createBrandedConfirmationContent() {
       {
         id: "confirmation-title",
         type: "title",
-        level: 1,
+        level: 2,
         content: "We've received your message",
         textAlign: "center",
         color: "#111827",
         styles: { padding: pad(0, 0, 0, 0) },
       },
       divider("confirmation-divider-top", "#e5e7eb"),
-      messageBlock(STARTER_MESSAGE, "#374151"),
-      referenceBlock("#4f46e5"),
-      divider("confirmation-divider-bottom", "#e5e7eb"),
-      footerBlock("#6b7280"),
+      messageBlock(DEFAULT_MESSAGE, "#374151"),
     ]),
   ]);
 }
@@ -208,17 +192,14 @@ function createDarkConfirmationContent() {
       {
         id: "confirmation-title",
         type: "title",
-        level: 1,
-        content: "WE'VE GOT YOUR MESSAGE!",
+        level: 2,
+        content: "We've received your message",
         textAlign: "center",
         color: "#ffffff",
         styles: { padding: pad(8, 0, 0, 0) },
       },
       divider("confirmation-divider-top", "#3b3f55"),
-      messageBlock(STARTER_MESSAGE, "#e5e7eb"),
-      referenceBlock("#5fd47a"),
-      divider("confirmation-divider-bottom", "#3b3f55"),
-      footerBlock("#9ca3af"),
+      messageBlock(DEFAULT_MESSAGE, "#e5e7eb"),
     ]),
   ]);
 }
@@ -226,7 +207,7 @@ function createDarkConfirmationContent() {
 function createMinimalConfirmationContent() {
   return contentWith("#ffffff", [
     singleSection("#ffffff", [
-      messageBlock(CONFIRMATION_MESSAGE_BLOCK.fields[0].default, "#111827"),
+      messageBlock(DEFAULT_MESSAGE, "#111827"),
     ], pad(32, 24, 32, 24)),
   ]);
 }
@@ -241,13 +222,13 @@ export const CONFIRMATION_STARTER_TEMPLATES = [
   {
     id: "branded",
     name: "Branded",
-    description: "Your logo, a headline and the ticket number in your brand color.",
+    description: "Your logo and a headline above the message.",
     accent: "#4f46e5",
   },
   {
     id: "dark",
     name: "Dark",
-    description: "A bold dark design with a highlighted ticket number.",
+    description: "Your logo and a headline on a dark background.",
     accent: "#5fd47a",
     surface: "#161827",
   },

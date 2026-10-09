@@ -46,7 +46,8 @@ describe("confirmation starter templates", () => {
       expect(() => normalizeConfirmationContent(content)).not.toThrow();
       const mail = await sendWith(content);
       expect(mail.subject).toBe("[T-50001] We've received your message");
-      expect(mail.html).toContain("T-50001");
+      expect(mail.html).toContain("Your ticket number: T-50001");
+      expect(mail.html).not.toContain("font-size: 32px");
       expect(mail.html).toContain("Hi Anna");
       expect(mail.html).not.toContain("{{");
     },
