@@ -34,6 +34,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -90,6 +91,8 @@ export function EmailSettings({
   const [designStatus, setDesignStatus] = useState(null);
   const [previewHeight, setPreviewHeight] = useState(360);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [editingSubject, setEditingSubject] = useState(false);
+  const subjectBeforeEditRef = useRef("");
 
   // Draft vs published state of the builder design for the selected scope.
   useEffect(() => {
@@ -347,16 +350,40 @@ export function EmailSettings({
             label="Subject"
             description="Use {{ticket.reference}} where the ticket number should appear."
             htmlFor="confirmation-subject"
-            controlClassName="sm:w-80"
+            controlClassName="sm:w-80 sm:justify-end"
           >
-            <Input
-              id="confirmation-subject"
-              value={toDesignerTokens(subjectTemplate)}
-              onChange={(event) => onSubjectTemplateChange?.(toStoredTokens(event.target.value))}
-              disabled={confirmationControlsDisabled}
-              maxLength={300}
-              className="h-8 text-input text-foreground md:text-sm"
-            />
+            {editingSubject ? (
+              <Input
+                id="confirmation-subject"
+                autoFocus
+                value={toDesignerTokens(subjectTemplate)}
+                onChange={(event) => onSubjectTemplateChange?.(toStoredTokens(event.target.value))}
+                onBlur={() => setEditingSubject(false)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    onSubjectTemplateChange?.(subjectBeforeEditRef.current);
+                    setEditingSubject(false);
+                  }
+                }}
+                maxLength={300}
+                className="h-8 text-input text-foreground md:text-sm"
+              />
+            ) : (
+              <button
+                type="button"
+                id="confirmation-subject"
+                title="Click to edit the subject"
+                disabled={confirmationControlsDisabled}
+                onClick={() => {
+                  subjectBeforeEditRef.current = subjectTemplate;
+                  setEditingSubject(true);
+                }}
+                className="-mr-2 max-w-full truncate rounded-md px-2 py-1 text-right text-sm text-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
+              >
+                {preview.subject}
+              </button>
+            )}
           </SettingsRow>
         </SettingsGroup>
       </div>
