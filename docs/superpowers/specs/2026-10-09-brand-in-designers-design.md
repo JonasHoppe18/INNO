@@ -1,80 +1,139 @@
-# Brand i mail-designerne (B) — design
+# Mediebibliotek og brand i mail-designerne (B) — design
 
 Dato: 2026-10-09 · Branch: `feat/brand-in-designers-1009` · Status: til review
 Forudsætning: workspace-brand (A, PR #114) og confirmation-skabeloner (PR #113), begge merget.
 
 ## Formål
 
-Brandet fra Settings → Brand skal komme ud i mailene, og billeder skal kunne lægges i designet uden en offentlig URL.
+En butik skal kunne bygge mails med sine egne billeder og sit eget brand uden at kende til URL'er. Billeder uploades én gang til et fælles bibliotek pr. workspace og genbruges derefter overalt.
+
+Leverancen er delt i to PR'er:
+
+| | Indhold |
+|---|---|
+| **B1 – Mediebibliotek** | Tabel, API, en fælles billedvælger, kobling til begge designere og til Brand-siden. Det eksisterende brand-logo flyttes ind i biblioteket |
+| **B2 – Skabeloner bruger brandet** | "Branded" og "Dark" udfyldes med logo og accentfarve. Satisfaction-skabeloner får logoet. Skabelon-dialogen linker til Brand-siden |
 
 **Succeskriterier:**
-- En butik med logo og accentfarve vælger "Branded" i confirmation-designeren og får en mail med sit eget logo og sin egen farve uden at redigere en eneste blok.
-- I begge designere (confirmation og satisfaction) kan man vælge et billede fra computeren til en billedblok.
+- Et billede uploadet i confirmation-designeren kan vælges igen i satisfaction-designeren og på Brand-siden uden ny upload.
+- En butik med brand vælger "Branded" og får sit logo og sin farve uden at redigere blokke.
 
 ## Ikke i scope
 
-- At eksisterende, gemte designs ændres, når brandet ændres. Brandet bruges, når en skabelon vælges. Bagefter ejer butikken designet.
-- Formatering i beskedblokken, footer med butiksnavn og eksempelværdier på lærredet. Det er leverance C.
+- En separat bibliotek-side i Settings. Biblioteket findes, hvor man vælger billeder. En side kan komme senere.
+- Signaturernes logoer. De har egen upload i dag og flyttes ind i biblioteket senere, som en separat opgave.
+- Mapper, tags, redigering eller beskæring af billeder.
+- Fysisk sletning af filer.
+- Formatering i beskedblokken, footer med butiksnavn og eksempelværdier på lærredet (leverance C).
 - Import af brandet fra butikkens platform.
-- Oprydning af gamle billedfiler.
 
-## 1. Billed-upload i designerne
+---
 
-Templatical-editoren kalder `onRequestMedia(context)` og forventer `{ url, alt? } | null`.
+# B1 — Mediebibliotek
 
-- `EmailTemplateBuilder` sender `onRequestMedia` til `init`. Funktionen åbner en skjult `<input type="file" accept="image/png,image/jpeg">`, uploader den valgte fil og returnerer `{ url }`. Hvis brugeren annullerer, returneres `null`.
-- **Ny route `POST /api/settings/email-images`** (multipart `file`):
-  - genbruger `uploadEmailSignatureImage` med `userId: "email-images"`
-  - gemmer filen i det offentlige bucket under `<workspaceId>/email-images/<uuid>.<ext>`
-  - samme regler som logoet: PNG/JPEG, maks. 5 MB, tjek af filens magic bytes
-  - returnerer `{ url }`
-- Fejl vises som toast, og billedblokken forbliver uændret.
-- Det gælder både confirmation- og satisfaction-designeren, fordi de deler `EmailTemplateBuilder`.
+## Data
 
-## 2. Skabelonerne bruger brandet
+Ny tabel `public.workspace_media`:
 
-- `EmailTemplateBuilder` henter `/api/settings/brand` ved åbning. Det er ét kald på en fuldskærmsside, som ikke er en del af settings-bootstrap.
-- `createStarter(templateId, { linkMode, brand })` får brandet med. `brand = { logoUrl, accentColor }` med tomme strenge, når intet er sat.
-- **Confirmation-skabeloner** (`createConfirmationStarterTemplate(id, { brand })`):
-  - **Branded:** logo-feltet får brandets logo. Overskriften og en tynd accentlinje øverst får accentfarven. En footer nederst i lille grå tekst: "You're receiving this email because you contacted our support team."
-  - **Dark:** logo og en accentlinje øverst. Overskriften forbliver hvid, så kontrasten holdes på den mørke baggrund.
-  - **Simple og Minimal:** ændres ikke af brandet. Minimal skal ligne en personlig mail.
-  - Uden brand bruger skabelonerne nuværende standardfarver og et tomt logo-felt, som i dag.
-- **Satisfaction-skabeloner** (`createCsatEmailStarterTemplate(id, { linkMode, brand })`): når brandet har et logo, indsættes logoet centreret øverst i alle skabeloner undtagen "Start blank". Accentfarven bruges ikke i satisfaction-mailen i denne leverance. Rating-farverne er afstemt efter læsbarhed, og det kræver et separat design at ændre dem.
-- **Nye designs:** standardudkastet til en butik uden gemt design (`confirmation-store` og builderens fallback) forbliver Simple. Brandet bruges kun, når man aktivt vælger en skabelon.
+```sql
+create table public.workspace_media (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  storage_path text not null unique,          -- <workspaceId>/media/<uuid>.<ext>
+  public_url text not null,
+  file_name text not null,                    -- originalt navn, maks. 200 tegn
+  content_type text not null check (content_type in ('image/png','image/jpeg','image/gif')),
+  size_bytes integer not null check (size_bytes > 0 and size_bytes <= 5242880),
+  width integer, height integer,
+  uploaded_by uuid,                           -- supabase user id, null for flyttede filer
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create index workspace_media_library_idx
+  on public.workspace_media (workspace_id, created_at desc) where deleted_at is null;
+```
 
-## 3. Synlig kobling til Brand-siden
+- RLS er slået til med en select-policy for workspace-medlemmer (samme mønster som `workspace_customer_satisfaction_settings`). Alle skrivninger sker via API'et med service-klienten.
+- **Brandets logo** gemmes fortsat som `workspaces.brand_logo_url`. Valideringen ændres: URL'en skal tilhøre en ikke-slettet række i `workspace_media` for samme workspace. Logoer, der allerede ligger i `<ws>/brand/`, flyttes ind i biblioteket: migrationen indsætter en række for hvert workspace med et `brand_logo_url`, med `content_type`/`size_bytes` hentet fra `storage.objects`.
+- Migrationen køres kun på dev. I prod skal den køres før web-deploy.
 
-Skabelon-dialogen viser én linje under beskrivelsen:
+## Filer og formater
 
-- Med brand: "Templates use your logo and accent color from **Brand settings**."
-- Uden brand: "Add your logo and accent color in **Brand settings** to use them in templates."
+- PNG, JPEG og GIF (også animeret). Filens indhold tjekkes mod typen via magic bytes (`GIF87a`/`GIF89a` for GIF).
+- SVG og WebP afvises. Mange mailprogrammer viser dem ikke, og SVG kan indeholde scripts.
+- Maks. 5 MB. Over 1 MB viser vælgeren en advarsel ("Large images load slowly in email"), men uploadet tillades.
+- Bredde og højde læses fra filens header på serveren med en ren funktion: PNG IHDR, JPEG SOF0/SOF2 og GIF's logiske skærm. Mislykkes det, gemmes `null`.
+- Storage: det eksisterende offentlige bucket `workspace-email-signature-assets` under `<workspaceId>/media/<uuid>.<ext>`. Filnavnene er tilfældige UUID'er og kan ikke gættes. Billederne er offentlige, fordi mails skal kunne vise dem.
 
-"Brand settings" er et link til `/settings/brand`.
+## API
 
-## 4. Minimal — afklaring
+| Route | Gør |
+|---|---|
+| `GET /api/media?before=<created_at>` | Workspacets ikke-slettede billeder, nyeste først, 60 ad gangen. Returnerer `{ items, next_before }` |
+| `POST /api/media` (multipart `file`) | Validerer, uploader og indsætter en række. Returnerer elementet |
+| `DELETE /api/media/:id` | Sætter `deleted_at`. Filen bliver liggende, så sendte mails og eksisterende designs stadig viser billedet |
 
-Mit tidligere forslag sagde "Minimal: hvid, centreret og stille". Indholdet er allerede centreret som en 600 px kolonne, mens teksten er venstrestillet. Centreret brødtekst i en mail med flere afsnit er svær at læse og ligner ikke en personlig mail. Minimal forbliver derfor venstrestillet.
+- Alle workspace-medlemmer må liste, uploade og skjule billeder. Sletning er blød og kan rettes i databasen, så det kræver ikke admin.
+- Et element: `{ id, url, file_name, content_type, size_bytes, width, height, created_at }`.
+- Rækker filtreres altid på `workspace_id` fra auth-scope. Et id fra et andet workspace giver 404.
 
-## Test og evidens
+## Billedvælgeren (`MediaPicker`)
 
-- **Unit (vitest):**
-  - Confirmation-skabeloner med og uden brand:
-    - logo-src
-    - accentfarve på overskrift og linje i Branded
-    - Dark-overskriften er hvid
-    - footer-teksten findes
-    - Simple og Minimal er identiske med og uden brand
-    - alle skabeloner kan stadig gemmes og sende ticket-nummeret
-  - Satisfaction-skabeloner med og uden logo: logoet står øverst, og "Start blank" er uden logo. Eksisterende CSAT-tests forbliver grønne.
-  - Route-test for `/api/settings/email-images`: 401 og at filen gemmes i `<workspace>/email-images/`.
-- **Manuelt i Chrome mod dev (Jonas' login):**
-  - Brand sat → confirmation-designer → Templates → Branded → logo og farve vises → Preview
-  - et billede uploades til en ny billedblok
-  - det samme i satisfaction-designeren
-  - testdesigns sættes tilbage bagefter
-- `next build` grøn. Dev-serveren genstartes bagefter.
+En dialog (`components/media/MediaPicker.jsx`) med:
+
+- **Header:** titlen "Choose an image" og knappen "Upload". Man kan også trække filer ind i dialogen.
+- **Gitter** med kvadratiske thumbnails (`object-contain` på neutral baggrund). Under hver: filnavn og dimensioner. Det valgte billede har en ring om sig. Ved hover vises en `⋯`-menu med "Delete".
+- **Upload:** et nyt billede vises øverst med en spinner, mens det uploades, og bliver valgt, når det er færdigt. Fejl vises som toast.
+- **Tom tilstand:** "No images yet. Upload your logo or other images to use them in your emails."
+- **"Load more"** når `next_before` findes.
+- **Footer:** "Cancel" og "Use image".
+- API: `openMediaPicker()` via en `MediaPickerProvider`, som resolver med elementet eller `null`.
+
+**Bruges i:**
+- `EmailTemplateBuilder`: `onRequestMedia` åbner vælgeren og returnerer `{ url, alt: file_name uden extension }`. Det gælder både confirmation- og satisfaction-designeren.
+- Brand-siden: "Upload" og "Replace" erstattes af "Choose logo", som åbner vælgeren. Brand-ruten `/api/settings/brand/logo` fjernes. "Remove" fjerner kun koblingen til brandet, ikke billedet i biblioteket.
+
+## Test og evidens (B1)
+
+- **Unit:**
+  - dimensionslæsning for PNG, JPEG (SOF0 og SOF2) og GIF
+  - typevalidering med GIF-magic bytes, afvisning af SVG/WebP og ikke-matchende indhold
+  - brand-validering, der kræver en media-række
+- **Route-tests:**
+  - 401
+  - liste filtreret på workspace og ikke-slettede
+  - pagination
+  - upload gemmer under `<ws>/media/` og indsætter en række
+  - DELETE på et andet workspace giver 404
+  - blød sletning
+- **Migration på dev:** tabel, index og policy findes. Det eksisterende brand-logo for Morrow Home er flyttet ind i biblioteket.
+- **Chrome mod dev (Jonas' login):**
+  - upload i confirmation-designeren → billedet indsættes
+  - åbn satisfaction-designeren → samme billede kan vælges uden ny upload
+  - Brand → Choose logo → vælg fra biblioteket → Save → genindlæs
+  - skjul et testbillede
+  - testdesigns og testbilleder ryddes bagefter
+
+---
+
+# B2 — Skabeloner bruger brandet
+
+- `EmailTemplateBuilder` henter `/api/settings/brand` ved åbning. `createStarter(templateId, { linkMode, brand })` får `brand = { logoUrl, accentColor }`.
+- **Confirmation:**
+  - **Branded:** logo, en tynd accentlinje øverst og overskriften i accentfarven. Footer i lille grå tekst: "You're receiving this email because you contacted our support team."
+  - **Dark:** logo og accentlinje. Overskriften forbliver hvid af hensyn til kontrasten.
+  - **Simple og Minimal:** uændrede. Minimal forbliver venstrestillet, fordi centreret brødtekst over flere afsnit er svær at læse.
+  - **Uden brand:** standardfarver og tomt logo-felt.
+- **Satisfaction:** når brandet har et logo, sættes det centreret øverst i alle skabeloner undtagen "Start blank". Accentfarven bruges ikke på rating-knapperne, fordi deres farver er valgt for læsbarhed.
+- **Brandet bruges kun, når man vælger en skabelon.** Gemte designs ændres ikke, når brandet ændres.
+- Skabelon-dialogen får én linje med link til `/settings/brand`:
+  - med brand: "Templates use your logo and accent color from Brand settings."
+  - uden brand: "Add your logo and accent color in Brand settings to use them in templates."
+- **Test:**
+  - unit for skabeloner med og uden brand: logo, accentfarve, hvid Dark-overskrift, footer, Simple og Minimal uændrede, alle kan gemmes og sender ticket-nummeret
+  - CSAT-skabeloner med og uden logo
+  - manuelt i Chrome: Branded med brand → preview
 
 ## Leverance
 
-Én PR. Ingen merge uden eksplicit instruks. Ingen migration.
+To PR'er: B1, derefter B2. Ingen merge uden eksplicit instruks. Ingen prod-migration uden eksplicit "prod".
