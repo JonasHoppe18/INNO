@@ -893,8 +893,14 @@ export function EmailTemplateBuilder({ config }) {
                 onClick={() => handleStarterTemplate(template.id)}
                 className="group rounded-xl border border-slate-200 bg-white p-3 text-left transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
               >
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="mx-auto h-2 w-16 rounded-full bg-slate-900/80" />
+                <div
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                  style={template.surface ? { backgroundColor: template.surface } : undefined}
+                >
+                  <div
+                    className="mx-auto h-2 w-16 rounded-full bg-slate-900/80"
+                    style={template.surface ? { backgroundColor: "#ffffff" } : undefined}
+                  />
                   <div className="mx-auto mt-2 h-1.5 w-24 rounded-full bg-slate-400/50" />
                   {template.id === "blank" || !config.thankYouHref ? (
                     <div className="mt-4 flex justify-center">
