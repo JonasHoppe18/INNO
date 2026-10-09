@@ -94,9 +94,9 @@ describe("PR 104 SDK per-product reads", () => {
     expect(lookups).toEqual(["Vale Shelf", "Luna Lamp"]);
     expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
     if (unknown) {
-      expect(reads.every(query => query.startsWith("Vale Shelf:"))).toBe(true);
-      expect(result.response).toContain("Luna Lamp: I cannot verify this product's identity");
-      expect(result.response).not.toContain("standard ABC");
+      expect(reads.some(query => query.startsWith("Luna Lamp:"))).toBe(true);
+      expect(result.response).toContain("Luna Lamp: Certification: verified standard ABC");
+      expect(result.response).not.toContain("cannot verify this product's identity");
     } else {
       expect(reads.some(query => query.startsWith("Luna Lamp:"))).toBe(true);
       expect(result.response).toContain("Luna Lamp: Certification: verified standard ABC");
@@ -177,4 +177,51 @@ describe("second review SDK boundary", () => {
     expect(result.response).not.toContain("FSC certified");
     expect(result.proposedActions).toEqual([]);
   });
+});
+
+describe("SDK grounded independent static reads", () => {
+  it.each(["not_found", "provider-error"])("recovers static knowledge after %s catalog without model tools", async mode => {
+    const dependencies = await createDemoDependencies();
+    dependencies.commerce.getProduct = async () => { if (mode === "provider-error") throw new Error("provider unavailable"); return { products: [] }; };
+    const queries = [];
+    dependencies.knowledge.search = async request => { queries.push(request.query); return [hit("Maximum load: 5 kg.")]; };
+    const message = "How much can Vale Shelf hold?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"] }] }) });
+    expect(queries.some(q => q.startsWith("Vale Shelf:"))).toBe(true);
+    expect(result.response).toContain("Maximum load: 5 kg");
+    expect(result.proposedActions).toEqual([]); expect(result.actionExecutions).toEqual([]);
+    expect(result.response).not.toMatch(/in stock|available to buy|price is/i);
+  });
+  it("does not query an invented semantic product identifier", async () => {
+    const dependencies = await createDemoDependencies();
+    const lookups = [], queries = [];
+    dependencies.commerce.getProduct = async q => { lookups.push(q); return { products: [{ id: "p1", title: "Vale Shelf" }] }; };
+    dependencies.knowledge.search = async request => { queries.push(request.query); return [hit("Maximum load: 500 kg.")]; };
+    const message = "How much can this shelf hold?";
+    const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+    const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+      turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Shelf Vale", facets: ["load_capacity"] }] }) });
+    expect(lookups).toEqual([]); expect(queries).toEqual([]);
+    expect(result.response).not.toContain("500 kg");
+  });
+});
+it("static-only recovery keeps the product label rather than the guide title", async () => {
+  const dependencies = await createDemoDependencies();
+  dependencies.commerce.getProduct = async () => ({ products: [] });
+  const queries = [];
+  dependencies.knowledge.search = async request => {
+    queries.push(request.query);
+    const item = hit(queries.length === 1 ? "Dishwasher safety is not established." : "Clean with a soft damp cloth.");
+    item.record.title = "Product Care Guide / Vale Shelf";
+    return [item];
+  };
+  const message = "Is Vale Shelf dishwasher safe?";
+  const model = new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({ segments: [] }))])]);
+  const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
+    turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_care", sourceText: message, subject: "Vale Shelf", facets: ["cleaning_method"] }] }) });
+  expect(queries.every(q => q.startsWith("Vale Shelf:"))).toBe(true);
+  expect(result.response).toContain("soft damp cloth");
+  expect(result.response).not.toContain("cannot verify this product's identity");
 });

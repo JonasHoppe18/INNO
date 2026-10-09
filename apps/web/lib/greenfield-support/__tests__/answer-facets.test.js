@@ -248,7 +248,7 @@ describe("PR 104 per-subject evidence and coverage", () => {
     expect(result.validation.coverage.obligations.find(o => o.id === "answer.0.qualified_next_step")).toMatchObject({ status: "supported" });
   });
   it.each(["en", "da"])("unverified second identity receives only its own %s limitation", locale => {
-    const { ctx } = mixedSetup("load_capacity", true); ctx.locale = locale;
+    const { ctx, sources } = mixedSetup("load_capacity", true); sources.pop(); ctx.locale = locale;
     const result = recover(ctx);
     expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
     expect(result.response).not.toContain("2 kg");
@@ -258,7 +258,7 @@ describe("PR 104 per-subject evidence and coverage", () => {
     expect(validateStructuredResponse({ segments: [wrongLimit] }, ctx).issues.map(i => i.code)).toContain("answer_facet_scope_unverified");
   });
   it("unverified identities cannot be repaired by a care segment from returned knowledge", () => {
-    const { ctx, records } = mixedSetup("cleaning_method", true);
+    const { ctx, records, sources } = mixedSetup("cleaning_method", true); sources[0].title = "Other Shelf";
     records.find(r => r.resultId === "catalog").result = { status: "not_found", data: null };
     const output = { segments: [{ ...sourceSegment("load_capacity"), kind: "care_constraint" }] };
     expect(validateStructuredResponse(output, ctx).issues.map(i => i.code)).toContain("product_scope_mismatch");
@@ -408,6 +408,8 @@ describe("second review: prefixed titles and paragraph deduplication", () => {
   it.each(["ambiguous", "wrong-product", "wrong-tenant"])("prefix matching remains fail closed for %s", mode => {
     const { ctx, records } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
     ctx.preciseReadResults = Object.fromEntries(compilePreciseAnswerRequests(ctx.turnIR.answerRequests).map(r => [r.id,["catalog"]]));
+    if (mode === "wrong-product") records[1].result.data.results[0].title = "Acme Luna Lamp";
+    if (mode === "wrong-tenant") records[1].result.data.results[0].shop_id = "other";
     records[0].result.data = mode === "ambiguous" ? { products: [{ id: "p1", title: "Acme Vale Shelf" }, { id: "p2", title: "Other Vale Shelf" }] } : { id: "p1", title: mode === "wrong-product" ? "Acme Luna Lamp" : "Acme Vale Shelf", ...(mode === "wrong-tenant" ? { shop_id: "other" } : {}) };
     expect(recover(ctx).response).not.toContain("500 kg");
   });
@@ -595,4 +597,101 @@ describe("qualified method units", () => {
     expect(sourceSupportsRequest("Dishwasher-safe at 90°C.", request)).toBe(false);
     expect(sourceSupportsRequest("Dishwasher-safe at 90 degrees Fahrenheit.", request)).toBe(true);
   });
+});
+
+describe("product identity: independent static authority and grounded subjects", () => {
+  it.each(["not_found", "unavailable", "error", "absent"])("preserves verified static load evidence after %s catalog", mode => {
+    const { ctx, records } = setup(["load_capacity"], ["Maximum load: 5 kg."]);
+    ctx.preciseReadResults = Object.fromEntries(compilePreciseAnswerRequests(ctx.turnIR.answerRequests).map(r => [r.id,["catalog"]]));
+    if (mode === "absent") records.shift(); else records[0].result = { status: mode, data: null };
+    const result = recover(ctx);
+    expect(result.response).toContain("Maximum load: 5 kg");
+    expect(result.response).not.toContain("cannot verify this product's identity");
+    expect(result.validation.coverage.obligations.find(o => o.facet === "load_capacity")).toMatchObject({ status: "supported", subjectIds: ["p1"], rendered: true });
+  });
+  it.each(["wrong-tenant", "wrong-product", "missing-provenance", "wrong-authority", "competing-id", "unknown"])("static fallback rejects %s", mode => {
+    const { ctx, records, sources } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+    records[0].result = { status: "not_found", data: null };
+    if (mode === "wrong-tenant") sources[0].workspace_id = "other";
+    if (mode === "wrong-product") sources[0].title = "Vale Cabinet";
+    if (mode === "missing-provenance") delete sources[0].provenance;
+    if (mode === "wrong-authority") sources[0].authority = "example";
+    if (mode === "unknown") sources.splice(0);
+    if (mode === "competing-id") sources.push({ ...sources[0], structured_data: { ...sources[0].structured_data, applicability: { kind: "products", product_ids: ["p2"] } } });
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+  it.each(["Shelf Vale", "Vale Shelf Large", "Vale Shelf 2"])("rejects invented identifying subject %s", subject => {
+    const { ctx, records, sources } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+    ctx.customerMessage = subject === "Shelf Vale" ? "What can this shelf hold?" : "How much can Vale Shelf hold?";
+    ctx.turnIR.answerRequests[0].subject = subject;
+    records[0].result.data.title = subject;
+    sources[0].title = subject;
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+  it("accepts a genuine follow-up to a customer-provided verified product", () => {
+    const { ctx } = setup(["load_capacity"], ["Maximum load: 5 kg."]);
+    ctx.customerMessage = "And how much can it hold?";
+    ctx.customerProvidedContext = { product: "Vale Shelf" };
+    expect(recover(ctx).response).toContain("5 kg");
+  });
+  it("keeps separate static identities across multiple products and read order", () => {
+    const { ctx, records } = mixedSetup();
+    records.filter(r => r.toolName === "get_product").forEach(r => { r.result = { status: "unavailable", data: null }; });
+    records.reverse();
+    const result = recover(ctx);
+    expect(result.response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+    expect(result.response).toContain("Luna Lamp: Maximum load capacity: 2 kg");
+  });
+  it("accepts an omitted source-title brand prefix without allowing competing identities", () => {
+    const { ctx, records, sources } = setup(["load_capacity"], ["Maximum load: 5 kg."]);
+    records[0].result = { status: "not_found", data: null };
+    sources[0].title = "Acme Vale Shelf";
+    expect(recover(ctx).response).toContain("5 kg");
+    sources.push({ ...sources[0], title: "Other Vale Shelf", structured_data: { ...sources[0].structured_data, applicability: { kind: "products", product_ids: ["p2"] } } });
+    expect(recover(ctx).response).not.toContain("5 kg");
+  });
+  it("rejects catalog and static identity disagreement", () => {
+    const { ctx, sources } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+    sources[0].structured_data.applicability.product_ids = ["p2"];
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+});
+it("current named competing product overrides a retained prior focus", () => {
+  const { ctx, records } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+  ctx.customerMessage = "What about the Luna Lamp's load capacity?";
+  ctx.customerProvidedContext = { product: "Vale Shelf" };
+  records.push({ resultId: "current-luna", toolName: "get_product", result: { status: "ok", data: { id: "p2", title: "Luna Lamp" } } });
+  expect(recover(ctx).response).not.toContain("500 kg");
+});
+it.each(["In stock now.", "Out of stock.", "Price: 50 DKK", "Pris: 50 DKK", "Available to buy."])("static product identity does not authorize live field: %s", text => {
+  const { ctx, sources, records } = setup([], [text]);
+  ctx.turnIR.answerRequests = []; records[0].result = { status: "unavailable", data: null };
+  sources[0].structured_data.semantic_type = "FACT";
+  const source = { type: "source_content", kind: "product_property", basis: { result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] } };
+  expect(validateStructuredResponse({ segments: [source] }, ctx).issues.map(i => i.code)).toContain("product_live_field_requires_provider");
+});
+it("static documentation never authorizes a live availability fact", () => {
+  const { ctx } = setup([], ["In stock now."]);
+  const segment = { type: "fact", fact_kind: "product_availability", evidence: [{ result_id: "knowledge", field_paths: ["results[0].evidence_sections[0].content"] }] };
+  expect(validateStructuredResponse({ segments: [segment] }, ctx).approvedSegments).toEqual([]);
+});
+it("a matching applicability ID cannot launder a different product title", () => {
+  const { ctx, sources } = setup(["load_capacity"], ["Maximum load: 500 kg."]);
+  sources[0].title = "Vale Cabinet";
+  expect(recover(ctx).response).not.toContain("500 kg");
+});
+it("does not render invented product identifiers in scoped limitations", () => {
+  const { ctx } = mixedSetup();
+  ctx.turnIR.answerRequests[1].subject = "Imaginary Lamp 7";
+  expect(recover(ctx).response).not.toContain("Imaginary Lamp 7");
+  expect(recover(ctx).response).toContain("Vale Shelf: Maximum load capacity: 5 kg");
+});
+it("an unambiguous source numeric-size suffix does not erase a customer-named product", () => {
+  const { ctx, sources, records } = setup([], ["No approved maximum load rating is specified."]);
+  ctx.turnIR.answerRequests = []; ctx.customerMessage = "How much can Vale Shelf hold?";
+  records.shift(); sources[0].title = "Vale Shelf 60";
+  const output = { segments: [{ ...sourceSegment("load_capacity"), facet: "load_capacity" }] };
+  expect(recover(ctx, output).response).toContain("No approved maximum load");
+  sources.push({ ...sources[0], title: "Vale Shelf 80", structured_data: { ...sources[0].structured_data, applicability: { kind: "products", product_ids: ["p2"] } } });
+  expect(recover(ctx, output).response).not.toContain("No approved maximum load");
 });

@@ -1680,13 +1680,17 @@ function productCareRequest(context: ResponseValidationContext): boolean {
       && pattern.test(String(objectValue(record.result.data)?.query ?? "")));
 }
 
-function careSubject(record: JsonObject): string {
+function careSubjectTitle(record: JsonObject): string {
   const title = String(record.title ?? "");
   const parts = title.split(/\s+\/\s+/);
   const productHeading = parts[0].split(/\s+[—–]\s+/);
   const label = productHeading.length > 1 ? productHeading[0]
-    : parts.length > 1 && parts.at(-1)!.trim().split(/\s+/).length > 2 ? parts.at(-1)! : parts[0];
-  return normalizedPhrase(label);
+    : parts.length > 1 && /\b(?:guide|instructions|vejledning|plejevejledning|produktvejledning|brugervejledning)\b/iu.test(parts[0])
+      && !/\b(?:guide|instructions|boundary|information|vejledning)\b/iu.test(parts.at(-1)!) ? parts.at(-1)! : parts[0];
+  return label.trim();
+}
+function careSubject(record: JsonObject): string {
+  return normalizedPhrase(careSubjectTitle(record));
 }
 
 function careRecords(context: ResponseValidationContext) {
@@ -5538,27 +5542,11 @@ function productScopeSupported(record: JsonObject, context: ResponseValidationCo
   const applicability = objectValue(structured?.applicability);
   const ids = Array.isArray(applicability?.product_ids) ? applicability.product_ids.map(String) : [];
   if (!ids.length) return false;
-  const currentRecords = (context.getResults?.() ?? []).flatMap(evidence => {
-    const data = objectValue(evidence.result.data);
-    return Array.isArray(data?.results) ? data.results.map(objectValue).filter((r): r is JsonObject => Boolean(r?.knowledge_type === "product")) : [];
-  });
-  const question = normalizedPhrase([context.customerMessage, context.customerProvidedContext?.product].filter(Boolean).join(" "));
-  const matched = currentRecords.filter(candidate => {
-    const subject = careSubject(candidate);
-    const tokens = subject.split(" ").filter(token => token.length > 2 && !["guide", "care", "textile", "support", "instructions", "product"].includes(token));
-    return tokens.length > 0 && question.split(" ").includes(tokens[0]);
-  });
-  const verifiedSubjects = preciseRequests(context).map(request => verifiedAnswerSubject(context, request)).filter(subject => subject !== null);
-  const verified = verifiedAnswerSubject(context);
-  const identityReadsAttempted = preciseRequests(context).some(request => context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product"));
-  if (verifiedSubjects.length || identityReadsAttempted) return ids.length === 1 && verifiedSubjects.some(subject => subject.id === ids[0]);
-  if (verified) return ids.length === 1 && ids[0] === verified.id;
-  const expectedIds = new Set(matched.flatMap(candidate => {
-    const applies = objectValue(objectValue(candidate.structured_data)?.applicability);
-    return Array.isArray(applies?.product_ids) ? applies.product_ids.map(String) : [];
-  }));
-  // Ambiguous product references are not repaired by choosing the first source.
-  return expectedIds.size === 1 && ids.length === 1 && expectedIds.has(ids[0]);
+  const requests = preciseRequests(context);
+  if (record.knowledge_type === "product" && !requestedProductMatches(careSubject(record), context)
+    && !requests.some(request => groundedAnswerSubject(context, request.subject) && requestSubjectMatches(request, careSubject(record)))) return false;
+  const subjects = [...requests.map(request => verifiedAnswerSubject(context, request)), verifiedAnswerSubject(context)];
+  return ids.length === 1 && subjects.some(subject => subject?.id === ids[0]);
 }
 
 function validateSourceContent(segment: Extract<ResponseSegment, { type: "source_content" }>, context: ResponseValidationContext, index: number) {
@@ -5598,6 +5586,10 @@ function validateSourceContent(segment: Extract<ResponseSegment, { type: "source
       }
       if (segment.kind === "product_constraint" && preciseRequests(context).length && !preciseRequests(context).some(request => request.facet === segment.facet && sourceMatchesRequest(record, request, context) && sourceSupportsRequest(String(section?.content ?? section?.text ?? ""), request))) {
         return [{ index, code: "answer_facet_qualifier_mismatch", message: "The source does not address the specifically requested property." }];
+      }
+      if (["product_property", "product_constraint", "care_constraint"].includes(segment.kind)
+        && /\b(?:in stock|out of stock|inventory|available (?:to buy|for purchase)|current price|price\s*[:=]|på lager|udsolgt|lagerstatus|pris\s*[:=])(?=$|\s|[.,;:=])/iu.test(String(section?.content ?? section?.text ?? ""))) {
+        return [{ index, code: "product_live_field_requires_provider", message: "Static product knowledge cannot establish current stock, catalog availability or pricing." }];
       }
       if (segment.kind === "product_property" && structured?.semantic_type !== "FACT") {
         return [{ index, code: "product_property_kind_mismatch", message: "A static product property requires a source-authored fact." }];
@@ -6076,35 +6068,80 @@ function segmentCovers(existing: ResponseSegment, required: ResponseSegment, con
 function preciseRequests(context: ResponseValidationContext): PreciseAnswerRequest[] {
   return context.preciseRequests ?? compilePreciseAnswerRequests(context.turnIR?.answerRequests ?? []);
 }
+/** Semantic subjects are query hints; every identifying token must be customer-grounded. */
+export function groundedAnswerSubject(context: ResponseValidationContext, subject: string | null | undefined): boolean {
+  if (!subject) return false;
+  const tokens = normalizedPhrase(subject).split(" ").filter(Boolean);
+  const contains = (text: string | undefined, required = tokens) => {
+    const supplied = normalizedPhrase(text ?? "").split(" ");
+    return required.length > 0 && required.every(token => supplied.includes(token));
+  };
+  if (contains(context.customerMessage)) return true;
+  if (!contains(context.customerProvidedContext?.product)) return false;
+  // A follow-up can retain focus, but a currently named competing verified subject overrides it.
+  const currentTitles = (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
+    const data = objectValue(record.result.data);
+    const candidates = record.toolName === "get_product" ? (Array.isArray(data?.products) ? data.products : [data]) : (Array.isArray(data?.results) ? data.results : []);
+    return candidates.flatMap((value, index) => {
+      const product = objectValue(value);
+      const supported = record.toolName === "get_product" ? meaningful(product?.id)
+        : product?.knowledge_type === "product" && meaningful(objectValue(product.provenance)?.source_id)
+          && !validateKnowledgeBasis({ result_id: record.resultId, field_paths: [`results[${index}].title`] }, context, -1).length;
+      return supported && typeof product?.title === "string" ? [normalizedPhrase(record.toolName === "get_product" ? product.title : careSubjectTitle(product)).split(" ").filter(Boolean)] : [];
+    });
+  });
+  return !currentTitles.some(title => contains(context.customerMessage, title) && !tokens.every(token => title.includes(token)));
+}
 function requestedProductMatches(title: string, context: ResponseValidationContext, request?: PreciseAnswerRequest): boolean {
-  const first = normalizedPhrase(request?.subject ?? title).split(" ").find(token => token.length > 2);
-  return Boolean(first?.length > 2 && normalizedPhrase(`${context.customerMessage ?? ""} ${context.customerProvidedContext?.product ?? ""}`).split(" ").includes(first));
+  if (request?.subject) return groundedAnswerSubject(context, request.subject);
+  if (groundedAnswerSubject(context, title)) return true;
+  // A source/catalog may append a numeric size to the customer-named title.
+  // All returned matching IDs still have to agree; a semantic subject cannot omit grounding this way.
+  const withoutSize = normalizedPhrase(title).replace(/\s+\d+(?:[.,]\d+)?$/, "");
+  return withoutSize !== normalizedPhrase(title) && withoutSize.split(" ").length >= 2 && groundedAnswerSubject(context, withoutSize);
 }
 export function verifiedAnswerSubject(context: ResponseValidationContext, request?: PreciseAnswerRequest): { id: string; title: string; handle?: string } | null {
-  const subjects = (context.getResults?.() ?? []).filter(record => record.toolName === "get_product" && record.result.status === "ok" && (!request || !context.preciseReadResults?.[request.id] || context.preciseReadResults[request.id].includes(record.resultId)) && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
+  const subjects: Array<{ id: string; title: string; handle?: string }> = [];
+  const records = (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length);
+  let ambiguousCatalog = false;
+  for (const record of records) {
     const data = objectValue(record.result.data);
-    const products = Array.isArray(data?.products) ? data.products.map(objectValue) : [data];
-    // Both supported catalog envelopes are normalized here; never select one of multiple returned products.
-    if (products.length !== 1) return [];
-    return products.flatMap(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context, request) && (!request || requestSubjectMatches(request, product.title)) ? [{ id: String(product.id), title: product.title, ...(typeof product.handle === "string" ? { handle: product.handle } : {}) }] : []);
-  });
+    if (record.toolName === "get_product" && (!request || !context.preciseReadResults?.[request.id] || context.preciseReadResults[request.id].includes(record.resultId))) {
+      const products = Array.isArray(data?.products) ? data.products.map(objectValue) : [data];
+      const matches = products.filter(product => meaningful(product?.id) && typeof product?.title === "string" && requestedProductMatches(product.title, context, request) && (!request || requestSubjectMatches(request, product.title)));
+      if (products.length > 1 && matches.length) ambiguousCatalog = true;
+      if (products.length === 1) for (const product of matches) subjects.push({ id: String(product!.id), title: String(product!.title), ...(typeof product!.handle === "string" ? { handle: product!.handle } : {}) });
+    }
+    if (!Array.isArray(data?.results)) continue;
+    for (const [index, value] of data.results.entries()) {
+      const source = objectValue(value);
+      const structured = objectValue(source?.structured_data);
+      const applies = objectValue(structured?.applicability);
+      const ids = applies?.product_ids;
+      const title = source ? careSubject(source) : "";
+      if (!source || source.knowledge_type !== "product" || applies?.kind !== "products" || !Array.isArray(ids) || ids.length !== 1
+        || !meaningful(ids[0]) || !meaningful(objectValue(source.provenance)?.source_id)
+        || !["FACT", "GUIDANCE"].includes(String(structured?.semantic_type))
+        || !["product", "care", "troubleshooting", "assembly"].includes(String(structured?.support_domain))
+        || !requestedProductMatches(title, context, request) || (request && !requestSubjectMatches(request, title))) continue;
+      if (validateKnowledgeBasis({ result_id: record.resultId, field_paths: [`results[${index}].title`] }, context, -1).length) continue;
+      subjects.push({ id: String(ids[0]), title: careSubjectTitle(source) });
+    }
+  }
   const ids = new Set(subjects.map(subject => subject.id));
-  return ids.size === 1 ? subjects[0] : null;
+  return !ambiguousCatalog && ids.size === 1 ? subjects[0] : null;
 }
 function requestSubjectMatches(request: PreciseAnswerRequest, title: string): boolean {
   if (!request.subject) return true;
-  const tokens = normalizedPhrase(request.subject).split(" ").filter(token => token.length > 2);
+  const tokens = normalizedPhrase(request.subject).split(" ").filter(Boolean);
   const titleTokens = normalizedPhrase(title).split(" ");
   return tokens.length > 0 && tokens.every(token => titleTokens.includes(token));
 }
 function sourceMatchesRequest(record: JsonObject, request: PreciseAnswerRequest, context: ResponseValidationContext): boolean {
   const subject = verifiedAnswerSubject(context, request);
   const ids = objectValue(objectValue(record.structured_data)?.applicability)?.product_ids;
-  if (subject) return Array.isArray(ids) && ids.length === 1 && String(ids[0]) === subject.id;
-  // Once a subject-specific catalog read was attempted, an unresolved identity cannot
-  // be supplied by a different product's knowledge or a coincidental title match.
-  if (context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product")) return false;
-  return requestSubjectMatches(request, careSubject(record)) && productScopeSupported(record, context);
+  if (subject) return Array.isArray(ids) && ids.length === 1 && String(ids[0]) === subject.id && requestSubjectMatches(request, careSubject(record));
+  return false;
 }
 function facetCandidates(request: PreciseAnswerRequest, context: ResponseValidationContext): ResponseSegment[] {
   return (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(evidence => {
@@ -6187,8 +6224,8 @@ function renderFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit
   };
   const request = preciseRequests(context).find(request => request.facet === segment.facet && request.requestIndex === segment.request_index);
   const multipleSubjects = new Set(preciseRequests(context).map(request => request.subject).filter(Boolean)).size > 1;
-  const prefix = multipleSubjects && request?.subject ? `${request.subject}: ` : "";
-  if (request && !verifiedAnswerSubject(context, request) && context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product")) {
+  const prefix = multipleSubjects && request?.subject && groundedAnswerSubject(context, request.subject) ? `${request.subject}: ` : "";
+  if (request && (!groundedAnswerSubject(context, request.subject) || (!verifiedAnswerSubject(context, request) && context.preciseReadResults?.[request.id]?.some(id => context.getResult(id)?.toolName === "get_product")))) {
     return prefix + (da ? "Jeg kan ikke bekræfte produktets identitet ud fra de tilgængelige oplysninger. Butikken kan hjælpe med at identificere det, før produktets egenskaber eller sikkerhed vurderes." : "I cannot verify this product's identity from the available information. The store can help identify it before its properties or safety are assessed.");
   }
   let text = da ? danish[segment.facet] : copy[segment.facet];

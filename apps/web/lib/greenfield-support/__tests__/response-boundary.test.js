@@ -333,8 +333,8 @@ it("inconsistent shipping qualification cannot add unrelated obligations to line
   expect(answer).not.toMatch(/threshold|coupon|order total/);
 });
 it("a semantic subject label never authorizes product identity or source scope", () => {
-  const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: "wool", subject: "A normalized unrelated product" }] }, "Is Willow all wool?");
-  const ctx = context([evidence([record("100% wool")])], { customerMessage: "Is Willow all wool?", turnIR: ir });
+  const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: "wool", subject: "A normalized unrelated product" }] }, "Is Willow Throw all wool?");
+  const ctx = context([evidence([record("100% wool")])], { customerMessage: "Is Willow Throw all wool?", turnIR: ir });
   expect(renderResponseSegments(complete(ctx).approvedSegments, ctx)).toContain("100% wool");
   expect(renderResponseSegments(complete(ctx).approvedSegments, ctx)).not.toContain("unrelated product");
 });

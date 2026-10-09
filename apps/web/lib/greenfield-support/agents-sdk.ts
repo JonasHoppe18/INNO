@@ -1,5 +1,5 @@
 import { compilePreciseAnswerRequests, facetReadQuery } from "./answer-facets";
-import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject } from "./response-contract";
+import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject, groundedAnswerSubject } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
@@ -513,16 +513,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const recoverPreciseReads = async () => {
     for (const request of missingPreciseEvidence(preciseContext())) {
       const subject = verifiedAnswerSubject(preciseContext(), request);
-      if (!subject) continue;
+      if (!subject && !groundedAnswerSubject(preciseContext(), request.subject)) continue;
       if (!missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) continue;
       const budget = preciseReadBudgets.get(request.subject) ?? 0;
       if (budget <= 0) continue;
-      const query = `${subject.title}: ${facetReadQuery(request.facet)}${request.qualifiers.length ? ` ${request.qualifiers.join(" ")}` : ""}`;
+      const query = `${subject?.title ?? request.subject}: ${facetReadQuery(request.facet)}${request.qualifiers.length ? ` ${request.qualifiers.join(" ")}` : ""}`;
       preciseReadBudgets.set(request.subject, budget - 1);
       const result = await preload("search_product_knowledge", query);
       if (result.resultId) (preciseReadResults[request.id] ??= []).push(result.resultId);
       // Retry the verified catalog alias, never a different product or an invented value.
-      if (subject.handle && (preciseReadBudgets.get(request.subject) ?? 0) > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
+      if (subject?.handle && (preciseReadBudgets.get(request.subject) ?? 0) > 0 && missingPreciseEvidence(preciseContext()).some(current => current.id === request.id)) {
         preciseReadBudgets.set(request.subject, (preciseReadBudgets.get(request.subject) ?? 0) - 1);
         const retry = await preload("search_product_knowledge", `${subject.handle}: ${facetReadQuery(request.facet)}${request.qualifiers.length ? ` ${request.qualifiers.join(" ")}` : ""}`);
         if (retry.resultId) (preciseReadResults[request.id] ??= []).push(retry.resultId);
@@ -531,6 +531,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   };
   if (preciseRequests.length && preciseRequests.some(request => request.subject)) {
     for (const lookupSubject of new Set(preciseRequests.map(request => request.subject).filter((subject): subject is string => Boolean(subject)))) {
+      if (!groundedAnswerSubject(preciseContext(), lookupSubject)) continue;
       preciseReadBudgets.set(lookupSubject, (preciseReadBudgets.get(lookupSubject) ?? 0) - 1);
       // A semantic label is only a query. Each returned identity binds its own requests.
       const read = await preload("get_product", lookupSubject);
