@@ -416,7 +416,8 @@ export async function renderCsatEmail({
     allowHtmlBlocks: false,
     renderCustomBlock: async (block) => {
       if (purpose === "confirmation" && block.customType === "confirmation-message") {
-        return `<mj-text font-size="${block.fieldValues.fontSize}px" color="${block.fieldValues.color}">{{content}}</mj-text>`;
+        // Custom blocks already render inside an mj-text, so style a plain div.
+        return `<div style="font-size:${escapeHtml(block.fieldValues.fontSize)}px;color:${escapeHtml(block.fieldValues.color)};line-height:1.6">{{content}}</div>`;
       }
       if (block.customType !== "csat-rating") return "";
       return renderCsatRatingHtml(block.fieldValues);

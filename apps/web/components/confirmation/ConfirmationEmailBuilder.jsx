@@ -7,18 +7,11 @@ import {
   CONFIRMATION_MESSAGE_BLOCK,
   CONFIRMATION_DESIGN_VARIABLES,
   CONFIRMATION_SAMPLE_DATA,
+  CONFIRMATION_STARTER_TEMPLATES,
   createConfirmationContent,
+  createConfirmationStarterTemplate,
   countConfirmationMessageBlocks,
 } from "@/lib/confirmation/email-template";
-const templates = [
-  {
-    id: "default",
-    name: "Simple confirmation",
-    description:
-      "A clean message you can brand with your logo, colors and additional sections.",
-    accent: "#635bff",
-  },
-];
 export function ConfirmationEmailBuilder({ mailboxId = "" }) {
   const { userId, orgId, sessionId } = useAuth();
   const config = useMemo(
@@ -35,9 +28,9 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       block: CONFIRMATION_MESSAGE_BLOCK,
       variables: CONFIRMATION_DESIGN_VARIABLES,
       sampleData: CONFIRMATION_SAMPLE_DATA,
-      templates,
+      templates: CONFIRMATION_STARTER_TEMPLATES,
       countBlocks: countConfirmationMessageBlocks,
-      createStarter: () => createConfirmationContent(),
+      createStarter: (templateId) => createConfirmationStarterTemplate(templateId),
       createFallbackDraft: () => ({
         id: null,
         name: "Customer confirmation",

@@ -125,3 +125,143 @@ export function createConfirmationContent(
     ],
   };
 }
+
+const pad = (top = 0, right = 0, bottom = 0, left = 0) => ({ top, right, bottom, left });
+const STARTER_MESSAGE =
+  "Hi {{customer.first_name}},\n\nThanks for reaching out. We've received your message and our support team will get back to you as soon as possible.\n\nYour ticket number is:";
+const messageBlock = (message, color) => ({
+  id: "confirmation-message",
+  type: "custom",
+  customType: "confirmation-message",
+  fieldValues: { message, fontSize: 16, color },
+  styles: { padding: pad(0, 0, 0, 0) },
+});
+// Empty image: the editor shows an upload slot, and the sent email leaves it out.
+const logoSlot = () => ({
+  id: "confirmation-logo",
+  type: "image",
+  src: "",
+  alt: "Logo",
+  width: 160,
+  align: "center",
+  styles: { padding: pad(0, 0, 24, 0) },
+});
+const divider = (id, color) => ({
+  id,
+  type: "divider",
+  lineStyle: "solid",
+  color,
+  thickness: 1,
+  width: "full",
+  styles: { padding: pad(24, 0, 24, 0) },
+});
+const referenceBlock = (color) => ({
+  id: "confirmation-reference",
+  type: "paragraph",
+  content: `<p style="text-align: center; color: ${color}; font-size: 32px; font-weight: 700; letter-spacing: 1px;">{{ticket.reference}}</p>`,
+  styles: { padding: pad(16, 0, 0, 0) },
+});
+const footerBlock = (color) => ({
+  id: "confirmation-footer",
+  type: "paragraph",
+  content: `<p style="text-align: center; color: ${color}; font-size: 13px; line-height: 1.5;">You can reply directly to this email if you would like to add more information.</p>`,
+  styles: { padding: pad(0, 0, 0, 0) },
+});
+const singleSection = (backgroundColor, children, padding = pad(40, 40, 40, 40)) => ({
+  id: "confirmation-section",
+  type: "section",
+  columns: "1",
+  styles: { backgroundColor, padding },
+  children: [children],
+});
+const contentWith = (backgroundColor, blocks) => ({
+  settings: { width: 600, backgroundColor, textColor: "#172033", fontFamily: "Arial, sans-serif" },
+  blocks,
+});
+
+function createBrandedConfirmationContent() {
+  return contentWith("#f3f4f6", [
+    singleSection("#ffffff", [
+      logoSlot(),
+      {
+        id: "confirmation-title",
+        type: "title",
+        level: 1,
+        content: "We've received your message",
+        textAlign: "center",
+        color: "#111827",
+        styles: { padding: pad(0, 0, 0, 0) },
+      },
+      divider("confirmation-divider-top", "#e5e7eb"),
+      messageBlock(STARTER_MESSAGE, "#374151"),
+      referenceBlock("#4f46e5"),
+      divider("confirmation-divider-bottom", "#e5e7eb"),
+      footerBlock("#6b7280"),
+    ]),
+  ]);
+}
+
+function createDarkConfirmationContent() {
+  return contentWith("#0b0d17", [
+    singleSection("#161827", [
+      logoSlot(),
+      {
+        id: "confirmation-title",
+        type: "title",
+        level: 1,
+        content: "WE'VE GOT YOUR MESSAGE!",
+        textAlign: "center",
+        color: "#ffffff",
+        styles: { padding: pad(8, 0, 0, 0) },
+      },
+      divider("confirmation-divider-top", "#3b3f55"),
+      messageBlock(STARTER_MESSAGE, "#e5e7eb"),
+      referenceBlock("#5fd47a"),
+      divider("confirmation-divider-bottom", "#3b3f55"),
+      footerBlock("#9ca3af"),
+    ]),
+  ]);
+}
+
+function createMinimalConfirmationContent() {
+  return contentWith("#ffffff", [
+    singleSection("#ffffff", [
+      messageBlock(CONFIRMATION_MESSAGE_BLOCK.fields[0].default, "#111827"),
+    ], pad(32, 24, 32, 24)),
+  ]);
+}
+
+export const CONFIRMATION_STARTER_TEMPLATES = [
+  {
+    id: "default",
+    name: "Simple",
+    description: "A clean message on a light background.",
+    accent: "#635bff",
+  },
+  {
+    id: "branded",
+    name: "Branded",
+    description: "Your logo, a headline and the ticket number in your brand color.",
+    accent: "#4f46e5",
+  },
+  {
+    id: "dark",
+    name: "Dark",
+    description: "A bold dark design with a highlighted ticket number.",
+    accent: "#5fd47a",
+    surface: "#161827",
+  },
+  {
+    id: "minimal",
+    name: "Minimal",
+    description: "Looks like a personal email, with no design around it.",
+    accent: "#111118",
+  },
+];
+
+export function createConfirmationStarterTemplate(id) {
+  if (id === "branded") return createBrandedConfirmationContent();
+  if (id === "dark") return createDarkConfirmationContent();
+  if (id === "minimal") return createMinimalConfirmationContent();
+  return createConfirmationContent();
+}
