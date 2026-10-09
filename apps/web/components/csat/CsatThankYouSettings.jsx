@@ -67,7 +67,7 @@ export function CsatThankYouSettings() {
       <div className="mx-auto max-w-4xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Link href="/settings/csat/email" className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft className="h-3.5 w-3.5" /> Back to CSAT email</Link>
+            <Link href="/settings/csat/email" className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft className="h-3.5 w-3.5" /> Back to survey email</Link>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Thank You responses</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Customize the branded page shown after a customer submits a rating. Scores are grouped so adding individual score copy later will not change this data model.</p>
           </div>
