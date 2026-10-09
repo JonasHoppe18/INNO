@@ -16,7 +16,7 @@ const config = {
     "Customize the survey email customers receive after a ticket is resolved.",
   apiBase: "/api/settings/csat/email",
   backHref: "/settings/customer-satisfaction",
-  thankYouHref: "/settings/csat/thank-you",
+  ratingPreview: true,
   palette: CSAT_PALETTE_BLOCKS,
   block: CSAT_RATING_BLOCK_DEFINITION,
   variables: CSAT_VARIABLES,

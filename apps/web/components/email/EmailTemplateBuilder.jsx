@@ -14,7 +14,6 @@ import {
   Settings2,
   Smartphone,
   Monitor,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { designerStatus, requiredBlockProblem } from "@/lib/email-designer/status";
@@ -798,15 +797,6 @@ function EmailTemplateBuilderInner({ config }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {config.thankYouHref ? (
-            <Link
-              href={config.thankYouHref}
-              className="hidden items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 transition-[background-color,color,transform] duration-150 ease-out hover:bg-violet-50 hover:text-violet-700 active:scale-[0.98] sm:inline-flex"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Thank You responses
-            </Link>
-          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -927,7 +917,7 @@ function EmailTemplateBuilderInner({ config }) {
                     style={template.surface ? { backgroundColor: "#ffffff" } : undefined}
                   />
                   <div className="mx-auto mt-2 h-1.5 w-24 rounded-full bg-slate-400/50" />
-                  {template.id === "blank" || !config.thankYouHref ? (
+                  {template.id === "blank" || !config.ratingPreview ? (
                     <div className="mt-4 flex justify-center">
                       <span className="h-1.5 w-20 rounded-full bg-slate-200" />
                     </div>
