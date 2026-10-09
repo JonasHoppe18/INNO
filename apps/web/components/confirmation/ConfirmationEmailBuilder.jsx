@@ -30,7 +30,7 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       sampleData: CONFIRMATION_SAMPLE_DATA,
       templates: CONFIRMATION_STARTER_TEMPLATES,
       countBlocks: countConfirmationMessageBlocks,
-      createStarter: (templateId) => createConfirmationStarterTemplate(templateId),
+      createStarter: (templateId, options) => createConfirmationStarterTemplate(templateId, options),
       createFallbackDraft: () => ({
         id: null,
         name: "Customer confirmation",

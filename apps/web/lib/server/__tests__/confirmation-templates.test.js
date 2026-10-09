@@ -87,3 +87,48 @@ describe("confirmation starter templates", () => {
     expect(createConfirmationStarterTemplate("nope")).toEqual(createConfirmationStarterTemplate("default"));
   });
 });
+
+describe("starter templates with the workspace brand", () => {
+  const brand = {
+    logoUrl: "https://abc.supabase.co/storage/v1/object/public/workspace-email-signature-assets/ws/media/logo.png",
+    accentColor: "#e11d48",
+  };
+  const find = (content, predicate) => blocksOf(content).find(predicate);
+
+  it("puts the logo and accent color into the branded template", () => {
+    const content = createConfirmationStarterTemplate("branded", { brand });
+    expect(find(content, (block) => block.type === "image").src).toBe(brand.logoUrl);
+    expect(find(content, (block) => block.type === "title").color).toBe("#e11d48");
+    expect(find(content, (block) => block.id === "confirmation-accent")).toMatchObject({ type: "divider", color: "#e11d48" });
+    expect(find(content, (block) => block.id === "confirmation-footer").content).toContain("contacted our support team");
+  });
+
+  it("keeps the dark headline white for contrast and uses the accent for the line", () => {
+    const content = createConfirmationStarterTemplate("dark", { brand });
+    expect(find(content, (block) => block.type === "image").src).toBe(brand.logoUrl);
+    expect(find(content, (block) => block.type === "title").color).toBe("#ffffff");
+    expect(find(content, (block) => block.id === "confirmation-accent").color).toBe("#e11d48");
+  });
+
+  it("falls back to default colors and an empty logo slot without a brand", () => {
+    for (const options of [undefined, { brand: { logoUrl: "", accentColor: "" } }, { brand: { accentColor: "red" } }]) {
+      const content = createConfirmationStarterTemplate("branded", options);
+      expect(find(content, (block) => block.type === "image").src).toBe("");
+      expect(find(content, (block) => block.type === "title").color).toBe("#111827");
+      expect(find(content, (block) => block.id === "confirmation-accent").color).toBe("#4f46e5");
+    }
+  });
+
+  it("leaves Simple and Minimal unchanged by the brand", () => {
+    for (const id of ["default", "minimal"]) {
+      expect(createConfirmationStarterTemplate(id, { brand })).toEqual(createConfirmationStarterTemplate(id));
+    }
+  });
+
+  it.each(["default", "branded", "dark", "minimal"])("%s with a brand can still be saved and sends the ticket number", async (id) => {
+    const content = createConfirmationStarterTemplate(id, { brand });
+    expect(() => normalizeConfirmationContent(content)).not.toThrow();
+    const mail = await sendWith(content);
+    expect(mail.html).toContain("Your ticket number: T-50001");
+  });
+});

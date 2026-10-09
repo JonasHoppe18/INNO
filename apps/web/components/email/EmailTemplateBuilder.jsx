@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { designerStatus } from "@/lib/email-designer/status";
 import { MediaPickerProvider, uploadMediaFile, useMediaPicker } from "@/components/media/MediaPicker";
 import { fitPickedImageWidth, mediaAltText } from "@/lib/media/library";
+import { brandFromPayload } from "@/lib/settings/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -148,6 +149,7 @@ function EmailTemplateBuilderInner({ config }) {
   const [sendingTest, setSendingTest] = useState(false);
   const [emailSettingsOpen, setEmailSettingsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [brand, setBrand] = useState(null);
   const [pendingTemplateId, setPendingTemplateId] = useState(null);
   const [requiredBlockCount, setRequiredBlockCount] = useState(1);
   const editorContent = draft?.editor_json;
@@ -590,10 +592,22 @@ function EmailTemplateBuilderInner({ config }) {
     return () => clearTimeout(timeout);
   }, [dirty, editorReady, loadError, persistDraft, saving]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/settings/brand", { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => !cancelled && setBrand(brandFromPayload(payload)))
+      .catch(() => !cancelled && setBrand(brandFromPayload(null)));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const applyStarterTemplate = useCallback(
     (templateId) => {
       const nextContent = createStarterTemplate(templateId, {
         linkMode: "preview",
+        brand,
       });
       editorRef.current?.setContent?.(nextContent);
       contentRef.current = nextContent;
@@ -604,7 +618,7 @@ function EmailTemplateBuilderInner({ config }) {
         "Starter template applied. You can customize it from here.",
       );
     },
-    [createStarterTemplate, countRequiredBlocks],
+    [brand, createStarterTemplate, countRequiredBlocks],
   );
 
   const handleStarterTemplate = useCallback(
@@ -887,6 +901,17 @@ function EmailTemplateBuilderInner({ config }) {
               Choose a starting point. It replaces the current canvas, and you
               can customize every block afterwards.
             </DialogDescription>
+            {brand ? (
+              <p className="text-xs text-slate-500">
+                {brand.logoUrl || brand.accentColor
+                  ? "Templates use your logo and accent color from "
+                  : "Add your logo and accent color in "}
+                <Link href="/settings/brand" className="font-medium text-violet-700 hover:underline">
+                  Brand settings
+                </Link>
+                {brand.logoUrl || brand.accentColor ? "." : " to use them in templates."}
+              </p>
+            ) : null}
           </DialogHeader>
           <div className="grid gap-3 py-2 sm:grid-cols-2 lg:grid-cols-4">
             {starterTemplates.map((template) => (
