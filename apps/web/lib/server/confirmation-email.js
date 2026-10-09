@@ -7,7 +7,7 @@ import {
   CONFIRMATION_TOKEN_MAP,
   countConfirmationMessageBlocks,
 } from "@/lib/confirmation/email-template";
-import { renderCustomerConfirmation } from "./customer-confirmation";
+import { FULL_DESIGN_MARKER, renderCustomerConfirmation } from "./customer-confirmation";
 import { htmlToPlainText } from "@/lib/confirmation/plain-text";
 
 // Variables become plain markers while the shared renderer runs, because it only
@@ -17,7 +17,6 @@ const VARIABLE_PATTERN = /{{\s*([a-z0-9_.]+)\s*}}/gi;
 const MARKER = (key) => `SONAVAR${key}SONAEND`;
 const MARKER_PATTERN = /SONAVAR([a-z_]+)SONAEND/g;
 const TEXT_BLOCK_TYPES = new Set(["title", "paragraph"]);
-export const FULL_DESIGN_MARKER = "<!--sona:full-design-->";
 const mapStrings = (node, fn) => {
   if (typeof node === "string") return fn(node);
   if (Array.isArray(node)) return node.map((item) => mapStrings(item, fn));
