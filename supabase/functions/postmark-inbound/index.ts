@@ -33,6 +33,7 @@ import {
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
+import { replyLookupIds } from "./reply-threading.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -1763,7 +1764,11 @@ Deno.serve(async (req) => {
   let threadId: string | null = null;
   for (const ref of referenceIds) {
     if (!ref) continue;
-    const match = await findThreadByReplyMessage(mailbox.mailbox_id, ref);
+    let match: string | null = null;
+    for (const candidate of replyLookupIds(ref)) {
+      match = await findThreadByReplyMessage(mailbox.mailbox_id, candidate);
+      if (match) break;
+    }
     if (!match) continue;
 
     // Guard: don't thread an email from a completely different sender into an existing
