@@ -2,6 +2,7 @@ import {
   addTicketReference,
   applyTicketReference,
   composeConfirmation,
+  customerFirstName,
   formatTicketReference,
   isAutomatedSender,
   mergeConfirmationLayout,
@@ -140,4 +141,13 @@ Deno.test("older designs without the variable keep the switch", () => {
   assert(on.text.includes("Ticket reference: T-50001") && on.html.includes("Ticket reference: T-50001"), "footer line");
   const off = composeConfirmation({ ...filled("Hello", "Hi", "<main>{{content}}</main>"), ticketNumber: 50001, includeTicketNumber: false });
   assert(off.subject === "Hello" && !off.html.includes("T-50001"), "no reference when off");
+});
+
+Deno.test("greets by first name and never by an email address", () => {
+  assert(customerFirstName("Anna Jensen") === "Anna", "expected Anna");
+  assert(customerFirstName("  Anna  ") === "Anna", "expected trimmed Anna");
+  assert(customerFirstName("") === "", "no name gives empty");
+  assert(customerFirstName(null) === "", "null gives empty");
+  assert(customerFirstName("jonas@example.com") === "", "email as name gives empty");
+  assert(customerFirstName("<jonas@example.com>") === "", "bracketed email gives empty");
 });

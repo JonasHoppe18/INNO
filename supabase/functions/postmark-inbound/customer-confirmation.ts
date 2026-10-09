@@ -159,3 +159,10 @@ export function composeConfirmation(input: {
     ticketReference: rendered.ticketReference,
   };
 }
+
+// First name for the greeting. A missing name or an email address used as the
+// name gives "", so the caller falls back to a neutral greeting.
+export function customerFirstName(name: string | null | undefined): string {
+  const first = String(name ?? "").trim().split(/\s+/)[0] || "";
+  return first.includes("@") ? "" : first;
+}
