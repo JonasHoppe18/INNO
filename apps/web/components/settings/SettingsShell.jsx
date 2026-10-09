@@ -56,7 +56,7 @@ export function SettingsShell({ activeSection, onSelectSection, children }) {
           {SETTINGS_NAV.map((section) => (
             <div key={section.label}>
               {section.label ? (
-                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
+                <p className="mb-1 px-2.5 text-xs font-medium text-muted-foreground/80">
                   {section.label}
                 </p>
               ) : null}
