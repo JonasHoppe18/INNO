@@ -14,7 +14,7 @@ import {
 describe("settings navigation", () => {
   it("groups sections by what they answer", () => {
     expect(SETTINGS_NAV.map((group) => group.label)).toEqual([
-      "WORKSPACE", "CHANNELS", "AUTOMATIC EMAILS", "AI & AUTOMATION", "ACCOUNT",
+      "Workspace", "Channels", "Automatic emails", "AI & automation", "Account",
     ]);
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.key))).toEqual([
       "general", "members", "brand", "mailboxes", "inbox-rules", "confirmation-email", "customer-satisfaction",

@@ -1,7 +1,7 @@
 // Single source for settings navigation, canonical paths and legacy ?tab= links.
 export const SETTINGS_NAV = [
   {
-    label: "WORKSPACE",
+    label: "Workspace",
     items: [
       { key: "general", label: "General" },
       { key: "members", label: "Members" },
@@ -9,28 +9,28 @@ export const SETTINGS_NAV = [
     ],
   },
   {
-    label: "CHANNELS",
+    label: "Channels",
     items: [
       { key: "mailboxes", label: "Mailboxes" },
       { key: "inbox-rules", label: "Inbox rules" },
     ],
   },
   {
-    label: "AUTOMATIC EMAILS",
+    label: "Automatic emails",
     items: [
       { key: "confirmation-email", label: "Confirmation email" },
       { key: "customer-satisfaction", label: "Satisfaction survey" },
     ],
   },
   {
-    label: "AI & AUTOMATION",
+    label: "AI & automation",
     items: [
       { key: "ai", label: "AI instructions" },
       { key: "automation", label: "Actions & automation" },
     ],
   },
   {
-    label: "ACCOUNT",
+    label: "Account",
     items: [
       { key: "profile", label: "Profile & appearance" },
       { key: "billing", label: "Billing" },
