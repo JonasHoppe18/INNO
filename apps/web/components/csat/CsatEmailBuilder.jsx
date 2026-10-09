@@ -22,6 +22,7 @@ const config = {
   variables: CSAT_VARIABLES,
   sampleData: CSAT_SAMPLE_DATA,
   templates: CSAT_EMAIL_STARTER_TEMPLATES,
+  testDescription: "The five rating links are disabled in test sends and cannot create a CSAT response.",
   countBlocks: countCsatRatingBlocks,
   createStarter: createCsatEmailStarterTemplate,
   createFallbackDraft: () => ({

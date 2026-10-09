@@ -10,7 +10,6 @@ import {
   Eye,
   LayoutTemplate,
   Mail,
-  Save,
   Send,
   Settings2,
   Smartphone,
@@ -18,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+import { designerStatus } from "@/lib/email-designer/status";
 import { MediaPickerProvider, uploadMediaFile, useMediaPicker } from "@/components/media/MediaPicker";
 import { fitPickedImageWidth, mediaAltText } from "@/lib/media/library";
 import { Button } from "@/components/ui/button";
@@ -31,27 +31,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-function StatusPill({ status, dirty, saving }) {
-  const label = saving
-    ? "Saving…"
-    : dirty
-      ? "Unsaved changes"
-      : status === "published"
-        ? "Published"
-        : "Draft";
-  const className = saving
-    ? "bg-violet-50 text-violet-700"
-    : dirty
-      ? "bg-amber-50 text-amber-700"
-      : status === "published"
-        ? "bg-emerald-50 text-emerald-700"
-        : "bg-slate-100 text-slate-600";
+const PUBLISH_TONES = {
+  published: "bg-emerald-50 text-emerald-700",
+  pending: "bg-amber-50 text-amber-700",
+  draft: "bg-slate-100 text-slate-600",
+};
+
+function DesignerStatus({ status }) {
   return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-medium ${className}`}
-    >
-      {label}
-    </span>
+    <>
+      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${PUBLISH_TONES[status.publish.tone]}`}>
+        {status.publish.label}
+      </span>
+      <span className="text-xs text-slate-500" aria-live="polite">
+        {status.save}
+      </span>
+    </>
   );
 }
 
@@ -765,6 +760,8 @@ function EmailTemplateBuilderInner({ config }) {
     );
   }
 
+  const status = designerStatus({ draft, dirty, saving });
+
   return (
     <main className="flex h-[100svh] min-h-[680px] flex-col overflow-hidden bg-[#f8f8fb]">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#e7e7ef] bg-white px-4 py-3 sm:px-6">
@@ -782,11 +779,7 @@ function EmailTemplateBuilderInner({ config }) {
               <h1 className="truncate text-sm font-semibold tracking-[-0.01em] text-slate-950 sm:text-base">
                 {config.title}
               </h1>
-              <StatusPill
-                status={draft?.status}
-                dirty={dirty}
-                saving={saving}
-              />
+              <DesignerStatus status={status} />
             </div>
             <p className="hidden text-xs text-slate-500 sm:block">
               {config.description}
@@ -822,10 +815,10 @@ function EmailTemplateBuilderInner({ config }) {
             onClick={() => setEmailSettingsOpen(true)}
             disabled={!draft}
             className="gap-1.5"
-            aria-label="Email settings"
+            aria-label="Settings"
           >
             <Settings2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Email settings</span>
+            <span className="hidden sm:inline">Settings</span>
           </Button>
           <Button
             type="button"
@@ -842,43 +835,12 @@ function EmailTemplateBuilderInner({ config }) {
           </Button>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setTestEmailTouched(false);
-              setTestOpen(true);
-            }}
-            disabled={
-              !editorReady || Boolean(loadError) || Boolean(requiredBlockIssue)
-            }
-            className="gap-1.5"
-          >
-            <Send className="h-3.5 w-3.5" />
-            Send test
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={persistDraft}
-            disabled={
-              saving ||
-              !dirty ||
-              Boolean(loadError) ||
-              Boolean(requiredBlockIssue)
-            }
-            className="gap-1.5"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {saving ? "Saving…" : "Save now"}
-          </Button>
-          <Button
-            type="button"
             size="sm"
             onClick={handlePublish}
             disabled={
               publishing ||
               saving ||
+              !status.canPublish ||
               !editorReady ||
               Boolean(loadError) ||
               Boolean(requiredBlockIssue)
@@ -1079,12 +1041,11 @@ function EmailTemplateBuilderInner({ config }) {
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="flex h-[90vh] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+          <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b border-slate-200 py-4 pl-5 pr-14">
             <div>
               <DialogTitle>Email preview</DialogTitle>
               <DialogDescription>
-                Rendered through the same MJML pipeline used for test and live
-                sends.
+                How customers will see this email, shown with sample data.
               </DialogDescription>
             </div>
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
@@ -1114,6 +1075,23 @@ function EmailTemplateBuilderInner({ config }) {
               sandbox="allow-same-origin"
             />
           </div>
+          <DialogFooter className="shrink-0 border-t border-slate-200 px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={Boolean(loadError) || Boolean(requiredBlockIssue)}
+              onClick={() => {
+                setPreviewOpen(false);
+                setTestEmailTouched(false);
+                setTestOpen(true);
+              }}
+            >
+              <Send className="h-3.5 w-3.5" />
+              Send test email
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1122,8 +1100,8 @@ function EmailTemplateBuilderInner({ config }) {
           <DialogHeader>
             <DialogTitle>Send a test email</DialogTitle>
             <DialogDescription>
-              The five rating links are disabled in test sends and cannot create
-              a CSAT response.
+              {config.testDescription ||
+                "Sends the current design with sample data. Nothing is published."}
             </DialogDescription>
           </DialogHeader>
           <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -1142,11 +1120,7 @@ function EmailTemplateBuilderInner({ config }) {
               <span className="text-xs font-normal text-red-600">
                 Enter a valid email address.
               </span>
-            ) : (
-              <span className="text-xs font-normal text-slate-500">
-                We’ll send the current draft to this address.
-              </span>
-            )}
+            ) : null}
           </label>
           <DialogFooter>
             <Button
