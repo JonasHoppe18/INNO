@@ -134,11 +134,12 @@ const messageBlock = (message, color) => ({
   fieldValues: { message, fontSize: 16, color },
   styles: { padding: pad(0, 0, 0, 0) },
 });
-// Empty image: the editor shows an upload slot, and the sent email leaves it out.
-const logoSlot = () => ({
+// Without a brand logo the image is empty: the editor shows an upload slot,
+// and the sent email leaves it out.
+const logoSlot = (src = "") => ({
   id: "confirmation-logo",
   type: "image",
-  src: "",
+  src,
   alt: "Logo",
   width: 160,
   align: "center",
@@ -153,6 +154,27 @@ const divider = (id, color) => ({
   width: "full",
   styles: { padding: pad(24, 0, 24, 0) },
 });
+const accentBar = (color) => ({
+  id: "confirmation-accent",
+  type: "divider",
+  lineStyle: "solid",
+  color,
+  thickness: 3,
+  width: 48,
+  styles: { padding: pad(0, 0, 24, 0) },
+});
+const footer = (color) => ({
+  id: "confirmation-footer",
+  type: "paragraph",
+  content: `<p style="text-align: center; color: ${color}; font-size: 13px;">You're receiving this email because you contacted our support team.</p>`,
+  styles: { padding: pad(32, 0, 0, 0) },
+});
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+// The brand only fills a template when it is picked; saved designs never change with it.
+const brandParts = (brand) => ({
+  logoUrl: String(brand?.logoUrl || "").trim(),
+  accent: HEX_COLOR.test(String(brand?.accentColor || "")) ? brand.accentColor.toLowerCase() : null,
+});
 const DEFAULT_MESSAGE = CONFIRMATION_MESSAGE_BLOCK.fields[0].default;
 const singleSection = (backgroundColor, children, padding = pad(40, 40, 40, 40)) => ({
   id: "confirmation-section",
@@ -166,29 +188,34 @@ const contentWith = (backgroundColor, blocks) => ({
   blocks,
 });
 
-function createBrandedConfirmationContent() {
+function createBrandedConfirmationContent(brand) {
+  const { logoUrl, accent } = brandParts(brand);
   return contentWith("#f3f4f6", [
     singleSection("#ffffff", [
-      logoSlot(),
+      accentBar(accent || "#4f46e5"),
+      logoSlot(logoUrl),
       {
         id: "confirmation-title",
         type: "title",
         level: 2,
         content: "We've received your message",
         textAlign: "center",
-        color: "#111827",
+        color: accent || "#111827",
         styles: { padding: pad(0, 0, 0, 0) },
       },
       divider("confirmation-divider-top", "#e5e7eb"),
       messageBlock(DEFAULT_MESSAGE, "#374151"),
+      footer("#9ca3af"),
     ]),
   ]);
 }
 
-function createDarkConfirmationContent() {
+function createDarkConfirmationContent(brand) {
+  const { logoUrl, accent } = brandParts(brand);
   return contentWith("#0b0d17", [
     singleSection("#161827", [
-      logoSlot(),
+      accentBar(accent || "#6366f1"),
+      logoSlot(logoUrl),
       {
         id: "confirmation-title",
         type: "title",
@@ -240,9 +267,9 @@ export const CONFIRMATION_STARTER_TEMPLATES = [
   },
 ];
 
-export function createConfirmationStarterTemplate(id) {
-  if (id === "branded") return createBrandedConfirmationContent();
-  if (id === "dark") return createDarkConfirmationContent();
+export function createConfirmationStarterTemplate(id, { brand } = {}) {
+  if (id === "branded") return createBrandedConfirmationContent(brand);
+  if (id === "dark") return createDarkConfirmationContent(brand);
   if (id === "minimal") return createMinimalConfirmationContent();
   return createConfirmationContent();
 }

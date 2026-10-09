@@ -400,11 +400,35 @@ export const CSAT_EMAIL_STARTER_TEMPLATES = [
   },
 ];
 
-export function createCsatEmailStarterTemplate(id, { linkMode = "preview" } = {}) {
-  if (id === "minimal") return createMinimalCsatEmailContent({ linkMode });
-  if (id === "personal") return createPersonalCsatEmailContent({ linkMode });
+// The brand logo goes on top when a template is picked; saved designs never change with it.
+function withBrandLogo(content, logoUrl) {
+  const src = String(logoUrl || "").trim();
+  if (!src) return content;
+  const [section, ...rest] = content.blocks;
+  const logo = {
+    id: "csat-logo-1",
+    type: "image",
+    src,
+    alt: "Logo",
+    width: 140,
+    align: "center",
+    styles: { padding: spacing(0, 0, 24, 0) },
+  };
+  return {
+    ...content,
+    blocks: [{ ...section, children: [[logo, ...section.children[0]], ...section.children.slice(1)] }, ...rest],
+  };
+}
+
+export function createCsatEmailStarterTemplate(id, { linkMode = "preview", brand } = {}) {
   if (id === "blank") return createBlankCsatEmailContent({ linkMode });
-  return createDefaultCsatEmailContent({ linkMode });
+  const content =
+    id === "minimal"
+      ? createMinimalCsatEmailContent({ linkMode })
+      : id === "personal"
+        ? createPersonalCsatEmailContent({ linkMode })
+        : createDefaultCsatEmailContent({ linkMode });
+  return withBrandLogo(content, brand?.logoUrl);
 }
 
 export function countCsatRatingBlocks(content) {
