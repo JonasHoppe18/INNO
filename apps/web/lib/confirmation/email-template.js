@@ -8,16 +8,15 @@ export const CONFIRMATION_SAMPLE_DATA = {
 };
 // Variables offered in the designer. The ticket reference may sit anywhere in the
 // layout (for example a footer); the message block keeps the customer variables.
+// Variables for any text or headline block in the designer. The sample shows on
+// the canvas and in previews.
 export const CONFIRMATION_DESIGN_VARIABLES = [
-  {
-    label: "Ticket reference",
-    value: "{{ticket.reference}}",
-    sample: "T-50001",
-    group: "Ticket",
-    description:
-      "Use it in the message or any text block, for example the footer. Without it, the reference is added below the message. Lines with it are left out when the reference is turned off.",
-  },
-];
+  ["Customer first name", "customer.first_name", "Alex", "Customer"],
+  ["Customer full name", "customer.full_name", "Alex Johnson", "Customer"],
+  ["Store name", "store.name", "Demo Store", "Store"],
+  ["Conversation subject", "conversation.subject", "A question about my order", "Ticket"],
+  ["Ticket reference", "ticket.reference", "T-50001", "Ticket"],
+].map(([label, path, sample, group]) => ({ label, value: `{{${path}}}`, sample, group }));
 export const CONFIRMATION_VARIABLES = [
   ["Customer first name", "customer.first_name"],
   ["Customer full name", "customer.full_name"],
@@ -71,10 +70,9 @@ export const CONFIRMATION_MESSAGE_BLOCK = {
   template:
     '<div style="white-space:pre-wrap;font-size:{{ fontSize }}px;color:{{ color }};line-height:1.6">{{ message | escape }}</div>',
 };
-export const CONFIRMATION_PALETTE = [
-  ...CSAT_PALETTE_BLOCKS.filter((type) => !type.startsWith("custom:")),
-  "custom:confirmation-message",
-];
+// The legacy message block stays registered so older designs still open, but new
+// designs use ordinary text blocks.
+export const CONFIRMATION_PALETTE = CSAT_PALETTE_BLOCKS.filter((type) => !type.startsWith("custom:"));
 export function countConfirmationMessageBlocks(content) {
   const count = (blocks) =>
     (blocks || []).reduce(
@@ -127,11 +125,24 @@ export function createConfirmationContent(
 }
 
 const pad = (top = 0, right = 0, bottom = 0, left = 0) => ({ top, right, bottom, left });
-const messageBlock = (message, color) => ({
-  id: "confirmation-message",
-  type: "custom",
-  customType: "confirmation-message",
-  fieldValues: { message, fontSize: 16, color },
+const escapeText = (value) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// New designs keep the message in an ordinary text block, so it can be formatted
+// and use variables like any other text. Blank lines become paragraphs.
+export function messageToParagraphs(message) {
+  return toDesignerTokens(String(message || ""))
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.split("\n").map(escapeText).join("<br>")}</p>`)
+    .join("");
+}
+const messageBlock = (message) => ({
+  id: "confirmation-text",
+  type: "paragraph",
+  content: messageToParagraphs(message),
+  paragraphSpacing: 16,
   styles: { padding: pad(0, 0, 0, 0) },
 });
 // Without a brand logo the image is empty: the editor shows an upload slot,
@@ -183,10 +194,14 @@ const singleSection = (backgroundColor, children, padding = pad(40, 40, 40, 40))
   styles: { backgroundColor, padding },
   children: [children],
 });
-const contentWith = (backgroundColor, blocks) => ({
-  settings: { width: 600, backgroundColor, textColor: "#172033", fontFamily: "Arial, sans-serif" },
+const contentWith = (backgroundColor, blocks, textColor = "#172033") => ({
+  settings: { width: 600, backgroundColor, textColor, fontFamily: "Arial, sans-serif" },
   blocks,
 });
+
+export function createConfirmationDesign(message = CONFIRMATION_MESSAGE_BLOCK.fields[0].default) {
+  return contentWith("#f3f4f6", [singleSection("#ffffff", [messageBlock(message)], pad(24, 24, 24, 24))]);
+}
 
 function createBrandedConfirmationContent(brand) {
   const { logoUrl, accent } = brandParts(brand);
@@ -204,10 +219,10 @@ function createBrandedConfirmationContent(brand) {
         styles: { padding: pad(0, 0, 0, 0) },
       },
       divider("confirmation-divider-top", "#e5e7eb"),
-      messageBlock(DEFAULT_MESSAGE, "#374151"),
+      messageBlock(DEFAULT_MESSAGE),
       footer("#9ca3af"),
     ]),
-  ]);
+  ], "#374151");
 }
 
 function createDarkConfirmationContent(brand) {
@@ -226,17 +241,17 @@ function createDarkConfirmationContent(brand) {
         styles: { padding: pad(8, 0, 0, 0) },
       },
       divider("confirmation-divider-top", "#3b3f55"),
-      messageBlock(DEFAULT_MESSAGE, "#e5e7eb"),
+      messageBlock(DEFAULT_MESSAGE),
     ]),
-  ]);
+  ], "#e5e7eb");
 }
 
 function createMinimalConfirmationContent() {
   return contentWith("#ffffff", [
     singleSection("#ffffff", [
-      messageBlock(DEFAULT_MESSAGE, "#111827"),
+      messageBlock(DEFAULT_MESSAGE),
     ], pad(32, 24, 32, 24)),
-  ]);
+  ], "#111827");
 }
 
 export const CONFIRMATION_STARTER_TEMPLATES = [
@@ -271,5 +286,5 @@ export function createConfirmationStarterTemplate(id, { brand } = {}) {
   if (id === "branded") return createBrandedConfirmationContent(brand);
   if (id === "dark") return createDarkConfirmationContent(brand);
   if (id === "minimal") return createMinimalConfirmationContent();
-  return createConfirmationContent();
+  return createConfirmationDesign();
 }

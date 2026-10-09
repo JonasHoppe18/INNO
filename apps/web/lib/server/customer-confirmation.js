@@ -7,6 +7,9 @@ export const CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT =
   '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">{{content}}</div>';
 
 export const TICKET_REFERENCE_TOKEN = "{{ticket_reference}}";
+// Compiled designs built from ordinary text blocks start with this marker. They
+// carry the variables across the whole email instead of in one {{content}} slot.
+export const FULL_DESIGN_MARKER = "<!--sona:full-design-->";
 
 // Fills the reference where the message mentions it. With the reference off, the
 // lines that mention it are dropped so no half sentence is left behind.
@@ -49,6 +52,39 @@ export function applySubjectReference(subject, ticketReference) {
     .trim();
 }
 
+const escapeAttributeSafe = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+const TOKEN_PATTERN = /{{\s*([a-z0-9_]+)\s*}}/gi;
+
+function renderFullDesign({ subjectTemplate, bodyTextTemplate, templateHtml, ticketNumber, tokens }) {
+  const reference = formatTicketReference(ticketNumber, "") || null;
+  const usesReference = [subjectTemplate, bodyTextTemplate, templateHtml].some((value) =>
+    String(value || "").includes(TICKET_REFERENCE_TOKEN),
+  );
+  const values = { ...tokens, ticket_reference: reference || "" };
+  const fill = (template, escape) =>
+    String(template || "").replace(TOKEN_PATTERN, (_match, key) => {
+      const value = values[key.toLowerCase()] ?? "";
+      return escape ? escapeAttributeSafe(value) : String(value);
+    });
+  const subjectWithReference = applySubjectReference(
+    fillConfirmationTokens(subjectTemplate, tokens),
+    reference,
+  );
+  const textWithReference = applyTicketReference(fillConfirmationTokens(bodyTextTemplate, tokens), reference);
+  return {
+    subject: fill(subjectWithReference, false).replace(/\s{2,}/g, " ").trim(),
+    text: fill(textWithReference, false).replace(/\n{3,}/g, "\n\n").trim(),
+    html: fill(String(templateHtml).slice(FULL_DESIGN_MARKER.length), true),
+    ticketReference: usesReference ? reference : null,
+  };
+}
+
 export function renderCustomerConfirmation({
   subjectTemplate = CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
   bodyTextTemplate = CUSTOMER_CONFIRMATION_DEFAULT_TEXT,
@@ -58,6 +94,9 @@ export function renderCustomerConfirmation({
   ticketNumber = 50001,
   tokens = {},
 } = {}) {
+  if (String(templateHtml || "").startsWith(FULL_DESIGN_MARKER)) {
+    return renderFullDesign({ subjectTemplate, bodyTextTemplate, templateHtml, ticketNumber, tokens });
+  }
   const reference = formatTicketReference(ticketNumber, "") || null;
   const layout = String(templateHtml || "{{content}}");
   // A design that uses the variable decides where the reference appears. Older

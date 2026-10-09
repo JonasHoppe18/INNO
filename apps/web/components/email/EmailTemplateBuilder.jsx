@@ -17,7 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { designerStatus } from "@/lib/email-designer/status";
+import { designerStatus, requiredBlockProblem } from "@/lib/email-designer/status";
 import { MediaPickerProvider, uploadMediaFile, useMediaPicker } from "@/components/media/MediaPicker";
 import { fitPickedImageWidth, mediaAltText } from "@/lib/media/library";
 import { brandFromPayload } from "@/lib/settings/brand";
@@ -518,11 +518,11 @@ function EmailTemplateBuilderInner({ config }) {
     async ({ silent = false } = {}) => {
       if (!draft || saving) return null;
       const nextContent = contentRef.current || draft.editor_json;
-      if (countRequiredBlocks(nextContent) !== 1) {
-        if (!silent)
-          toast.error(
-            "Keep exactly one required message block in the email before saving.",
-          );
+      const blockProblem = requiredBlockProblem(countRequiredBlocks(nextContent), {
+        optional: config.blockOptional,
+      });
+      if (blockProblem) {
+        if (!silent) toast.error(blockProblem);
         return null;
       }
       const draftSnapshot = {
@@ -577,7 +577,7 @@ function EmailTemplateBuilderInner({ config }) {
         setSaving(false);
       }
     },
-    [draft, saving, countRequiredBlocks, endpoint],
+    [draft, saving, countRequiredBlocks, endpoint, config.blockOptional],
   );
 
   useEffect(() => {
@@ -633,12 +633,9 @@ function EmailTemplateBuilderInner({ config }) {
     [applyStarterTemplate, dirty],
   );
 
-  const requiredBlockIssue =
-    requiredBlockCount === 1
-      ? ""
-      : requiredBlockCount === 0
-        ? "Add one required message block before publishing."
-        : "Keep one required message block in the email. Remove the extra required blocks before publishing.";
+  const requiredBlockIssue = requiredBlockProblem(requiredBlockCount, {
+    optional: config.blockOptional,
+  });
 
   const handleBack = useCallback(
     async (event) => {

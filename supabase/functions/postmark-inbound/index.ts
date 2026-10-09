@@ -1118,6 +1118,7 @@ async function maybeSendAutoReply(options: {
     templateHtml,
     ticketNumber: options.ticketNumber,
     includeTicketNumber: setting.include_ticket_number,
+    tokens: tokenValues,
   });
   const mergedHtml = rendered.html;
   const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;

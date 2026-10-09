@@ -14,3 +14,13 @@ export function designerStatus({ draft, dirty = false, saving = false }) {
     canPublish: Boolean(draft) && !live,
   };
 }
+
+// CSAT needs exactly one rating block; confirmation designs may drop the legacy
+// message block but never hold two.
+export function requiredBlockProblem(count, { optional = false } = {}) {
+  if (optional) return count > 1 ? "Keep at most one message block in the email." : "";
+  if (count === 1) return "";
+  return count === 0
+    ? "Add one required message block before publishing."
+    : "Keep one required message block in the email. Remove the extra required blocks before publishing.";
+}

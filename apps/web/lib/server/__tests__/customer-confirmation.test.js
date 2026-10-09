@@ -79,3 +79,46 @@ describe("older saved designs without the variable keep the old switch", () => {
     expect(rendered.html).not.toContain("T-50001");
   });
 });
+
+describe("full designs fill the variables across the whole email", () => {
+  const html =
+    '<!--sona:full-design--><h2>Thanks, {{customer_first_name}}</h2><p>Your ticket number: <span style="color:#e11d48">{{ticket_reference}}</span></p><p>{{team_name}}</p>';
+  const text = "Thanks, {{customer_first_name}}\n\nYour ticket number: {{ticket_reference}}\n\n{{team_name}}";
+
+  it("escapes values in the HTML, keeps formatting and fills the text version", () => {
+    const mail = renderCustomerConfirmation({
+      subjectTemplate: "[{{ticket_reference}}] Hi",
+      bodyTextTemplate: text,
+      templateHtml: html,
+      ticketNumber: 50001,
+      tokens: { customer_first_name: "<script>x</script>", team_name: "Example & Co" },
+    });
+    expect(mail.html).toContain("Thanks, &lt;script&gt;x&lt;/script&gt;");
+    expect(mail.html).not.toContain("<script>");
+    expect(mail.html).toContain('<span style="color:#e11d48">T-50001</span>');
+    expect(mail.html).toContain("<p>Example &amp; Co</p>");
+    expect(mail.html).not.toContain("sona:full-design");
+    expect(mail.text).toBe("Thanks, <script>x</script>\n\nYour ticket number: T-50001\n\nExample & Co");
+    expect(mail.subject).toBe("[T-50001] Hi");
+    expect(mail.ticketReference).toBe("T-50001");
+  });
+
+  it("drops the reference cleanly when there is no ticket number", () => {
+    const mail = renderCustomerConfirmation({
+      subjectTemplate: "[{{ticket_reference}}] Hi",
+      bodyTextTemplate: text,
+      templateHtml: html,
+      ticketNumber: null,
+      tokens: { customer_first_name: "Anna", team_name: "Shop" },
+    });
+    expect(mail.subject).toBe("Hi");
+    expect(mail.html).not.toContain("{{");
+    expect(mail.text).toBe("Thanks, Anna\n\nShop");
+  });
+
+  it("leaves unknown tokens out instead of showing braces", () => {
+    const mail = renderCustomerConfirmation({ templateHtml: "<!--sona:full-design--><p>{{customer_name}}</p>", bodyTextTemplate: "{{customer_name}}", ticketNumber: 1 });
+    expect(mail.html).toBe("<p></p>");
+    expect(mail.text).toBe("");
+  });
+});

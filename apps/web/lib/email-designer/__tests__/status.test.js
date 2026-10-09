@@ -30,3 +30,19 @@ describe("designerStatus", () => {
     expect(designerStatus({ draft: null }).canPublish).toBe(false);
   });
 });
+
+describe("requiredBlockProblem", () => {
+  it("requires exactly one block when the block is required", async () => {
+    const { requiredBlockProblem } = await import("../status");
+    expect(requiredBlockProblem(1, { optional: false })).toBe("");
+    expect(requiredBlockProblem(0, { optional: false })).toBe("Add one required message block before publishing.");
+    expect(requiredBlockProblem(2, { optional: false })).toContain("Keep one required message block");
+  });
+
+  it("allows none but not two when the block is optional", async () => {
+    const { requiredBlockProblem } = await import("../status");
+    expect(requiredBlockProblem(0, { optional: true })).toBe("");
+    expect(requiredBlockProblem(1, { optional: true })).toBe("");
+    expect(requiredBlockProblem(2, { optional: true })).toBe("Keep at most one message block in the email.");
+  });
+});

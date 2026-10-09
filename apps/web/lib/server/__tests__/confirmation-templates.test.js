@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CONFIRMATION_STARTER_TEMPLATES,
   countConfirmationMessageBlocks,
+  createConfirmationContent,
+  createConfirmationDesign,
   createConfirmationStarterTemplate,
 } from "@/lib/confirmation/email-template";
 import { compileConfirmationEmail, normalizeConfirmationContent } from "../confirmation-email";
@@ -42,9 +44,12 @@ describe("confirmation starter templates", () => {
     "%s can be saved and sends the ticket number",
     async (id) => {
       const content = createConfirmationStarterTemplate(id);
-      expect(countConfirmationMessageBlocks(content)).toBe(1);
+      expect(countConfirmationMessageBlocks(content)).toBe(0);
+      expect(blocksOf(content).some((block) => block.type === "paragraph")).toBe(true);
       expect(() => normalizeConfirmationContent(content)).not.toThrow();
       const mail = await sendWith(content);
+      expect(mail.html).toContain("Example Store");
+      expect(mail.text).toContain("Your ticket number: T-50001");
       expect(mail.subject).toBe("[T-50001] We've received your message");
       expect(mail.html).toContain("Your ticket number: T-50001");
       expect(mail.html).not.toContain("font-size: 32px");
@@ -70,17 +75,26 @@ describe("confirmation starter templates", () => {
     }
   });
 
-  it("uses light text on the dark template", () => {
+  it("uses light text on the dark template", async () => {
     const content = createConfirmationStarterTemplate("dark");
-    const message = blocksOf(content).find((block) => block.customType === "confirmation-message");
-    expect(message.fieldValues.color.toLowerCase()).not.toBe("#172033");
+    expect(content.settings.textColor.toLowerCase()).toBe("#e5e7eb");
     expect(content.settings.backgroundColor.toLowerCase()).not.toBe("#f3f4f6");
+    const mail = await sendWith(content);
+    expect(mail.html).toMatch(/color:\s*#e5e7eb[^>]*>[\s\S]{0,300}Hi Anna/);
   });
 
-  it("applies the message block's text color and size in the sent email", async () => {
-    const mail = await sendWith(createConfirmationStarterTemplate("dark"));
+  it("still applies a legacy message block's text color and size in the sent email", async () => {
+    const legacy = createConfirmationContent();
+    legacy.blocks[0].children[0][0].fieldValues.color = "#e5e7eb";
+    const mail = await sendWith(legacy);
     expect(mail.html).not.toContain("<mj-text");
     expect(mail.html).toMatch(/color:\s*#e5e7eb[^>]*>\s*<p[^>]*>Hi Anna/);
+  });
+
+  it("turns a plain-text message into paragraphs for new designs", () => {
+    const content = createConfirmationDesign("Hi {{customer_first_name}},\n\nA & B <b>\nline two");
+    const paragraph = blocksOf(content).find((block) => block.type === "paragraph");
+    expect(paragraph.content).toBe("<p>Hi {{customer.first_name}},</p><p>A &amp; B &lt;b&gt;<br>line two</p>");
   });
 
   it("falls back to the classic template for an unknown id", () => {

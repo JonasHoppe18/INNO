@@ -1,6 +1,6 @@
 import { loadConfirmationConfiguration } from "./confirmation-configuration";
 import { requireCsatWorkspace } from "./csat-route";
-import { createConfirmationContent, toDesignerTokens } from "@/lib/confirmation/email-template";
+import { createConfirmationDesign, toDesignerTokens } from "@/lib/confirmation/email-template";
 import { compileConfirmationEmail } from "./confirmation-email";
 
 export async function confirmationContext(request) {
@@ -42,9 +42,7 @@ export async function loadConfirmationDraft(context) {
       name: "Customer confirmation",
       subject: toDesignerTokens(context.setting.subject_template),
       preview_text: "",
-      editor_json: createConfirmationContent(
-        context.setting.body_text_template,
-      ),
+      editor_json: createConfirmationDesign(context.setting.body_text_template),
       status: "draft",
       version: 0,
       published_version: null,

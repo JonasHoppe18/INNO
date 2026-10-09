@@ -53,26 +53,24 @@ describe("confirmation email design", () => {
     expect(result.text).toContain("Demo Store");
     expect(result.html).not.toContain("Ticket reference:");
   });
-  it("rejects unsafe input, unsupported variables and a missing/duplicate message", async () => {
+  it("rejects unsafe input, unsupported variables and a duplicate message", async () => {
     const source = createConfirmationContent();
     source.blocks[0].children[0][0].fieldValues.message =
       "<script>bad</script>";
     expect(() => normalizeConfirmationContent(source)).toThrow();
     source.blocks[0].children[0][0].fieldValues.message = "{{customer.secret}}";
     expect(() => normalizeConfirmationContent(source)).toThrow("Unsupported");
-    source.blocks[0].children[0] = [];
-    expect(() => normalizeConfirmationContent(source)).toThrow("exactly one");
     const duplicate = createConfirmationContent();
     duplicate.blocks.push(...structuredClone(duplicate.blocks));
     expect(() => normalizeConfirmationContent(duplicate)).toThrow(
-      "exactly one",
+      "at most one",
     );
-    const wrongPlace = createConfirmationContent();
-    wrongPlace.blocks[0].children[0].push({
-      type: "paragraph",
-      content: "{{customer.first_name}}",
-    });
-    expect(() => normalizeConfirmationContent(wrongPlace)).toThrow("belong");
+    const unknown = createConfirmationContent();
+    unknown.blocks[0].children[0].push({ type: "paragraph", content: "<p>{{order.number}}</p>" });
+    expect(() => normalizeConfirmationContent(unknown)).toThrow("can't be used");
+    const inButton = createConfirmationContent();
+    inButton.blocks[0].children[0].push({ type: "button", text: "Hi {{customer.first_name}}", url: "https://shop.test" });
+    expect(() => normalizeConfirmationContent(inButton)).toThrow("text and headline");
   });
   it("lets the design place the ticket reference outside the message", async () => {
     const source = createConfirmationContent();
@@ -114,5 +112,53 @@ describe("confirmation email design", () => {
     expect(() =>
       normalizeCsatTemplateContent(createConfirmationContent()),
     ).toThrow();
+  });
+});
+
+const fullDesign = () => ({
+  settings: { width: 600, backgroundColor: "#ffffff" },
+  blocks: [
+    {
+      id: "s",
+      type: "section",
+      columns: "1",
+      styles: {},
+      children: [[
+        { id: "t", type: "title", level: 2, content: "Thanks, {{customer.first_name}}", textAlign: "center", styles: {} },
+        {
+          id: "p",
+          type: "paragraph",
+          content: '<p>Your ticket number: <span style="color: #e11d48">{{ticket.reference}}</span></p><p>Best,<br>{{ store.name }}</p>',
+          styles: {},
+        },
+      ]],
+    },
+  ],
+});
+
+describe("full designs without the message block", () => {
+  it("allows the confirmation variables in text and headlines", () => {
+    const normalized = normalizeConfirmationContent(fullDesign());
+    expect(JSON.stringify(normalized)).toContain("{{customer.first_name}}");
+    expect(JSON.stringify(normalized)).toContain("{{store.name}}");
+  });
+
+  it("allows at most one legacy message block", () => {
+    const two = createConfirmationContent();
+    two.blocks[0].children[0].push(structuredClone(two.blocks[0].children[0][0]));
+    expect(() => normalizeConfirmationContent(two)).toThrow("at most one");
+  });
+
+  it("compiles the whole email with sender tokens and a text version", async () => {
+    const compiled = await compileConfirmationEmail({ content: fullDesign(), subject: "[{{ticket.reference}}] Hi" });
+    expect(compiled.html.startsWith("<!--sona:full-design-->")).toBe(true);
+    expect(compiled.html).not.toContain("{{content}}");
+    expect(compiled.html).toContain("{{customer_first_name}}");
+    expect(compiled.html).toContain("{{team_name}}");
+    expect(compiled.html).toContain("{{ticket_reference}}");
+    expect(compiled.html).not.toMatch(/SONAVAR|SONATICKET/);
+    expect(compiled.html).toMatch(/color:\s*#e11d48/);
+    expect(compiled.text).toBe("Thanks, {{customer_first_name}}\n\nYour ticket number: {{ticket_reference}}\n\nBest,\n{{team_name}}");
+    expect(compiled.subject).toBe("[{{ticket_reference}}] Hi");
   });
 });

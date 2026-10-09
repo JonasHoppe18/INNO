@@ -151,3 +151,46 @@ Deno.test("greets by first name and never by an email address", () => {
   assert(customerFirstName("jonas@example.com") === "", "email as name gives empty");
   assert(customerFirstName("<jonas@example.com>") === "", "bracketed email gives empty");
 });
+
+const FULL_HTML =
+  '<!--sona:full-design--><h2>Thanks, {{customer_first_name}}</h2><p>Your ticket number: <span style="color:#e11d48">{{ticket_reference}}</span></p><p>{{team_name}}</p>';
+const FULL_TEXT = "Thanks, {{customer_first_name}}\n\nYour ticket number: {{ticket_reference}}\n\n{{team_name}}";
+const fill = (template: string, values: Record<string, string>) =>
+  Object.entries(values).reduce((result, [key, value]) => result.replaceAll(`{{${key}}}`, value), template);
+
+Deno.test("full designs fill variables across the whole email, escaped in HTML", () => {
+  const tokens = { customer_first_name: "<script>x</script>", team_name: "Example & Co" };
+  const result = composeConfirmation({
+    subjectTemplate: fill("[{{ticket_reference}}] Hi", tokens),
+    bodyText: fill(FULL_TEXT, tokens),
+    bodyHtml: "",
+    templateHtml: FULL_HTML,
+    ticketNumber: 50001,
+    includeTicketNumber: true,
+    tokens,
+  });
+  assert(result.html.includes("Thanks, &lt;script&gt;x&lt;/script&gt;"), result.html);
+  assert(!result.html.includes("<script>"), "raw script must not reach the html");
+  assert(result.html.includes('<span style="color:#e11d48">T-50001</span>'), result.html);
+  assert(result.html.includes("<p>Example &amp; Co</p>"), result.html);
+  assert(!result.html.includes("sona:full-design"), "marker must be removed");
+  assert(result.text === "Thanks, <script>x</script>\n\nYour ticket number: T-50001\n\nExample & Co", result.text);
+  assert(result.subject === "[T-50001] Hi", result.subject);
+  assert(result.ticketReference === "T-50001", "reference");
+});
+
+Deno.test("full designs drop the reference cleanly without a ticket number", () => {
+  const tokens = { customer_first_name: "Anna", team_name: "Shop" };
+  const result = composeConfirmation({
+    subjectTemplate: "[{{ticket_reference}}] Hi",
+    bodyText: fill(FULL_TEXT, tokens),
+    bodyHtml: "",
+    templateHtml: FULL_HTML,
+    ticketNumber: null,
+    includeTicketNumber: true,
+    tokens,
+  });
+  assert(result.subject === "Hi", result.subject);
+  assert(!result.html.includes("{{"), result.html);
+  assert(result.text === "Thanks, Anna\n\nShop", result.text);
+});
