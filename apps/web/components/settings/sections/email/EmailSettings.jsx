@@ -88,6 +88,7 @@ export function EmailSettings({
 
   const [designStatus, setDesignStatus] = useState(null);
   const [previewHeight, setPreviewHeight] = useState(360);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Draft vs published state of the builder design for the selected scope.
   useEffect(() => {
@@ -340,6 +341,9 @@ export function EmailSettings({
               <Button type="button" variant="ghost" size="sm" onClick={() => setTestConfirmationOpen(true)}>
                 Send test email
               </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+                Preview
+              </Button>
               <Button asChild size="sm">
                 <Link href={designHref}>Edit design</Link>
               </Button>
@@ -360,28 +364,6 @@ export function EmailSettings({
             description="Edited in the email designer under Email settings. The ticket reference is added in front when it is turned on."
           >
             <span className="truncate text-sm text-foreground" title={preview.subject}>{preview.subject}</span>
-          </SettingsRow>
-          <SettingsRow stacked label="Preview" description="What a customer receives today, with sample values.">
-            <div className="w-full overflow-hidden rounded-lg border border-border/70 bg-card">
-              <div className="space-y-0.5 border-b border-border/60 px-4 py-3 text-xs">
-                <p className="text-muted-foreground">
-                  From <span className="text-foreground">{selectedMailbox?.from_name || teamName || "Your team"}</span>
-                </p>
-                <p className="truncate text-sm font-medium text-foreground">{preview.subject}</p>
-              </div>
-              <iframe
-                title="Confirmation email preview"
-                sandbox="allow-same-origin"
-                srcDoc={previewDocument(preview.html)}
-                onLoad={(event) => {
-                  const doc = event.currentTarget.contentDocument;
-                  const height = doc?.documentElement?.scrollHeight || 0;
-                  if (height) setPreviewHeight(Math.min(Math.max(height, 200), 1200));
-                }}
-                style={{ height: previewHeight }}
-                className="block w-full bg-[#f4f4f5]"
-              />
-            </div>
           </SettingsRow>
         </SettingsGroup>
       </div>
@@ -767,6 +749,35 @@ export function EmailSettings({
         </div>
         </>
       ) : null}
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="space-y-0.5 border-b border-border/60 px-5 py-4 text-left">
+            <DialogTitle className="text-section-heading">Confirmation email preview</DialogTitle>
+            <DialogDescription className="text-xs">What a customer receives today, with sample values.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-0.5 border-b border-border/60 px-5 py-3 text-xs">
+            <p className="text-muted-foreground">
+              From <span className="text-foreground">{selectedMailbox?.from_name || teamName || "Your team"}</span>
+            </p>
+            <p className="truncate text-sm font-medium text-foreground">{preview.subject}</p>
+          </div>
+          <div className="max-h-[70vh] overflow-y-auto bg-[#f4f4f5]">
+            <iframe
+              title="Confirmation email preview"
+              sandbox="allow-same-origin"
+              srcDoc={previewDocument(preview.html)}
+              onLoad={(event) => {
+                const doc = event.currentTarget.contentDocument;
+                const height = doc?.documentElement?.scrollHeight || 0;
+                if (height) setPreviewHeight(Math.max(height, 200));
+              }}
+              style={{ height: previewHeight }}
+              className="block w-full"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={testConfirmationOpen} onOpenChange={setTestConfirmationOpen}>
         <DialogContent className="max-w-md">
