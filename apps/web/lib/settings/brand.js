@@ -10,18 +10,6 @@ export function normalizeAccentColor(value) {
   return color.toLowerCase();
 }
 
-// Only logos uploaded to this workspace's own brand folder may be saved as the brand.
-export function isWorkspaceBrandLogoUrl(url, { supabaseUrl, workspaceId } = {}) {
-  const value = String(url || "").trim();
-  const base = String(supabaseUrl || "").trim().replace(/\/+$/, "");
-  const workspace = String(workspaceId || "").trim();
-  if (!value || !base || !workspace || value.includes("..")) return false;
-  const prefix = `${base}/storage/v1/object/public/${BRAND_IMAGE_BUCKET}/${encodeURIComponent(workspace)}/brand/`;
-  if (!prefix.startsWith("https://") || !value.startsWith(prefix)) return false;
-  const fileName = value.slice(prefix.length);
-  return Boolean(fileName) && !fileName.includes("/");
-}
-
 export function brandFromPayload(payload) {
   const color = String(payload?.accent_color || "").trim().toLowerCase();
   return { logoUrl: String(payload?.logo_url || "").trim(), accentColor: color };

@@ -3,7 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createStatelessServiceClient } from "@/lib/server/stateless-service-client";
 import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
-import { isWorkspaceBrandLogoUrl, normalizeAccentColor } from "@/lib/settings/brand";
+import { normalizeAccentColor } from "@/lib/settings/brand";
+import { findActiveWorkspaceMediaByUrl } from "@/lib/server/workspace-media";
 
 const EMPTY_BRAND = { logo_url: null, accent_color: null };
 
@@ -59,7 +60,7 @@ export async function PUT(request) {
   try {
     const context = await resolveContext();
     if (context.response) return context.response;
-    const { serviceClient, scope, supabaseUrl } = context;
+    const { serviceClient, scope } = context;
     if (!scope?.workspaceId) {
       return NextResponse.json({ error: "Workspace scope not found." }, { status: 404 });
     }
@@ -72,8 +73,9 @@ export async function PUT(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
     const logoUrl = String(body?.logo_url || "").trim() || null;
-    if (logoUrl && !isWorkspaceBrandLogoUrl(logoUrl, { supabaseUrl, workspaceId: scope.workspaceId })) {
-      return NextResponse.json({ error: "Upload the logo again before saving." }, { status: 400 });
+    // The logo must be a visible image in this workspace's media library.
+    if (logoUrl && !(await findActiveWorkspaceMediaByUrl(serviceClient, scope.workspaceId, logoUrl))) {
+      return NextResponse.json({ error: "Choose the logo from your image library again." }, { status: 400 });
     }
 
     const { error } = await serviceClient
