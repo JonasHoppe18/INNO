@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GET as members } from "../members/route";
 import { GET as testMode } from "../test-mode/route";
+import { GET as brand } from "../brand/route";
 import { GET as persona } from "../../persona/route";
 import { GET as autoReply } from "../auto-reply/route";
 import { GET as emailSignature } from "../email-signature/route";
@@ -13,6 +14,7 @@ import { GET as inboxes } from "../../inboxes/route";
 const resources = {
   "/api/settings/members": members,
   "/api/settings/test-mode": testMode,
+  "/api/settings/brand": brand,
   "/api/persona": persona,
   "/api/settings/auto-reply": autoReply,
   "/api/settings/email-signature": emailSignature,

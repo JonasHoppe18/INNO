@@ -2,6 +2,7 @@
 export const SETTINGS_RESOURCE_URLS = [
   "/api/settings/members",
   "/api/settings/test-mode",
+  "/api/settings/brand",
   "/api/persona",
   "/api/settings/auto-reply",
   "/api/settings/email-signature",
@@ -11,7 +12,7 @@ export const SETTINGS_RESOURCE_URLS = [
   "/api/inboxes",
 ];
 
-export const WORKSPACE_ONLY_RESOURCE_URLS = new Set(["/api/settings/test-mode", "/api/persona"]);
+export const WORKSPACE_ONLY_RESOURCE_URLS = new Set(["/api/settings/test-mode", "/api/settings/brand", "/api/persona"]);
 
 export function resourcesFromBootstrap(bootstrap) {
   const resources = {};

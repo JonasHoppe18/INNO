@@ -10,6 +10,7 @@ const handler = async (request) => {
 };
 vi.mock("../members/route", () => ({ GET: (...args) => handler(...args) }));
 vi.mock("../test-mode/route", () => ({ GET: (...args) => handler(...args) }));
+vi.mock("../brand/route", () => ({ GET: (...args) => handler(...args) }));
 vi.mock("../../persona/route", () => ({ GET: (...args) => handler(...args) }));
 vi.mock("../auto-reply/route", () => ({ GET: (...args) => handler(...args) }));
 vi.mock("../email-signature/route", () => ({ GET: (...args) => handler(...args) }));
@@ -29,7 +30,7 @@ describe("settings bootstrap", () => {
     const pending = GET(new Request("https://app.test/api/settings/bootstrap?ignored=1", {
       headers: { Authorization: "Bearer test-session" },
     }));
-    await vi.waitFor(() => expect(state.calls).toHaveLength(9));
+    await vi.waitFor(() => expect(state.calls).toHaveLength(10));
     expect(state.calls.every(call => call.authorization === "Bearer test-session")).toBe(true);
     state.release.forEach(resolve => resolve());
     const response = await pending;
@@ -38,6 +39,6 @@ describe("settings bootstrap", () => {
     expect(resources["/api/settings/members"].ok).toBe(true);
     expect(resources["/api/settings/email-blocklist"].status).toBe(403);
     expect(resources["/api/settings/email-routing"].status).toBe(500);
-    expect(Object.keys(resources)).toHaveLength(9);
+    expect(Object.keys(resources)).toHaveLength(10);
   });
 });
