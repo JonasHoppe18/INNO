@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -19,7 +20,11 @@ import {
 import { TabSkeleton } from "@/components/settings/TabSkeleton";
 import { designerStatus } from "@/lib/email-designer/status";
 import { previewDocument } from "@/lib/settings/confirmation-preview";
-import { surveyPreviewSource } from "@/lib/settings/satisfaction";
+import {
+  surveyPreviewSource,
+  thankYouFormFromMessages,
+  thankYouMessagesFromForm,
+} from "@/lib/settings/satisfaction";
 import {
   SettingsGroup,
   SettingsPage,
@@ -52,6 +57,10 @@ export function CustomerSatisfactionSettings() {
   const [testOpen, setTestOpen] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
+  const [thankYou, setThankYou] = useState(() => thankYouFormFromMessages(null));
+  const [initialThankYou, setInitialThankYou] = useState(() => thankYouFormFromMessages(null));
+  const thankYouDirty = JSON.stringify(thankYou) !== JSON.stringify(initialThankYou);
+  const updateThankYou = (key, value) => setThankYou((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
     let active = true;
@@ -59,12 +68,15 @@ export function CustomerSatisfactionSettings() {
       setLoading(true);
       setError("");
       try {
-        const [settingsResponse, emailResponse] = await Promise.all([
+        const [settingsResponse, emailResponse, thankYouResponse] = await Promise.all([
           fetch("/api/settings/customer-satisfaction", { credentials: "include" }),
           fetch("/api/settings/csat/email", { credentials: "include", cache: "no-store" }),
+          fetch("/api/settings/csat/thank-you", { credentials: "include", cache: "no-store" }),
         ]);
         const settingsPayload = await settingsResponse.json().catch(() => ({}));
         const emailPayload = await emailResponse.json().catch(() => ({}));
+        const thankYouPayload = await thankYouResponse.json().catch(() => ({}));
+        if (!thankYouResponse.ok) throw new Error(thankYouPayload.error || "Could not load the thank-you message.");
         if (!settingsResponse.ok) throw new Error(settingsPayload.error || "Could not load survey settings.");
         if (!emailResponse.ok) throw new Error(emailPayload.error || "Could not load the survey email.");
         if (!active) return;
@@ -72,6 +84,9 @@ export function CustomerSatisfactionSettings() {
         setSettings(loaded);
         setInitialSettings(loaded);
         setEmailTemplate(emailPayload);
+        const loadedThankYou = thankYouFormFromMessages(thankYouPayload.messages);
+        setThankYou(loadedThankYou);
+        setInitialThankYou(loadedThankYou);
         setSaved(true);
       } catch (loadError) {
         if (active) setError(loadError.message || "Could not load survey settings.");
@@ -105,21 +120,46 @@ export function CustomerSatisfactionSettings() {
         return;
       }
     }
+    if (thankYouDirty) {
+      if (!thankYou.heading.trim() || !thankYou.body.trim()) {
+        setError("Add a title and a message for the thank-you page.");
+        return;
+      }
+      if (thankYou.reviewEnabled && !/^https:\/\/\S+\.\S+/.test(thankYou.reviewUrl.trim())) {
+        setError("Add the link to your review page, starting with https://.");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     try {
-      const response = await fetch("/api/settings/customer-satisfaction", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ enabled: settings.enabled, delay: settings.delay, delayMinutes: settings.delayMinutes, languageMode: settings.languageMode }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Could not save survey settings.");
-      const savedSettings = { ...workspaceDefaults, ...(payload.settings || settings) };
-      setSettings(savedSettings);
-      setInitialSettings(savedSettings);
-      setSaved(true);
+      if (!saved) {
+        const response = await fetch("/api/settings/customer-satisfaction", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ enabled: settings.enabled, delay: settings.delay, delayMinutes: settings.delayMinutes, languageMode: settings.languageMode }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Could not save survey settings.");
+        const savedSettings = { ...workspaceDefaults, ...(payload.settings || settings) };
+        setSettings(savedSettings);
+        setInitialSettings(savedSettings);
+        setSaved(true);
+      }
+      if (thankYouDirty) {
+        const response = await fetch("/api/settings/csat/thank-you", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ messages: thankYouMessagesFromForm(thankYou) }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Could not save the thank-you message.");
+        const savedThankYou = thankYouFormFromMessages(payload.messages);
+        setThankYou(savedThankYou);
+        setInitialThankYou(savedThankYou);
+      }
       toast.success("Survey settings saved.");
     } catch (saveError) {
       setError(saveError.message || "Could not save survey settings.");
@@ -136,6 +176,8 @@ export function CustomerSatisfactionSettings() {
   const discard = () => {
     setSettings(initialSettings);
     setSaved(true);
+    setThankYou(initialThankYou);
+    setError("");
   };
 
   const previewSource = surveyPreviewSource(emailTemplate || {});
@@ -314,15 +356,65 @@ export function CustomerSatisfactionSettings() {
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="After rating">
+      <SettingsGroup title="After rating" description="The page customers see after they rate.">
         <SettingsRow
-          label="Thank-you pages"
-          description="What customers see after they rate, with separate pages for negative, neutral and positive ratings."
+          label="Thank-you message"
+          description="Shown to every customer, whatever they rate."
+          stacked
         >
-          <Button asChild variant="outline" size="sm">
-            <Link href="/settings/csat/thank-you">Edit pages</Link>
-          </Button>
+          <div className="grid w-full gap-2">
+            <Input
+              aria-label="Thank-you title"
+              value={thankYou.heading}
+              onChange={(event) => updateThankYou("heading", event.target.value)}
+              maxLength={180}
+              placeholder="Thank you for your feedback"
+              className="h-8 text-input text-foreground md:text-sm"
+            />
+            <Textarea
+              aria-label="Thank-you message"
+              value={thankYou.body}
+              onChange={(event) => updateThankYou("body", event.target.value)}
+              maxLength={2000}
+              rows={3}
+              placeholder="We appreciate you taking a moment to tell us how we did."
+              className="text-input text-foreground md:text-sm"
+            />
+          </div>
         </SettingsRow>
+        <SettingsRow
+          label="Ask happy customers for a review"
+          description="Customers who rate 4 or 5 get a button to your review page, for example on Trustpilot or Google."
+        >
+          <SettingsSwitch
+            checked={thankYou.reviewEnabled}
+            onCheckedChange={(value) => updateThankYou("reviewEnabled", value)}
+            aria-label="Ask happy customers for a review"
+          />
+        </SettingsRow>
+        {thankYou.reviewEnabled ? (
+          <SettingsRow label="Review button" description="The link and the text on the button." stacked>
+            <div className="grid w-full gap-2 sm:grid-cols-[1fr_12rem]">
+              <Input
+                aria-label="Review page link"
+                type="url"
+                value={thankYou.reviewUrl}
+                onChange={(event) => updateThankYou("reviewUrl", event.target.value)}
+                maxLength={4000}
+                placeholder="https://www.trustpilot.com/review/your-store.com"
+                className="h-8 text-input text-foreground md:text-sm"
+              />
+              <Input
+                aria-label="Review button text"
+                value={thankYou.reviewLabel}
+                onChange={(event) => updateThankYou("reviewLabel", event.target.value)}
+                maxLength={120}
+                placeholder="Leave a review"
+                className="h-8 text-input text-foreground md:text-sm"
+              />
+            </div>
+          </SettingsRow>
+        ) : null}
       </SettingsGroup>
 
       <Dialog open={preview.open} onOpenChange={(open) => !open && setPreview({ open: false, loading: false, html: "" })}>
@@ -392,7 +484,7 @@ export function CustomerSatisfactionSettings() {
         </DialogContent>
       </Dialog>
 
-      <SettingsSaveBar visible={!saved} saving={saving} onSave={save} onDiscard={discard} />
+      <SettingsSaveBar visible={!saved || thankYouDirty} saving={saving} onSave={save} onDiscard={discard} />
     </SettingsPage>
   );
 }
