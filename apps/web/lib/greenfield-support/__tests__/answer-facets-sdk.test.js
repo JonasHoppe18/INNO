@@ -19,7 +19,7 @@ describe("SDK precise read recovery without model tools", () => {
     const result = await runGreenfieldAgentWithAgentsSdk({ ...dependencies, capabilities: dependencies, message, model,
       turnInterpreter: async () => ({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", propertyKey: "composition" }] }) });
     model.assertComplete();
-    expect(reads.map(read => read.query)).toEqual(["Vale Shelf: documented product material composition", "vale-shelf: documented product material composition"]);
+    expect(reads.map(read => read.query)).toEqual(["Vale Shelf: documented product material composition", "vale-shelf: documented product material composition Vale Shelf"]);
     expect(result.response).toContain("100% wool");
     expect(result.response).not.toContain("does not establish");
     expect(result.proposedActions).toEqual([]);
@@ -224,4 +224,50 @@ it("static-only recovery keeps the product label rather than the guide title", a
   expect(queries.every(q => q.startsWith("Vale Shelf:"))).toBe(true);
   expect(result.response).toContain("soft damp cloth");
   expect(result.response).not.toContain("cannot verify this product's identity");
+});
+
+describe("final review subjectless SDK follow-ups", () => {
+  it.each(["en","da"])("retains verified customer product for %s follow-up with no model tools", async locale => {
+    const dependencies=await createDemoDependencies();const queries=[];
+    dependencies.commerce.getProduct=async()=>({products:[{id:"p1",title:"Halo Vase"}]});
+    dependencies.knowledge.search=async request=>{queries.push(request.query);const item=hit(request.query.includes("composition")?"Material: ceramic.":"Dishwasher safety is not established. Clean with a soft damp cloth.");item.record.title="Halo Vase";return[item];};
+    const first="What material is the Halo Vase made of?";
+    const run=(message,ir,conversationContext)=>runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,conversationContext,model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_property",sourceText:message,...ir}]})});
+    const one=await run(first,{subject:"Halo Vase",propertyKey:"composition"});
+    expect(one.conversationContext.customerProvided.product).toBe("Halo Vase");
+    const message=locale==="da"?"Kan den komme i opvaskemaskinen?":"Can it go in the dishwasher?";
+    const two=await run(message,{subject:null,facets:["cleaning_method"]},one.conversationContext);
+    expect(queries.filter(q=>q.includes(":")).every(q=>q.startsWith("Halo Vase:"))).toBe(true);
+    expect(two.response).toContain("soft damp cloth");expect(two.response).not.toContain("product's identity");
+    expect(two.proposedActions).toEqual([]);expect(two.actionExecutions).toEqual([]);
+  });
+  it("retained context from another tenant cannot supply a subject",async()=>{
+    const dependencies=await createDemoDependencies();const queries=[];dependencies.commerce.getProduct=async q=>{queries.push(q);return{products:[{id:"p1",title:"Halo Vase"}]}};
+    const message="Can it go in the dishwasher?";
+    const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,conversationContext:{turn:1,customerProvided:{product:"Halo Vase"},caseState:{scope:{workspaceId:"other",shopId:dependencies.tenant.shopId,caseId:"foreign",customerEmail:null}}},model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_care",sourceText:message,subject:null,facets:["cleaning_method"]}]})});
+    expect(queries).toEqual([]);expect(result.response).not.toContain("Halo Vase");
+  });
+});
+it("a product switch replaces retained focus rather than reading the earlier product",async()=>{
+  const dependencies=await createDemoDependencies(),queries=[];
+  dependencies.commerce.getProduct=async q=>{queries.push(q);return{products:[{id:q==="Luna Lamp"?"p2":"p1",title:q}]}};
+  dependencies.knowledge.search=async request=>{queries.push(request.query);const item=hit("Clean with a soft damp cloth.");item.record.title="Luna Lamp";item.record.structuredData.applicability.product_ids=["p2"];return[item]};
+  const message="Can Luna Lamp be cleaned?";
+  const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,conversationContext:{turn:1,customerProvided:{product:"Halo Vase"}},model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_care",sourceText:message,subject:"Luna Lamp",facets:["cleaning_method"]}]})});
+  expect(queries.every(q=>q.startsWith("Luna Lamp"))).toBe(true);expect(result.response).toContain("soft damp cloth");expect(result.conversationContext.customerProvided.product).toBe("Luna Lamp");
+});
+it("a compound retained reference does not trigger deterministic product reads",async()=>{
+  const dependencies=await createDemoDependencies(),queries=[];
+  dependencies.commerce.getProduct=async q=>{queries.push(q);return{products:[]}};
+  const message="Can it be washed?";
+  await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,conversationContext:{turn:1,customerProvided:{product:"Halo Vase and Luna Lamp"}},model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_care",sourceText:message,subject:null,facets:["cleaning_method"]}]})});
+  expect(queries).toEqual([]);
+});
+it("old history cannot revive an earlier product after the scoped focus switched",async()=>{
+  const dependencies=await createDemoDependencies(),queries=[];
+  dependencies.commerce.getProduct=async q=>{queries.push(q);return{products:[{id:"p2",title:"Luna Lamp"}]}};
+  dependencies.knowledge.search=async()=>{const item=hit("Clean with a soft damp cloth.");item.record.title="Luna Lamp";item.record.structuredData.applicability.product_ids=["p2"];return[item]};
+  const message="Can it be cleaned?";
+  const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,history:[{role:"user",content:"I own Halo Vase."}],conversationContext:{turn:2,customerProvided:{product:"Luna Lamp"}},model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_care",sourceText:message,subject:null,facets:["cleaning_method"]}]})});
+  expect(queries).toEqual(["Luna Lamp"]);expect(result.conversationContext.customerProvided.product).toBe("Luna Lamp");expect(result.response).toContain("soft damp cloth");
 });

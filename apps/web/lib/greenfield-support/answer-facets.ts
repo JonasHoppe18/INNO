@@ -42,6 +42,15 @@ const topics: Record<CoveredAnswerFacet, RegExp> = {
 };
 export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): boolean {
   if (internalAnswerInstruction(text)) return false;
+  if (facet === "material_composition") {
+    return text.split(/[;\n]|[.!?]\s+/).some(clause => {
+      const relation = clause.match(/\b(?:material(?:s)?(?: composition)?|composition|materiale|sammensætning)\s*(?::|=|is|er)\s*(.+)|\b(?:made (?:of|from)|fremstillet af|lavet af|består af)\s+(.+)/iu);
+      const value = (relation?.[1] ?? relation?.[2] ?? "").trim();
+      if (value && /(?<![\p{L}\p{N}_])(?:oak|wood|wool|cotton|linen|steel|alumini?um|glass|ceramic|porcelain|plastic|polyester|polypropylene|felt|leather|bamboo|silk|nylon|viscose|acrylic|concrete|stone|rattan|terrazzo|cork|mdf|hdf|eg|egetræ|træ|uld|bomuld|hør|stål|glas|keramik|porcelæn|plast|filt|læder|beton|sten)(?![\p{L}\p{N}_])/iu.test(value) && !/\b(?:care|wipe|wash|clean|instructions|tolerance|dimension|rengør|aftør|pleje|vejledning|various materials|natural materials|different materials|mixed materials)\b/iu.test(value)) return true;
+      if (documentedUnknown(clause) && /\b(?:material composition|composition|sammensætning|materiale)\b|\bmaterial\s+(?:is|not|unknown)/iu.test(clause) && !/\b(?:care|cleaning|pleje)\b/i.test(clause)) return true;
+      return !/\b(?:tolerance|shrinkage|dimensions|toleranc|krymp)\w*/iu.test(clause) && /\d+(?:[.,]\d+)?\s*%\s*(?:wool|cotton|linen|polyester|nylon|silk|viscose|acrylic|uld|bomuld|hør|silke)\b|\b(?:oak veneer|veneer over|engineered wood core|egetræsfiner|massivt træ)\b/iu.test(clause);
+    });
+  }
   if (facet === "cleaning_method" && topics.prohibited_method.test(text)) return true;
   // Unknown dishwasher status is not an approved alternative or cleaning method.
   if (["load_capacity", "weight_limit"].includes(facet)) {

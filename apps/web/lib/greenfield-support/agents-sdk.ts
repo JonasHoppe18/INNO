@@ -1,5 +1,5 @@
 import { compilePreciseAnswerRequests, facetReadQuery } from "./answer-facets";
-import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject, groundedAnswerSubject } from "./response-contract";
+import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject, groundedAnswerSubject, resolvePreciseAnswerSubjects, type ResponseValidationContext } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
@@ -364,11 +364,18 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   const previousContext = options.conversationContext ?? options.capabilities.conversationContext;
   options = { ...options, tenant: { ...options.tenant, customerEmail: resolvedCaseEmail(previousContext, options.tenant) } };
   let conversationContext = prepareCaseContext(previousContext, options.tenant);
-  const customerProvidedContext = extractCustomerProvidedContext(
+  let customerProvidedContext = extractCustomerProvidedContext(
     options.history ?? [],
     options.message,
     conversationContext?.customerProvided,
   );
+  if (conversationContext.turn > 0) {
+    // Retained scoped focus outranks older history; only the current customer can switch it.
+    const current = extractCustomerProvidedContext([], options.message, conversationContext.customerProvided);
+    customerProvidedContext = { ...customerProvidedContext };
+    delete customerProvidedContext.product;
+    if (current?.product) customerProvidedContext.product = current.product;
+  }
   let turnIR: TurnIR | null = null;
   try {
     turnIR = normalizeTurnIR(await (options.turnInterpreter ?? interpretTurnIR)(options.message), options.message);
@@ -377,7 +384,14 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     pushEvent(trace, "error", { code: "turn_ir_unavailable",
       message: "Semantic interpretation is unavailable. Proposal-only actions are blocked for this turn." }, now());
   }
-  const preciseRequests = compilePreciseAnswerRequests(turnIR?.answerRequests ?? []);
+  const namedSubjects = [...new Set((turnIR?.answerRequests ?? []).map(request => request.subject).filter((subject): subject is string => Boolean(subject && groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject))))];
+  if (namedSubjects.length) {
+    customerProvidedContext = { ...customerProvidedContext };
+    delete customerProvidedContext.product;
+    if (namedSubjects.length === 1) customerProvidedContext.product = namedSubjects[0];
+  }
+  conversationContext.customerProvided = customerProvidedContext;
+  const preciseRequests = resolvePreciseAnswerSubjects(compilePreciseAnswerRequests(turnIR?.answerRequests ?? []), { customerMessage: options.message, customerProvidedContext });
   const preciseReadResults: Record<string, string[]> = {};
   // Identity reads precede facet reads so one subject cannot consume another's lookup.
   const preciseReadBudgets = new Map(preciseRequests.map(request => [request.subject, 6]));
@@ -539,6 +553,14 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     }
     await recoverPreciseReads();
   }
+  if (namedSubjects.length) {
+    const verified = namedSubjects.length === 1 && preciseRequests.some(request => request.subject === namedSubjects[0] && verifiedAnswerSubject(preciseContext(), request));
+    customerProvidedContext = { ...customerProvidedContext };
+    delete customerProvidedContext.product;
+    if (verified) customerProvidedContext.product = namedSubjects[0];
+    conversationContext.customerProvided = customerProvidedContext;
+  }
+  conversationContext.customerProvided = customerProvidedContext;
   conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());
   const effectiveTurnIR = caseActionIntents(conversationContext, turnIR, currentReferences.length > 0);
   const operationalOutcome = options.operational ? await resolveOperationalAction({ tenant: options.tenant,
@@ -679,7 +701,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         proposedActions,
         actionExecutions: [],
         trace,
-        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
+        conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, [], registry.getOrderCandidates()),
       };
     }
 
@@ -731,7 +753,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
         hasEmail: Boolean(options.tenant.customerEmail?.trim()),
         hasName: Boolean(verifiedProfileName?.trim()),
       },
-      customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+      customerProvidedContext,
     };
     let validatedOutput = validateStructuredResponse(boundaryOutput?.structuredOutput ?? result?.finalOutput, responseContext);
     if (!boundaryOutput && options.operational && turnIR?.orderContext === "status") {
@@ -832,7 +854,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
       proposedActions,
       actionExecutions,
       trace,
-      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
+      conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, [], registry.getOrderCandidates()),
     };
   } catch (error) {
     pushEvent(trace, "error", { code: "agent_failed", message: error instanceof Error ? error.message : "Agent failed." }, now());
@@ -858,7 +880,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     activeOrder: registry.getActiveOrderFocus(),
     locale: inferResponseLocale(options.message),
     customerMessage: options.message,
-    customerProvidedContext: extractCustomerProvidedContext(options.history ?? [], options.message, conversationContext?.customerProvided),
+    customerProvidedContext,
     interactionChannel: options.interactionChannel,
     getResults: registry.getResults,
   });
@@ -870,6 +892,6 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     proposedActions,
     actionExecutions: [],
     trace,
-    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, options.history ?? [], registry.getOrderCandidates()),
+    conversationContext: nextConversationContext(conversationContext, registry.getActiveOrderFocus(), options.message, [], registry.getOrderCandidates()),
   };
 }

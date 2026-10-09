@@ -695,3 +695,33 @@ it("an unambiguous source numeric-size suffix does not erase a customer-named pr
   sources.push({ ...sources[0], title: "Vale Shelf 80", structured_data: { ...sources[0].structured_data, applicability: { kind: "products", product_ids: ["p2"] } } });
   expect(recover(ctx, output).response).not.toContain("No approved maximum load");
 });
+
+describe("final review material values", () => {
+  it.each(["Material: solid oak", "100% wool", "Made from stainless steel", "Materiale: massivt egetræ", "100% uld", "Fremstillet af rustfrit stål", "Material: recycled polypropylene"])("accepts actual composition: %s", text => {
+    expect(sourceSupportsFacet(text,"material_composition")).toBe(true);
+    const result = recover(setup(["material_composition"],[text]).ctx);
+    expect(result.validation.coverage.obligations.find(o=>o.facet==="material_composition")).toMatchObject({status:"supported",rendered:true});
+  });
+  it.each(["Material care: wipe with a damp cloth", "Dimensional tolerance: 5%", "Materials are selected for comfort", "Material: care instructions", "Material care is not documented", "Tolerance is 5% wool shrinkage", "Material: various materials"])("rejects topic-only composition: %s", text => {
+    expect(sourceSupportsFacet(text,"material_composition")).toBe(false);
+    const result=recover(setup(["material_composition"],[text]).ctx);
+    expect(result.validation.coverage.obligations.find(o=>o.facet==="material_composition")).toMatchObject({status:"unknown",rendered:true});
+  });
+});
+describe("final review subjectless binding", () => {
+  it("recovers care for a retained product without a model subject", () => {
+    const {ctx}=setup(["cleaning_method"],["Dishwasher safety is not established. Clean with a soft damp cloth."]);
+    ctx.customerMessage="Can it go in the dishwasher?";ctx.customerProvidedContext={product:"Vale Shelf"};ctx.turnIR.answerRequests[0].subject=null;
+    expect(recover(ctx).response).toContain("soft damp cloth");
+  });
+  it.each([undefined,"Vale Shelf and Luna Lamp","Vale Shelf or Luna Lamp"])("does not choose an absent or ambiguous retained subject: %s", product => {
+    const {ctx}=setup(["load_capacity"],["Maximum load: 500 kg."]);
+    ctx.customerMessage="How much can it hold?";ctx.customerProvidedContext={product};ctx.turnIR.answerRequests[0].subject=null;
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+});
+it.each(["Can the other one go in the dishwasher?","Kan den anden komme i opvaskemaskinen?"])("does not bind an ambiguous alternative reference: %s", message=>{
+  const {ctx}=setup(["load_capacity"],["Maximum load: 500 kg."]);
+  ctx.customerMessage=message;ctx.customerProvidedContext={product:"Vale Shelf"};ctx.turnIR.answerRequests[0].subject=null;
+  expect(recover(ctx).response).not.toContain("500 kg");
+});

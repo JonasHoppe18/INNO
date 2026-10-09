@@ -6065,8 +6065,15 @@ function segmentCovers(existing: ResponseSegment, required: ResponseSegment, con
   return JSON.stringify(existing) === JSON.stringify(required);
 }
 
+export function resolvePreciseAnswerSubjects(requests: PreciseAnswerRequest[], context: Pick<ResponseValidationContext, "customerMessage" | "customerProvidedContext" | "getResults" | "evidenceScope" | "operationalScope">): PreciseAnswerRequest[] {
+  const retained = context.customerProvidedContext?.product;
+  // A compound retained reference does not establish one product for "it".
+  const usable = retained && !/\b(?:other one|another one|either|both|those|these|den anden|det andet|begge|de andre)\b/iu.test(context.customerMessage ?? "") && !/\b(?:and|or|og|eller)\b|[,;]/iu.test(retained)
+    && groundedAnswerSubject(context as ResponseValidationContext, retained);
+  return requests.map(request => !request.subject && usable ? { ...request, subject: retained } : request);
+}
 function preciseRequests(context: ResponseValidationContext): PreciseAnswerRequest[] {
-  return context.preciseRequests ?? compilePreciseAnswerRequests(context.turnIR?.answerRequests ?? []);
+  return resolvePreciseAnswerSubjects(context.preciseRequests ?? compilePreciseAnswerRequests(context.turnIR?.answerRequests ?? []), context);
 }
 /** Semantic subjects are query hints; every identifying token must be customer-grounded. */
 export function groundedAnswerSubject(context: ResponseValidationContext, subject: string | null | undefined): boolean {
@@ -6077,7 +6084,7 @@ export function groundedAnswerSubject(context: ResponseValidationContext, subjec
     return required.length > 0 && required.every(token => supplied.includes(token));
   };
   if (contains(context.customerMessage)) return true;
-  if (!contains(context.customerProvidedContext?.product)) return false;
+  if (/\b(?:other one|another one|either|both|those|these|den anden|det andet|begge|de andre)\b/iu.test(context.customerMessage ?? "") || /\b(?:and|or|og|eller)\b|[,;]/iu.test(context.customerProvidedContext?.product ?? "") || !contains(context.customerProvidedContext?.product)) return false;
   // A follow-up can retain focus, but a currently named competing verified subject overrides it.
   const currentTitles = (context.getResults?.() ?? []).filter(record => record.result.status === "ok" && !evidenceScopeIssues(record, context, -1).length).flatMap(record => {
     const data = objectValue(record.result.data);
