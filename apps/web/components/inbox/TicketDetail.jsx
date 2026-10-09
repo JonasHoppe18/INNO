@@ -1021,6 +1021,7 @@ function TicketDetailComponent({
                       message={message}
                       direction={direction}
                       neutral={Boolean(message.confirmation_sent_at)}
+                      preferPlainText={Boolean(message.confirmation_sent_at)}
                       attachments={messageAttachments}
                       outboundSenderName={currentUserName}
                       showMeta={!groupedWithPrevious && !message.confirmation_sent_at}

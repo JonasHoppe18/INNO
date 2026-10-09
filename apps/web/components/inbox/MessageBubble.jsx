@@ -416,6 +416,9 @@ function MessageBubbleComponent({
   message,
   direction = "inbound",
   neutral = false,
+  // Designed emails (like the confirmation) show their text version in the thread;
+  // the full design stays in View email.
+  preferPlainText = false,
   attachments = [],
   outboundSenderName,
   showMeta = true,
@@ -685,6 +688,13 @@ function MessageBubbleComponent({
                     <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
                     Translating…
                   </div>
+                ) : preferPlainText ? (
+                  <div
+                    className={EMAIL_BODY_CLASS}
+                    dangerouslySetInnerHTML={{
+                      __html: linkifyText(message.body_text || stripHtmlToText(rawBodyHtml)),
+                    }}
+                  />
                 ) : !isStructuredForm && previewBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
@@ -927,6 +937,7 @@ const arePropsEqual = (prev, next) => {
   }
   if (prev.direction !== next.direction) return false;
   if (prev.neutral !== next.neutral) return false;
+  if (prev.preferPlainText !== next.preferPlainText) return false;
   if (prev.outboundSenderName !== next.outboundSenderName) return false;
   if (prev.showMeta !== next.showMeta) return false;
   if (prev.compactTimestamp !== next.compactTimestamp) return false;
