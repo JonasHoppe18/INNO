@@ -29,6 +29,7 @@ import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 import {
   composeConfirmation,
+  customerFirstName,
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
@@ -698,12 +699,6 @@ function decideRouteForClassification(
   };
 }
 
-function firstName(value: string | null | undefined): string {
-  const next = asString(value);
-  if (!next) return "";
-  return next.split(/\s+/)[0] || "";
-}
-
 function fillTemplateTokens(template: string, values: Record<string, string>): string {
   let result = String(template || "");
   Object.entries(values).forEach(([key, value]) => {
@@ -1109,10 +1104,9 @@ async function maybeSendAutoReply(options: {
     });
     return { sent: false, providerMessageId: null };
   }
-  const customerFirstName = firstName(options.fromName || options.fromEmail);
   const tokenValues = {
     customer_name: asString(options.fromName),
-    customer_first_name: customerFirstName || "there",
+    customer_first_name: customerFirstName(options.fromName) || "there",
     team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
     subject: asString(options.subject),
   };
