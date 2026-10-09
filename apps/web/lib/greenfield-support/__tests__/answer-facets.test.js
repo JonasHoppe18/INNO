@@ -725,3 +725,22 @@ it.each(["Can the other one go in the dishwasher?","Kan den anden komme i opvask
   ctx.customerMessage=message;ctx.customerProvidedContext={product:"Vale Shelf"};ctx.turnIR.answerRequests[0].subject=null;
   expect(recover(ctx).response).not.toContain("500 kg");
 });
+
+describe("acceptance P2 source syntax",()=>{
+  it.each(["UL Listed","UL 153 Listed","UL certified","CE marked","UL certification is not specified"])("preserves the exact certification source %s",text=>{
+    const code=text.startsWith("CE")?"CE":text.startsWith("UL 153")?"UL 153":"UL";
+    const {ctx}=setup(["certification"],[text]);ctx.customerMessage=`Is Vale Shelf ${code} certified?`;ctx.turnIR.answerRequests[0].sourceText=ctx.customerMessage;ctx.turnIR.answerRequests[0].qualifiers=[{facet:"certification",value:code}];
+    const result=recover(ctx);expect(result.response).toContain(text);
+    if(text==="UL Listed")expect(result.response).not.toMatch(/UL certified/);
+    if(text==="CE marked")expect(result.response).not.toMatch(/CE certified/);
+  });
+  it.each(["FSC certified","FSC listed. UL is a model name.","UL 1598 Listed"])("does not establish another requested qualification: %s",text=>{
+    expect(sourceSupportsRequest(text,{facet:"certification",qualifiers:[text.startsWith("UL 1598")?"UL 153":"UL"]})).toBe(false);
+  });
+  it.each(["Maximum load: 10 kg","10 kg maximum load","Supports up to 20 kg","Maksimal belastning: 5 kg"])("accepts a verified rating: %s",text=>{
+    expect(sourceSupportsFacet(text,"load_capacity")).toBe(true);expect(sourceSupportsFacet(text,"weight_limit")).toBe(true);expect(recover(setup(["load_capacity"],[text]).ctx).response).toContain(text);
+  });
+  it.each(["Product weight: 10 kg","10 kg maximum product weight","Dimensions: 10 × 20 cm","Supports a product weighing 20 kg, but no load rating is given"])("does not convert other data into a positive rating: %s",text=>{
+    expect(sourceSupportsFacet(text,"load_capacity")).toBe(false);
+  });
+});

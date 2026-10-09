@@ -25,11 +25,11 @@ export function documentedUnknown(text: string): boolean {
 }
 const topics: Record<CoveredAnswerFacet, RegExp> = {
   material_composition: /\d+(?:[.,]\d+)?\s*%|\b(?:composition|material|made (?:of|from)|veneer|engineered wood core|materiale|sammensætning|finer)\b/i,
-  load_capacity: /\b(?:load|weight capacity|weight limit|maximum weight|supports? devices? up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
-  weight_limit: /\b(?:weight limit|maximum weight|load|supports? devices? up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
+  load_capacity: /\b(?:load|weight capacity|weight limit|maximum weight|supports? (?:devices? )?up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
+  weight_limit: /\b(?:weight limit|maximum weight|load|supports? (?:devices? )?up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
   electrical_safety: /(?:elektrisk\w*|strømledning|kabel|ledning).*(?:reparation|udskiftning|beskadig|sikker|ikke dokumenteret)|(?:reparation|udskiftning|beskadig).*(?:elektrisk|strømledning|kabel)|\b(?:electrical|power.cord|cable).*(?:repair|replacement|damaged|safety|not established)|(?:repair|damaged).*\b(?:electrical|power.cord|cable)\b/i,
   repair_boundary: /\b(?:repair|replacement procedure|cable replacement|power.cord replacement|reparation|reparationsprocedure|udskiftning af (?:ledning|kabel))\b/i,
-  certification: /\b(?:certif\w*|fire.resistan\w*|fire.safe|brandmodstand|brandsikker\w*|brandhæmmende|brandcertificering)\b/i,
+  certification: /\b(?:certif\w*|\b(?:UL|CE|FSC|GS|ISO)(?:\s+\d+(?:[-:]\d+)*)?\s+(?:listed|marked)|fire.resistan\w*|fire.safe|brandmodstand|brandsikker\w*|brandhæmmende|brandcertificering)\b/i,
   placement: /\b(?:fireplace|placement|near heat|distance.*(?:fire|heat)|keep.*(?:heat|fire)|wall.type suitability|wall.*installation|pejs|placering|nær varme|afstand.*(?:varme|ild)|vægtype|montering på væg)\b/i,
   cleaning_method: /\b(?:clean\w*|wash\w*|wipe|dishwasher|damp cloth|dry\w*|rengør\w*|vask\w*|aftør\w*|opvaskemaskine|fugtig klud|tør af)\b/i,
   prohibited_method: /\b(?:avoid|do not|don't|no|not|never|undgå|ikke|aldrig)(?![\p{L}\p{N}_]).*\b(?:wash\w*|wipe|cloth|tumble|bleach|abrasive\w*|chemical\w*|water|dishwasher|klud|vask\w*|tørretumbl\w*|blegemiddel|skuremid\w*|kemikal\w*|vand|opvaskemaskine)\b/iu,
@@ -57,7 +57,7 @@ export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): bo
     if (!topics[facet].test(text)) return false;
     if (documentedUnknown(text)) return true;
     // A product's mass is not a rated load. Positive support needs a rating and units.
-    return /(?:maximum load|max(?:imum)? (?:load|weight)|load capacity|weight (?:capacity|limit)|rated load|supports? devices? up to|maksimal(?:e|t)? belastning|maks(?:imal)?\.? (?:belastning|vægt)|bæreevne|vægtgrænse|tilladt belastning)\s*(?:rating\s*)?(?::|=|is|of|up to|er|på|højst)?\s*\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?|tonnes?|ton)\b/i.test(text);
+    return /(?:maximum load|max(?:imum)? (?:load|weight)|load capacity|weight (?:capacity|limit)|rated load|supports? (?:devices? )?up to|maksimal(?:e|t)? belastning|maks(?:imal)?\.? (?:belastning|vægt)|bæreevne|vægtgrænse|tilladt belastning)\s*(?:rating\s*)?(?::|=|is|of|up to|er|på|højst)?\s*\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?|tonnes?|ton)\b|\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?|tonnes?|ton)\s+(?:maximum load|max(?:imum)? (?:load|weight)|load capacity|weight (?:capacity|limit)|rated load|maksimal(?:e|t)? belastning|bæreevne|vægtgrænse)\b/i.test(text);
   }
   if (facet === "cleaning_alternative") return text.split(/[.;\n]/).some(clause => topics.cleaning_alternative.test(clause)
     && !documentedUnknown(clause) && !/\b(?:not recommended|not approved|not allowed|not permitted|prohibited|forbidden|ikke anbefalet|ikke godkendt|ikke tilladt|forbudt)\b/i.test(clause) && !/\b(?:rengør\w*|vask\w*|aftør\w*|pletrens|tør|luft)\s+ikke\b/i.test(clause) && !/\b(?:do not|don't|never|avoid|må ikke|undgå|aldrig|ikke)\s+(?:rengør\w*|vask\w*|aftør\w*|tør af|pletrens|clean\w*|wipe|wash\w*|spot clean|air)\b/i.test(clause));
@@ -142,7 +142,7 @@ function qualifierSupported(text: string, qualifier: string, facet: CoveredAnswe
         const requested = tokens(code);
         const connective = /^(?:to|under|for|according|standard|the|a|an|is|er|efter|med|til|i|henhold|ikke|not|no|verified|verificeret|bekræftet|safety|fire|resistance|and|og|ul|fsc|ce|gs|iso)$/;
         const linked = (words: string[]) => words.every(word => connective.test(word)) && (!words.some(word => /^(?:ul|fsc|ce|gs|iso)$/.test(word)) || words.some(word => /^(?:and|og)$/.test(word)));
-        const certification = /^(?:certif\w*|standard|godkend\w*)$/;
+        const certification = /^(?:certif\w*|standard|godkend\w*|listed|marked)$/;
         return source.some((_, index) => requested.every((token, offset) => source[index + offset] === token)
           && source.some((token, propertyIndex) => certification.test(token)
             && (propertyIndex < index && index - propertyIndex <= 4 && linked(source.slice(propertyIndex + 1, index))

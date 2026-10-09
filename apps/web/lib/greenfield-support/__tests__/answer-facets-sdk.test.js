@@ -271,3 +271,14 @@ it("old history cannot revive an earlier product after the scoped focus switched
   const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,history:[{role:"user",content:"I own Halo Vase."}],conversationContext:{turn:2,customerProvided:{product:"Luna Lamp"}},model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_care",sourceText:message,subject:null,facets:["cleaning_method"]}]})});
   expect(queries).toEqual(["Luna Lamp"]);expect(result.conversationContext.customerProvided.product).toBe("Luna Lamp");expect(result.response).toContain("soft damp cloth");
 });
+it("the frozen 039 shortened quote recovers safety obligations without model tools",async()=>{
+  const dependencies=await createDemoDependencies();
+  dependencies.commerce.getProduct=async()=>({products:[]});
+  dependencies.knowledge.search=async()=>{const a=hit("No approved maximum load rating is specified.","assembly"),b=hit("For questions about load, contact the store before installation.","assembly");for(const item of [a,b])item.record.title="Vale wall shelf";return[a,b]};
+  const message="How much weight can the Vale wall shelf hold? I'd put 8 kg of books on it.";
+  const model=new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]);
+  const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,model,enableDevDiagnostics:true,turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_property",sourceText:"How much weight can the Vale wall shelf hold?",subject:"Vale wall shelf",propertyKey:"general",facets:["weight_limit"],qualifiers:[{facet:"weight_limit",value:"8 kg"}]}]})});
+  model.assertComplete();expect(result.response).toContain("No approved maximum load rating");expect(result.response).toContain("before installation");
+  expect(result.trace.events.filter(e=>e.type==="error").map(e=>e.data.code)).not.toContain("turn_ir_unavailable");
+  expect(result.proposedActions).toEqual([]);expect(result.actionExecutions).toEqual([]);
+});

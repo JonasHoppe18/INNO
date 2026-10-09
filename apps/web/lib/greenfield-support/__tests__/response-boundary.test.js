@@ -375,3 +375,39 @@ describe("redundant semantic facet labels", () => {
     expect(ir.answerRequests[0].qualifiers).toEqual([]);
   });
 });
+
+describe("R1 acceptance qualifier-span repair", () => {
+  const message="How much weight can the Vale wall shelf hold? I'd put 8 kg of books on it.";
+  const request={kind:"product_property",sourceText:"How much weight can the Vale wall shelf hold?",subject:"Vale wall shelf",propertyKey:"general",facets:["weight_limit"],qualifiers:[{facet:"weight_limit",value:"8 kg"}]};
+  it("preserves the exact frozen 039 read-only meaning",()=>{
+    const ir=normalizeTurnIR({actions:[],answerRequests:[request]},message);
+    expect(ir.answerRequests[0].qualifiers).toEqual(request.qualifiers);expect(ir.actions).toEqual([]);
+  });
+  it("rejects an invented continuation value",()=>{
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers:[{facet:"weight_limit",value:"80 kg"}]}]},message)).toThrow("Property qualifiers must quote");
+  });
+  it("cannot borrow a qualifier from a second product request",()=>{
+    const text="How much can Vale Shelf hold? Can Luna Lamp support 8 kg?";
+    const first={...request,sourceText:"How much can Vale Shelf hold?",subject:"Vale Shelf"};
+    const second={...request,sourceText:"Can Luna Lamp support 8 kg?",subject:"Luna Lamp"};
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[first,second]},text)).toThrow("Property qualifiers must quote");
+  });
+  it("a short quote does not authorize a disconnected property elsewhere",()=>{
+    const text="Is Vale Shelf UL certified? Luna Lamp is CE marked.";
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{kind:"product_property",sourceText:"Is Vale Shelf UL certified?",subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"CE"}]}]},text)).toThrow("Property qualifiers must quote");
+  });
+  it("preserves independently scoped properties",()=>{
+    const text="Is Vale Shelf UL certified? Is Luna Lamp CE marked?";
+    const requests=[{kind:"product_property",sourceText:"Is Vale Shelf UL certified?",subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"UL"}]},{kind:"product_property",sourceText:"Is Luna Lamp CE marked?",subject:"Luna Lamp",facets:["certification"],qualifiers:[{facet:"certification",value:"CE"}]}];
+    expect(normalizeTurnIR({actions:[],answerRequests:requests},text).answerRequests).toMatchObject(requests);
+  });
+  it.each([null,undefined,[]])("missing qualifiers remain safe: %s",qualifiers=>{
+    expect(normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers}]},message).actions).toEqual([]);
+  });
+  it("rejects a qualifier for an unrequested facet",()=>{
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers:[{facet:"certification",value:"8 kg"}]}]},message)).toThrow("Property qualifiers must quote");
+  });
+  it("valid read-only continuation cannot ground an invented action quote",()=>{
+    expect(()=>normalizeTurnIR({actions:[{action:"cancel_order",sourceText:"Cancel my order",orderReference:null,addressProvided:false}],answerRequests:[request]},message)).toThrow("Action intent must cite");
+  });
+});
