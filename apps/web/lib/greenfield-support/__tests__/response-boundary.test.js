@@ -295,8 +295,8 @@ it("a dimension fact cannot satisfy a requested composition obligation", () => {
   const ctx = context([evidence([record("Size: 130 × 180 cm.")])], { turnIR: { actions: [], answerRequests: [{ kind: "product_property", propertyKey: "composition", sourceText: "wool", subject: "Willow" }] } });
   const result = complete(ctx);
   expect(result.coverage.supported).toEqual([]);
-  expect(result.coverage.unknown).toEqual(["product.properties.composition"]);
-  expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("does not establish its material composition");
+  expect(result.coverage.unknown).toEqual(["answer.0.material_composition"]);
+  expect(renderResponseSegments(result.approvedSegments, ctx)).toContain("does not establish the requested material composition");
 });
 
 it("a full recovered procedure replaces its validated partial projection", () => {
@@ -333,8 +333,8 @@ it("inconsistent shipping qualification cannot add unrelated obligations to line
   expect(answer).not.toMatch(/threshold|coupon|order total/);
 });
 it("a semantic subject label never authorizes product identity or source scope", () => {
-  const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: "wool", subject: "A normalized unrelated product" }] }, "Is Willow all wool?");
-  const ctx = context([evidence([record("100% wool")])], { customerMessage: "Is Willow all wool?", turnIR: ir });
+  const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: "wool", subject: "A normalized unrelated product" }] }, "Is Willow Throw all wool?");
+  const ctx = context([evidence([record("100% wool")])], { customerMessage: "Is Willow Throw all wool?", turnIR: ir });
   expect(renderResponseSegments(complete(ctx).approvedSegments, ctx)).toContain("100% wool");
   expect(renderResponseSegments(complete(ctx).approvedSegments, ctx)).not.toContain("unrelated product");
 });
@@ -352,4 +352,92 @@ it("a typed missing-order clarification cannot invent a photo attachment channel
   const answer = renderResponseSegments(result.approvedSegments, ctx);
   expect(answer).toMatch(/order/i);
   expect(answer).not.toMatch(/attach|photos|upload|here/i);
+});
+
+
+describe("source-quoted property qualifier contract", () => {
+  it("preserves an exact requested certification qualifier in TurnIR", () => {
+    const message = "Is Vale Shelf UL certified?";
+    const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["certification"], qualifiers: [{ facet: "certification", value: "UL" }] }] }, message);
+    expect(ir.answerRequests[0].qualifiers).toEqual([{ facet: "certification", value: "UL" }]);
+  });
+  it("rejects an invented property qualifier before the response boundary", () => {
+    const message = "Is Vale Shelf UL certified?";
+    expect(() => normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["certification"], qualifiers: [{ facet: "certification", value: "FSC" }] }] }, message)).toThrow("Property qualifiers must quote");
+  });
+});
+
+describe("redundant semantic facet labels", () => {
+  it.each(["maximum load", "How much weight"])("does not discard the interpreted request for redundant label %s", value => {
+    const message = "How much weight can Vale Shelf hold?";
+    const ir = normalizeTurnIR({ actions: [], answerRequests: [{ kind: "product_property", sourceText: message, subject: "Vale Shelf", facets: ["load_capacity"], qualifiers: [{ facet: "load_capacity", value }] }] }, message);
+    expect(ir.answerRequests[0].facets).toEqual(["load_capacity"]);
+    expect(ir.answerRequests[0].qualifiers).toEqual([]);
+  });
+});
+
+describe("R1 acceptance qualifier-span repair", () => {
+  const message="How much weight can the Vale wall shelf hold? I'd put 8 kg of books on it.";
+  const request={kind:"product_property",sourceText:"How much weight can the Vale wall shelf hold?",subject:"Vale wall shelf",propertyKey:"general",facets:["weight_limit"],qualifiers:[{facet:"weight_limit",value:"8 kg"}]};
+  it("preserves the exact frozen 039 read-only meaning",()=>{
+    const ir=normalizeTurnIR({actions:[],answerRequests:[request]},message);
+    expect(ir.answerRequests[0].qualifiers).toEqual(request.qualifiers);expect(ir.actions).toEqual([]);
+  });
+  it("rejects an invented continuation value",()=>{
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers:[{facet:"weight_limit",value:"80 kg"}]}]},message)).toThrow("Property qualifiers must quote");
+  });
+  it("cannot borrow a qualifier from a second product request",()=>{
+    const text="How much can Vale Shelf hold? Can Luna Lamp support 8 kg?";
+    const first={...request,sourceText:"How much can Vale Shelf hold?",subject:"Vale Shelf"};
+    const second={...request,sourceText:"Can Luna Lamp support 8 kg?",subject:"Luna Lamp"};
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[first,second]},text)).toThrow("Property qualifiers must quote");
+  });
+  it("a short quote does not authorize a disconnected property elsewhere",()=>{
+    const text="Is Vale Shelf UL certified? Luna Lamp is CE marked.";
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{kind:"product_property",sourceText:"Is Vale Shelf UL certified?",subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"CE"}]}]},text)).toThrow("Property qualifiers must quote");
+  });
+  it("preserves independently scoped properties",()=>{
+    const text="Is Vale Shelf UL certified? Is Luna Lamp CE marked?";
+    const requests=[{kind:"product_property",sourceText:"Is Vale Shelf UL certified?",subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"UL"}]},{kind:"product_property",sourceText:"Is Luna Lamp CE marked?",subject:"Luna Lamp",facets:["certification"],qualifiers:[{facet:"certification",value:"CE"}]}];
+    expect(normalizeTurnIR({actions:[],answerRequests:requests},text).answerRequests).toMatchObject(requests);
+  });
+  it.each([null,undefined,[]])("missing qualifiers remain safe: %s",qualifiers=>{
+    expect(normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers}]},message).actions).toEqual([]);
+  });
+  it("rejects a qualifier for an unrequested facet",()=>{
+    expect(()=>normalizeTurnIR({actions:[],answerRequests:[{...request,qualifiers:[{facet:"certification",value:"8 kg"}]}]},message)).toThrow("Property qualifiers must quote");
+  });
+  it("valid read-only continuation cannot ground an invented action quote",()=>{
+    expect(()=>normalizeTurnIR({actions:[{action:"cancel_order",sourceText:"Cancel my order",orderReference:null,addressProvided:false}],answerRequests:[request]},message)).toThrow("Action intent must cite");
+  });
+});
+
+describe("partial read-only normalization security",()=>{
+  const message="Can I replace the power cord on my Norr lamp myself? Mine looks frayed.";
+  const request={kind:"product_care",sourceText:message,subject:"Norr lamp",facets:["electrical_safety","repair_boundary"],qualifiers:[{facet:"electrical_safety",value:"power cord"},{facet:"repair_boundary",value:"replace the power cord ... myself"}]};
+  function recovered(input,text=message){try{normalizeTurnIR(input,text);throw new Error("expected unavailable interpretation")}catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");return e}}
+  it("preserves the grounded 038 core but not the invalid qualifier",()=>{
+    const e=recovered({actions:[],answerRequests:[request]});expect(e.readOnlyIR.actions).toEqual([]);expect(e.readOnlyIR.answerRequests[0].facets).toEqual(request.facets);expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([{facet:"electrical_safety",value:"power cord"}]);expect(e.unresolvedFacets).toEqual([{requestIndex:0,facets:["repair_boundary"]}]);
+  });
+  it("malformed optional structure cannot erase valid core or create actions",()=>{
+    const e=recovered({actions:[{action:"cancel_order",sourceText:"Cancel order",orderReference:null,addressProvided:false}],answerRequests:[{...request,qualifiers:[{value:"UL"}]}]});expect(e.readOnlyIR.actions).toEqual([]);expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([]);expect(e.unresolvedFacets[0].facets).toEqual(request.facets);
+  });
+  it("invented subject or source cannot be salvaged",()=>{
+    for(const override of [{subject:"Imaginary Lamp"},{sourceText:"Invented repair request"}]){try{normalizeTurnIR({actions:[],answerRequests:[{...request,...override}]},message)}catch(e){expect(e.readOnlyIR).toBeUndefined()}}
+  });
+  it("full provider/schema failure has no recoverable core",()=>{
+    for(const value of [null,{}, {answerRequests:[{kind:"product_care"}],actions:[]}]){try{normalizeTurnIR(value,message)}catch(e){expect(e.readOnlyIR).toBeUndefined()}}
+  });
+  it("one invalid request does not invent core for a different subject",()=>{
+    const e=recovered({actions:[],answerRequests:[{...request,subject:"Invented Lamp"},request]});expect(e.readOnlyIR.answerRequests).toHaveLength(1);expect(e.readOnlyIR.answerRequests[0].subject).toBe("Norr lamp");
+  });
+});
+it("partial recovery does not re-accept a qualifier owned by another read-only request",()=>{
+  const text="Is Vale Shelf UL certified? Is Luna Lamp FSC certified?";
+  const input={actions:[],answerRequests:[{kind:"product_property",sourceText:text,subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"FSC"}]},{kind:"product_property",sourceText:"Is Luna Lamp FSC certified?",subject:"Luna Lamp",facets:["certification"],qualifiers:[{facet:"certification",value:"FSC"}]}]};
+  try{normalizeTurnIR(input,text);throw Error("expected unavailable") }catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([]);expect(e.unresolvedFacets).toContainEqual({requestIndex:0,facets:["certification"]});expect(e.readOnlyIR.answerRequests[1].qualifiers).toEqual([{facet:"certification",value:"FSC"}]);}
+});
+it("invalid optional specificity marks an inferred composition facet unresolved",()=>{
+  const text="What material is Vale Shelf?";
+  try{normalizeTurnIR({actions:[],answerRequests:[{kind:"product_property",subject:"Vale Shelf",sourceText:text,propertyKey:"composition",qualifiers:[{value:"invented"}]}]},text);throw Error("expected unavailable")}catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");expect(e.unresolvedFacets).toEqual([{requestIndex:0,facets:["material_composition"]}]);}
 });
