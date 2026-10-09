@@ -45,7 +45,7 @@ describe("withResource", () => {
   });
 
   it("makes saved email values visible on the next mount", () => {
-    const saved = withResource({}, "/api/settings/email-signature", { signature: { is_active: false, template_html: "<b>x</b>" } });
-    expect(initialEmailState(saved, "")).toMatchObject({ signatureIsActive: false, signatureTemplateHtml: "<b>x</b>" });
+    const saved = withResource({}, "/api/settings/email-blocklist", { blocks: [{ id: "b1", matcher_type: "email", matcher_value: "A@B.dk" }] });
+    expect(initialEmailState(saved, "").emailBlocklistRows[0]).toMatchObject({ matcher_value: "a@b.dk" });
   });
 });

@@ -6,6 +6,7 @@ import {
   legacySettingsPath,
   parseSettingsPathname,
   parseSettingsSlug,
+  retiredSettingsPath,
   settingsPageKey,
   settingsPath,
   withSearchParams,
@@ -17,7 +18,7 @@ describe("settings navigation", () => {
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.key))).toEqual([
       "general", "members", "mailboxes", "ai", "automation", "email", "customer-satisfaction", "profile", "billing",
     ]);
-    expect(EMAIL_SECTIONS.map((section) => section.key)).toEqual(["auto-reply", "routing", "sender-rules", "blocklist", "signatures"]);
+    expect(EMAIL_SECTIONS.map((section) => section.key)).toEqual(["auto-reply", "routing", "sender-rules", "blocklist"]);
   });
 
   it("parses section slugs", () => {
@@ -71,7 +72,7 @@ describe("settings navigation", () => {
   it("recognizes settings section paths but not the email builders", () => {
     expect(isSettingsSectionPath("/settings")).toBe(true);
     expect(isSettingsSectionPath("/settings/general")).toBe(true);
-    expect(isSettingsSectionPath("/settings/email/signatures")).toBe(true);
+    expect(isSettingsSectionPath("/settings/email/blocklist")).toBe(true);
     expect(isSettingsSectionPath("/settings/csat/email")).toBe(false);
     expect(isSettingsSectionPath("/settings/confirmation/email")).toBe(false);
     expect(isSettingsSectionPath("/inbox")).toBe(false);
@@ -83,5 +84,13 @@ describe("settings navigation", () => {
     expect(settingsPageKey("/settings")).toBe("/settings");
     expect(settingsPageKey("/settings/csat/email")).toBe("/settings/csat/email");
     expect(settingsPageKey("/inbox")).toBe("/inbox");
+  });
+
+  it("sends retired signature links to Members", () => {
+    expect(retiredSettingsPath(["email", "signatures"])).toBe("/settings/members");
+    expect(retiredSettingsPath(["Email", "Signatures"])).toBe("/settings/members");
+    expect(retiredSettingsPath(["email", "routing"])).toBeNull();
+    expect(parseSettingsSlug(["email", "signatures"])).toBeNull();
+    expect(legacySettingsPath(new URLSearchParams("tab=email&section=signatures"))).toBe("/settings/members");
   });
 });

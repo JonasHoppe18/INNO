@@ -1,11 +1,5 @@
 "use client";
 
-import {
-  DEFAULT_SIGNATURE_BUILDER,
-  SIGNATURE_TEXT_FIELD_KEYS,
-  buildSignatureTemplateFromBuilder,
-  parseSignatureBuilderFromTemplate,
-} from "@/components/settings/sections/email/signature-builder";
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
 import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
 import {
@@ -33,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { uploadEmailSignatureImage } from "@/lib/email-signature-image";
 import { cn } from "@/lib/utils";
 import { PenLine, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -64,12 +57,6 @@ export function EmailSettings({
   inheritsWorkspace = false,
   onInheritsWorkspaceChange,
   currentUserEmail = "",
-  signatureIsActive = true,
-  onSignatureIsActiveChange,
-  signatureTemplateHtml = "",
-  onSignatureTemplateHtmlChange,
-  onSendSignatureTest,
-  sendingSignatureTest = false,
   routingRows = [],
   onUpdateRoutingRow,
   onAddRoutingCategory,
@@ -102,9 +89,6 @@ export function EmailSettings({
   const [newBlockMatcherValue, setNewBlockMatcherValue] = useState("");
   const [newBlockNote, setNewBlockNote] = useState("");
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
-  const [signatureBuilderOpen, setSignatureBuilderOpen] = useState(false);
-  const [signatureDraft, setSignatureDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
-  const [signatureLogoUploadError, setSignatureLogoUploadError] = useState("");
   const [testConfirmationOpen, setTestConfirmationOpen] = useState(false);
   const [testConfirmationEmail, setTestConfirmationEmail] = useState(currentUserEmail || "");
   const [sendingConfirmationTest, setSendingConfirmationTest] = useState(false);
@@ -261,68 +245,6 @@ export function EmailSettings({
     onAddBlocklistRow,
   ]);
 
-  const handleSignatureDraftField = useCallback((field, value) => {
-    setSignatureDraft((prev) => ({ ...prev, [field]: value }));
-  }, []);
-
-  const handleSignatureFieldVisibility = useCallback((fieldKey, nextVisible) => {
-    if (!SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey)) return;
-    setSignatureDraft((prev) => ({
-      ...prev,
-      fieldVisibility: {
-        ...(prev?.fieldVisibility || {}),
-        [fieldKey]: Boolean(nextVisible),
-      },
-    }));
-  }, []);
-
-  const handleSignatureFieldMove = useCallback((fieldKey, direction) => {
-    if (!SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey)) return;
-    setSignatureDraft((prev) => {
-      const order = Array.isArray(prev?.textOrder) ? [...prev.textOrder] : [...SIGNATURE_TEXT_FIELD_KEYS];
-      const index = order.indexOf(fieldKey);
-      if (index < 0) return prev;
-      const nextIndex = direction === "up" ? index - 1 : index + 1;
-      if (nextIndex < 0 || nextIndex >= order.length) return prev;
-      [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
-      return {
-        ...prev,
-        textOrder: order,
-      };
-    });
-  }, []);
-
-  const handleLogoUpload = useCallback(async (event) => {
-    const file = event?.target?.files?.[0];
-    if (!file) return;
-    if (!["image/png", "image/jpeg"].includes(String(file.type || "").toLowerCase())) {
-      setSignatureLogoUploadError("Please upload a PNG or JPEG image.");
-      return;
-    }
-    if (Number(file.size || 0) > 5 * 1024 * 1024) {
-      setSignatureLogoUploadError("Logo must be 5 MB or smaller.");
-      return;
-    }
-    try {
-      setSignatureLogoUploadError("Uploading logo…");
-      const result = await uploadEmailSignatureImage(file);
-      setSignatureLogoUploadError("");
-      setSignatureDraft((prev) => ({ ...prev, logoUrl: result }));
-    } catch (error) {
-      setSignatureLogoUploadError(error?.message || "Could not upload logo file.");
-    }
-  }, []);
-
-  const handleApplySignatureBuilder = useCallback(() => {
-    onSignatureTemplateHtmlChange?.(buildSignatureTemplateFromBuilder(signatureDraft));
-    setSignatureBuilderOpen(false);
-  }, [onSignatureTemplateHtmlChange, signatureDraft]);
-
-  const handleClearSignatureTemplate = useCallback(() => {
-    if (!window.confirm("Clear outbound signature template?")) return;
-    onSignatureTemplateHtmlChange?.("");
-  }, [onSignatureTemplateHtmlChange]);
-
   const previewLines = String(bodyTextTemplate || "")
     .split("\n")
     .map((line) => line.trim())
@@ -334,36 +256,6 @@ export function EmailSettings({
   const previewSubject = `${includeTicketNumber ? "[T-50001] " : ""}${
     subjectTemplate || "We've received your message"
   }`;
-
-  const signaturePreviewHtml = useMemo(() => {
-    const sampleReply = "Message body preview.";
-    const templateHtml = String(signatureTemplateHtml || "").trim();
-    const templateSection = templateHtml || "";
-    return [sampleReply.replace(/\n/g, "<br/>"), templateSection]
-      .filter(Boolean)
-      .join("<br/><br/>");
-  }, [signatureTemplateHtml]);
-
-  const signatureSummary = useMemo(() => {
-    const parsed = parseSignatureBuilderFromTemplate(signatureTemplateHtml);
-    const hasAnyTemplate = Boolean(String(signatureTemplateHtml || "").trim());
-    const lineOne =
-      String(parsed.fullName || "").trim() ||
-      (hasAnyTemplate ? "Signature template configured." : "No signature configured yet.");
-    const lineTwo = String(parsed.jobTitle || "").trim();
-    return [lineOne, lineTwo].filter(Boolean).join(" • ");
-  }, [signatureTemplateHtml]);
-
-  const signatureDraftPreviewHtml = useMemo(
-    () => buildSignatureTemplateFromBuilder(signatureDraft),
-    [signatureDraft]
-  );
-
-  useEffect(() => {
-    if (!signatureBuilderOpen) return;
-    setSignatureDraft(parseSignatureBuilderFromTemplate(signatureTemplateHtml));
-    setSignatureLogoUploadError("");
-  }, [signatureBuilderOpen, signatureTemplateHtml]);
 
   return (
     <SettingsPage title="Email" description="Configure customer-facing messages, routing and sender controls.">
@@ -850,98 +742,6 @@ export function EmailSettings({
             </div>
           </div>
         </div>
-
-        <div className={cn(activeSection !== "signatures" && "hidden")}>
-          <SettingsGroup title="Outbound signature">
-            <SettingsRow label="Add signature" description="Add a consistent workspace signature below outgoing replies.">
-              <SettingsSwitch
-                aria-label="Add signature"
-                checked={Boolean(signatureIsActive)}
-                onCheckedChange={() => onSignatureIsActiveChange?.(!signatureIsActive)}
-                disabled={saving}
-              />
-            </SettingsRow>
-            <SettingsRow label="Current signature" description={signatureSummary}>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSignatureBuilderOpen(true)}>
-                  Edit signature
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onSendSignatureTest}
-                  disabled={sendingSignatureTest || !String(signatureTemplateHtml || "").trim()}
-                >
-                  {sendingSignatureTest ? "Sending…" : "Send test"}
-                </Button>
-                {String(signatureTemplateHtml || "").trim() ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-danger-foreground"
-                    onClick={handleClearSignatureTemplate}
-                  >
-                    Clear
-                  </Button>
-                ) : null}
-              </div>
-            </SettingsRow>
-            <SettingsRow stacked label="Preview">
-              <div
-                className="min-h-24 w-full rounded-lg border border-border/70 bg-card p-4 text-sm text-foreground"
-                dangerouslySetInnerHTML={{ __html: signaturePreviewHtml }}
-              />
-            </SettingsRow>
-          </SettingsGroup>
-        </div>
-
-      <Dialog open={signatureBuilderOpen} onOpenChange={setSignatureBuilderOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Edit outbound signature</DialogTitle>
-            <DialogDescription>Choose the details shown below workspace replies.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                ["fullName", "Full name", "Alex Morgan"],
-                ["jobTitle", "Job title", "Customer Support"],
-                ["phone", "Phone", "+45 12 34 56 78"],
-                ["email", "Email", "support@example.com"],
-                ["companyName", "Company", "Company name"],
-              ].map(([field, label, placeholder]) => (
-                <label key={field} className={cn("space-y-1.5", field === "logoUrl" && "sm:col-span-2")}>
-                  <span className="text-sm font-medium text-foreground">{label}</span>
-                  <Input value={signatureDraft[field] || ""} onChange={(event) => handleSignatureDraftField(field, event.target.value)} placeholder={placeholder} />
-                </label>
-              ))}
-              <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-sm font-medium text-foreground">Logo</span>
-                <Input type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} />
-                <span className="block text-xs text-muted-foreground">PNG or JPG up to 5 MB.</span>
-              </label>
-              <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-sm font-medium text-foreground">Accent color</span>
-                <div className="flex items-center gap-2">
-                  <input type="color" value={signatureDraft.accentColor || "#6d5dfc"} onChange={(event) => handleSignatureDraftField("accentColor", event.target.value)} className="h-9 w-12 rounded-md border border-input bg-background p-1" />
-                  <Input value={signatureDraft.accentColor || ""} onChange={(event) => handleSignatureDraftField("accentColor", event.target.value)} placeholder="#6d5dfc" />
-                </div>
-              </label>
-              {signatureLogoUploadError ? <p className="text-sm text-danger-foreground sm:col-span-2">{signatureLogoUploadError}</p> : null}
-            </div>
-            <div className="overflow-hidden rounded-xl border border-border bg-background">
-              <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">Preview</div>
-              <div className="min-h-44 p-4 text-sm" dangerouslySetInnerHTML={{ __html: signatureDraftPreviewHtml }} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setSignatureBuilderOpen(false)}>Cancel</Button>
-            <Button type="button" onClick={handleApplySignatureBuilder}>Apply signature</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
         <DialogContent className="max-w-3xl">

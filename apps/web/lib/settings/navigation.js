@@ -36,7 +36,6 @@ export const EMAIL_SECTIONS = [
   { key: "routing", label: "Routing" },
   { key: "sender-rules", label: "Sender rules" },
   { key: "blocklist", label: "Blocklist" },
-  { key: "signatures", label: "Signatures" },
 ];
 
 export const DEFAULT_SETTINGS_SECTION = "general";
@@ -44,6 +43,16 @@ export const DEFAULT_EMAIL_SECTION = "auto-reply";
 
 const SECTION_KEYS = new Set(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.key)));
 const EMAIL_KEYS = new Set(EMAIL_SECTIONS.map((section) => section.key));
+
+// Sections that were removed; old links land on their replacement.
+const RETIRED_PATHS = {
+  "email/signatures": "/settings/members",
+};
+
+export function retiredSettingsPath(slug) {
+  const key = (Array.isArray(slug) ? slug : []).map((part) => String(part || "").trim().toLowerCase()).join("/");
+  return RETIRED_PATHS[key] || null;
+}
 
 export function parseSettingsSlug(slug) {
   const parts = (Array.isArray(slug) ? slug : []).map((part) => String(part || "").trim().toLowerCase());
@@ -92,6 +101,8 @@ export function legacySettingsPath(searchParams) {
   const entries = searchEntries(searchParams);
   const read = (key) => String(entries.find(([name]) => name === key)?.[1] || "").trim().toLowerCase();
   const tab = read("tab");
+  const retired = retiredSettingsPath([tab, read("section")]);
+  if (retired) return withSearchParams(retired, searchParams, ["tab", "section"]);
   const section = SECTION_KEYS.has(tab) ? tab : DEFAULT_SETTINGS_SECTION;
   return withSearchParams(settingsPath(section, read("section")), searchParams, ["tab", "section"]);
 }
