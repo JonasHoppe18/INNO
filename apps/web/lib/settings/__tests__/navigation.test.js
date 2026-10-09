@@ -17,7 +17,7 @@ describe("settings navigation", () => {
       "WORKSPACE", "CHANNELS", "AUTOMATIC EMAILS", "AI & AUTOMATION", "ACCOUNT",
     ]);
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.key))).toEqual([
-      "general", "members", "mailboxes", "inbox-rules", "confirmation-email", "customer-satisfaction",
+      "general", "members", "brand", "mailboxes", "inbox-rules", "confirmation-email", "customer-satisfaction",
       "ai", "automation", "profile", "billing",
     ]);
   });
@@ -25,6 +25,7 @@ describe("settings navigation", () => {
   it("parses section slugs", () => {
     expect(parseSettingsSlug(["general"])).toEqual({ section: "general" });
     expect(parseSettingsSlug(["Inbox-Rules"])).toEqual({ section: "inbox-rules" });
+    expect(parseSettingsSlug(["brand"])).toEqual({ section: "brand" });
   });
 
   it("rejects unknown, nested or retired slugs", () => {
