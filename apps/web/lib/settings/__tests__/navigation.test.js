@@ -15,7 +15,7 @@ describe("settings navigation", () => {
   it("keeps the current menu order and keys", () => {
     expect(SETTINGS_NAV.map((group) => group.label)).toEqual(["WORKSPACE", "AI & AUTOMATION", "COMMUNICATION", "ACCOUNT"]);
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.key))).toEqual([
-      "general", "members", "mailboxes", "tags", "ai", "automation", "email", "customer-satisfaction", "profile", "billing",
+      "general", "members", "mailboxes", "ai", "automation", "email", "customer-satisfaction", "profile", "billing",
     ]);
     expect(EMAIL_SECTIONS.map((section) => section.key)).toEqual(["auto-reply", "routing", "sender-rules", "blocklist", "signatures"]);
   });
@@ -35,6 +35,7 @@ describe("settings navigation", () => {
     expect(parseSettingsSlug(["general", "extra"])).toBeNull();
     expect(parseSettingsSlug(["email", "routing", "extra"])).toBeNull();
     expect(parseSettingsSlug(["csat"])).toBeNull();
+    expect(parseSettingsSlug(["tags"])).toBeNull();
   });
 
   it("builds canonical paths", () => {

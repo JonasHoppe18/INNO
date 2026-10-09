@@ -6,7 +6,6 @@ export const SETTINGS_NAV = [
       { key: "general", label: "General" },
       { key: "members", label: "Members" },
       { key: "mailboxes", label: "Channels & mailboxes" },
-      { key: "tags", label: "Tags" },
     ],
   },
   {

@@ -16,7 +16,6 @@ import {
   AutomationSection,
   CustomerSatisfactionSection,
   MailboxesSection,
-  TagsSection,
 } from "@/components/settings/sections/SimpleSections";
 import {
   DEFAULT_EMAIL_SECTION,
@@ -30,7 +29,6 @@ const SECTION_COMPONENTS = {
   general: GeneralSection,
   members: MembersSection,
   mailboxes: MailboxesSection,
-  tags: TagsSection,
   ai: AiInstructionsSection,
   automation: AutomationSection,
   email: EmailSection,
