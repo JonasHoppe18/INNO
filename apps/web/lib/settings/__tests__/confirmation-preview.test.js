@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmationDraftStatus, renderConfirmationPreview } from "../confirmation-preview";
+import { confirmationDraftStatus, previewDocument, renderConfirmationPreview } from "../confirmation-preview";
 
 describe("renderConfirmationPreview", () => {
   const base = {
@@ -42,5 +42,20 @@ describe("confirmationDraftStatus", () => {
     expect(confirmationDraftStatus({ version: 3, published_version: 3 })).toEqual({ label: "Published", variant: "success" });
     expect(confirmationDraftStatus({ version: 4, published_version: 3 })).toEqual({ label: "Unpublished changes", variant: "warning" });
     expect(confirmationDraftStatus({ version: 2, published_version: null })).toEqual({ label: "Draft not published", variant: "warning" });
+  });
+});
+
+describe("previewDocument", () => {
+  it("frames a bare layout like an email on a neutral canvas", () => {
+    const doc = previewDocument('<div style="color:#111">Hi</div>');
+    expect(doc.startsWith("<!doctype html>")).toBe(true);
+    expect(doc).toContain("max-width:600px");
+    expect(doc).toContain('<div style="color:#111">Hi</div>');
+  });
+
+  it("leaves a full designed email document as it is", () => {
+    const designed = "<!doctype html><html><body style=\"background:#000\">Hi</body></html>";
+    expect(previewDocument(designed)).toBe(designed);
+    expect(previewDocument("  <html><body>Hi</body></html>")).toBe("  <html><body>Hi</body></html>");
   });
 });

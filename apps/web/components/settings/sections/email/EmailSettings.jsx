@@ -1,6 +1,6 @@
 "use client";
 
-import { confirmationDraftStatus, renderConfirmationPreview } from "@/lib/settings/confirmation-preview";
+import { confirmationDraftStatus, previewDocument, renderConfirmationPreview } from "@/lib/settings/confirmation-preview";
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
 import {
   SettingsGroup,
@@ -87,6 +87,7 @@ export function EmailSettings({
   const [sendingConfirmationTest, setSendingConfirmationTest] = useState(false);
 
   const [designStatus, setDesignStatus] = useState(null);
+  const [previewHeight, setPreviewHeight] = useState(360);
 
   // Draft vs published state of the builder design for the selected scope.
   useEffect(() => {
@@ -352,17 +353,35 @@ export function EmailSettings({
                 {designStatus ? <Badge variant={designStatus.variant}>{designStatus.label}</Badge> : null}
               </span>
             }
-            description="Subject, message, logo, colors and layout are edited in the email designer. Publish there to update what customers receive."
+            description="Message, logo, colors and layout are edited in the email designer. Publish there to update what customers receive."
+          />
+          <SettingsRow
+            label="Subject"
+            description="Edited in the email designer under Email settings. The ticket reference is added in front when it is turned on."
           >
-            <span className="truncate text-sm text-muted-foreground">{preview.subject}</span>
+            <span className="truncate text-sm text-foreground" title={preview.subject}>{preview.subject}</span>
           </SettingsRow>
           <SettingsRow stacked label="Preview" description="What a customer receives today, with sample values.">
-            <iframe
-              title="Confirmation email preview"
-              sandbox=""
-              srcDoc={preview.html}
-              className="h-[420px] w-full rounded-lg border border-border/70 bg-white"
-            />
+            <div className="w-full overflow-hidden rounded-lg border border-border/70 bg-card">
+              <div className="space-y-0.5 border-b border-border/60 px-4 py-3 text-xs">
+                <p className="text-muted-foreground">
+                  From <span className="text-foreground">{selectedMailbox?.from_name || teamName || "Your team"}</span>
+                </p>
+                <p className="truncate text-sm font-medium text-foreground">{preview.subject}</p>
+              </div>
+              <iframe
+                title="Confirmation email preview"
+                sandbox="allow-same-origin"
+                srcDoc={previewDocument(preview.html)}
+                onLoad={(event) => {
+                  const doc = event.currentTarget.contentDocument;
+                  const height = doc?.documentElement?.scrollHeight || 0;
+                  if (height) setPreviewHeight(Math.min(Math.max(height, 200), 1200));
+                }}
+                style={{ height: previewHeight }}
+                className="block w-full bg-[#f4f4f5]"
+              />
+            </div>
           </SettingsRow>
         </SettingsGroup>
       </div>

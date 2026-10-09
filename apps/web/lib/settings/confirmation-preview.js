@@ -38,3 +38,11 @@ export function confirmationDraftStatus(draft) {
     ? { label: "Unpublished changes", variant: "warning" }
     : { label: "Published", variant: "success" };
 }
+
+// Designed emails are full documents with their own canvas; a bare layout gets
+// an email-like frame so the preview reads like a received message.
+export function previewDocument(html) {
+  const source = String(html || "");
+  if (/^\s*(<!doctype|<html)/i.test(source)) return source;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#f4f4f5}body{padding:24px 16px;font-family:Arial,sans-serif}</style></head><body><div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;padding:24px 28px">${source}</div></body></html>`;
+}
