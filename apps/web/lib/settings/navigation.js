@@ -5,6 +5,7 @@ export const SETTINGS_NAV = [
     items: [
       { key: "general", label: "General" },
       { key: "members", label: "Members" },
+      { key: "brand", label: "Brand" },
     ],
   },
   {

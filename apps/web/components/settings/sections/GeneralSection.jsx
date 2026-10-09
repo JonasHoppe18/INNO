@@ -6,9 +6,6 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
 import { initialGeneralState, normalizeAutoCloseMode } from "@/lib/settings/general";
-import { brandDirty, brandFromPayload, normalizeAccentColor } from "@/lib/settings/brand";
-import { resourcePayload } from "@/lib/settings/resource-map";
-import { BrandGroup } from "@/components/settings/sections/BrandGroup";
 import {
   SettingsGroup,
   SettingsPage,
@@ -42,8 +39,6 @@ function GeneralTab({
   needsAttentionStaleDays,
   onNeedsAttentionStaleDaysChange,
   hasWorkspaceScope,
-  brand,
-  onBrandChange,
   onSave,
   onReset,
   saving,
@@ -79,8 +74,6 @@ function GeneralTab({
           </Select>
         </SettingsRow>
       </SettingsGroup>
-
-      {hasWorkspaceScope ? <BrandGroup brand={brand} onChange={onBrandChange} /> : null}
 
       <SettingsGroup title="Ticket lifecycle" description="When inactive tickets move forward automatically.">
         <SettingsRow
@@ -176,10 +169,6 @@ export function GeneralSection() {
   const [initialAutoCloseMode, setInitialAutoCloseMode] = useState(init.autoCloseMode);
   const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(init.needsAttentionStaleDays);
   const [initialNeedsAttentionStaleDays, setInitialNeedsAttentionStaleDays] = useState(init.needsAttentionStaleDays);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initBrand = useMemo(() => brandFromPayload(resourcePayload(resources, "/api/settings/brand")), []);
-  const [brand, setBrand] = useState(initBrand);
-  const [initialBrand, setInitialBrand] = useState(initBrand);
 
   const canSave = useMemo(
     () =>
@@ -188,11 +177,8 @@ export function GeneralSection() {
       String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
       normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
       normalizeAutoCloseMode(autoCloseMode) !== normalizeAutoCloseMode(initialAutoCloseMode) ||
-      normalizeStaleDays(needsAttentionStaleDays) !== normalizeStaleDays(initialNeedsAttentionStaleDays) ||
-      brandDirty(initialBrand, brand),
+      normalizeStaleDays(needsAttentionStaleDays) !== normalizeStaleDays(initialNeedsAttentionStaleDays),
     [
-      brand,
-      initialBrand,
       autoCloseMode,
       initialAutoCloseMode,
       needsAttentionStaleDays,
@@ -258,23 +244,6 @@ export function GeneralSection() {
         setInitialAutoCloseMode(persistedAutoCloseMode);
         setNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
         setInitialNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
-        if (brandDirty(initialBrand, brand)) {
-          const brandResponse = await fetch("/api/settings/brand", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              logo_url: brand.logoUrl || null,
-              accent_color: normalizeAccentColor(brand.accentColor),
-            }),
-          });
-          const brandPayload = await brandResponse.json().catch(() => ({}));
-          if (!brandResponse.ok) throw new Error(brandPayload?.error || "Could not save brand.");
-          const savedBrand = brandFromPayload(brandPayload);
-          setBrand(savedBrand);
-          setInitialBrand(savedBrand);
-          setResource("/api/settings/brand", brandPayload);
-        }
         setResource("/api/settings/test-mode", {
           ...testModePayload,
           test_mode: nextTestMode,
@@ -318,8 +287,6 @@ export function GeneralSection() {
     canSave,
     saving,
     shopId,
-    brand,
-    initialBrand,
     supabase,
     supportLanguage,
     autoCloseMode,
@@ -341,9 +308,7 @@ export function GeneralSection() {
     setNeedsAttentionStaleDays(
       String(normalizeStaleDays(initialNeedsAttentionStaleDays))
     );
-    setBrand(initialBrand);
   }, [
-    initialBrand,
     initialAutoCloseMode,
     initialNeedsAttentionStaleDays,
     initialSupportLanguage,
@@ -370,8 +335,6 @@ export function GeneralSection() {
       needsAttentionStaleDays={needsAttentionStaleDays}
       onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
       hasWorkspaceScope={Boolean(workspaceId)}
-      brand={brand}
-      onBrandChange={setBrand}
       onSave={handleSaveGeneral}
       onReset={handleResetGeneral}
       saving={saving}

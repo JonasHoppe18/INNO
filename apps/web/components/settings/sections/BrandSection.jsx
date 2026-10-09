@@ -1,14 +1,23 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SettingsGroup, SettingsRow } from "@/components/settings/ui/settings-layout";
+import {
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+  SettingsSaveBar,
+} from "@/components/settings/ui/settings-layout";
+import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
+import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
+import { brandDirty, brandFromPayload, normalizeAccentColor } from "@/lib/settings/brand";
+import { resourcePayload } from "@/lib/settings/resource-map";
 
 const DEFAULT_PICKER_COLOR = "#4f46e5";
 
-export function BrandGroup({ brand, onChange, disabled = false }) {
+function BrandGroup({ brand, onChange, disabled = false }) {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
@@ -38,7 +47,7 @@ export function BrandGroup({ brand, onChange, disabled = false }) {
   const pickerColor = /^#[0-9a-f]{6}$/i.test(brand.accentColor) ? brand.accentColor : DEFAULT_PICKER_COLOR;
 
   return (
-    <SettingsGroup title="Brand" description="Used in your confirmation and satisfaction email designs.">
+    <SettingsGroup>
       <SettingsRow label="Logo" description="PNG or JPG, up to 5 MB.">
         <div className="flex items-center gap-2">
           {brand.logoUrl ? (
@@ -100,5 +109,55 @@ export function BrandGroup({ brand, onChange, disabled = false }) {
         </div>
       </SettingsRow>
     </SettingsGroup>
+  );
+}
+
+export function BrandSection() {
+  const { workspace, resources, setResource } = useSettingsWorkspace();
+  const hasWorkspaceScope = Boolean(workspace?.workspaceId);
+  // The draft initializes once per mount from the loaded resources.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const init = useMemo(() => brandFromPayload(resourcePayload(resources, "/api/settings/brand")), []);
+  const [brand, setBrand] = useState(init);
+  const [initialBrand, setInitialBrand] = useState(init);
+  const [saving, setSaving] = useState(false);
+  const dirty = brandDirty(initialBrand, brand);
+  useSettingsDirty(dirty);
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings/brand", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          logo_url: brand.logoUrl || null,
+          accent_color: normalizeAccentColor(brand.accentColor),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not save brand.");
+      const saved = brandFromPayload(payload);
+      setBrand(saved);
+      setInitialBrand(saved);
+      setResource("/api/settings/brand", payload);
+      toast.success("Brand saved.");
+    } catch (error) {
+      toast.error(error?.message || "Could not save brand.");
+    } finally {
+      setSaving(false);
+    }
+  }, [brand, dirty, saving, setResource]);
+
+  return (
+    <SettingsPage title="Brand" description="Your logo and accent color, used in your confirmation and satisfaction email designs.">
+      <BrandGroup brand={brand} onChange={setBrand} disabled={!hasWorkspaceScope} />
+      {hasWorkspaceScope ? null : (
+        <p className="text-xs text-warning-foreground">Brand settings require an organization workspace.</p>
+      )}
+      <SettingsSaveBar visible={dirty} saving={saving} onSave={handleSave} onDiscard={() => setBrand(initialBrand)} />
+    </SettingsPage>
   );
 }

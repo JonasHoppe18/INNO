@@ -10,6 +10,7 @@ import { GeneralSection } from "@/components/settings/sections/GeneralSection";
 import { AiInstructionsSection } from "@/components/settings/sections/AiInstructionsSection";
 import { ConfirmationEmailSection, InboxRulesSection } from "@/components/settings/sections/email/EmailSection";
 import { MembersSection } from "@/components/settings/sections/MembersSection";
+import { BrandSection } from "@/components/settings/sections/BrandSection";
 import { ProfileSection } from "@/components/settings/sections/ProfileSection";
 import { BillingSection } from "@/components/settings/sections/BillingSection";
 import {
@@ -27,6 +28,7 @@ import {
 const SECTION_COMPONENTS = {
   general: GeneralSection,
   members: MembersSection,
+  brand: BrandSection,
   mailboxes: MailboxesSection,
   ai: AiInstructionsSection,
   automation: AutomationSection,

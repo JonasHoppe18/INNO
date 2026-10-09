@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Palette,
   Bot,
   Building2,
   CreditCard,
@@ -18,6 +19,7 @@ import { SETTINGS_NAV } from "@/lib/settings/navigation";
 const SETTINGS_NAV_ICONS = {
   general: Building2,
   members: Users2,
+  brand: Palette,
   mailboxes: Inbox,
   ai: Bot,
   automation: Zap,

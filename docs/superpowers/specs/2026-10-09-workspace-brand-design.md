@@ -20,7 +20,7 @@ Arbejdet deles i tre leverancer. Hver merges og testes for sig.
 
 Denne spec beskriver A i detaljer. B og C er skitseret nederst og får hver deres spec og plan, når A er merget.
 
-**Succeskriterium for A:** en admin kan uploade et logo og vælge en accentfarve under Settings → General. Værdierne gemmes på workspacet og står der efter genindlæsning. Logoet ligger på en offentlig HTTPS-URL, som kan bruges i mails.
+**Succeskriterium for A:** en admin kan uploade et logo og vælge en accentfarve under Settings → Brand. Værdierne gemmes på workspacet og står der efter genindlæsning. Logoet ligger på en offentlig HTTPS-URL, som kan bruges i mails.
 
 ## Ikke i scope (A)
 
@@ -31,14 +31,14 @@ Denne spec beskriver A i detaljer. B og C er skitseret nederst og får hver dere
 
 ## Placering i Settings
 
-En ny gruppe **"Brand"** i Settings → General, under den eksisterende gruppe med workspace-navnet. Den får ikke sit eget menupunkt. Brandet er to felter, og et menupunkt mere gør menuen længere uden at gøre noget lettere at finde.
+En egen side **"Brand"** under WORKSPACE, efter General og Members (`/settings/brand`). Brandet handler om, hvordan butikken ser ud over for kunderne, og hører ikke hjemme blandt General's driftsindstillinger. Siden får også mere indhold med tiden (fx "Import from Shopify"). Beslutningen er truffet med Jonas efter første test, hvor gruppen lå i General.
 
 | Række | Kontrol | Hjælpetekst |
 |---|---|---|
 | Logo | Thumbnail og knapperne "Upload" og "Remove" (når der er et logo) | "PNG or JPG, up to 5 MB. Used in your email designs." |
 | Accent color | Farvefelt (native color input) og hex-felt (h-8) | "Used for headlines, links and buttons in your email designs." |
 
-Rækkerne følger settings-redesignets byggeklodser (`SettingsGroup`, `SettingsRow`). Ændringer gemmes med den eksisterende `SettingsSaveBar` sammen med resten af General. Upload sker straks, når filen vælges, så thumbnailen kan vises. URL'en gemmes dog først på workspacet, når der trykkes Save. "Discard" fortryder derfor også et logo-skift.
+Rækkerne følger settings-redesignets byggeklodser (`SettingsGroup`, `SettingsRow`). Ændringer gemmes med sidens egen `SettingsSaveBar`. Upload sker straks, når filen vælges, så thumbnailen kan vises. URL'en gemmes dog først på workspacet, når der trykkes Save. "Discard" fortryder derfor også et logo-skift.
 
 Al UI-tekst er på engelsk.
 
