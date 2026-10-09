@@ -23,7 +23,7 @@ import {
 function EmailSection({ mode }) {
   const searchParams = useSearchParams();
   const { user } = useUser();
-  const { resources, setResource } = useSettingsWorkspace();
+  const { resources, setResource, workspace } = useSettingsWorkspace();
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const emailInit = useMemo(() => initialEmailState(resources, searchParams?.get("mailbox_id") || ""), []);
@@ -696,11 +696,8 @@ function EmailSection({ mode }) {
         enabled={autoReplyEnabled}
         onEnabledChange={setAutoReplyEnabled}
         subjectTemplate={autoReplySubjectTemplate}
-        onSubjectTemplateChange={setAutoReplySubjectTemplate}
         bodyTextTemplate={autoReplyBodyTextTemplate}
-        onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
         bodyHtmlTemplate={autoReplyBodyHtmlTemplate}
-        onBodyHtmlTemplateChange={setAutoReplyBodyHtmlTemplate}
         confirmationTemplateHtml={autoReplyTemplateHtml}
         includeTicketNumber={autoReplyIncludeTicketNumber}
         onIncludeTicketNumberChange={setAutoReplyIncludeTicketNumber}
@@ -710,6 +707,7 @@ function EmailSection({ mode }) {
         inheritsWorkspace={autoReplyInheritsWorkspace}
         onInheritsWorkspaceChange={setAutoReplyInheritsWorkspace}
         currentUserEmail={user?.primaryEmailAddress?.emailAddress || ""}
+        teamName={workspace.workspaceName}
         routingRows={emailRoutingRows}
         onUpdateRoutingRow={handleUpdateEmailRoutingRow}
         onAddRoutingCategory={handleAddEmailRoutingCategory}

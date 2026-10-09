@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmationDraftStatus, renderConfirmationPreview } from "@/lib/settings/confirmation-preview";
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
 import {
   SettingsGroup,
@@ -8,6 +9,7 @@ import {
   SettingsSaveBar,
   SettingsSwitch,
 } from "@/components/settings/ui/settings-layout";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PenLine, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
   useCallback,
@@ -39,11 +41,8 @@ export function EmailSettings({
   enabled,
   onEnabledChange,
   subjectTemplate,
-  onSubjectTemplateChange,
   bodyTextTemplate,
-  onBodyTextTemplateChange,
   bodyHtmlTemplate = "",
-  onBodyHtmlTemplateChange,
   confirmationTemplateHtml = "",
   includeTicketNumber = true,
   onIncludeTicketNumberChange,
@@ -53,6 +52,7 @@ export function EmailSettings({
   inheritsWorkspace = false,
   onInheritsWorkspaceChange,
   currentUserEmail = "",
+  teamName = "",
   routingRows = [],
   onUpdateRoutingRow,
   onAddRoutingCategory,
@@ -72,9 +72,6 @@ export function EmailSettings({
   savingRouting = false,
   saving,
 }) {
-  const [messageModalOpen, setMessageModalOpen] = useState(false);
-  const [draftSubject, setDraftSubject] = useState(subjectTemplate || "");
-  const [draftBody, setDraftBody] = useState(bodyTextTemplate || "");
   const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
   const [addSenderRuleModalOpen, setAddSenderRuleModalOpen] = useState(false);
   const [addBlocklistModalOpen, setAddBlocklistModalOpen] = useState(false);
@@ -89,13 +86,25 @@ export function EmailSettings({
   const [testConfirmationEmail, setTestConfirmationEmail] = useState(currentUserEmail || "");
   const [sendingConfirmationTest, setSendingConfirmationTest] = useState(false);
 
-  useEffect(() => {
-    setDraftSubject(subjectTemplate || "");
-  }, [subjectTemplate]);
+  const [designStatus, setDesignStatus] = useState(null);
 
+  // Draft vs published state of the builder design for the selected scope.
   useEffect(() => {
-    setDraftBody(bodyTextTemplate || "");
-  }, [bodyTextTemplate]);
+    if (mode !== "confirmation") return undefined;
+    let active = true;
+    const query = selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : "";
+    fetch(`/api/settings/confirmation/email${query}`, { credentials: "include", cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (active) setDesignStatus(confirmationDraftStatus(payload?.draft));
+      })
+      .catch(() => {
+        if (active) setDesignStatus(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, selectedConfirmationMailboxId]);
 
   useEffect(() => {
     if (testConfirmationOpen && !testConfirmationEmail) {
@@ -147,13 +156,6 @@ export function EmailSettings({
     },
     [onEnabledChange]
   );
-
-  const handleSaveMessage = useCallback(() => {
-    onSubjectTemplateChange(draftSubject);
-    onBodyTextTemplateChange(draftBody);
-    onBodyHtmlTemplateChange?.("");
-    setMessageModalOpen(false);
-  }, [draftBody, draftSubject, onBodyHtmlTemplateChange, onBodyTextTemplateChange, onSubjectTemplateChange]);
 
   const handleCreateCategory = useCallback(() => {
     const label = String(newCategoryLabel || "").trim();
@@ -241,17 +243,23 @@ export function EmailSettings({
     onAddBlocklistRow,
   ]);
 
-  const previewLines = String(bodyTextTemplate || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 3);
+  const selectedMailbox = confirmationMailboxes.find((mailbox) => mailbox.id === selectedConfirmationMailboxId);
+  const preview = useMemo(
+    () =>
+      renderConfirmationPreview({
+        templateHtml: confirmationTemplateHtml,
+        subjectTemplate,
+        bodyTextTemplate,
+        bodyHtmlTemplate,
+        includeTicketNumber,
+        teamName: selectedMailbox?.from_name || teamName,
+      }),
+    [bodyHtmlTemplate, bodyTextTemplate, confirmationTemplateHtml, includeTicketNumber, selectedMailbox?.from_name, subjectTemplate, teamName]
+  );
+  const designHref = `/settings/confirmation/email${selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : ""}`;
   const confirmationControlsDisabled = Boolean(
     saving || (selectedConfirmationMailboxId && inheritsWorkspace)
   );
-  const previewSubject = `${includeTicketNumber ? "[T-50001] " : ""}${
-    subjectTemplate || "We've received your message"
-  }`;
 
   return (
     <SettingsPage
@@ -264,8 +272,8 @@ export function EmailSettings({
     >
 
       {mode === "confirmation" ? (
-      <div>
-        <SettingsGroup>
+      <div className="space-y-9">
+        <SettingsGroup title="Delivery">
           {confirmationMailboxes.length > 1 ? (
             <SettingsRow label="Configuration scope" description="Set the workspace default or override it for one mailbox.">
               <Select
@@ -322,49 +330,39 @@ export function EmailSettings({
               disabled={confirmationControlsDisabled}
             />
           </SettingsRow>
-          <SettingsRow
-            stacked
-            label="Confirmation message"
-            description="The ticket reference is inserted by Sona and cannot be removed from this text."
-          >
-            <div className="w-full space-y-3">
-              <div className="min-w-0 rounded-lg border border-border/70 bg-card px-4 py-3.5">
-                <p className="text-sm font-medium text-foreground">{previewSubject}</p>
-                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                  {previewLines.length ? (
-                    previewLines.map((line, index) => (
-                      <p key={`${line}-${index}`} className="break-words">
-                        {line}
-                      </p>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground">No message set yet.</p>
-                  )}
-                </div>
-                {includeTicketNumber ? (
-                  <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                    Ticket reference: T-50001
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setMessageModalOpen(true)}
-                  disabled={confirmationControlsDisabled}
-                >
-                  Edit message
-                </Button>
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/settings/confirmation/email${selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : ""}`}>Customize email design</Link>
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setTestConfirmationOpen(true)}>
-                  Send test email
-                </Button>
-              </div>
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="Email design"
+          action={
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setTestConfirmationOpen(true)}>
+                Send test email
+              </Button>
+              <Button asChild size="sm">
+                <Link href={designHref}>Edit design</Link>
+              </Button>
             </div>
+          }
+        >
+          <SettingsRow
+            label={
+              <span className="inline-flex items-center gap-2">
+                Design
+                {designStatus ? <Badge variant={designStatus.variant}>{designStatus.label}</Badge> : null}
+              </span>
+            }
+            description="Subject, message, logo, colors and layout are edited in the email designer. Publish there to update what customers receive."
+          >
+            <span className="truncate text-sm text-muted-foreground">{preview.subject}</span>
+          </SettingsRow>
+          <SettingsRow stacked label="Preview" description="What a customer receives today, with sample values.">
+            <iframe
+              title="Confirmation email preview"
+              sandbox=""
+              srcDoc={preview.html}
+              className="h-[420px] w-full rounded-lg border border-border/70 bg-white"
+            />
           </SettingsRow>
         </SettingsGroup>
       </div>
@@ -751,84 +749,6 @@ export function EmailSettings({
         </>
       ) : null}
 
-      <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PenLine className="h-4 w-4" />
-              Customer confirmation message
-            </DialogTitle>
-            <DialogDescription>
-              This message is sent once when a customer creates a new support ticket.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Subject</label>
-              <Input
-                value={draftSubject}
-                onChange={(event) => setDraftSubject(event.target.value)}
-                placeholder="We've received your message"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">Message</label>
-                <span className="text-xs text-muted-foreground">
-                  {draftBody.length} / 2000 characters
-                </span>
-              </div>
-              <textarea
-                value={draftBody}
-                onChange={(event) => setDraftBody(event.target.value.slice(0, 2000))}
-                rows={8}
-                className="w-full rounded-md border border-border px-3 py-2 text-input md:text-sm"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium text-foreground">Email Preview</h4>
-              <div className="rounded-md border border-border">
-                <div className="border-b border-border bg-muted px-4 py-2 text-sm text-muted-foreground">
-                  <div>From: [sender]</div>
-                  <div>To: [recipient]</div>
-                  <div>
-                    Subject: {includeTicketNumber ? "[T-50001] " : ""}
-                    {draftSubject || "We've received your message"}
-                  </div>
-                </div>
-                <div
-                  className="p-4 text-sm text-foreground"
-                  dangerouslySetInnerHTML={{
-                    __html: `<div style="white-space:pre-wrap;">${String(draftBody || "")
-                      .replace(/</g, "&lt;")
-                      .replace(/>/g, "&gt;")}</div>`,
-                  }}
-                />
-                {includeTicketNumber ? (
-                  <div className="px-4 pb-4 text-xs text-muted-foreground">Ticket reference: T-50001</div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setMessageModalOpen(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSaveMessage} disabled={saving}>
-              {saving ? "Saving..." : "Save message"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <Dialog open={testConfirmationOpen} onOpenChange={setTestConfirmationOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
