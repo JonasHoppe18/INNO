@@ -25,13 +25,13 @@ Denne spec beskriver A i detaljer. B og C er skitseret nederst og får hver dere
 ## Ikke i scope (A)
 
 - At designerne eller mails bruger brandet. Det er B.
-- At hente brandet fra Shopify. Det kan tilføjes senere som en knap ("Import from Shopify").
+- At hente brandet fra butikkens platform. Det kan tilføjes senere som en platform-neutral knap ("Import from your store"), der bruger den tilsluttede platform (Shopify i dag, andre senere). Navne i UI og kode må ikke binde funktionen til Shopify.
 - At flytte satisfaction-indstillingernes eller signaturernes logoer over på brandet. De forbliver uændrede.
 - Font-valg. Designerne har deres egen font-indstilling.
 
 ## Placering i Settings
 
-En egen side **"Brand"** under WORKSPACE, efter General og Members (`/settings/brand`). Brandet handler om, hvordan butikken ser ud over for kunderne, og hører ikke hjemme blandt General's driftsindstillinger. Siden får også mere indhold med tiden (fx "Import from Shopify"). Beslutningen er truffet med Jonas efter første test, hvor gruppen lå i General.
+En egen side **"Brand"** under WORKSPACE, efter General og Members (`/settings/brand`). Brandet handler om, hvordan butikken ser ud over for kunderne, og hører ikke hjemme blandt General's driftsindstillinger. Siden får også mere indhold med tiden (fx "Import from your store"). Beslutningen er truffet med Jonas efter første test, hvor gruppen lå i General.
 
 | Række | Kontrol | Hjælpetekst |
 |---|---|---|
