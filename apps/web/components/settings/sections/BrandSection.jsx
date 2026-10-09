@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useMediaPicker } from "@/components/media/MediaPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,37 +19,18 @@ import { resourcePayload } from "@/lib/settings/resource-map";
 const DEFAULT_PICKER_COLOR = "#4f46e5";
 
 function BrandGroup({ brand, onChange, disabled = false }) {
-  const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
+  const openMediaPicker = useMediaPicker();
 
-  const handleFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch("/api/settings/brand/logo", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.url) throw new Error(payload?.error || "Could not upload logo.");
-      onChange({ ...brand, logoUrl: payload.url });
-    } catch (error) {
-      toast.error(error?.message || "Could not upload logo.");
-    } finally {
-      setUploading(false);
-    }
+  const chooseLogo = async () => {
+    const item = await openMediaPicker();
+    if (item) onChange({ ...brand, logoUrl: item.url });
   };
 
   const pickerColor = /^#[0-9a-f]{6}$/i.test(brand.accentColor) ? brand.accentColor : DEFAULT_PICKER_COLOR;
 
   return (
     <SettingsGroup>
-      <SettingsRow label="Logo" description="PNG or JPG, up to 5 MB.">
+      <SettingsRow label="Logo" description="Choose an image from your library or upload a new one.">
         <div className="flex items-center gap-2">
           {brand.logoUrl ? (
             <span className="flex h-8 max-w-28 items-center rounded-md border border-border/70 bg-background px-1.5">
@@ -56,22 +38,15 @@ function BrandGroup({ brand, onChange, disabled = false }) {
               <img src={brand.logoUrl} alt="Brand logo" className="max-h-6 max-w-full object-contain" />
             </span>
           ) : null}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg"
-            className="hidden"
-            onChange={handleFile}
-          />
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="h-8"
-            disabled={disabled || uploading}
-            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            onClick={chooseLogo}
           >
-            {uploading ? "Uploading…" : brand.logoUrl ? "Replace" : "Upload"}
+            {brand.logoUrl ? "Change logo" : "Choose logo"}
           </Button>
           {brand.logoUrl ? (
             <Button
@@ -79,7 +54,7 @@ function BrandGroup({ brand, onChange, disabled = false }) {
               variant="ghost"
               size="sm"
               className="h-8 text-muted-foreground"
-              disabled={disabled || uploading}
+              disabled={disabled}
               onClick={() => onChange({ ...brand, logoUrl: "" })}
             >
               Remove

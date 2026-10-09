@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ userId: "user", row: null, updates: [] }));
+const state = vi.hoisted(() => ({ userId: "user", row: null, updates: [], media: new Map() }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => ({ userId: state.userId, orgId: "org" }) }));
 vi.mock("@/lib/server/supabase-server-config", () => ({
@@ -8,6 +8,9 @@ vi.mock("@/lib/server/supabase-server-config", () => ({
 }));
 vi.mock("@/lib/server/workspace-auth", () => ({
   resolveAuthScope: async () => ({ workspaceId: "ws-1" }),
+}));
+vi.mock("@/lib/server/workspace-media", () => ({
+  findActiveWorkspaceMediaByUrl: async (_client, workspaceId, url) => state.media.get(`${workspaceId}|${url}`) || null,
 }));
 vi.mock("@/lib/server/stateless-service-client", () => ({
   createStatelessServiceClient: () => ({
@@ -39,6 +42,7 @@ beforeEach(() => {
   state.userId = "user";
   state.row = { brand_logo_url: null, brand_accent_color: "#4f46e5" };
   state.updates = [];
+  state.media = new Map([[`ws-1|${logo("ws-1")}`, { id: "m1" }]]);
 });
 
 describe("workspace brand route", () => {
@@ -51,6 +55,12 @@ describe("workspace brand route", () => {
   it("returns the stored brand", async () => {
     const response = await GET();
     expect(await response.json()).toEqual({ logo_url: null, accent_color: "#4f46e5", workspace_found: true });
+  });
+
+  it("rejects a logo that is no longer in the library", async () => {
+    state.media.clear();
+    expect((await put({ accent_color: null, logo_url: logo("ws-1") })).status).toBe(400);
+    expect(state.updates).toHaveLength(0);
   });
 
   it("rejects an invalid color and a logo from another workspace", async () => {

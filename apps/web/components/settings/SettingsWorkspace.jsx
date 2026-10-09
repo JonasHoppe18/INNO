@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { usePathname, useSearchParams } from "next/navigation";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsWorkspaceProvider, useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
+import { MediaPickerProvider } from "@/components/media/MediaPicker";
 import { TabSkeleton } from "@/components/settings/TabSkeleton";
 import { SettingsRouteContext } from "@/components/settings/SettingsRouteContext";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
@@ -123,16 +124,18 @@ export function SettingsWorkspace() {
 
   return (
     <SettingsWorkspaceProvider>
-      <SettingsRouteContext.Provider value={routeValue}>
-        <SettingsShell
-          activeSection={active.section}
-          onSelectSection={(key) => {
-            if (key !== active.section) navigate(key);
-          }}
-        >
-          <SettingsContent section={active.section} />
-        </SettingsShell>
-      </SettingsRouteContext.Provider>
+      <MediaPickerProvider>
+        <SettingsRouteContext.Provider value={routeValue}>
+          <SettingsShell
+            activeSection={active.section}
+            onSelectSection={(key) => {
+              if (key !== active.section) navigate(key);
+            }}
+          >
+            <SettingsContent section={active.section} />
+          </SettingsShell>
+        </SettingsRouteContext.Provider>
+      </MediaPickerProvider>
     </SettingsWorkspaceProvider>
   );
 }
