@@ -26,17 +26,13 @@ export function renderConfirmationPreview({
   return { subject, html };
 }
 
+// Saving in the designer marks the draft "draft"; publishing marks it "published".
 export function confirmationDraftStatus(draft) {
-  const version = Number(draft?.version) || 0;
-  const published = draft?.published_version == null ? null : Number(draft.published_version);
-  if (published == null) {
-    return version > 0
-      ? { label: "Draft not published", variant: "warning" }
-      : { label: "Default design", variant: "neutral" };
-  }
-  return version > published
-    ? { label: "Unpublished changes", variant: "warning" }
-    : { label: "Published", variant: "success" };
+  if (!draft?.id) return { label: "Default design", variant: "neutral" };
+  if (draft.published_version == null) return { label: "Draft not published", variant: "warning" };
+  return draft.status === "published"
+    ? { label: "Published", variant: "success" }
+    : { label: "Unpublished changes", variant: "warning" };
 }
 
 // Designed emails are full documents with their own canvas; a bare layout gets

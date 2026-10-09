@@ -36,12 +36,12 @@ describe("renderConfirmationPreview", () => {
 });
 
 describe("confirmationDraftStatus", () => {
-  it("describes the design state", () => {
+  it("reads the draft status the designer stores", () => {
     expect(confirmationDraftStatus(null)).toEqual({ label: "Default design", variant: "neutral" });
-    expect(confirmationDraftStatus({ version: 0, published_version: null })).toEqual({ label: "Default design", variant: "neutral" });
-    expect(confirmationDraftStatus({ version: 3, published_version: 3 })).toEqual({ label: "Published", variant: "success" });
-    expect(confirmationDraftStatus({ version: 4, published_version: 3 })).toEqual({ label: "Unpublished changes", variant: "warning" });
-    expect(confirmationDraftStatus({ version: 2, published_version: null })).toEqual({ label: "Draft not published", variant: "warning" });
+    expect(confirmationDraftStatus({ id: null, status: "draft", published_version: null })).toEqual({ label: "Default design", variant: "neutral" });
+    expect(confirmationDraftStatus({ id: "d1", status: "draft", published_version: null })).toEqual({ label: "Draft not published", variant: "warning" });
+    expect(confirmationDraftStatus({ id: "d1", status: "published", version: 3, published_version: 3 })).toEqual({ label: "Published", variant: "success" });
+    expect(confirmationDraftStatus({ id: "d1", status: "draft", version: 3, published_version: 3 })).toEqual({ label: "Unpublished changes", variant: "warning" });
   });
 });
 

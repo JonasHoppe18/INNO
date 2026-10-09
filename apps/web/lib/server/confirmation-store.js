@@ -1,6 +1,6 @@
 import { loadConfirmationConfiguration } from "./confirmation-configuration";
 import { requireCsatWorkspace } from "./csat-route";
-import { CONFIRMATION_TOKEN_MAP, createConfirmationContent } from "@/lib/confirmation/email-template";
+import { createConfirmationContent, toDesignerTokens } from "@/lib/confirmation/email-template";
 import { compileConfirmationEmail } from "./confirmation-email";
 
 export async function confirmationContext(request) {
@@ -28,13 +28,6 @@ export async function confirmationContext(request) {
     setting: mailbox?.effective || configuration.workspace_setting,
   };
 }
-// The designer shows its own variable syntax ({{ticket.reference}}), the sender stores the legacy one.
-function designerSubject(subject) {
-  let result = String(subject || "");
-  for (const [path, legacy] of Object.entries(CONFIRMATION_TOKEN_MAP)) result = result.replaceAll(`{{${legacy}}}`, `{{${path}}}`);
-  return result;
-}
-
 export async function loadConfirmationDraft(context) {
   const { data, error } = await context.serviceClient
     .from("confirmation_email_drafts")
@@ -47,7 +40,7 @@ export async function loadConfirmationDraft(context) {
     data || {
       id: null,
       name: "Customer confirmation",
-      subject: designerSubject(context.setting.subject_template),
+      subject: toDesignerTokens(context.setting.subject_template),
       preview_text: "",
       editor_json: createConfirmationContent(
         context.setting.body_text_template,
@@ -83,6 +76,16 @@ export async function saveConfirmationDraft(context, body) {
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+// Keeps a saved designer draft in step when Settings edits the live subject,
+// without changing its draft/published status.
+export async function syncConfirmationDraftSubject(context, subject) {
+  const { error } = await context.serviceClient
+    .from("confirmation_email_drafts")
+    .update({ subject: String(subject || "").slice(0, 300), updated_at: new Date().toISOString() })
+    .eq("workspace_id", context.workspaceId)
+    .eq("scope_key", context.scopeKey);
+  if (error) throw new Error(error.message);
 }
 export async function publishConfirmationDraft(context) {
   const draft = await loadConfirmationDraft(context);

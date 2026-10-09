@@ -35,6 +35,22 @@ export const CONFIRMATION_TOKEN_MAP = {
   "conversation.subject": "subject",
   "ticket.reference": "ticket_reference",
 };
+
+// The designer and Settings show dotted variables; the sender stores underscore tokens.
+export function toDesignerTokens(value) {
+  let result = String(value || "");
+  for (const [path, legacy] of Object.entries(CONFIRMATION_TOKEN_MAP)) {
+    result = result.replaceAll(`{{${legacy}}}`, `{{${path}}}`);
+  }
+  return result;
+}
+
+export function toStoredTokens(value) {
+  return String(value || "").replace(/{{\s*([a-z0-9_.]+)\s*}}/gi, (match, path) => {
+    const legacy = CONFIRMATION_TOKEN_MAP[String(path).toLowerCase()];
+    return legacy ? `{{${legacy}}}` : match;
+  });
+}
 export const CONFIRMATION_MESSAGE_BLOCK = {
   type: "confirmation-message",
   name: "Confirmation message",

@@ -8,6 +8,7 @@ import { EmailSettings } from "@/components/settings/sections/email/EmailSetting
 import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
 import { DEFAULT_CONFIRMATION_BODY_TEXT, DEFAULT_CONFIRMATION_SUBJECT, initialEmailState } from "@/lib/settings/email-state";
+import { toDesignerTokens } from "@/lib/confirmation/email-template";
 import {
   blocklistSnapshot,
   normalizeBlocklistRows,
@@ -420,6 +421,7 @@ function EmailSection({ mode }) {
     if (!canSaveEmailSettings || savingEmailRouting || savingAutoReply) return;
     setSavingEmailRouting(true);
     try {
+      const subjectChanged = autoReplySubjectTemplate !== initialAutoReplySubjectTemplate;
       if (hasAutoReplyChanges) {
         const autoReplyResult = await handleSaveAutoReply(
           {
@@ -436,6 +438,17 @@ function EmailSection({ mode }) {
         );
         if (!autoReplyResult?.ok) {
           throw new Error(autoReplyResult?.error || "Could not save customer confirmation settings.");
+        }
+        if (subjectChanged) {
+          // Keep a saved designer draft in step so the next publish keeps this subject.
+          const query = selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : "";
+          const sync = await fetch(`/api/settings/confirmation/email${query}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ subject_only: true, subject: toDesignerTokens(autoReplySubjectTemplate) }),
+          }).catch(() => null);
+          if (!sync?.ok) toast.warning("Subject saved, but the email designer still shows the old subject.");
         }
       }
 
@@ -672,6 +685,8 @@ function EmailSection({ mode }) {
     autoReplyTemplateName,
     canSaveEmailSettings,
     mode,
+    initialAutoReplySubjectTemplate,
+    selectedConfirmationMailboxId,
     emailBlocklistRows,
     emailRoutingRows,
     emailSenderRuleRows,
@@ -696,6 +711,7 @@ function EmailSection({ mode }) {
         enabled={autoReplyEnabled}
         onEnabledChange={setAutoReplyEnabled}
         subjectTemplate={autoReplySubjectTemplate}
+        onSubjectTemplateChange={setAutoReplySubjectTemplate}
         bodyTextTemplate={autoReplyBodyTextTemplate}
         bodyHtmlTemplate={autoReplyBodyHtmlTemplate}
         confirmationTemplateHtml={autoReplyTemplateHtml}

@@ -1,6 +1,7 @@
 "use client";
 
 import { confirmationDraftStatus, previewDocument, renderConfirmationPreview } from "@/lib/settings/confirmation-preview";
+import { toDesignerTokens, toStoredTokens } from "@/lib/confirmation/email-template";
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
 import {
   SettingsGroup,
@@ -41,6 +42,7 @@ export function EmailSettings({
   enabled,
   onEnabledChange,
   subjectTemplate,
+  onSubjectTemplateChange,
   bodyTextTemplate,
   bodyHtmlTemplate = "",
   confirmationTemplateHtml = "",
@@ -343,9 +345,18 @@ export function EmailSettings({
           </SettingsRow>
           <SettingsRow
             label="Subject"
-            description="Edited in the email designer under Email settings."
+            description="Use {{ticket.reference}} where the ticket number should appear."
+            htmlFor="confirmation-subject"
+            controlClassName="sm:w-80"
           >
-            <span className="truncate text-sm text-foreground" title={preview.subject}>{preview.subject}</span>
+            <Input
+              id="confirmation-subject"
+              value={toDesignerTokens(subjectTemplate)}
+              onChange={(event) => onSubjectTemplateChange?.(toStoredTokens(event.target.value))}
+              disabled={confirmationControlsDisabled}
+              maxLength={300}
+              className="h-8 text-input text-foreground md:text-sm"
+            />
           </SettingsRow>
         </SettingsGroup>
       </div>
