@@ -11,9 +11,9 @@ import {
   createDefaultCsatEmailContent,
 } from "@/lib/csat/email-template";
 const config = {
-  title: "CSAT email",
+  title: "Satisfaction survey",
   description:
-    "Build the published survey email customers receive after support.",
+    "Customize the survey email customers receive after a ticket is resolved.",
   apiBase: "/api/settings/csat/email",
   backHref: "/settings/customer-satisfaction",
   thankYouHref: "/settings/csat/thank-you",
