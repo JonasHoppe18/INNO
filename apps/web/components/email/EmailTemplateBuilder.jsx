@@ -18,6 +18,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MediaPickerProvider, useMediaPicker } from "@/components/media/MediaPicker";
+import { mediaAltText } from "@/lib/media/library";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -100,7 +102,19 @@ const SONA_EDITOR_STYLE = {
   "--tpl-user-shadow-md": "0 8px 24px rgba(15, 23, 42, 0.08)",
 };
 
-export function EmailTemplateBuilder({ config }) {
+export function EmailTemplateBuilder(props) {
+  return (
+    <MediaPickerProvider>
+      <EmailTemplateBuilderInner {...props} />
+    </MediaPickerProvider>
+  );
+}
+
+function EmailTemplateBuilderInner({ config }) {
+  const openMediaPicker = useMediaPicker();
+  // The editor keeps the first callback it gets, so it reads the picker via a ref.
+  const openMediaPickerRef = useRef(openMediaPicker);
+  openMediaPickerRef.current = openMediaPicker;
   const createFallbackDraft = config.createFallbackDraft;
   const countRequiredBlocks = config.countBlocks;
   const createStarterTemplate = config.createStarter;
@@ -199,6 +213,10 @@ export function EmailTemplateBuilder({ config }) {
           theme: SONA_EDITOR_THEME,
           paletteBlocks: paletteBlocks,
           customBlocks: [requiredBlock],
+          async onRequestMedia() {
+            const item = await openMediaPickerRef.current();
+            return item ? { url: item.url, alt: mediaAltText(item.file_name) } : null;
+          },
           mergeTags: {
             syntax: "handlebars",
             tags: variables,
