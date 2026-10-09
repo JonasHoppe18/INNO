@@ -1,4 +1,4 @@
-import { ANSWER_FACETS, compilePreciseAnswerRequests, documentedUnknown, internalAnswerInstruction, sourceSupportsFacet, sourceSupportsRequest, qualifierLabel, sourceDomainSupportsFacet, type CoveredAnswerFacet, type PreciseAnswerRequest } from "./answer-facets";
+import { ANSWER_FACETS, compilePreciseAnswerRequests, documentedUnknown, internalAnswerInstruction, sourceSupportsFacet, sourceSupportsRequest, sourceDocumentsLoadUnknown, qualifierLabel, sourceDomainSupportsFacet, type CoveredAnswerFacet, type PreciseAnswerRequest } from "./answer-facets";
 import { isVerifiedOperationalOutcome, operationalReply } from "./operational-execution";
 import type { OperationalOutcome } from "./operational-types";
 import type { TurnIR } from "./turn-ir";
@@ -678,8 +678,9 @@ function procedureBlocks(result: ToolExecutionResult, resultIndex: number): Arra
 
 function normalizedPhrase(value: unknown): string {
   return String(value ?? "")
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ");
 }
@@ -6169,7 +6170,7 @@ function facetSourceText(segment: ResponseSegment, context: ResponseValidationCo
   return segment.type === "source_content" ? sourceSections(segment.basis, context).map(section => section.text) : [];
 }
 function facetEvidenceIsUnknown(segment: ResponseSegment, context: ResponseValidationContext): boolean {
-  return segment.type === "facet_limit" || (segment.type !== "source_content" || !["qualified_next_step", "cleaning_alternative"].includes(segment.facet ?? "")) && facetSourceText(segment, context).some(documentedUnknown);
+  return segment.type === "facet_limit" || (segment.type !== "source_content" || !["qualified_next_step", "cleaning_alternative"].includes(segment.facet ?? "")) && facetSourceText(segment, context).some(text => segment.type === "source_content" && ["load_capacity", "weight_limit"].includes(segment.facet ?? "") ? sourceDocumentsLoadUnknown(text) : documentedUnknown(text));
 }
 function validateFacetLimit(segment: Extract<ResponseSegment, { type: "facet_limit" }>, context: ResponseValidationContext, index: number): ResponseValidationIssue[] {
   const issues = validateBasis(segment.basis, context, { requireOk: false, requireMeaningfulFields: false, scope: "result" }, index);

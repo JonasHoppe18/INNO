@@ -3,7 +3,7 @@
 export const ANSWER_FACETS = ["material_composition", "load_capacity", "weight_limit", "electrical_safety", "repair_boundary", "certification", "placement", "cleaning_method", "prohibited_method", "cleaning_alternative", "dimension_width", "dimension_depth", "dimension_height", "dimension_values"] as const;
 export type AnswerFacet = typeof ANSWER_FACETS[number];
 export type CoveredAnswerFacet = AnswerFacet | "qualified_next_step";
-export interface PreciseAnswerRequest { id: string; facet: CoveredAnswerFacet; requestIndex: number; subject: string | null; requiredFor: AnswerFacet[]; qualifiers: string[] }
+export interface PreciseAnswerRequest { id: string; facet: CoveredAnswerFacet; requestIndex: number; subject: string | null; requiredFor: AnswerFacet[]; qualifiers: string[]; unresolvedSpecificity?: boolean; safetyQualifiers?: Array<{ facet: AnswerFacet; value: string }> }
 
 export function compilePreciseAnswerRequests(requests: Array<{ subject?: string | null; propertyKey?: string | null; facets?: AnswerFacet[] | null; sourceText?: string; qualifiers?: Array<{ facet: AnswerFacet; value: string }> | null }> = []): PreciseAnswerRequest[] {
   return requests.flatMap((request, requestIndex) => {
@@ -13,7 +13,7 @@ export function compilePreciseAnswerRequests(requests: Array<{ subject?: string 
     if (["dimension_width", "dimension_depth", "dimension_height"].some(facet => facets.has(facet as AnswerFacet))) facets.add("dimension_values");
     const safety = [...facets].filter((facet): facet is AnswerFacet => ["load_capacity", "weight_limit", "electrical_safety", "repair_boundary", "certification", "placement"].includes(facet));
     if (safety.length) facets.add("qualified_next_step");
-    return [...facets].map(facet => ({ id: `answer.${requestIndex}.${facet}`, facet, requestIndex, subject: request.subject ?? null, requiredFor: facet === "qualified_next_step" ? safety : [], qualifiers: [...new Set([...(request.qualifiers ?? []).filter(q => q.facet === facet && !redundantFacetQualifier(q.facet, q.value)).map(q => q.value), ...requestedQualifiers(request.sourceText ?? "", facet).filter(value => !(request.qualifiers ?? []).some(q => q.facet === facet && qualifierLabel(q.value, facet) === qualifierLabel(value, facet)))])] }));
+    return [...facets].map(facet => ({ id: `answer.${requestIndex}.${facet}`, facet, requestIndex, subject: request.subject ?? null, requiredFor: facet === "qualified_next_step" ? safety : [], ...(facet === "qualified_next_step" ? { safetyQualifiers: safety.flatMap(safetyFacet => [...(request.qualifiers ?? []).filter(q => q.facet === safetyFacet && !redundantFacetQualifier(q.facet, q.value)), ...requestedQualifiers(request.sourceText ?? "", safetyFacet).map(value => ({ facet: safetyFacet, value }))]) } : {}), qualifiers: [...new Set([...(request.qualifiers ?? []).filter(q => q.facet === facet && !redundantFacetQualifier(q.facet, q.value)).map(q => q.value), ...requestedQualifiers(request.sourceText ?? "", facet).filter(value => !(request.qualifiers ?? []).some(q => q.facet === facet && qualifierLabel(q.value, facet) === qualifierLabel(value, facet)))])] }));
   });
 }
 
@@ -28,7 +28,7 @@ const topics: Record<CoveredAnswerFacet, RegExp> = {
   load_capacity: /\b(?:load|weight capacity|weight limit|maximum weight|supports? (?:devices? )?up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
   weight_limit: /\b(?:weight limit|maximum weight|load|supports? (?:devices? )?up to|belastning|bæreevne|vægtgrænse|maksimal vægt)\b/i,
   electrical_safety: /(?:elektrisk\w*|strømledning|kabel|ledning).*(?:reparation|udskiftning|beskadig|sikker|ikke dokumenteret)|(?:reparation|udskiftning|beskadig).*(?:elektrisk|strømledning|kabel)|\b(?:electrical|power.cord|cable).*(?:repair|replacement|damaged|safety|not established)|(?:repair|damaged).*\b(?:electrical|power.cord|cable)\b/i,
-  repair_boundary: /\b(?:repair|replacement procedure|cable replacement|power.cord replacement|reparation|reparationsprocedure|udskiftning af (?:ledning|kabel))\b/i,
+  repair_boundary: /\b(?:repairs?|replacement procedure|cable replacement|power.cord replacement|reparation|reparationsprocedure|udskiftning af (?:ledning|kabel))\b/i,
   certification: /\b(?:certif\w*|\b(?:UL|CE|FSC|GS|ISO)(?:\s+\d+(?:[-:]\d+)*)?\s+(?:listed|marked)|fire.resistan\w*|fire.safe|brandmodstand|brandsikker\w*|brandhæmmende|brandcertificering)\b/i,
   placement: /\b(?:fireplace|placement|near heat|distance.*(?:fire|heat)|keep.*(?:heat|fire)|wall.type suitability|wall.*installation|pejs|placering|nær varme|afstand.*(?:varme|ild)|vægtype|montering på væg)\b/i,
   cleaning_method: /\b(?:clean\w*|wash\w*|wipe|dishwasher|damp cloth|dry\w*|rengør\w*|vask\w*|aftør\w*|opvaskemaskine|fugtig klud|tør af)\b/i,
@@ -40,6 +40,18 @@ const topics: Record<CoveredAnswerFacet, RegExp> = {
   dimension_values: /\b(?:dimensions|width|depth|height|bredde|dybde|højde)\b|\d\s*[×x]\s*\d/i,
   qualified_next_step: /\b(?:contact|consult|seek|check|ask)\b.*\b(?:support|merchant|store|before installation|manufacturer|professional|documentation|safety label)\b|(?:kontakt|spørg|bed|rådfør).*(?:butik|forhandler|producent|fagperson|installatør|før montering|dokumentation)/i,
 };
+export function sourceDocumentsLoadUnknown(text: string): boolean {
+  const property = "(?:approved\\s+)?(?:max(?:imum)?\\s+(?:shelf\\s+|device\\s+)?load(?:\\s+capacity|\\s+rating)?|load\\s+(?:capacity|rating|limit)|weight\\s+(?:capacity|limit)|rated\\s+load|maximum\\s+weight|maksimal(?:e|t)?\\s+belastning|bæreevne|vægtgrænse)";
+  const unavailable = "(?:not\\s+(?:established|specified|documented|rated|verified|known|provided|available)|unknown|unavailable|unverified|ikke\\s+(?:oplyst|angivet|dokumenteret|fastlagt|bekræftet|kendt)|ukendt)";
+  return text.split(/[;\n]|[.!?]\s+/).some(clause => new RegExp(property + "\\s*(?::|=|is|er)?\\s*" + unavailable + "\\b|(?:no\\s+(?:approved|verified|documented)\\s+|ingen\\s+(?:godkendt|dokumenteret|oplysninger\\s+om)\\s+)" + property + "(?=\\s*(?:[.,;]|$|(?:is|er|are|was|has been)\\s+(?:specified|documented|provided|available|known|verified|approved|oplyst|dokumenteret|angivet)))|" + unavailable + "\\s*:\\s*" + property, "iu").test(clause));
+}
+function handoffAddressesFacet(text: string, facet: AnswerFacet): boolean {
+  if (["load_capacity", "weight_limit"].includes(facet)) return /load capacity|load rating|maximum load|weight limit|bæreevne|belastning|vægtgrænse|(?:wall type|load).*(?:before installation|installation)|(?:vægtype|belastning).*(?:før montering|montering)/iu.test(text);
+  if (["electrical_safety", "repair_boundary"].includes(facet)) return /electrical|power.?cord|cable|elektrisk|strømledning|kabel|ledning|repair (?:safety|procedure)|reparationsprocedure/iu.test(text);
+  if (facet === "certification") return /certif|safety label|brandmodstand|brandsikker|(?:UL|CE|FSC|GS)\s+(?:listed|marked)/iu.test(text);
+  if (facet === "placement") return /\bplacement\b|near heat|distance.*(?:fire|heat)|fireplace|placering|nær varme|pejs|afstand.*(?:ild|varme)|wall type|vægtype/iu.test(text);
+  return false;
+}
 export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): boolean {
   if (internalAnswerInstruction(text)) return false;
   if (facet === "material_composition") {
@@ -55,7 +67,7 @@ export function sourceSupportsFacet(text: string, facet: CoveredAnswerFacet): bo
   // Unknown dishwasher status is not an approved alternative or cleaning method.
   if (["load_capacity", "weight_limit"].includes(facet)) {
     if (!topics[facet].test(text)) return false;
-    if (documentedUnknown(text)) return true;
+    if (sourceDocumentsLoadUnknown(text)) return true;
     // A product's mass is not a rated load. Positive support needs a rating and units.
     return /(?:maximum load|max(?:imum)? (?:load|weight)|load capacity|weight (?:capacity|limit)|rated load|supports? (?:devices? )?up to|maksimal(?:e|t)? belastning|maks(?:imal)?\.? (?:belastning|vægt)|bæreevne|vægtgrænse|tilladt belastning)\s*(?:rating\s*)?(?::|=|is|of|up to|er|på|højst)?\s*\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?|tonnes?|ton)\b|\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?|tonnes?|ton)\s+(?:maximum load|max(?:imum)? (?:load|weight)|load capacity|weight (?:capacity|limit)|rated load|maksimal(?:e|t)? belastning|bæreevne|vægtgrænse)\b/i.test(text);
   }
@@ -156,6 +168,11 @@ function qualifierSupported(text: string, qualifier: string, facet: CoveredAnswe
 }
 export function sourceSupportsRequest(text: string, request: PreciseAnswerRequest): boolean {
   if (!sourceSupportsFacet(text, request.facet)) return false;
+  if (request.unresolvedSpecificity) return false;
+  if (request.facet === "qualified_next_step") {
+    const dependencies = request.requiredFor ?? [];
+    return dependencies.length > 0 && text.split(/[;\n]|[.!?]\s+/).some(clause => topics.qualified_next_step.test(clause) && /verif(?:y|ied|ication)|confirm|guidance|documentation|safety|before (?:installation|loading|use)|damaged|qualified professional|bekræft|vejledning|sikkerhed|før (?:montering|brug)|beskadig/iu.test(clause) && dependencies.every(facet => handoffAddressesFacet(clause, facet)) && (request.safetyQualifiers ?? []).every(qualifier => ["load_capacity", "weight_limit"].includes(qualifier.facet) && /^\d+(?:[.,]\d+)?\s*(?:kg|g|lbs?|pounds?)/iu.test(qualifier.value) || qualifierSupported(["certification", "placement"].includes(qualifier.facet) ? clause : text, qualifier.value, qualifier.facet)));
+  }
   const qualifiers = request.qualifiers ?? [];
   if (!qualifiers.length) return true;
   const clauses = text.split(/[;\n]|[.!?]\s+/);

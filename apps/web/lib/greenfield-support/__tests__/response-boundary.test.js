@@ -411,3 +411,33 @@ describe("R1 acceptance qualifier-span repair", () => {
     expect(()=>normalizeTurnIR({actions:[{action:"cancel_order",sourceText:"Cancel my order",orderReference:null,addressProvided:false}],answerRequests:[request]},message)).toThrow("Action intent must cite");
   });
 });
+
+describe("partial read-only normalization security",()=>{
+  const message="Can I replace the power cord on my Norr lamp myself? Mine looks frayed.";
+  const request={kind:"product_care",sourceText:message,subject:"Norr lamp",facets:["electrical_safety","repair_boundary"],qualifiers:[{facet:"electrical_safety",value:"power cord"},{facet:"repair_boundary",value:"replace the power cord ... myself"}]};
+  function recovered(input,text=message){try{normalizeTurnIR(input,text);throw new Error("expected unavailable interpretation")}catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");return e}}
+  it("preserves the grounded 038 core but not the invalid qualifier",()=>{
+    const e=recovered({actions:[],answerRequests:[request]});expect(e.readOnlyIR.actions).toEqual([]);expect(e.readOnlyIR.answerRequests[0].facets).toEqual(request.facets);expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([{facet:"electrical_safety",value:"power cord"}]);expect(e.unresolvedFacets).toEqual([{requestIndex:0,facets:["repair_boundary"]}]);
+  });
+  it("malformed optional structure cannot erase valid core or create actions",()=>{
+    const e=recovered({actions:[{action:"cancel_order",sourceText:"Cancel order",orderReference:null,addressProvided:false}],answerRequests:[{...request,qualifiers:[{value:"UL"}]}]});expect(e.readOnlyIR.actions).toEqual([]);expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([]);expect(e.unresolvedFacets[0].facets).toEqual(request.facets);
+  });
+  it("invented subject or source cannot be salvaged",()=>{
+    for(const override of [{subject:"Imaginary Lamp"},{sourceText:"Invented repair request"}]){try{normalizeTurnIR({actions:[],answerRequests:[{...request,...override}]},message)}catch(e){expect(e.readOnlyIR).toBeUndefined()}}
+  });
+  it("full provider/schema failure has no recoverable core",()=>{
+    for(const value of [null,{}, {answerRequests:[{kind:"product_care"}],actions:[]}]){try{normalizeTurnIR(value,message)}catch(e){expect(e.readOnlyIR).toBeUndefined()}}
+  });
+  it("one invalid request does not invent core for a different subject",()=>{
+    const e=recovered({actions:[],answerRequests:[{...request,subject:"Invented Lamp"},request]});expect(e.readOnlyIR.answerRequests).toHaveLength(1);expect(e.readOnlyIR.answerRequests[0].subject).toBe("Norr lamp");
+  });
+});
+it("partial recovery does not re-accept a qualifier owned by another read-only request",()=>{
+  const text="Is Vale Shelf UL certified? Is Luna Lamp FSC certified?";
+  const input={actions:[],answerRequests:[{kind:"product_property",sourceText:text,subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"FSC"}]},{kind:"product_property",sourceText:"Is Luna Lamp FSC certified?",subject:"Luna Lamp",facets:["certification"],qualifiers:[{facet:"certification",value:"FSC"}]}]};
+  try{normalizeTurnIR(input,text);throw Error("expected unavailable") }catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");expect(e.readOnlyIR.answerRequests[0].qualifiers).toEqual([]);expect(e.unresolvedFacets).toContainEqual({requestIndex:0,facets:["certification"]});expect(e.readOnlyIR.answerRequests[1].qualifiers).toEqual([{facet:"certification",value:"FSC"}]);}
+});
+it("invalid optional specificity marks an inferred composition facet unresolved",()=>{
+  const text="What material is Vale Shelf?";
+  try{normalizeTurnIR({actions:[],answerRequests:[{kind:"product_property",subject:"Vale Shelf",sourceText:text,propertyKey:"composition",qualifiers:[{value:"invented"}]}]},text);throw Error("expected unavailable")}catch(e){expect(e.name).toBe("TurnIRReadOnlyRecoveryError");expect(e.unresolvedFacets).toEqual([{requestIndex:0,facets:["material_composition"]}]);}
+});

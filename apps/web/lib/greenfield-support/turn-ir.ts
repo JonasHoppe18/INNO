@@ -61,7 +61,7 @@ function qualifierBelongsToRequest(request: NonNullable<TurnIR["answerRequests"]
   return Boolean(request.subject && preceding.includes(value) && preceding.toLowerCase().includes(request.subject.toLowerCase()));
 }
 
-export function normalizeTurnIR(input: unknown, message: string): TurnIR {
+function normalizeTurnIRStrict(input: unknown, message: string): TurnIR {
   const parsed = TurnIRSchema.parse(input);
   if (parsed.answerRequests?.some(request => !message.includes(request.sourceText))) {
     throw new Error("Answer requests must cite the current customer question.");
@@ -83,6 +83,45 @@ export function normalizeTurnIR(input: unknown, message: string): TurnIR {
   if (parsed.lineChange && [parsed.lineChange.sourceItem, parsed.lineChange.targetVariant].some(value => value && !message.includes(value))) throw new Error("Line selection must quote current customer wording.");
   if (parsed.address?.details && [parsed.address.details.address1, parsed.address.details.address2, parsed.address.details.city, parsed.address.details.zip].some(value => value && !message.includes(value))) throw new Error("Address fields must come from the supplied address.");
   return parsed;
+}
+
+/** Carries only independently grounded read-only meaning; the turn remains action-unavailable. */
+export class TurnIRReadOnlyRecoveryError extends Error {
+  constructor(message: string, readonly readOnlyIR: TurnIR, readonly unresolvedFacets: Array<{ requestIndex: number; facets: typeof ANSWER_FACETS[number][] }>) { super(message); this.name = "TurnIRReadOnlyRecoveryError"; }
+}
+export function normalizeTurnIR(input: unknown, message: string): TurnIR {
+  try { return normalizeTurnIRStrict(input, message); } catch (error) {
+    const rows = input && typeof input === "object" && Array.isArray((input as { answerRequests?: unknown }).answerRequests)
+      ? (input as { answerRequests: unknown[] }).answerRequests.slice(0, 8) : [];
+    const coreSchema = TurnIRSchema.shape.answerRequests.unwrap().element.omit({ qualifiers: true });
+    const coreRows = rows.map(value => coreSchema.safeParse(value)).filter(result => result.success).map(result => result.data);
+    const ownershipIR: TurnIR = { actions: [], answerRequests: coreRows };
+    const answerRequests: NonNullable<TurnIR["answerRequests"]> = [];
+    const unresolvedFacets: Array<{ requestIndex: number; facets: typeof ANSWER_FACETS[number][] }> = [];
+    for (const value of rows) {
+      const parsed = coreSchema.safeParse(value);
+      if (!parsed.success || !["product_property", "product_care"].includes(parsed.data.kind) || !message.includes(parsed.data.sourceText)) continue;
+      const core = parsed.data;
+      const words = (text: string) => text.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+      if (core.subject && (!words(core.subject).length || !words(core.subject).every(word => (words(message) as string[]).includes(word)))) continue;
+      const annotation = TurnIRSchema.shape.answerRequests.unwrap().element.shape.qualifiers.safeParse((value as { qualifiers?: unknown }).qualifiers);
+      const valid: NonNullable<NonNullable<TurnIR["answerRequests"]>[number]["qualifiers"]> = [];
+      const unresolved = new Set<typeof ANSWER_FACETS[number]>();
+      const coreFacets = [...(core.facets ?? []), ...(core.propertyKey === "composition" ? ["material_composition" as const] : [])];
+      if (!annotation.success) for (const facet of coreFacets) unresolved.add(facet);
+      else for (const qualifier of annotation.data ?? []) {
+        if (redundantFacetQualifier(qualifier.facet, qualifier.value)) continue;
+        if ((core.facets?.includes(qualifier.facet) || qualifier.facet === "material_composition" && core.propertyKey === "composition") && core.sourceText.includes(qualifier.value) && qualifierBelongsToRequest(core, coreRows.findIndex(other => other.sourceText === core.sourceText && other.subject === core.subject), ownershipIR, qualifier.value, message)) valid.push(qualifier);
+        else if (core.facets?.includes(qualifier.facet)) unresolved.add(qualifier.facet);
+        else for (const facet of coreFacets) unresolved.add(facet);
+      }
+      const requestIndex = answerRequests.length;
+      answerRequests.push({ ...core, qualifiers: valid });
+      if (unresolved.size) unresolvedFacets.push({ requestIndex, facets: [...unresolved] });
+    }
+    if (answerRequests.length) throw new TurnIRReadOnlyRecoveryError(error instanceof Error ? error.message : "Semantic interpretation unavailable", { actions: [], answerRequests }, unresolvedFacets);
+    throw error;
+  }
 }
 
 /** Required semantic pass, with no tools, separate from the support writer/tool loop. */

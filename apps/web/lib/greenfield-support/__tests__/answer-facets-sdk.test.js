@@ -282,3 +282,30 @@ it("the frozen 039 shortened quote recovers safety obligations without model too
   expect(result.trace.events.filter(e=>e.type==="error").map(e=>e.data.code)).not.toContain("turn_ir_unavailable");
   expect(result.proposedActions).toEqual([]);expect(result.actionExecutions).toEqual([]);
 });
+
+describe("038 partial read-only recovery",()=>{
+  const message="Can I replace the power cord on my Norr lamp myself? Mine looks frayed.";
+  const core={kind:"product_care",sourceText:message,subject:"Norr lamp",facets:["electrical_safety","repair_boundary"],qualifiers:[{facet:"electrical_safety",value:"power cord"},{facet:"repair_boundary",value:"replace the power cord ... myself"}]};
+  it.each(["empty","model-action"])("retains safety core and blocks %s action output",async shape=>{
+    const dependencies=await createDemoDependencies();dependencies.commerce.getProduct=async()=>({products:[{id:"p1",title:"Norr Table Lamp"}]});
+    dependencies.knowledge.search=async()=>{const a=hit("Electrical repairs and cable replacement are not described; contact support if electrical parts appear damaged.","troubleshooting");a.record.title="Norr Table Lamp";return[a]};
+    const {functionCall}=await import("@openai/agents/testing");
+    const responses=shape==="empty"?[modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]:[modelResponse([functionCall("cancel_order",{order_id:"1001",reason:"cancel"},{callId:"blocked-partial"})]),modelResponse([assistantMessage(JSON.stringify({segments:[]}))])];
+    const model=new ScriptedModel(responses);const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message,model,enableDevDiagnostics:true,turnInterpreter:async()=>({actions:[],answerRequests:[core]})});
+    expect(result.response).toContain("Electrical repairs and cable replacement are not described");expect(result.response).toContain("contact support");expect(result.response).not.toContain("...");expect(result.response).not.toContain("safely complete that lookup");
+    expect(result.trace.events.filter(e=>e.type==="error").map(e=>e.data.code)).toContain("turn_ir_read_only_recovered");
+    expect(result.trace.diagnostics.turn_ir_unavailable).toBe(true);expect(result.proposedActions).toEqual([]);expect(result.actionExecutions).toEqual([]);
+    if(shape==="model-action")expect(result.trace.events.filter(e=>e.type==="tool_result"&&e.data.name==="cancel_order")[0].data.result.error.code).toBe("turn_ir_unavailable");
+  });
+  it("a mixed action annotation cannot approve or resume an operational action",async()=>{
+    const dependencies=await createDemoDependencies();dependencies.commerce.getProduct=async()=>({products:[{id:"p1",title:"Norr Table Lamp"}]});dependencies.knowledge.search=async()=>{const a=hit("Electrical repairs and cable replacement are not described; contact support if electrical parts appear damaged.","troubleshooting");a.record.title="Norr Table Lamp";return[a]};
+    let mutations=0;const operational={permissions:{workspaceId:dependencies.tenant.workspaceId,shopId:dependencies.tenant.shopId,actions:{cancel_order:{mode:"auto",requireConfirmation:false}}},catalog:dependencies.commerce,mutationProvider:{scope:dependencies.tenant,mutationsEnabled:true,supports:()=>true,mutate:async()=>{mutations++;throw Error("must not mutate")}}};
+    const mixed=message+" Cancel order #1001.";const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message:mixed,operational,model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[{action:"cancel_order",sourceText:"Cancel order #1001.",orderReference:"1001",addressProvided:false}],answerRequests:[core]})});
+    expect(mutations).toBe(0);expect(result.proposedActions).toEqual([]);expect(result.actionExecutions).toEqual([]);expect(result.response).toContain("Electrical repairs");
+  });
+  it("invalid specificity cannot be replaced by a positive broad certification",async()=>{
+    const dependencies=await createDemoDependencies();dependencies.commerce.getProduct=async()=>({products:[{id:"p1",title:"Vale Shelf"}]});dependencies.knowledge.search=async()=>[hit("FSC certified.")];
+    const text="Is Vale Shelf UL certified?";const result=await runGreenfieldAgentWithAgentsSdk({...dependencies,capabilities:dependencies,message:text,model:new ScriptedModel([modelResponse([assistantMessage(JSON.stringify({segments:[]}))])]),turnInterpreter:async()=>({actions:[],answerRequests:[{kind:"product_property",sourceText:text,subject:"Vale Shelf",facets:["certification"],qualifiers:[{facet:"certification",value:"Imaginary UL status"}]}]})});
+    expect(result.response).toContain("cannot verify");expect(result.response).not.toContain("FSC certified");expect(result.response).not.toContain("Imaginary");expect(result.proposedActions).toEqual([]);
+  });
+});

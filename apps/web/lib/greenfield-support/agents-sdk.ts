@@ -3,7 +3,7 @@ import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, mis
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
 import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements } from "./case-state";
-import { interpretTurnIR, normalizeTurnIR, type TurnIR, type TurnInterpreter } from "./turn-ir";
+import { interpretTurnIR, normalizeTurnIR, TurnIRReadOnlyRecoveryError, type TurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
 import { boundedActionDecision } from "./action-decision";
 import { validateActionProposal } from "./action-executor";
@@ -377,21 +377,25 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     if (current?.product) customerProvidedContext.product = current.product;
   }
   let turnIR: TurnIR | null = null;
+  let readOnlyRecovery: TurnIRReadOnlyRecoveryError | null = null;
   try {
     turnIR = normalizeTurnIR(await (options.turnInterpreter ?? interpretTurnIR)(options.message), options.message);
-  } catch {
+  } catch (error) {
+    if (error instanceof TurnIRReadOnlyRecoveryError) readOnlyRecovery = error;
     // An unavailable interpretation is not a successful interpretation with no actions.
     pushEvent(trace, "error", { code: "turn_ir_unavailable",
       message: "Semantic interpretation is unavailable. Proposal-only actions are blocked for this turn." }, now());
   }
-  const namedSubjects = [...new Set((turnIR?.answerRequests ?? []).map(request => request.subject).filter((subject): subject is string => Boolean(subject && groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject))))];
+  const readOnlyIR = turnIR ?? readOnlyRecovery?.readOnlyIR;
+  if (readOnlyRecovery) pushEvent(trace, "error", { code: "turn_ir_read_only_recovered", actions_blocked: true, request_count: readOnlyIR?.answerRequests?.length ?? 0, unresolved_facets: readOnlyRecovery.unresolvedFacets }, now());
+  const namedSubjects = [...new Set((readOnlyIR?.answerRequests ?? []).map(request => request.subject).filter((subject): subject is string => Boolean(subject && groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject))))];
   if (namedSubjects.length) {
     customerProvidedContext = { ...customerProvidedContext };
     delete customerProvidedContext.product;
     if (namedSubjects.length === 1) customerProvidedContext.product = namedSubjects[0];
   }
   conversationContext.customerProvided = customerProvidedContext;
-  const preciseRequests = resolvePreciseAnswerSubjects(compilePreciseAnswerRequests(turnIR?.answerRequests ?? []), { customerMessage: options.message, customerProvidedContext });
+  const preciseRequests = resolvePreciseAnswerSubjects(compilePreciseAnswerRequests(readOnlyIR?.answerRequests ?? []), { customerMessage: options.message, customerProvidedContext }).map(request => ({ ...request, ...(readOnlyRecovery?.unresolvedFacets.some(entry => entry.requestIndex === request.requestIndex && entry.facets.some(facet => facet === request.facet || request.facet === "qualified_next_step" && request.requiredFor.includes(facet))) ? { unresolvedSpecificity: true } : {}) }));
   const preciseReadResults: Record<string, string[]> = {};
   // Identity reads precede facet reads so one subject cannot consume another's lookup.
   const preciseReadBudgets = new Map(preciseRequests.map(request => [request.subject, 6]));
@@ -523,7 +527,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     preloadedResults.push({ tool: toolName, result });
     return result;
   };
-  const preciseContext = () => ({ ...registry, evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, operationalScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" }, preciseRequests, preciseReadResults, turnIR: turnIR ?? undefined, customerMessage: options.message, customerProvidedContext, caseState: conversationContext.caseState });
+  const preciseContext = () => ({ ...registry, evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, operationalScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" }, preciseRequests, preciseReadResults, turnIR: readOnlyIR ?? undefined, customerMessage: options.message, customerProvidedContext, caseState: conversationContext.caseState });
   const recoverPreciseReads = async () => {
     for (const request of missingPreciseEvidence(preciseContext())) {
       const subject = verifiedAnswerSubject(preciseContext(), request);
@@ -563,7 +567,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   conversationContext.customerProvided = customerProvidedContext;
   conversationContext = advanceCaseContext(conversationContext, turnIR, options.message, registry.getActiveOrderFocus());
   const effectiveTurnIR = caseActionIntents(conversationContext, turnIR, currentReferences.length > 0);
-  const operationalOutcome = options.operational ? await resolveOperationalAction({ tenant: options.tenant,
+  const operationalOutcome = options.operational && turnIR !== null ? await resolveOperationalAction({ tenant: options.tenant,
     commerce: options.capabilities.commerce, runtime: options.operational, channel: options.interactionChannel }, conversationContext, effectiveTurnIR) : null;
   const operationalRecord = operationalOutcome ? registry.recordOperationalOutcome({ operation: traceValue(operationalOutcome) }) : null;
   const operationalDecision = operationalRecord ? { structuredOutput: { segments: [{ type: "operational_result", basis: { result_id: operationalRecord.resultId, field_paths: ["data.operation"] } }] } } : null;
@@ -587,7 +591,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     purpose: "resolve_required_argument", capability: "update_address", missing_arguments: ["address"],
     text: inferResponseLocale(options.message) === "da" ? "Hvad er den nye komplette leveringsadresse?" : "What is the complete new delivery address?",
     basis: { result_id: missingAddress.result.resultId!, field_paths: ["data.action_eligibility"] } }] } } : null;
-  const requirements = caseIntakeRequirements(conversationContext, turnIR, registry.getOrderCandidates(),
+  const requirements = readOnlyRecovery ? [] : caseIntakeRequirements(conversationContext, turnIR, registry.getOrderCandidates(),
     registry.getResults().filter(record => record.toolName === "get_order" || record.toolName === "get_order_history").at(-1)?.result.status, options.capabilities.remedyAuthorization);
   if (requirements[0]?.field === "photo" && intentDecision?.outcome === "assessment_required") intentDecision = null;
   let intakeDecision: { structuredOutput: unknown } | null = null;
@@ -734,7 +738,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     const responseContext = {
       ...registry,
       operationalScope: options.operational ? { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "", caseId: options.tenant.caseId, customerEmail: options.tenant.customerEmail ?? "" } : undefined,
-      turnIR: effectiveTurnIR ?? undefined,
+      turnIR: effectiveTurnIR ?? readOnlyRecovery?.readOnlyIR ?? undefined,
       caseState: conversationContext.caseState,
       evidenceScope: { workspaceId: options.tenant.workspaceId, shopId: options.tenant.shopId ?? "" }, preciseRequests, preciseReadResults,
       knownCaseArguments: [...(conversationContext.activeOrder ? ["order_id"] : []),

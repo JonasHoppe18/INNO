@@ -744,3 +744,65 @@ describe("acceptance P2 source syntax",()=>{
     expect(sourceSupportsFacet(text,"load_capacity")).toBe(false);
   });
 });
+
+describe("final safety clause and handoff binding",()=>{
+  it.each(["Maximum load capacity is not documented.","Approved load rating is unknown.","Maksimal belastning er ikke oplyst."])("accepts property-specific uncertainty: %s",text=>{
+    expect(sourceSupportsFacet(text,"load_capacity")).toBe(true);
+    expect(recover(setup(["load_capacity"],[text]).ctx).validation.coverage.obligations.find(o=>o.facet==="load_capacity")).toMatchObject({status:"unknown",rendered:true});
+  });
+  it.each(["Load items evenly. Replacement parts are unavailable.","Maximum load instructions are supplied, but replacement parts are unknown.","Product weight is not specified.","Dimensions are unknown. Load items evenly."])("unrelated unknown does not establish a load limit: %s",text=>{
+    expect(sourceSupportsFacet(text,"load_capacity")).toBe(false);
+    const result=recover(setup(["load_capacity"],[text]).ctx);expect(result.response).toContain("cannot verify an approved load capacity");
+  });
+  it("an unrelated unknown does not convert a verified rating into unknown status",()=>{
+    const result=recover(setup(["load_capacity"],["Maximum load: 10 kg. Replacement parts are unavailable."]).ctx);
+    expect(result.validation.coverage.obligations.find(o=>o.facet==="load_capacity")).toMatchObject({status:"supported",rendered:true});
+  });
+  it.each(["load_capacity","electrical_safety","certification","placement"])("cushion contact cannot satisfy %s safety",facet=>{
+    const request=compilePreciseAnswerRequests([{facets:[facet]}]).find(r=>r.facet==="qualified_next_step");
+    expect(sourceSupportsRequest("Contact the store for replacement cushions.",request)).toBe(false);
+    const result=recover(setup([facet],["Contact the store for replacement cushions."]).ctx);
+    expect(result.response).not.toContain("replacement cushions");expect(result.validation.coverage.obligations.find(o=>o.facet==="qualified_next_step")).toMatchObject({status:"unknown",rendered:true});
+  });
+  it.each([
+    ["load_capacity","Contact support to verify the shelf's load capacity before installation."],
+    ["electrical_safety","Contact support for verified electrical repair safety guidance."],
+    ["certification","Ask the manufacturer to verify UL certification."],
+    ["placement","Contact the manufacturer for verified placement guidance near heat."],
+    ["load_capacity","Kontakt producenten for at bekræfte bæreevnen før montering."],
+  ])("accepts a relevant %s handoff",(facet,text)=>{
+    const request=compilePreciseAnswerRequests([{facets:[facet]}]).find(r=>r.facet==="qualified_next_step");expect(sourceSupportsRequest(text,request)).toBe(true);
+  });
+  it("a different certification handoff does not substitute for UL verification",()=>{
+    const request=compilePreciseAnswerRequests([{facets:["certification"],sourceText:"Is it UL certified?"}]).find(r=>r.facet==="qualified_next_step");
+    expect(sourceSupportsRequest("Contact support to verify FSC certification.",request)).toBe(false);
+  });
+});
+describe("Unicode verified product binding",()=>{
+  it.each(["Светильник Север","晨光台灯","星のランプ","Café Lamp"])("retains grounded static evidence for %s",name=>{
+    const {ctx,records,sources}=setup(["load_capacity"],["Maximum load: 5 kg."]);
+    ctx.customerMessage=`What is the maximum load of «${name}»?`;ctx.turnIR.answerRequests[0].subject=name;ctx.turnIR.answerRequests[0].sourceText=ctx.customerMessage;
+    records[0].result.data.title=name;sources[0].title=name;
+    expect(recover(ctx).response).toContain("5 kg");
+    sources[0].shop_id="other";expect(recover(ctx).response).not.toContain("5 kg");
+  });
+  it.each(["Светильник Север","晨光台灯","星のランプ"])("Unicode does not permit invented identifiers or another product: %s",name=>{
+    const {ctx,records,sources}=setup(["load_capacity"],["Maximum load: 500 kg."]);
+    ctx.customerMessage=`What is the maximum load of «${name}»?`;ctx.turnIR.answerRequests[0].subject=name+" XL";records[0].result.data.title=name+" XL";sources[0].title=name+" XL";
+    expect(recover(ctx).response).not.toContain("500 kg");
+  });
+});
+it.each(["Светильник Север","晨光台灯","星のランプ"])("Unicode ambiguity does not select one product: %s",name=>{
+  const {ctx,records,sources}=setup(["load_capacity"],["Maximum load: 500 kg."]);ctx.customerMessage=`Load of «${name}»?`;ctx.turnIR.answerRequests[0].subject=name;sources[0].title=name;records[0].result.data={products:[{id:"p1",title:name},{id:"p2",title:name}]};expect(recover(ctx).response).not.toContain("500 kg");
+});
+it.each([
+  ["load_capacity","Contact the store to purchase load capacity labels."],
+  ["electrical_safety","Contact the store for electrical replacement parts."],
+  ["placement","Contact the store to order placement accessories."],
+])("commercial %s contact cannot replace a safety verification step",(facet,text)=>{
+  const request=compilePreciseAnswerRequests([{facets:[facet]}]).find(r=>r.facet==="qualified_next_step");expect(sourceSupportsRequest(text,request)).toBe(false);
+});
+it("missing load-rating labels do not establish a missing capacity rating",()=>{
+  expect(sourceSupportsFacet("No approved load rating stickers are available.","load_capacity")).toBe(false);
+  expect(sourceSupportsFacet("Maximum load rating labels are unavailable.","load_capacity")).toBe(false);
+});
