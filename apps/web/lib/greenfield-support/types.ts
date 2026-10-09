@@ -309,6 +309,10 @@ export interface CaseState {
   scope: { workspaceId: string; shopId: string | null; caseId: string; customerEmail: string | null };
   customerEmail?: string;
   identityUnavailable?: boolean;
+  pendingReadOnlyAnswers?: Array<{
+    id: string; request: NonNullable<import("./turn-ir").TurnIR["answerRequests"]>[number];
+    subjectRequirement: "missing" | "verification"; verifiedProductId?: string;
+  }>;
   requestedChange?: { sourceText: string; description?: string; orderReference: string | null };
   pendingAction?: { action: ProposedAction["action"]; sourceText: string; orderReference: string | null };
   orderConfirmation?: { orderReference: string; sourceText: string };

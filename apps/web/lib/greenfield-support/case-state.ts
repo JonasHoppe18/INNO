@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { TurnIRSchema, type TurnIR } from "./turn-ir";
+import { compilePreciseAnswerRequests } from "./answer-facets";
+import type { ResponseValidationResult } from "./response-contract";
 import type { CaseState, ConversationContext, TenantContext, RemedyAuthorization } from "./types";
 
 const reference = (value: string | null | undefined) => String(value ?? "").trim().replace(/^#/, "").toLowerCase();
@@ -9,6 +11,11 @@ const CaseStateSchema = z.object({
   scope: z.object({ workspaceId: z.string().min(1), shopId: z.string().nullable(), caseId: z.string().min(1), customerEmail: z.string().email().nullable() }),
   customerEmail: z.string().email().optional(),
   identityUnavailable: z.boolean().optional(),
+  pendingReadOnlyAnswers: z.array(z.object({
+    id: z.string().min(1).max(200),
+    request: TurnIRSchema.shape.answerRequests.unwrap().element.extend({ kind: z.enum(["product_care", "product_property"]), sourceText: z.string().min(1).max(1000) }),
+    subjectRequirement: z.enum(["missing", "verification"]), verifiedProductId: z.string().min(1).optional(),
+  })).max(8).optional(),
   pendingAction: z.object({ action, sourceText: z.string().min(1).max(1000), orderReference: z.string().nullable() }).optional(),
   requestedChange: z.object({ sourceText: z.string().min(1).max(1000), description: z.string().max(500).optional(), orderReference: z.string().nullable() }).optional(),
   orderConfirmation: z.object({ orderReference: z.string().min(1), sourceText: z.string().min(1).max(1000) }).optional(),
@@ -46,7 +53,11 @@ export function prepareCaseContext(previous: ConversationContext | undefined, te
     ...(known?.customerProvided ? { customerProvided: known.customerProvided } : {}),
     ...(known?.orderCandidates ? { orderCandidates: known.orderCandidates } : {}),
     caseState: {
-      ...(keep && state ? state : {}),
+      ...(keep && state ? { ...state, pendingReadOnlyAnswers: tenant.caseId
+        ? state.pendingReadOnlyAnswers?.map(value => ({ ...value, request: { ...value.request,
+          facets: value.request.facets ? [...value.request.facets] : value.request.facets,
+          qualifiers: value.request.qualifiers?.map(qualifier => ({ ...qualifier })),
+        } })) ?? [] : [] } : {}),
       scope: { workspaceId: tenant.workspaceId, shopId: tenant.shopId ?? null,
         caseId: tenant.caseId ?? (keep && state ? state.scope.caseId : crypto.randomUUID()),
         customerEmail: resolvedCaseEmail(known, tenant) ?? (keep && state ? state.scope.customerEmail : null) },
@@ -164,4 +175,70 @@ export function caseIntakeRequirements(context: ConversationContext, ir: TurnIR 
     return [{ field: "photo", owner: "customer" }];
   }
   return [];
+}
+
+
+export interface ReadOnlyAnswerBinding { id: string; requestIndex: number }
+
+/** Carries customer intent only; no source values or operational facts persist here. */
+export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR | null, message: string,
+  groundedSubjects: string[]): { ir: TurnIR | null; bindings: ReadOnlyAnswerBinding[]; carried: string[]; closed: string[] } {
+  const state = context.caseState!;
+  let pending = state.pendingReadOnlyAnswers ?? [];
+  if (ir?.readOnlyFollowup?.kind === "resolve") {
+    const closed = pending.map(value => value.id); state.pendingReadOnlyAnswers = [];
+    return { ir, bindings: [], carried: [], closed };
+  }
+  if (!ir) return { ir, bindings: [], carried: [], closed: [] };
+  const followup = ir.readOnlyFollowup;
+  const subject = followup?.kind === "provide_subject" && followup.subject && groundedSubjects.length === 1
+    && groundedSubjects[0] === followup.subject ? followup.subject : null;
+  const normalized = (value: string) => value.normalize("NFKC").trim().toLowerCase();
+  const carried = subject && !ir.actions.length && !ir.orderContext && !ir.policyIntents?.length
+    ? pending.filter(value => !value.request.subject || normalized(value.request.subject) === normalized(subject)) : [];
+  // Subject identification is not a model-selected material question.
+  const requests = carried.length ? carried.map(value => ({ ...value.request, subject })) : ir.answerRequests ?? [];
+  const bindings: ReadOnlyAnswerBinding[] = carried.map((value, requestIndex) => ({ id: value.id, requestIndex }));
+  if (!carried.length) for (const [requestIndex, request] of requests.entries()) {
+    if (!["product_care", "product_property"].includes(request.kind) || !message.includes(request.sourceText)
+      || !request.facets?.some(facet => ["cleaning_method", "prohibited_method", "cleaning_alternative"].includes(facet))) continue;
+    const careFacets = request.facets.filter(facet => ["cleaning_method", "prohibited_method", "cleaning_alternative"].includes(facet));
+    const storedRequest = { ...request, facets: careFacets,
+      ...(request.propertyKey === "composition" || request.propertyKey === "dimensions" ? { propertyKey: "general" as const } : {}),
+      qualifiers: request.qualifiers?.filter(qualifier => careFacets.includes(qualifier.facet)), sourceText: request.sourceText.slice(0, 1000),
+      subject: request.subject && groundedSubjects.includes(request.subject) ? request.subject : null };
+    const existing = pending.find(value => JSON.stringify(value.request) === JSON.stringify(storedRequest));
+    const entry = existing ?? { id: `${state.scope.caseId}:read-only:${context.turn}:${requestIndex}`,
+      request: storedRequest,
+      subjectRequirement: storedRequest.subject ? "verification" as const : "missing" as const };
+    if (!existing && pending.length < 8) pending = [...pending, entry];
+    if (pending.includes(entry)) bindings.push({ id: entry.id, requestIndex });
+  }
+  state.pendingReadOnlyAnswers = pending;
+  return { ir: { ...ir, answerRequests: requests }, bindings, carried: carried.map(value => value.id), closed: [] };
+}
+
+export function bindReadOnlyAnswer(context: ConversationContext, binding: ReadOnlyAnswerBinding,
+  product: { id: string; title: string } | null): boolean {
+  const entry = context.caseState?.pendingReadOnlyAnswers?.find(value => value.id === binding.id);
+  if (!entry || !product || entry.verifiedProductId && entry.verifiedProductId !== product.id) return false;
+  entry.request = { ...entry.request, subject: product.title };
+  entry.subjectRequirement = "verification"; entry.verifiedProductId = product.id;
+  return true;
+}
+
+/** An acknowledgement or merely approved-but-unrendered segment cannot close work. */
+export function completeReadOnlyAnswers(context: ConversationContext, bindings: ReadOnlyAnswerBinding[],
+  validation: ResponseValidationResult): string[] {
+  const closed: string[] = [];
+  for (const binding of bindings) {
+    const entry = context.caseState?.pendingReadOnlyAnswers?.find(value => value.id === binding.id);
+    if (!entry?.verifiedProductId) continue;
+    const requested = compilePreciseAnswerRequests([entry.request]);
+    if (requested.length && requested.every(request => validation.coverage?.obligations.some(obligation =>
+      obligation.id === `answer.${binding.requestIndex}.${request.facet}` && obligation.status === "supported"
+      && obligation.subjectIds?.includes(entry.verifiedProductId!) && obligation.satisfied && obligation.rendered === true))) closed.push(entry.id);
+  }
+  if (context.caseState) context.caseState.pendingReadOnlyAnswers = (context.caseState.pendingReadOnlyAnswers ?? []).filter(value => !closed.includes(value.id));
+  return closed;
 }
