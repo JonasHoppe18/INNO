@@ -178,6 +178,25 @@ export function caseIntakeRequirements(context: ConversationContext, ir: TurnIR 
 }
 
 
+/** Lexical equivalence only; verified product IDs remain the identity boundary. */
+export function normalizeReadOnlySubject(value: string): string {
+  const words = value.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (words[0] === "the") words.shift();
+  return words.join(" ");
+}
+
+export function deduplicateReadOnlySubjects(subjects: string[]): string[] {
+  const unique = new Map<string, string>();
+  for (const subject of subjects) {
+    const key = normalizeReadOnlySubject(subject);
+    if (!key || unique.has(key)) continue;
+    const words = subject.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
+    if (words[0]?.toLowerCase() === "the") words.shift();
+    unique.set(key, words.join(" "));
+  }
+  return [...unique.values()];
+}
+
 export interface ReadOnlyAnswerBinding { id: string; requestIndex: number }
 
 /** Carries customer intent only; no source values or operational facts persist here. */
@@ -186,16 +205,19 @@ export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR 
   const state = context.caseState!;
   let pending = state.pendingReadOnlyAnswers ?? [];
   if (ir?.readOnlyFollowup?.kind === "resolve") {
-    const closed = pending.map(value => value.id); state.pendingReadOnlyAnswers = [];
+    const target = ir.readOnlyFollowup.targetRequestId;
+    const selected = target ? pending.filter(value => value.id === target) : pending.length === 1 ? pending : [];
+    const closed = selected.length === 1 ? [selected[0].id] : [];
+    state.pendingReadOnlyAnswers = pending.filter(value => !closed.includes(value.id));
     return { ir, bindings: [], carried: [], closed };
   }
   if (!ir) return { ir, bindings: [], carried: [], closed: [] };
   const followup = ir.readOnlyFollowup;
-  const subject = followup?.kind === "provide_subject" && followup.subject && groundedSubjects.length === 1
-    && groundedSubjects[0] === followup.subject ? followup.subject : null;
-  const normalized = (value: string) => value.normalize("NFKC").trim().toLowerCase();
+  const subjects = deduplicateReadOnlySubjects(groundedSubjects);
+  const subject = followup?.kind === "provide_subject" && followup.subject && subjects.length === 1
+    && normalizeReadOnlySubject(subjects[0]) === normalizeReadOnlySubject(followup.subject) ? subjects[0] : null;
   const carried = subject && !ir.actions.length && !ir.orderContext && !ir.policyIntents?.length
-    ? pending.filter(value => !value.request.subject || normalized(value.request.subject) === normalized(subject)) : [];
+    ? pending.filter(value => !value.request.subject || normalizeReadOnlySubject(value.request.subject) === normalizeReadOnlySubject(subject)) : [];
   // Subject identification is not a model-selected material question.
   const requests = carried.length ? carried.map(value => ({ ...value.request, subject })) : ir.answerRequests ?? [];
   const bindings: ReadOnlyAnswerBinding[] = carried.map((value, requestIndex) => ({ id: value.id, requestIndex }));
@@ -206,7 +228,7 @@ export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR 
     const storedRequest = { ...request, facets: careFacets,
       ...(request.propertyKey === "composition" || request.propertyKey === "dimensions" ? { propertyKey: "general" as const } : {}),
       qualifiers: request.qualifiers?.filter(qualifier => careFacets.includes(qualifier.facet)), sourceText: request.sourceText.slice(0, 1000),
-      subject: request.subject && groundedSubjects.includes(request.subject) ? request.subject : null };
+      subject: request.subject && subjects.some(subject => normalizeReadOnlySubject(subject) === normalizeReadOnlySubject(request.subject!)) ? request.subject : null };
     const existing = pending.find(value => JSON.stringify(value.request) === JSON.stringify(storedRequest));
     const entry = existing ?? { id: `${state.scope.caseId}:read-only:${context.turn}:${requestIndex}`,
       request: storedRequest,

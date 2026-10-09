@@ -27,3 +27,11 @@ Checks: 24 new scoped controls; 1,218 deterministic Greenfield/Knowledge/Action 
 This is recognized product-care continuity, not durable handling of every support task. It cannot recover an initial question that TurnIR never registers, and it still depends on the existing interpreter classifying a subject follow-up. Unknown/unavailable care stays pending rather than being falsely marked answered. Bound subject aliases are conservative; ambiguous or changed identity does not inherit old work. There is no deployed DEV smoke yet.
 
 Existing semantic evidence limitations remain unchanged. Semantic Contract V2 stays paused. No provider mutations, outbound sends, merchant Knowledge/fixture changes, sealed benchmark rerun, merge or deployment.
+
+## PR123 final review repair
+
+Equivalent customer-grounded subjects now share a Unicode-normalized comparison key before ambiguity checks. Casing, punctuation and a leading "the" do not create another product. This is lexical normalization only; conflicting or ambiguous verified product IDs still block carryover.
+
+Explicit resolution can name one existing `targetRequestId`. Only a single matching pending obligation is removed. Missing or unknown targets preserve all work when multiple obligations exist; the existing single-question explicit-resolution behavior remains. Acknowledgement does not imply resolution.
+
+Updated validation: 39 focused controls pass, including #043 and R1 038–041; 1,233 scoped deterministic Greenfield/Knowledge/Action checks pass, with eight opt-in skips and the same excluded unconditional live evaluator. Typecheck passes. No new model calls were made for this review repair.

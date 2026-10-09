@@ -2,7 +2,7 @@ import { compilePreciseAnswerRequests, facetReadQuery } from "./answer-facets";
 import { normalizeMerchantPolicyAttribution, preserveMaterialPolicyEvidence, missingPreciseEvidence, renderWithAnswerCoverage, verifiedAnswerSubject, groundedAnswerSubject, resolvePreciseAnswerSubjects, type ResponseValidationContext } from "./response-contract";
 import { resolveOperationalAction } from "./operational-execution";
 import type { OperationalRuntime } from "./operational-types";
-import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements, prepareReadOnlyAnswers, bindReadOnlyAnswer, completeReadOnlyAnswers } from "./case-state";
+import { prepareCaseContext, advanceCaseContext, caseActionIntents, confirmedCaseAction, resolvedCaseEmail, caseIntakeRequirements, deduplicateReadOnlySubjects, normalizeReadOnlySubject, prepareReadOnlyAnswers, bindReadOnlyAnswer, completeReadOnlyAnswers } from "./case-state";
 import { interpretTurnIR, normalizeTurnIR, TurnIRReadOnlyRecoveryError, type TurnIR, type TurnInterpreter } from "./turn-ir";
 import { complaintContextForOrder } from "./action-eligibility";
 import { boundedActionDecision } from "./action-decision";
@@ -388,10 +388,10 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   }
   let readOnlyIR = turnIR ?? readOnlyRecovery?.readOnlyIR;
   if (readOnlyRecovery) pushEvent(trace, "error", { code: "turn_ir_read_only_recovered", actions_blocked: true, request_count: readOnlyIR?.answerRequests?.length ?? 0, unresolved_facets: readOnlyRecovery.unresolvedFacets }, now());
-  const namedSubjects = [...new Set((readOnlyIR?.answerRequests ?? []).map(request => request.subject).filter((subject): subject is string => Boolean(subject && groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject))))];
-  const followupSubject = turnIR?.readOnlyFollowup?.subject;
-  if (followupSubject && groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, followupSubject)
-    && !namedSubjects.includes(followupSubject)) namedSubjects.push(followupSubject);
+  const namedSubjects = deduplicateReadOnlySubjects([
+    ...(readOnlyIR?.answerRequests ?? []).flatMap(request => request.subject ? [request.subject] : []),
+    ...(turnIR?.readOnlyFollowup?.subject ? [turnIR.readOnlyFollowup.subject] : []),
+  ]).filter(subject => groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject));
   const readOnlyAnswers = prepareReadOnlyAnswers(conversationContext, turnIR, options.message, namedSubjects);
   if (turnIR) readOnlyIR = readOnlyAnswers.ir ?? undefined;
   if (readOnlyAnswers.bindings.length || readOnlyAnswers.closed.length) pushEvent(trace, "case_state", {
@@ -579,7 +579,7 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     await recoverPreciseReads();
   }
   if (namedSubjects.length) {
-    const verified = namedSubjects.length === 1 && preciseRequests.some(request => request.subject === namedSubjects[0] && verifiedAnswerSubject(preciseContext(), request));
+    const verified = namedSubjects.length === 1 && preciseRequests.some(request => request.subject && normalizeReadOnlySubject(request.subject) === normalizeReadOnlySubject(namedSubjects[0]) && verifiedAnswerSubject(preciseContext(), request));
     customerProvidedContext = { ...customerProvidedContext };
     delete customerProvidedContext.product;
     if (verified) customerProvidedContext.product = namedSubjects[0];
