@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import {
   MEDIA_PAGE_SIZE,
   decodeMediaCursor,
@@ -6,6 +7,7 @@ import {
   findActiveWorkspaceMediaByUrl,
   listWorkspaceMedia,
   mediaCursorFilter,
+  restoreWorkspaceMedia,
   softDeleteWorkspaceMedia,
   uploadWorkspaceMedia,
 } from "../workspace-media";
@@ -39,7 +41,7 @@ function fakeClient(results = {}) {
     from: builder,
     storage: {
       from: (bucket) => ({
-        upload: async (path, bytes, options) => { storage.push({ op: "upload", bucket, path, options }); return { error: null }; },
+        upload: async (path, bytes, options) => { storage.push({ op: "upload", bucket, path, bytes, options }); return { error: null }; },
         remove: async (paths) => { storage.push({ op: "remove", bucket, paths }); return { error: null }; },
       }),
     },
@@ -120,6 +122,22 @@ describe("uploadWorkspaceMedia", () => {
     expect(item.url).toBe(inserted.public_url);
   });
 
+  it("stores large photos scaled down to the email maximum", async () => {
+    let inserted;
+    const client = fakeClient({
+      workspace_media: (chain) => {
+        inserted = chain.find(([method]) => method === "insert")?.[1];
+        return { data: { ...inserted, id: ID, created_at: AT }, error: null };
+      },
+    });
+    const photo = await sharp({ create: { width: 2400, height: 1600, channels: 3, background: "#e11d48" } }).jpeg().toBuffer();
+    const file = { name: "photo.jpg", type: "image/jpeg", arrayBuffer: async () => new Uint8Array(photo).buffer };
+    await uploadWorkspaceMedia(client, { supabaseUrl: "https://abc.supabase.co", workspaceId: WS, userId: null, file });
+    expect(inserted).toMatchObject({ width: 1200, height: 800, content_type: "image/jpeg" });
+    expect((await sharp(Buffer.from(client.storageCalls[0].bytes)).metadata()).width).toBe(1200);
+    expect(inserted.size_bytes).toBe(client.storageCalls[0].bytes.length);
+  });
+
   it("removes the uploaded file when the row cannot be saved", async () => {
     const client = fakeClient({ workspace_media: () => ({ data: null, error: { message: "boom" } }) });
     const file = { name: "a.gif", type: "image/gif", arrayBuffer: async () => gifBytes.buffer };
@@ -147,6 +165,17 @@ describe("soft delete and lookup", () => {
     expect(has(chain, "eq", "workspace_id", WS)).toBe(true);
     expect(has(chain, "eq", "id", ID)).toBe(true);
     expect(has(chain, "is", "deleted_at", null)).toBe(true);
+  });
+
+  it("restores a hidden image in this workspace", async () => {
+    const client = fakeClient({ workspace_media: () => ({ data: [{ id: ID }], error: null }) });
+    expect(await restoreWorkspaceMedia(client, WS, ID)).toBe(true);
+    const { chain } = client.calls[0];
+    expect(chain[0]).toEqual(["update", { deleted_at: null }]);
+    expect(has(chain, "eq", "workspace_id", WS)).toBe(true);
+    expect(has(chain, "eq", "id", ID)).toBe(true);
+    expect(has(chain, "not", "deleted_at", "is", null)).toBe(true);
+    expect(await restoreWorkspaceMedia(fakeClient(), WS, "not-a-uuid")).toBe(false);
   });
 
   it("reports a missing or foreign image", async () => {

@@ -18,8 +18,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { MediaPickerProvider, useMediaPicker } from "@/components/media/MediaPicker";
-import { mediaAltText } from "@/lib/media/library";
+import { MediaPickerProvider, uploadMediaFile, useMediaPicker } from "@/components/media/MediaPicker";
+import { fitPickedImageWidth, mediaAltText } from "@/lib/media/library";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -115,6 +115,7 @@ function EmailTemplateBuilderInner({ config }) {
   // The editor keeps the first callback it gets, so it reads the picker via a ref.
   const openMediaPickerRef = useRef(openMediaPicker);
   openMediaPickerRef.current = openMediaPicker;
+  const pickedImageRef = useRef(null);
   const createFallbackDraft = config.createFallbackDraft;
   const countRequiredBlocks = config.countBlocks;
   const createStarterTemplate = config.createStarter;
@@ -213,16 +214,38 @@ function EmailTemplateBuilderInner({ config }) {
           theme: SONA_EDITOR_THEME,
           paletteBlocks: paletteBlocks,
           customBlocks: [requiredBlock],
-          async onRequestMedia() {
-            const item = await openMediaPickerRef.current();
-            return item ? { url: item.url, alt: mediaAltText(item.file_name) } : null;
+          async onRequestMedia(context) {
+            let item = null;
+            const dropped = context?.files?.[0];
+            if (dropped) {
+              try {
+                item = await uploadMediaFile(dropped);
+              } catch (error) {
+                toast.error(error.message || "Could not upload image.");
+                return null;
+              }
+            } else {
+              item = await openMediaPickerRef.current();
+            }
+            if (!item) return null;
+            pickedImageRef.current = { url: item.url, width: item.width };
+            return { url: item.url, alt: mediaAltText(item.file_name) };
           },
           mergeTags: {
             syntax: "handlebars",
             tags: variables,
             autocomplete: true,
           },
-          onChange(nextContent) {
+          onChange(changedContent) {
+            let nextContent = changedContent;
+            if (pickedImageRef.current) {
+              const fitted = fitPickedImageWidth(nextContent, pickedImageRef.current);
+              pickedImageRef.current = null;
+              if (fitted.changed) {
+                nextContent = fitted.content;
+                editorRef.current?.setContent?.(nextContent);
+              }
+            }
             contentRef.current = nextContent;
             setRequiredBlockCount(countRequiredBlocks(nextContent));
             if (!initializing) setDirty(true);

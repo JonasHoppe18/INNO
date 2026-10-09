@@ -62,6 +62,15 @@ async function readJson(response, fallback) {
   return payload;
 }
 
+export async function uploadMediaFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return readJson(
+    await fetch("/api/media", { method: "POST", body: formData, credentials: "include" }),
+    "Could not upload image.",
+  );
+}
+
 function MediaPickerDialog({ onClose }) {
   const fileInputRef = useRef(null);
   const [items, setItems] = useState([]);
@@ -71,6 +80,10 @@ function MediaPickerDialog({ onClose }) {
   const [uploading, setUploading] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [dragging, setDragging] = useState(false);
+  // Images moved in from before the library have no stored size; read it from the thumbnail.
+  const [naturalSizes, setNaturalSizes] = useState({});
+  const withSize = (item) =>
+    item && !item.width && naturalSizes[item.id] ? { ...item, ...naturalSizes[item.id] } : item;
 
   useEffect(() => {
     let cancelled = false;
@@ -108,18 +121,14 @@ function MediaPickerDialog({ onClose }) {
   const uploadFiles = async (fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    if (files.some((file) => isLargeMedia(file.size))) {
-      toast.warning("Large images load slowly in email. Images under 1 MB work best.");
+    // Photos are resized and compressed on upload; GIFs are stored as they are.
+    if (files.some((file) => file.type === "image/gif" && isLargeMedia(file.size))) {
+      toast.warning("Large GIFs load slowly in email. GIFs under 1 MB work best.");
     }
     setUploading((count) => count + files.length);
     for (const file of files) {
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const item = await readJson(
-          await fetch("/api/media", { method: "POST", body: formData, credentials: "include" }),
-          "Could not upload image.",
-        );
+        const item = await uploadMediaFile(file);
         setItems((shown) => [item, ...shown.filter((entry) => entry.id !== item.id)]);
         setSelectedId(item.id);
       } catch (error) {
@@ -130,7 +139,25 @@ function MediaPickerDialog({ onClose }) {
     }
   };
 
+  const restoreImage = async (item, index) => {
+    try {
+      await readJson(
+        await fetch(`/api/media/${item.id}/restore`, { method: "POST", credentials: "include" }),
+        "Could not restore image.",
+      );
+      setItems((shown) => {
+        if (shown.some((entry) => entry.id === item.id)) return shown;
+        const next = [...shown];
+        next.splice(Math.min(index, next.length), 0, item);
+        return next;
+      });
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
   const hideImage = async (item) => {
+    const index = items.findIndex((entry) => entry.id === item.id);
     try {
       await readJson(
         await fetch(`/api/media/${item.id}`, { method: "DELETE", credentials: "include" }),
@@ -138,6 +165,10 @@ function MediaPickerDialog({ onClose }) {
       );
       setItems((shown) => shown.filter((entry) => entry.id !== item.id));
       if (selectedId === item.id) setSelectedId(null);
+      toast("Image deleted.", {
+        description: "Emails that already use it keep showing it.",
+        action: { label: "Undo", onClick: () => restoreImage(item, index) },
+      });
     } catch (error) {
       toast.error(error.message);
     }
@@ -203,7 +234,7 @@ function MediaPickerDialog({ onClose }) {
             >
               <ImagePlus className="size-6" />
               <span>No images yet. Upload your logo or other images to use them in your emails.</span>
-              <span className="text-xs">PNG, JPG or GIF, up to 5 MB. You can also drop files here.</span>
+              <span className="text-xs">PNG or JPG up to 15 MB, resized for email. GIF up to 5 MB. You can also drop files here.</span>
             </button>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -220,7 +251,7 @@ function MediaPickerDialog({ onClose }) {
                   <button
                     type="button"
                     onClick={() => setSelectedId(item.id)}
-                    onDoubleClick={() => onClose(item)}
+                    onDoubleClick={() => onClose(withSize(item))}
                     className={cn(
                       "flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg border bg-[repeating-conic-gradient(#f4f4f5_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px] p-2",
                       selectedId === item.id ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-foreground/30",
@@ -229,12 +260,21 @@ function MediaPickerDialog({ onClose }) {
                     aria-label={item.file_name}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.url} alt="" loading="lazy" className="max-h-full max-w-full object-contain" />
+                    <img
+                      src={item.url}
+                      alt=""
+                      loading="lazy"
+                      className="max-h-full max-w-full object-contain"
+                      onLoad={(event) => {
+                        const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
+                        if (!item.width && width) setNaturalSizes((sizes) => ({ ...sizes, [item.id]: { width, height } }));
+                      }}
+                    />
                   </button>
                   <div className="mt-1.5 min-w-0 pr-7">
                     <p className="truncate text-xs font-medium text-foreground">{item.file_name}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {item.width && item.height ? `${item.width} × ${item.height} · ` : ""}
+                      {withSize(item).width ? `${withSize(item).width} × ${withSize(item).height} · ` : ""}
                       {formatMediaSize(item.size_bytes)}
                     </p>
                   </div>
@@ -271,7 +311,7 @@ function MediaPickerDialog({ onClose }) {
           <Button type="button" variant="outline" onClick={() => onClose(null)}>
             Cancel
           </Button>
-          <Button type="button" disabled={!selected} onClick={() => onClose(selected)}>
+          <Button type="button" disabled={!selected} onClick={() => onClose(withSize(selected))}>
             Use image
           </Button>
         </DialogFooter>

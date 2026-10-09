@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MEDIA_MAX_BYTES,
+  MEDIA_MAX_UPLOAD_BYTES,
   detectImageType,
   readImageDimensions,
   validateMediaFile,
@@ -45,6 +46,12 @@ describe("validateMediaFile", () => {
       .toEqual({ contentType: "image/jpeg", extension: "jpg" });
   });
 
+  it("accepts large photos that will be compressed, but not large GIFs", () => {
+    const bigJpeg = new Uint8Array(MEDIA_MAX_BYTES + 10);
+    bigJpeg.set([0xff, 0xd8, 0xff]);
+    expect(validateMediaFile({ contentType: "image/jpeg", bytes: bigJpeg }).contentType).toBe("image/jpeg");
+  });
+
   it("rejects unsupported types, mismatched bytes, empty and oversized files", () => {
     const reject = (input, message) => {
       let error;
@@ -56,7 +63,8 @@ describe("validateMediaFile", () => {
     reject({ contentType: "image/webp", bytes: new Uint8Array([1]) }, "PNG, JPG or GIF");
     reject({ contentType: "image/png", bytes: gif(1, 1) }, "does not match");
     reject({ contentType: "image/png", bytes: new Uint8Array() }, "empty");
-    reject({ contentType: "image/png", bytes: new Uint8Array(MEDIA_MAX_BYTES + 1) }, "5 MB");
+    reject({ contentType: "image/gif", bytes: new Uint8Array(MEDIA_MAX_BYTES + 1) }, "GIFs must be 5 MB");
+    reject({ contentType: "image/png", bytes: new Uint8Array(MEDIA_MAX_UPLOAD_BYTES + 1) }, "15 MB");
   });
 });
 

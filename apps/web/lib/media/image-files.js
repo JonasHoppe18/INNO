@@ -1,6 +1,9 @@
 // Image types that email clients display reliably. SVG and WebP are left out on
 // purpose: many clients (notably Outlook) don't render them, and SVG can carry script.
+// Stored images are at most 5 MB. Photos may be uploaded larger because they are
+// compressed before storage; GIFs are stored as uploaded.
 export const MEDIA_MAX_BYTES = 5 * 1024 * 1024;
+export const MEDIA_MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const MEDIA_WARN_BYTES = 1024 * 1024;
 
 const TYPES = {
@@ -32,7 +35,8 @@ export function validateMediaFile({ contentType, bytes }) {
   if (!TYPES[type]) throw badRequest("Images must be PNG, JPG or GIF files.");
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   if (!data.length) throw badRequest("The image file is empty.");
-  if (data.length > MEDIA_MAX_BYTES) throw badRequest("Images must be 5 MB or smaller.");
+  if (type === "image/gif" && data.length > MEDIA_MAX_BYTES) throw badRequest("GIFs must be 5 MB or smaller.");
+  if (data.length > MEDIA_MAX_UPLOAD_BYTES) throw badRequest("Images must be 15 MB or smaller.");
   if (detectImageType(data) !== type) throw badRequest("The file does not match its image type.");
   return { contentType: type, extension: TYPES[type].extension };
 }

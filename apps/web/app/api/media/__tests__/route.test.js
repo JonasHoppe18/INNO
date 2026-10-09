@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   upload: vi.fn(),
   remove: vi.fn(),
+  restore: vi.fn(),
 }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => ({ userId: mocks.userId, orgId: "org" }) }));
 vi.mock("@/lib/server/supabase-server-config", () => ({
@@ -17,10 +18,12 @@ vi.mock("@/lib/server/workspace-media", () => ({
   listWorkspaceMedia: mocks.list,
   uploadWorkspaceMedia: mocks.upload,
   softDeleteWorkspaceMedia: mocks.remove,
+  restoreWorkspaceMedia: mocks.restore,
 }));
 
 import { GET, POST } from "../route";
 import { DELETE } from "../[id]/route";
+import { POST as RESTORE } from "../[id]/restore/route";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -68,6 +71,15 @@ describe("media library routes", () => {
     expect(ok.status).toBe(200);
     expect(mocks.remove).toHaveBeenCalledWith({ client: true }, "ws-1", "a");
     const missing = await DELETE(new Request("https://app.test/api/media/b"), { params: { id: "b" } });
+    expect(missing.status).toBe(404);
+  });
+
+  it("restores a hidden image in this workspace and returns 404 otherwise", async () => {
+    mocks.restore.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const ok = await RESTORE(new Request("https://app.test/api/media/a/restore", { method: "POST" }), { params: { id: "a" } });
+    expect(ok.status).toBe(200);
+    expect(mocks.restore).toHaveBeenCalledWith({ client: true }, "ws-1", "a");
+    const missing = await RESTORE(new Request("https://app.test/api/media/b/restore", { method: "POST" }), { params: { id: "b" } });
     expect(missing.status).toBe(404);
   });
 

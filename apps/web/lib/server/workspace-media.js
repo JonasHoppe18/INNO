@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readImageDimensions, validateMediaFile } from "@/lib/media/image-files";
+import { MEDIA_MAX_BYTES, validateMediaFile } from "@/lib/media/image-files";
+import { optimizeMediaImage } from "@/lib/media/optimize-image";
 import { BRAND_IMAGE_BUCKET } from "@/lib/settings/brand";
 import { buildPublicEmailSignatureImageUrl } from "@/lib/server/email-signature-assets";
 
@@ -68,9 +69,14 @@ export async function uploadWorkspaceMedia(client, { supabaseUrl, workspaceId, u
     error.status = 400;
     throw error;
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const { contentType, extension } = validateMediaFile({ contentType: file.type, bytes });
-  const dimensions = readImageDimensions(bytes, contentType);
+  const original = new Uint8Array(await file.arrayBuffer());
+  const { contentType, extension } = validateMediaFile({ contentType: file.type, bytes: original });
+  const { bytes, width, height } = await optimizeMediaImage(original, contentType);
+  if (bytes.length > MEDIA_MAX_BYTES) {
+    const error = new Error("This image is still larger than 5 MB after compression. Try a smaller image.");
+    error.status = 400;
+    throw error;
+  }
   const storagePath = `${workspaceId}/media/${randomUUID()}.${extension}`;
   const bucket = client.storage.from(BRAND_IMAGE_BUCKET);
   const { error: uploadError } = await bucket.upload(storagePath, bytes, {
@@ -89,8 +95,8 @@ export async function uploadWorkspaceMedia(client, { supabaseUrl, workspaceId, u
       file_name: cleanFileName(file.name),
       content_type: contentType,
       size_bytes: bytes.length,
-      width: dimensions?.width ?? null,
-      height: dimensions?.height ?? null,
+      width,
+      height,
       uploaded_by: userId || null,
     })
     .select(MEDIA_COLUMNS)
@@ -130,4 +136,18 @@ export async function findActiveWorkspaceMediaByUrl(client, workspaceId, url) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data || null;
+}
+
+// Undo for a delete: makes a hidden image in this workspace visible again.
+export async function restoreWorkspaceMedia(client, workspaceId, id) {
+  if (!UUID.test(String(id || ""))) return false;
+  const { data, error } = await client
+    .from("workspace_media")
+    .update({ deleted_at: null })
+    .eq("workspace_id", workspaceId)
+    .eq("id", id)
+    .not("deleted_at", "is", null)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) && data.length > 0;
 }

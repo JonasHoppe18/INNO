@@ -61,8 +61,14 @@ create index workspace_media_library_idx
 
 - PNG, JPEG og GIF (også animeret). Filens indhold tjekkes mod typen via magic bytes (`GIF87a`/`GIF89a` for GIF).
 - SVG og WebP afvises. Mange mailprogrammer viser dem ikke, og SVG kan indeholde scripts.
-- Maks. 5 MB. Over 1 MB viser vælgeren en advarsel ("Large images load slowly in email"), men uploadet tillades.
-- Bredde og højde læses fra filens header på serveren med en ren funktion: PNG IHDR, JPEG SOF0/SOF2 og GIF's logiske skærm. Mislykkes det, gemmes `null`.
+- **Optimering ved upload** (med `sharp`, som allerede er en afhængighed):
+  - JPEG genkodes altid: maks. 1200 px bredde (dobbelt opløsning af 600 px-mailen), kvalitet 82. Det fjerner også metadata som GPS-position og anvender kameraets rotation. Det er vigtigt, fordi billederne er offentlige.
+  - PNG genkodes kun, når den er bredere end 1200 px eller over 1 MB, og forbliver PNG af hensyn til gennemsigtighed.
+  - GIF røres aldrig, så animationer bevares.
+- **Grænser:**
+  - JPEG og PNG må uploades op til 15 MB, fordi de komprimeres, men det gemte billede skal være højst 5 MB.
+  - GIF højst 5 MB. Over 1 MB vises en advarsel ("Large GIFs load slowly in email").
+- Bredde og højde gemmes efter optimering. Billeder, der er flyttet ind fra før biblioteket, har ingen dimensioner. Vælgeren aflæser dem fra thumbnailen.
 - Storage: det eksisterende offentlige bucket `workspace-email-signature-assets` under `<workspaceId>/media/<uuid>.<ext>`. Filnavnene er tilfældige UUID'er og kan ikke gættes. Billederne er offentlige, fordi mails skal kunne vise dem.
 
 ## API
@@ -72,6 +78,7 @@ create index workspace_media_library_idx
 | `GET /api/media?before=<created_at>` | Workspacets ikke-slettede billeder, nyeste først, 60 ad gangen. Returnerer `{ items, next_before }` |
 | `POST /api/media` (multipart `file`) | Validerer, uploader og indsætter en række. Returnerer elementet |
 | `DELETE /api/media/:id` | Sætter `deleted_at`. Filen bliver liggende, så sendte mails og eksisterende designs stadig viser billedet |
+| `POST /api/media/:id/restore` | Fortryder en sletning (fjerner `deleted_at`) |
 
 - Alle workspace-medlemmer må liste, uploade og skjule billeder. Sletning er blød og kan rettes i databasen, så det kræver ikke admin.
 - Et element: `{ id, url, file_name, content_type, size_bytes, width, height, created_at }`.
@@ -89,8 +96,12 @@ En dialog (`components/media/MediaPicker.jsx`) med:
 - **Footer:** "Cancel" og "Use image".
 - API: `openMediaPicker()` via en `MediaPickerProvider`, som resolver med elementet eller `null`.
 
+- **Fortryd:** efter "Delete" vises en besked med "Undo", som gendanner billedet på samme plads.
+
 **Bruges i:**
-- `EmailTemplateBuilder`: `onRequestMedia` åbner vælgeren og returnerer `{ url, alt: file_name uden extension }`. Det gælder både confirmation- og satisfaction-designeren.
+- `EmailTemplateBuilder`: `onRequestMedia` åbner vælgeren og returnerer `{ url, alt }`, hvor alt er filnavnet uden extension. Det gælder både confirmation- og satisfaction-designeren.
+  - Trækkes en fil direkte ind på en billedblok, uploades den til biblioteket og indsættes uden dialog.
+  - **Bredde:** nye billedblokke starter i fuld bredde. Efter et valg får blokken billedets egen bredde, når billedet er smallere end mailen (fx et 417 px logo). Editoren kan kun overføre `src` og `alt`, så bredden sættes i `onChange` via `setContent`.
 - Brand-siden: "Upload" og "Replace" erstattes af "Choose logo", som åbner vælgeren. Brand-ruten `/api/settings/brand/logo` fjernes. "Remove" fjerner kun koblingen til brandet, ikke billedet i biblioteket.
 
 ## Test og evidens (B1)
