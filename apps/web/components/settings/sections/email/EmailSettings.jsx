@@ -258,7 +258,7 @@ export function EmailSettings({
       title={mode === "inbox-rules" ? "Inbox rules" : "Confirmation email"}
       description={
         mode === "inbox-rules"
-          ? "Decide what happens to incoming email. Rules apply in this order: blocked senders, sender rules, then email categories."
+          ? "Decide what happens to incoming email. Rules apply in this order: blocked senders, sender rules, then forwarding."
           : "The automatic reply a customer receives when they open a new support ticket."
       }
     >
@@ -648,9 +648,9 @@ export function EmailSettings({
         <div>
           <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="text-section-heading font-semibold text-foreground">Email categories</h3>
+              <h3 className="text-section-heading font-semibold text-foreground">Forwarding</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Automatically detect non-support emails and route them to the right team.
+                Detect non-support emails, like invoices or job applications, and forward them to the right person.
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Emails that don&apos;t match an active category stay in your Sona inbox.
@@ -679,7 +679,7 @@ export function EmailSettings({
                     <span />
                   </div>
                   {!routingRows.length ? (
-                    <p className="py-3 text-sm text-muted-foreground">No email categories yet.</p>
+                    <p className="py-3 text-sm text-muted-foreground">No forwarding categories yet.</p>
                   ) : null}
                   {routingRows.map((row) => (
                     <div
