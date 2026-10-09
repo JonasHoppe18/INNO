@@ -633,8 +633,12 @@ function EmailTemplateBuilderInner({ config }) {
     [applyStarterTemplate, dirty],
   );
 
-  const requiredBlockIssue =
-    requiredBlockCount === 1
+  // Confirmation designs may drop the legacy message block; CSAT needs its rating block.
+  const requiredBlockIssue = config.blockOptional
+    ? requiredBlockCount > 1
+      ? "Keep at most one message block in the email."
+      : ""
+    : requiredBlockCount === 1
       ? ""
       : requiredBlockCount === 0
         ? "Add one required message block before publishing."

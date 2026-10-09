@@ -115,9 +115,10 @@ describe("confirmation draft scope and publication", () => {
     const draft = await loadConfirmationDraft(context);
     expect(state.calls).toContainEqual(["workspace_id", "workspace-a"]);
     expect(state.calls).toContainEqual(["scope_key", "mail-a"]);
-    expect(draft.editor_json.blocks[0].children[0][0].fieldValues.message).toBe(
-      "Current message",
-    );
+    expect(draft.editor_json.blocks[0].children[0][0]).toMatchObject({
+      type: "paragraph",
+      content: "<p>Current message</p>",
+    });
   });
   it("saves only draft data without changing live settings or sending mail", async () => {
     await saveConfirmationDraft(context, {
