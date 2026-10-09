@@ -105,3 +105,57 @@ export function addTicketReference(input: {
     ticketReference,
   };
 }
+
+// Removes the reference from a subject, including an empty "[ ]" wrapper.
+export function applySubjectReference(subject: string, ticketReference: string | null): string {
+  const source = String(subject || "");
+  if (!source.includes(TICKET_REFERENCE_TOKEN)) return source;
+  if (ticketReference) return source.replaceAll(TICKET_REFERENCE_TOKEN, ticketReference);
+  return source
+    .replace(/[[(]\s*\{\{ticket_reference\}\}\s*[\])]/g, "")
+    .replaceAll(TICKET_REFERENCE_TOKEN, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Builds subject, text and merged HTML from token-filled templates. A design that
+// uses {{ticket_reference}} decides where the reference appears; older saved
+// designs without it keep the include switch (subject prefix + footer line).
+export function composeConfirmation(input: {
+  subjectTemplate: string;
+  bodyText: string;
+  bodyHtml: string;
+  templateHtml: string;
+  ticketNumber: unknown;
+  includeTicketNumber: boolean;
+}): { subject: string; text: string; html: string; ticketReference: string | null } {
+  const reference = formatTicketReference(input.ticketNumber);
+  const usesVariable = [input.subjectTemplate, input.bodyText, input.bodyHtml, input.templateHtml].some(
+    (value) => String(value || "").includes(TICKET_REFERENCE_TOKEN),
+  );
+  const placed = usesVariable ? reference : null;
+  const subject = applySubjectReference(input.subjectTemplate, placed);
+  const text = applyTicketReference(input.bodyText, placed);
+  const bodyHtml =
+    applyTicketReference(input.bodyHtml || "", placed) ||
+    `<p style="white-space:pre-wrap">${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+  const rendered = usesVariable
+    ? { subject, text, html: bodyHtml, ticketReference: placed }
+    : addTicketReference({
+        subject,
+        text,
+        html: bodyHtml,
+        ticketNumber: input.ticketNumber,
+        includeTicketNumber: input.includeTicketNumber,
+      });
+  return {
+    subject: rendered.subject,
+    text: rendered.text,
+    html: mergeConfirmationLayout({
+      templateHtml: input.templateHtml,
+      contentHtml: rendered.html,
+      ticketReference: placed,
+    }),
+    ticketReference: rendered.ticketReference,
+  };
+}

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { EmailSettings } from "@/components/settings/sections/email/EmailSettings";
 import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
-import { DEFAULT_CONFIRMATION_BODY_TEXT, initialEmailState } from "@/lib/settings/email-state";
+import { DEFAULT_CONFIRMATION_BODY_TEXT, DEFAULT_CONFIRMATION_SUBJECT, initialEmailState } from "@/lib/settings/email-state";
 import {
   blocklistSnapshot,
   normalizeBlocklistRows,
@@ -65,7 +65,7 @@ function EmailSection({ mode }) {
     const setting = mailbox?.effective || configuration?.workspace_setting || configuration?.setting || {};
     const template = mailbox?.template || configuration?.workspace_template || configuration?.template || {};
     const inherits = Boolean(normalizedMailboxId && mailbox?.inherits_workspace);
-    const subject = String(setting?.subject_template || "We've received your message");
+    const subject = String(setting?.subject_template || DEFAULT_CONFIRMATION_SUBJECT);
     const bodyText = String(setting?.body_text_template || DEFAULT_CONFIRMATION_BODY_TEXT);
     const bodyHtml = String(setting?.body_html_template || "");
     const templateName = String(template?.name || "Customer confirmation template");
@@ -392,7 +392,7 @@ function EmailSection({ mode }) {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
     setAutoReplyIncludeTicketNumber(Boolean(initialAutoReplyIncludeTicketNumber));
     setAutoReplyInheritsWorkspace(Boolean(initialAutoReplyInheritsWorkspace));
-    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || "We've received your message"));
+    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || DEFAULT_CONFIRMATION_SUBJECT));
     setAutoReplyBodyTextTemplate(String(initialAutoReplyBodyTextTemplate || ""));
     setAutoReplyBodyHtmlTemplate(String(initialAutoReplyBodyHtmlTemplate || ""));
     setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
@@ -700,7 +700,6 @@ function EmailSection({ mode }) {
         bodyHtmlTemplate={autoReplyBodyHtmlTemplate}
         confirmationTemplateHtml={autoReplyTemplateHtml}
         includeTicketNumber={autoReplyIncludeTicketNumber}
-        onIncludeTicketNumberChange={setAutoReplyIncludeTicketNumber}
         confirmationMailboxes={confirmationConfiguration?.mailboxes || []}
         selectedConfirmationMailboxId={selectedConfirmationMailboxId}
         onConfirmationMailboxChange={handleConfirmationMailboxChange}

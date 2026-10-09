@@ -41,7 +41,7 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       createFallbackDraft: () => ({
         id: null,
         name: "Customer confirmation",
-        subject: "We've received your message",
+        subject: "[{{ticket.reference}}] We've received your message",
         preview_text: "Our team will get back to you soon.",
         editor_json: createConfirmationContent(),
         status: "draft",

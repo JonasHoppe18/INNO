@@ -1,6 +1,6 @@
 import { loadConfirmationConfiguration } from "./confirmation-configuration";
 import { requireCsatWorkspace } from "./csat-route";
-import { createConfirmationContent } from "@/lib/confirmation/email-template";
+import { CONFIRMATION_TOKEN_MAP, createConfirmationContent } from "@/lib/confirmation/email-template";
 import { compileConfirmationEmail } from "./confirmation-email";
 
 export async function confirmationContext(request) {
@@ -28,6 +28,13 @@ export async function confirmationContext(request) {
     setting: mailbox?.effective || configuration.workspace_setting,
   };
 }
+// The designer shows its own variable syntax ({{ticket.reference}}), the sender stores the legacy one.
+function designerSubject(subject) {
+  let result = String(subject || "");
+  for (const [path, legacy] of Object.entries(CONFIRMATION_TOKEN_MAP)) result = result.replaceAll(`{{${legacy}}}`, `{{${path}}}`);
+  return result;
+}
+
 export async function loadConfirmationDraft(context) {
   const { data, error } = await context.serviceClient
     .from("confirmation_email_drafts")
@@ -40,7 +47,7 @@ export async function loadConfirmationDraft(context) {
     data || {
       id: null,
       name: "Customer confirmation",
-      subject: context.setting.subject_template,
+      subject: designerSubject(context.setting.subject_template),
       preview_text: "",
       editor_json: createConfirmationContent(
         context.setting.body_text_template,

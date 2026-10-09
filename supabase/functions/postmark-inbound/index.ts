@@ -28,11 +28,7 @@ import { autoTagThread } from "../_shared/autoTagThread.ts";
 import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 import {
-  addTicketReference,
-  applyTicketReference,
-  formatTicketReference,
-  mergeConfirmationLayout,
-  TICKET_REFERENCE_TOKEN,
+  composeConfirmation,
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
@@ -760,7 +756,7 @@ async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplyS
     id: selected.id,
     enabled: Boolean(selected.enabled),
     include_ticket_number: selected.include_ticket_number !== false,
-    subject_template: asString(selected.subject_template) || "We've received your message",
+    subject_template: asString(selected.subject_template) || "[{{ticket_reference}}] We've received your message",
     body_text_template:
       asString(selected.body_text_template) ||
       "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible.\n\nYour ticket number: {{ticket_reference}}\n\nYou can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}",
@@ -1120,35 +1116,16 @@ async function maybeSendAutoReply(options: {
     team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
     subject: asString(options.subject),
   };
-  const messageReference = setting.include_ticket_number
-    ? formatTicketReference(options.ticketNumber)
-    : null;
-  const mentionsReference =
-    String(setting.body_text_template || "").includes(TICKET_REFERENCE_TOKEN) ||
-    String(setting.body_html_template || "").includes(TICKET_REFERENCE_TOKEN);
-  const renderedSubject = fillTemplateTokens(setting.subject_template, tokenValues);
-  const renderedText = applyTicketReference(
-    fillTemplateTokens(setting.body_text_template, tokenValues),
-    messageReference,
-  );
-  const renderedBodyHtml =
-    applyTicketReference(fillTemplateTokens(setting.body_html_template || "", tokenValues), messageReference) ||
-    `<p style="white-space:pre-wrap">${renderedText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
   const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
-  const rendered = addTicketReference({
-    subject: renderedSubject,
-    text: renderedText,
-    html: renderedBodyHtml,
+  const rendered = composeConfirmation({
+    subjectTemplate: fillTemplateTokens(setting.subject_template, tokenValues),
+    bodyText: fillTemplateTokens(setting.body_text_template, tokenValues),
+    bodyHtml: fillTemplateTokens(setting.body_html_template || "", tokenValues),
+    templateHtml,
     ticketNumber: options.ticketNumber,
     includeTicketNumber: setting.include_ticket_number,
-    placedInLayout: templateHtml.includes(TICKET_REFERENCE_TOKEN),
-    placedInMessage: mentionsReference,
   });
-  const mergedHtml = mergeConfirmationLayout({
-    templateHtml,
-    contentHtml: rendered.html,
-    ticketReference: rendered.ticketReference,
-  });
+  const mergedHtml = rendered.html;
   const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
   const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
   const providerMessageId = await sendPostmarkAutoReply({

@@ -45,7 +45,6 @@ export function EmailSettings({
   bodyHtmlTemplate = "",
   confirmationTemplateHtml = "",
   includeTicketNumber = true,
-  onIncludeTicketNumberChange,
   confirmationMailboxes = [],
   selectedConfirmationMailboxId = "",
   onConfirmationMailboxChange,
@@ -321,17 +320,6 @@ export function EmailSettings({
               disabled={confirmationControlsDisabled}
             />
           </SettingsRow>
-          <SettingsRow
-            label="Include ticket reference"
-            description="Show the ticket number in the subject and in the message. When off, lines that mention it are left out."
-          >
-            <SettingsSwitch
-              aria-label="Include ticket reference"
-              checked={Boolean(includeTicketNumber)}
-              onCheckedChange={() => onIncludeTicketNumberChange?.(!includeTicketNumber)}
-              disabled={confirmationControlsDisabled}
-            />
-          </SettingsRow>
         </SettingsGroup>
 
         <SettingsGroup
@@ -357,11 +345,11 @@ export function EmailSettings({
                 {designStatus ? <Badge variant={designStatus.variant}>{designStatus.label}</Badge> : null}
               </span>
             }
-            description="Message, logo, colors and layout are edited in the email designer. Publish there to update what customers receive."
+            description="Message, logo, colors and layout are edited in the email designer. Add the ticket reference variable wherever the ticket number should appear. Publish to update what customers receive."
           />
           <SettingsRow
             label="Subject"
-            description="Edited in the email designer under Email settings. The ticket reference is added in front when it is turned on."
+            description="Edited in the email designer under Email settings."
           >
             <span className="truncate text-sm text-foreground" title={preview.subject}>{preview.subject}</span>
           </SettingsRow>

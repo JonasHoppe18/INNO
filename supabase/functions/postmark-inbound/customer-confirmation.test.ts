@@ -1,6 +1,7 @@
 import {
   addTicketReference,
   applyTicketReference,
+  composeConfirmation,
   formatTicketReference,
   isAutomatedSender,
   mergeConfirmationLayout,
@@ -103,4 +104,40 @@ Deno.test("a message that mentions the reference gets no extra reference line", 
   assert(rendered.subject === "[T-50001] Hi", "subject keeps the prefix");
   assert(rendered.text === "Your ticket number is T-50001.", `text: ${rendered.text}`);
   assert(!rendered.html.includes("Ticket reference"), "no footer line");
+});
+
+const filled = (subject: string, text: string, layout: string) => ({
+  subjectTemplate: subject,
+  bodyText: text,
+  bodyHtml: "",
+  templateHtml: layout,
+});
+
+Deno.test("a design using the variable decides where the reference goes", () => {
+  const out = composeConfirmation({
+    ...filled("[{{ticket_reference}}] Hello", "Hi\n\nYour ticket number: {{ticket_reference}}", "<main>{{content}}</main>"),
+    ticketNumber: 50001,
+    includeTicketNumber: false,
+  });
+  assert(out.subject === "[T-50001] Hello", `subject: ${out.subject}`);
+  assert(out.text === "Hi\n\nYour ticket number: T-50001", `text: ${out.text}`);
+  assert(!out.html.includes("Ticket reference:"), "no footer line");
+});
+
+Deno.test("without a ticket number the subject brackets and lines disappear", () => {
+  const out = composeConfirmation({
+    ...filled("[{{ticket_reference}}] Hello", "Hi\n\nYour ticket number: {{ticket_reference}}\n\nBest", "{{content}}"),
+    ticketNumber: null,
+    includeTicketNumber: true,
+  });
+  assert(out.subject === "Hello", `subject: ${out.subject}`);
+  assert(out.text === "Hi\n\nBest", `text: ${out.text}`);
+});
+
+Deno.test("older designs without the variable keep the switch", () => {
+  const on = composeConfirmation({ ...filled("Hello", "Hi", "<main>{{content}}</main>"), ticketNumber: 50001, includeTicketNumber: true });
+  assert(on.subject === "[T-50001] Hello", `subject: ${on.subject}`);
+  assert(on.text.includes("Ticket reference: T-50001") && on.html.includes("Ticket reference: T-50001"), "footer line");
+  const off = composeConfirmation({ ...filled("Hello", "Hi", "<main>{{content}}</main>"), ticketNumber: 50001, includeTicketNumber: false });
+  assert(off.subject === "Hello" && !off.html.includes("T-50001"), "no reference when off");
 });

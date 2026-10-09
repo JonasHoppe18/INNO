@@ -1,6 +1,6 @@
 import { formatTicketReference } from "../tickets/reference.js";
 
-export const CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT = "We've received your message";
+export const CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT = "[{{ticket_reference}}] We've received your message";
 export const CUSTOMER_CONFIRMATION_DEFAULT_TEXT =
   "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible.\n\nYour ticket number: {{ticket_reference}}\n\nYou can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}";
 export const CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT =
@@ -37,6 +37,18 @@ export function escapeConfirmationHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+// Removes the reference from a subject, including an empty "[ ]" wrapper.
+export function applySubjectReference(subject, ticketReference) {
+  const source = String(subject || "");
+  if (!source.includes(TICKET_REFERENCE_TOKEN)) return source;
+  if (ticketReference) return source.replaceAll(TICKET_REFERENCE_TOKEN, ticketReference);
+  return source
+    .replace(/[[(]\s*\{\{ticket_reference\}\}\s*[\])]/g, "")
+    .replaceAll(TICKET_REFERENCE_TOKEN, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function renderCustomerConfirmation({
   subjectTemplate = CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
   bodyTextTemplate = CUSTOMER_CONFIRMATION_DEFAULT_TEXT,
@@ -46,41 +58,35 @@ export function renderCustomerConfirmation({
   ticketNumber = 50001,
   tokens = {},
 } = {}) {
-  const ticketReference = formatTicketReference(ticketNumber, "");
-  const shouldIncludeReference = Boolean(includeTicketNumber && ticketReference);
-  const placedReference = shouldIncludeReference ? ticketReference : null;
-  const renderedSubject = fillConfirmationTokens(subjectTemplate, tokens);
-  const renderedText = applyTicketReference(fillConfirmationTokens(bodyTextTemplate, tokens), placedReference);
-  const renderedBodyHtml =
-    applyTicketReference(fillConfirmationTokens(bodyHtmlTemplate, tokens), placedReference) ||
-    `<p style="white-space:pre-wrap">${escapeConfirmationHtml(renderedText)}</p>`;
-  const referenceText = shouldIncludeReference && !String(bodyTextTemplate || "").includes(TICKET_REFERENCE_TOKEN)
-    ? `Ticket reference: ${ticketReference}`
-    : "";
-  // A design can place the reference itself; otherwise it follows the message.
+  const reference = formatTicketReference(ticketNumber, "") || null;
   const layout = String(templateHtml || "{{content}}");
-  const placesReference =
-    layout.includes(TICKET_REFERENCE_TOKEN) ||
-    String(bodyTextTemplate || "").includes(TICKET_REFERENCE_TOKEN) ||
-    String(bodyHtmlTemplate || "").includes(TICKET_REFERENCE_TOKEN);
-  const referenceHtml = shouldIncludeReference && !placesReference
-    ? `<p style="margin-top:24px;color:#64748b;font-size:13px">Ticket reference: ${ticketReference}</p>`
+  // A design that uses the variable decides where the reference appears. Older
+  // saved designs without it keep the include switch: subject prefix + footer line.
+  const usesVariable = [subjectTemplate, bodyTextTemplate, bodyHtmlTemplate, layout].some((value) =>
+    String(value || "").includes(TICKET_REFERENCE_TOKEN)
+  );
+  const placed = usesVariable ? reference : null;
+  const legacy = !usesVariable && includeTicketNumber ? reference : null;
+
+  const filledSubject = applySubjectReference(fillConfirmationTokens(subjectTemplate, tokens), placed);
+  const renderedText = applyTicketReference(fillConfirmationTokens(bodyTextTemplate, tokens), placed);
+  const renderedBodyHtml =
+    applyTicketReference(fillConfirmationTokens(bodyHtmlTemplate, tokens), placed) ||
+    `<p style="white-space:pre-wrap">${escapeConfirmationHtml(renderedText)}</p>`;
+  const referenceText = legacy ? `Ticket reference: ${legacy}` : "";
+  const referenceHtml = legacy
+    ? `<p style="margin-top:24px;color:#64748b;font-size:13px">Ticket reference: ${legacy}</p>`
     : "";
   const contentHtml = `${renderedBodyHtml}${referenceHtml}`;
-  const filledLayout = layout.replaceAll(
-    TICKET_REFERENCE_TOKEN,
-    shouldIncludeReference ? escapeConfirmationHtml(ticketReference) : ""
-  );
+  const filledLayout = layout.replaceAll(TICKET_REFERENCE_TOKEN, placed ? escapeConfirmationHtml(placed) : "");
   const mergedHtml = filledLayout.includes("{{content}}")
     ? filledLayout.replace("{{content}}", contentHtml)
     : `${filledLayout}\n${contentHtml}`;
 
   return {
-    subject: shouldIncludeReference
-      ? `[${ticketReference}] ${renderedSubject}`
-      : renderedSubject,
+    subject: legacy ? `[${legacy}] ${filledSubject}` : filledSubject,
     text: [renderedText, referenceText].filter(Boolean).join("\n\n"),
     html: mergedHtml,
-    ticketReference: shouldIncludeReference ? ticketReference : null,
+    ticketReference: placed || legacy,
   };
 }
