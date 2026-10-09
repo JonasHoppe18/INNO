@@ -45,12 +45,31 @@ export function shouldSendCustomerConfirmation(input: {
   );
 }
 
+export const TICKET_REFERENCE_TOKEN = "{{ticket_reference}}";
+
+// Puts the message into the published layout. A design that places
+// {{ticket_reference}} itself gets it filled there (or emptied when off).
+export function mergeConfirmationLayout(input: {
+  templateHtml: string;
+  contentHtml: string;
+  ticketReference: string | null;
+}): string {
+  const layout = String(input.templateHtml || "").replaceAll(
+    TICKET_REFERENCE_TOKEN,
+    input.ticketReference ? input.ticketReference.replace(/[<>&]/g, "") : "",
+  );
+  return layout.includes("{{content}}")
+    ? layout.replace("{{content}}", input.contentHtml)
+    : `${layout}\n${input.contentHtml}`;
+}
+
 export function addTicketReference(input: {
   subject: string;
   text: string;
   html: string;
   ticketNumber: unknown;
   includeTicketNumber: boolean;
+  placedInLayout?: boolean;
 }): { subject: string; text: string; html: string; ticketReference: string | null } {
   const ticketReference = formatTicketReference(input.ticketNumber);
   if (!input.includeTicketNumber || !ticketReference) {
@@ -65,7 +84,9 @@ export function addTicketReference(input: {
   return {
     subject: `[${ticketReference}] ${input.subject}`,
     text: [input.text, referenceText].filter(Boolean).join("\n\n"),
-    html: `${input.html}<p style="margin-top:24px;color:#64748b;font-size:13px">${referenceText}</p>`,
+    html: input.placedInLayout
+      ? input.html
+      : `${input.html}<p style="margin-top:24px;color:#64748b;font-size:13px">${referenceText}</p>`,
     ticketReference,
   };
 }

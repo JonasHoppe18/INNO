@@ -2,6 +2,7 @@ import {
   addTicketReference,
   formatTicketReference,
   isAutomatedSender,
+  mergeConfirmationLayout,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
 
@@ -53,4 +54,30 @@ Deno.test("ticket reference is system controlled in subject and body", () => {
   assert(rendered.subject === "[T-50001] We've received your message", "subject reference missing");
   assert(rendered.text.endsWith("Ticket reference: T-50001"), "text reference missing");
   assert(rendered.html.includes("Ticket reference: T-50001"), "html reference missing");
+});
+
+Deno.test("a design can place the ticket reference itself", () => {
+  const layout = "<main>{{content}}</main><footer>Ref {{ticket_reference}}</footer>";
+  const rendered = addTicketReference({
+    subject: "Hi",
+    text: "Body",
+    html: "<p>Body</p>",
+    ticketNumber: 50001,
+    includeTicketNumber: true,
+    placedInLayout: true,
+  });
+  assert(rendered.subject === "[T-50001] Hi", "subject keeps the prefix");
+  assert(!rendered.html.includes("Ticket reference"), "html must not append the default line");
+  const merged = mergeConfirmationLayout({ templateHtml: layout, contentHtml: rendered.html, ticketReference: rendered.ticketReference });
+  assert(merged === "<main><p>Body</p></main><footer>Ref T-50001</footer>", `unexpected merge: ${merged}`);
+});
+
+Deno.test("a placed reference is emptied when the reference is off", () => {
+  const merged = mergeConfirmationLayout({ templateHtml: "<main>{{content}}</main><b>{{ticket_reference}}</b>", contentHtml: "x", ticketReference: null });
+  assert(merged === "<main>x</main><b></b>", `unexpected merge: ${merged}`);
+});
+
+Deno.test("layouts without a content slot get the content appended", () => {
+  const merged = mergeConfirmationLayout({ templateHtml: "<header>Logo</header>", contentHtml: "x", ticketReference: "T-1" });
+  assert(merged === "<header>Logo</header>\nx", `unexpected merge: ${merged}`);
 });

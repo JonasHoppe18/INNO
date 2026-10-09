@@ -29,6 +29,8 @@ import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 import {
   addTicketReference,
+  mergeConfirmationLayout,
+  TICKET_REFERENCE_TOKEN,
   isAutomatedSender,
   shouldSendCustomerConfirmation,
 } from "./customer-confirmation.ts";
@@ -1121,17 +1123,20 @@ async function maybeSendAutoReply(options: {
   const renderedBodyHtml =
     fillTemplateTokens(setting.body_html_template || "", tokenValues) ||
     `<p style="white-space:pre-wrap">${renderedText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+  const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
   const rendered = addTicketReference({
     subject: renderedSubject,
     text: renderedText,
     html: renderedBodyHtml,
     ticketNumber: options.ticketNumber,
     includeTicketNumber: setting.include_ticket_number,
+    placedInLayout: templateHtml.includes(TICKET_REFERENCE_TOKEN),
   });
-  const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
-  const mergedHtml = templateHtml.includes("{{content}}")
-    ? templateHtml.replace("{{content}}", rendered.html)
-    : `${templateHtml}\n${rendered.html}`;
+  const mergedHtml = mergeConfirmationLayout({
+    templateHtml,
+    contentHtml: rendered.html,
+    ticketReference: rendered.ticketReference,
+  });
   const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
   const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
   const providerMessageId = await sendPostmarkAutoReply({

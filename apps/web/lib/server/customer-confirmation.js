@@ -6,6 +6,8 @@ export const CUSTOMER_CONFIRMATION_DEFAULT_TEXT =
 export const CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT =
   '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">{{content}}</div>';
 
+export const TICKET_REFERENCE_TOKEN = "{{ticket_reference}}";
+
 export function fillConfirmationTokens(template, values = {}) {
   let result = String(template || "");
   Object.entries(values).forEach(([key, value]) => {
@@ -40,13 +42,20 @@ export function renderCustomerConfirmation({
   const referenceText = shouldIncludeReference
     ? `Ticket reference: ${ticketReference}`
     : "";
-  const referenceHtml = shouldIncludeReference
+  // A design can place the reference itself; otherwise it follows the message.
+  const layout = String(templateHtml || "{{content}}");
+  const placesReference = layout.includes(TICKET_REFERENCE_TOKEN);
+  const referenceHtml = shouldIncludeReference && !placesReference
     ? `<p style="margin-top:24px;color:#64748b;font-size:13px">Ticket reference: ${ticketReference}</p>`
     : "";
   const contentHtml = `${renderedBodyHtml}${referenceHtml}`;
-  const mergedHtml = String(templateHtml || "{{content}}").includes("{{content}}")
-    ? String(templateHtml || "{{content}}").replace("{{content}}", contentHtml)
-    : `${templateHtml}\n${contentHtml}`;
+  const filledLayout = layout.replaceAll(
+    TICKET_REFERENCE_TOKEN,
+    shouldIncludeReference ? escapeConfirmationHtml(ticketReference) : ""
+  );
+  const mergedHtml = filledLayout.includes("{{content}}")
+    ? filledLayout.replace("{{content}}", contentHtml)
+    : `${filledLayout}\n${contentHtml}`;
 
   return {
     subject: shouldIncludeReference

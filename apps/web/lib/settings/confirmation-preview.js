@@ -1,18 +1,6 @@
-// Mirrors how postmark-inbound renders the customer confirmation, with sample values,
-// so Settings can preview the published email.
-const SAMPLE_REFERENCE = "T-50001";
+import { renderCustomerConfirmation } from "@/lib/server/customer-confirmation";
 
-const escapeHtml = (value) =>
-  String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-function fillTokens(template, values) {
-  let result = String(template || "");
-  Object.entries(values).forEach(([key, value]) => {
-    result = result.replaceAll(`{{${key}}}`, String(value ?? ""));
-  });
-  return result;
-}
-
+// Settings preview of the live confirmation email, rendered like the sender with sample values.
 export function renderConfirmationPreview({
   templateHtml,
   subjectTemplate,
@@ -21,26 +9,21 @@ export function renderConfirmationPreview({
   includeTicketNumber,
   teamName,
 }) {
-  const tokens = {
-    customer_name: "Alex Jensen",
-    customer_first_name: "Alex",
-    team_name: String(teamName || "").trim() || "Sona",
-    subject: "Question about my order",
-  };
-  const subject = fillTokens(subjectTemplate, tokens);
-  const text = fillTokens(bodyTextTemplate, tokens);
-  let body =
-    fillTokens(bodyHtmlTemplate || "", tokens) ||
-    `<p style="white-space:pre-wrap">${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
-  if (includeTicketNumber) {
-    body += `<p style="margin-top:24px;color:#64748b;font-size:13px">${escapeHtml(`Ticket reference: ${SAMPLE_REFERENCE}`)}</p>`;
-  }
-  const layout = String(templateHtml || "");
-  const html = layout.includes("{{content}}") ? layout.replace("{{content}}", body) : `${layout}\n${body}`;
-  return {
-    subject: includeTicketNumber ? `[${SAMPLE_REFERENCE}] ${subject}` : subject,
-    html,
-  };
+  const { subject, html } = renderCustomerConfirmation({
+    subjectTemplate,
+    bodyTextTemplate,
+    bodyHtmlTemplate,
+    templateHtml,
+    includeTicketNumber,
+    ticketNumber: 50001,
+    tokens: {
+      customer_name: "Alex Jensen",
+      customer_first_name: "Alex",
+      team_name: String(teamName || "").trim() || "Sona",
+      subject: "Question about my order",
+    },
+  });
+  return { subject, html };
 }
 
 export function confirmationDraftStatus(draft) {

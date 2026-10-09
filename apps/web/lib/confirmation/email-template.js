@@ -2,7 +2,22 @@ import {
   CSAT_PALETTE_BLOCKS,
   CSAT_SAMPLE_DATA,
 } from "@/lib/csat/email-template";
-export const CONFIRMATION_SAMPLE_DATA = CSAT_SAMPLE_DATA;
+export const CONFIRMATION_SAMPLE_DATA = {
+  ...CSAT_SAMPLE_DATA,
+  ticket: { reference: "T-50001" },
+};
+// Variables offered in the designer. The ticket reference may sit anywhere in the
+// layout (for example a footer); the message block keeps the customer variables.
+export const CONFIRMATION_DESIGN_VARIABLES = [
+  {
+    label: "Ticket reference",
+    value: "{{ticket.reference}}",
+    sample: "T-50001",
+    group: "Ticket",
+    description:
+      "Place it in a text block outside the message, for example the footer. Without it, the reference is added below the message.",
+  },
+];
 export const CONFIRMATION_VARIABLES = [
   ["Customer first name", "customer.first_name"],
   ["Customer full name", "customer.full_name"],
