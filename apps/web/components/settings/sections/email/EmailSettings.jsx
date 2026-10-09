@@ -1,14 +1,12 @@
 "use client";
 
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
-import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
 import {
   SettingsGroup,
   SettingsPage,
   SettingsRow,
   SettingsSaveBar,
   SettingsSwitch,
-  SettingsTabs,
 } from "@/components/settings/ui/settings-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { PenLine, Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -38,8 +35,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 export function EmailSettings({
-  activeSection = "auto-reply",
-  onSectionChange,
+  mode = "confirmation",
   enabled,
   onEnabledChange,
   subjectTemplate,
@@ -258,11 +254,18 @@ export function EmailSettings({
   }`;
 
   return (
-    <SettingsPage title="Email" description="Configure customer-facing messages, routing and sender controls.">
-      <SettingsTabs tabs={EMAIL_SECTIONS} value={activeSection} onChange={(key) => onSectionChange?.(key)} />
+    <SettingsPage
+      title={mode === "inbox-rules" ? "Inbox rules" : "Confirmation email"}
+      description={
+        mode === "inbox-rules"
+          ? "Decide what happens to incoming email. Rules apply in this order: blocked senders, sender rules, then forwarding."
+          : "The automatic reply a customer receives when they open a new support ticket."
+      }
+    >
 
-      <div className={cn(activeSection !== "auto-reply" && "hidden")}>
-        <SettingsGroup title="Customer confirmation">
+      {mode === "confirmation" ? (
+      <div>
+        <SettingsGroup>
           {confirmationMailboxes.length > 1 ? (
             <SettingsRow label="Configuration scope" description="Set the workspace default or override it for one mailbox.">
               <Select
@@ -365,18 +368,20 @@ export function EmailSettings({
           </SettingsRow>
         </SettingsGroup>
       </div>
+      ) : null}
 
-        <div className={cn(activeSection !== "routing" && "hidden")}>
+      {mode === "inbox-rules" ? (
+        <>
+        <div>
           <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="text-section-heading font-semibold text-foreground">Email Routing</h3>
+              <h3 className="text-section-heading font-semibold text-foreground">Blocked senders</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Automatically detect non-support emails and route them to the right team.
+                Soft-block future inbound emails by exact sender email or domain.
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Emails that don&apos;t match an active category stay in your Sona inbox.
+                Blocked emails are stored for audit but hidden from the normal inbox.
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Support emails are always handled in Sona.</p>
             </div>
             <div className="space-y-3">
               <div className="flex justify-end">
@@ -385,95 +390,107 @@ export function EmailSettings({
                   variant="outline"
                   size="sm"
                   disabled={savingRouting}
-                  onClick={() => setAddCategoryModalOpen(true)}
+                  onClick={() => setAddBlocklistModalOpen(true)}
                 >
-                  + Add email category
+                  + Add blocked sender
                 </Button>
               </div>
               <div className="overflow-x-auto">
                 <div>
-                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
-                    <span>Category</span>
-                    <span>Forward to</span>
-                    <span>Mode</span>
+                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
+                    <span>Type</span>
+                    <span>Sender match</span>
+                    <span>Note</span>
                     <span className="text-right">Status</span>
                     <span />
                   </div>
-                  {!routingRows.length ? (
-                    <p className="py-3 text-sm text-muted-foreground">No email categories yet.</p>
-                  ) : null}
-                  {routingRows.map((row) => (
+                  {blocklistRows.map((row) => (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
+                      className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
                     >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-foreground">{row.label}</span>
-                    </div>
-                    <Input
-                      type="email"
-                      placeholder="forward@company.com"
-                      value={row.forward_to_email || ""}
-                      onChange={(event) =>
-                        onUpdateRoutingRow?.({
-                          ...row,
-                          forward_to_email: event.target.value,
-                        })
-                      }
-                      className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
-                      disabled={savingRouting}
-                    />
-                    <Select
-                      value={row.mode || "manual_approval"}
-                      onValueChange={(value) =>
-                        onUpdateRoutingRow?.({
-                          ...row,
-                          mode: value,
-                        })
-                      }
-                      disabled={savingRouting}
-                    >
-                      <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
-                        <SelectValue placeholder="Mode" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="manual_approval">Manual approval</SelectItem>
-                        <SelectItem value="auto_forward">Auto forward</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div className="flex justify-end">
-                      <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
-                          onUpdateRoutingRow?.({
+                      <Select
+                        value={row.matcher_type || "email"}
+                        onValueChange={(value) =>
+                          onUpdateBlocklistRow?.({
                             ...row,
-                            is_active: !Boolean(row.is_active),
-                          })} disabled={savingRouting} />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-danger-foreground"
-                      disabled={savingRouting}
-                      onClick={() => onDeleteRoutingCategory?.(row)}
-                      title="Delete category"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                            matcher_type: value === "domain" ? "domain" : "email",
+                          })
+                        }
+                        disabled={savingRouting}
+                      >
+                        <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="domain">Domain</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="text"
+                        placeholder={row.matcher_type === "domain" ? "example.com" : "sender@example.com"}
+                        value={row.matcher_value || ""}
+                        onChange={(event) =>
+                          onUpdateBlocklistRow?.({
+                            ...row,
+                            matcher_value: event.target.value,
+                          })
+                        }
+                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                        disabled={savingRouting}
+                      />
+                      <Input
+                        type="text"
+                        placeholder="Optional"
+                        value={row.note || ""}
+                        onChange={(event) =>
+                          onUpdateBlocklistRow?.({
+                            ...row,
+                            note: event.target.value,
+                          })
+                        }
+                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                        disabled={savingRouting}
+                      />
+                      <div className="flex justify-end">
+                        <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
+                            onUpdateBlocklistRow?.({
+                              ...row,
+                              is_active: !Boolean(row.is_active),
+                            })} disabled={savingRouting} />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-danger-foreground"
+                        disabled={savingRouting}
+                        onClick={() => onDeleteBlocklistRow?.(row)}
+                        title="Delete blocked sender"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   ))}
+                  {!blocklistRows.length ? (
+                    <p className="py-3 text-sm text-muted-foreground">
+                      No blocked senders yet.
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                If a category is inactive, deleted, or has no forwarding email, messages remain in the normal inbox.
+                Exact email blocks take precedence over domain blocks and sender rules.
               </p>
             </div>
           </div>
         </div>
 
-        <div className={cn(activeSection !== "sender-rules" && "hidden")}>
+        <div>
           <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="text-section-heading font-semibold text-foreground">Sender Rules</h3>
+              <h3 className="text-section-heading font-semibold text-foreground">Sender rules</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Route new inbound emails by exact sender email or sender domain.
               </p>
@@ -628,16 +645,17 @@ export function EmailSettings({
           </div>
         </div>
 
-        <div className={cn(activeSection !== "blocklist" && "hidden")}>
+        <div>
           <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="text-section-heading font-semibold text-foreground">Blocked Senders</h3>
+              <h3 className="text-section-heading font-semibold text-foreground">Forwarding</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Soft-block future inbound emails by exact sender email or domain.
+                Detect non-support emails, like invoices or job applications, and forward them to the right person.
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Blocked emails are stored for audit but hidden from the normal inbox.
+                Emails that don&apos;t match an active category stay in your Sona inbox.
               </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Support emails are always handled in Sona.</p>
             </div>
             <div className="space-y-3">
               <div className="flex justify-end">
@@ -646,102 +664,92 @@ export function EmailSettings({
                   variant="outline"
                   size="sm"
                   disabled={savingRouting}
-                  onClick={() => setAddBlocklistModalOpen(true)}
+                  onClick={() => setAddCategoryModalOpen(true)}
                 >
-                  + Add blocked sender
+                  + Add email category
                 </Button>
               </div>
               <div className="overflow-x-auto">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
-                    <span>Type</span>
-                    <span>Sender match</span>
-                    <span>Note</span>
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
+                    <span>Category</span>
+                    <span>Forward to</span>
+                    <span>Mode</span>
                     <span className="text-right">Status</span>
                     <span />
                   </div>
-                  {blocklistRows.map((row) => (
+                  {!routingRows.length ? (
+                    <p className="py-3 text-sm text-muted-foreground">No forwarding categories yet.</p>
+                  ) : null}
+                  {routingRows.map((row) => (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
+                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
                     >
-                      <Select
-                        value={row.matcher_type || "email"}
-                        onValueChange={(value) =>
-                          onUpdateBlocklistRow?.({
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">{row.label}</span>
+                    </div>
+                    <Input
+                      type="email"
+                      placeholder="forward@company.com"
+                      value={row.forward_to_email || ""}
+                      onChange={(event) =>
+                        onUpdateRoutingRow?.({
+                          ...row,
+                          forward_to_email: event.target.value,
+                        })
+                      }
+                      className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={savingRouting}
+                    />
+                    <Select
+                      value={row.mode || "manual_approval"}
+                      onValueChange={(value) =>
+                        onUpdateRoutingRow?.({
+                          ...row,
+                          mode: value,
+                        })
+                      }
+                      disabled={savingRouting}
+                    >
+                      <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                        <SelectValue placeholder="Mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual_approval">Manual approval</SelectItem>
+                        <SelectItem value="auto_forward">Auto forward</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex justify-end">
+                      <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
+                          onUpdateRoutingRow?.({
                             ...row,
-                            matcher_type: value === "domain" ? "domain" : "email",
-                          })
-                        }
-                        disabled={savingRouting}
-                      >
-                        <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
-                          <SelectValue placeholder="Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="email">Email</SelectItem>
-                          <SelectItem value="domain">Domain</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        type="text"
-                        placeholder={row.matcher_type === "domain" ? "example.com" : "sender@example.com"}
-                        value={row.matcher_value || ""}
-                        onChange={(event) =>
-                          onUpdateBlocklistRow?.({
-                            ...row,
-                            matcher_value: event.target.value,
-                          })
-                        }
-                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
-                        disabled={savingRouting}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="Optional"
-                        value={row.note || ""}
-                        onChange={(event) =>
-                          onUpdateBlocklistRow?.({
-                            ...row,
-                            note: event.target.value,
-                          })
-                        }
-                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
-                        disabled={savingRouting}
-                      />
-                      <div className="flex justify-end">
-                        <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
-                            onUpdateBlocklistRow?.({
-                              ...row,
-                              is_active: !Boolean(row.is_active),
-                            })} disabled={savingRouting} />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-danger-foreground"
-                        disabled={savingRouting}
-                        onClick={() => onDeleteBlocklistRow?.(row)}
-                        title="Delete blocked sender"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                            is_active: !Boolean(row.is_active),
+                          })} disabled={savingRouting} />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-danger-foreground"
+                      disabled={savingRouting}
+                      onClick={() => onDeleteRoutingCategory?.(row)}
+                      title="Delete category"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                     </div>
                   ))}
-                  {!blocklistRows.length ? (
-                    <p className="py-3 text-sm text-muted-foreground">
-                      No blocked senders yet.
-                    </p>
-                  ) : null}
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Exact email blocks take precedence over domain blocks and sender rules.
+                If a category is inactive, deleted, or has no forwarding email, messages remain in the normal inbox.
               </p>
             </div>
           </div>
         </div>
+        </>
+      ) : null}
 
       <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
         <DialogContent className="max-w-3xl">

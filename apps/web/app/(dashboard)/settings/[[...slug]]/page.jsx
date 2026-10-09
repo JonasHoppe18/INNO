@@ -22,7 +22,7 @@ export default async function SettingsPage({ params, searchParams }) {
   if (retired) redirect(withSearchParams(retired, searchParams));
   const route = parseSettingsSlug(slug);
   if (!route) redirect(settingsPath("general"));
-  const canonical = settingsPath(route.section, route.emailSection);
+  const canonical = settingsPath(route.section);
   if (`/settings/${slug.join("/")}` !== canonical) redirect(withSearchParams(canonical, searchParams));
 
   return <SettingsWorkspace />;

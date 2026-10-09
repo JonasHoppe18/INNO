@@ -29,7 +29,7 @@ export function ConfirmationEmailBuilder({ mailboxId = "" }) {
       scopeQuery: mailboxId
         ? `?mailbox_id=${encodeURIComponent(mailboxId)}`
         : "",
-      backHref: `/settings/email/auto-reply${mailboxId ? `?mailbox_id=${encodeURIComponent(mailboxId)}` : ""}`,
+      backHref: `/settings/confirmation-email${mailboxId ? `?mailbox_id=${encodeURIComponent(mailboxId)}` : ""}`,
       palette: CONFIRMATION_PALETTE,
       block: CONFIRMATION_MESSAGE_BLOCK,
       variables: [],

@@ -5,9 +5,8 @@ import { useUser } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { EmailSettings } from "@/components/settings/sections/email/EmailSettings";
-import { useSettingsDirty, useSettingsRoute } from "@/components/settings/SettingsRouteContext";
+import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
-import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
 import { initialEmailState } from "@/lib/settings/email-state";
 import {
   blocklistSnapshot,
@@ -21,10 +20,9 @@ import {
   senderRulesSnapshot,
 } from "@/lib/settings/email-rows";
 
-export function EmailSection() {
+function EmailSection({ mode }) {
   const searchParams = useSearchParams();
   const { user } = useUser();
-  const { emailSection, navigate } = useSettingsRoute();
   const { resources, setResource } = useSettingsWorkspace();
   // Drafts initialize once per mount from the loaded resources.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -383,9 +381,12 @@ export function EmailSection() {
     [emailBlocklistRows, initialEmailBlocklistRows]
   );
 
+  // Each page only edits its own part, so only that part can make the page dirty.
   const canSaveEmailSettings = useMemo(() => {
-    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasBlocklistChanges;
-  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasBlocklistChanges]);
+    return mode === "inbox-rules"
+      ? hasRoutingChanges || hasSenderRulesChanges || hasBlocklistChanges
+      : hasAutoReplyChanges;
+  }, [mode, hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasBlocklistChanges]);
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
@@ -654,7 +655,7 @@ export function EmailSection() {
         setEmailBlocklistRows(persistedBlocks);
       }
 
-      toast.success("Email settings saved.");
+      toast.success(mode === "inbox-rules" ? "Inbox rules saved." : "Confirmation email saved.");
     } catch (error) {
       toast.error(error?.message || "Could not save email settings.");
     } finally {
@@ -670,6 +671,7 @@ export function EmailSection() {
     autoReplyTemplateId,
     autoReplyTemplateName,
     canSaveEmailSettings,
+    mode,
     emailBlocklistRows,
     emailRoutingRows,
     emailSenderRuleRows,
@@ -688,18 +690,9 @@ export function EmailSection() {
 
   useSettingsDirty(canSaveEmailSettings);
 
-  const handleSelectEmailSection = useCallback(
-    (nextSection) => {
-      if (!EMAIL_SECTIONS.some((section) => section.key === nextSection)) return;
-      navigate("email", nextSection);
-    },
-    [navigate]
-  );
-
   return (
       <EmailSettings
-        activeSection={emailSection}
-        onSectionChange={handleSelectEmailSection}
+        mode={mode}
         enabled={autoReplyEnabled}
         onEnabledChange={setAutoReplyEnabled}
         subjectTemplate={autoReplySubjectTemplate}
@@ -737,4 +730,12 @@ export function EmailSection() {
         saving={savingAutoReply || savingEmailRouting}
       />
   );
+}
+
+export function ConfirmationEmailSection() {
+  return <EmailSection mode="confirmation" />;
+}
+
+export function InboxRulesSection() {
+  return <EmailSection mode="inbox-rules" />;
 }
