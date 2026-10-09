@@ -47,10 +47,6 @@ export function EmailSection() {
   const [initialAutoReplyTemplateName, setInitialAutoReplyTemplateName] = useState(emailInit.autoReplyTemplateName);
   const [autoReplyTemplateHtml, setAutoReplyTemplateHtml] = useState(emailInit.autoReplyTemplateHtml);
   const [initialAutoReplyTemplateHtml, setInitialAutoReplyTemplateHtml] = useState(emailInit.autoReplyTemplateHtml);
-  const [signatureIsActive, setSignatureIsActive] = useState(emailInit.signatureIsActive);
-  const [initialSignatureIsActive, setInitialSignatureIsActive] = useState(emailInit.signatureIsActive);
-  const [signatureTemplateHtml, setSignatureTemplateHtml] = useState(emailInit.signatureTemplateHtml);
-  const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState(emailInit.signatureTemplateHtml);
   const [confirmationConfiguration, setConfirmationConfiguration] = useState(emailInit.confirmationConfiguration);
   const [selectedConfirmationMailboxId, setSelectedConfirmationMailboxId] = useState(emailInit.selectedConfirmationMailboxId);
   const [workspaceInboxesForRules] = useState(emailInit.workspaceInboxesForRules);
@@ -60,7 +56,6 @@ export function EmailSection() {
   const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState(emailInit.emailSenderRuleRows);
   const [emailBlocklistRows, setEmailBlocklistRows] = useState(emailInit.emailBlocklistRows);
   const [initialEmailBlocklistRows, setInitialEmailBlocklistRows] = useState(emailInit.emailBlocklistRows);
-  const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
 
@@ -341,37 +336,6 @@ export function EmailSection() {
     setEmailBlocklistRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
   }, []);
 
-  const handleSendSignatureTest = useCallback(async () => {
-    if (sendingSignatureTest) return;
-    setSendingSignatureTest(true);
-    try {
-      const response = await fetch("/api/settings/email-signature/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          sample_body_text:
-            "Message body preview.",
-          is_active: Boolean(signatureIsActive),
-          template_html: signatureTemplateHtml,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error || "Could not send test email.");
-      }
-      toast.success(`Test email sent to ${payload?.sent_to || "recipient"}.`);
-    } catch (error) {
-      toast.error(error?.message || "Could not send test email.");
-    } finally {
-      setSendingSignatureTest(false);
-    }
-  }, [
-    sendingSignatureTest,
-    signatureIsActive,
-    signatureTemplateHtml,
-  ]);
-
   const hasAutoReplyChanges = useMemo(() => {
     if (Boolean(autoReplyEnabled) !== Boolean(initialAutoReplyEnabled)) return true;
     if (Boolean(autoReplyIncludeTicketNumber) !== Boolean(initialAutoReplyIncludeTicketNumber)) return true;
@@ -419,20 +383,9 @@ export function EmailSection() {
     [emailBlocklistRows, initialEmailBlocklistRows]
   );
 
-  const hasSignatureTemplateChanges = useMemo(() => {
-    if (Boolean(signatureIsActive) !== Boolean(initialSignatureIsActive)) return true;
-    if (String(signatureTemplateHtml || "") !== String(initialSignatureTemplateHtml || "")) return true;
-    return false;
-  }, [
-    initialSignatureIsActive,
-    initialSignatureTemplateHtml,
-    signatureIsActive,
-    signatureTemplateHtml,
-  ]);
-
   const canSaveEmailSettings = useMemo(() => {
-    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasBlocklistChanges || hasSignatureTemplateChanges;
-  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasBlocklistChanges, hasSignatureTemplateChanges]);
+    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasBlocklistChanges;
+  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasBlocklistChanges]);
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
@@ -444,8 +397,6 @@ export function EmailSection() {
     setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
     setAutoReplyTemplateName(String(initialAutoReplyTemplateName || "Default template"));
     setAutoReplyTemplateHtml(String(initialAutoReplyTemplateHtml || ""));
-    setSignatureIsActive(Boolean(initialSignatureIsActive));
-    setSignatureTemplateHtml(String(initialSignatureTemplateHtml || ""));
     setEmailRoutingRows(normalizeRoutingRows(initialEmailRoutingRows));
     setEmailSenderRuleRows(normalizeSenderRuleRows(initialEmailSenderRuleRows));
     setEmailBlocklistRows(normalizeBlocklistRows(initialEmailBlocklistRows));
@@ -459,8 +410,6 @@ export function EmailSection() {
     initialAutoReplyTemplateHtml,
     initialAutoReplyTemplateId,
     initialAutoReplyTemplateName,
-    initialSignatureIsActive,
-    initialSignatureTemplateHtml,
     initialEmailRoutingRows,
     initialEmailSenderRuleRows,
     initialEmailBlocklistRows,
@@ -487,28 +436,6 @@ export function EmailSection() {
         if (!autoReplyResult?.ok) {
           throw new Error(autoReplyResult?.error || "Could not save customer confirmation settings.");
         }
-      }
-
-      if (hasSignatureTemplateChanges) {
-        const response = await fetch("/api/settings/email-signature", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            is_active: Boolean(signatureIsActive),
-            template_html: signatureTemplateHtml,
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload?.error || "Could not save outbound signature template.");
-        }
-        const persistedSignature = payload?.signature || {};
-        setSignatureIsActive(persistedSignature?.is_active !== false);
-        setInitialSignatureIsActive(persistedSignature?.is_active !== false);
-        setSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
-        setInitialSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
-        setResource("/api/settings/email-signature", { signature: persistedSignature });
       }
 
       if (hasRoutingChanges) {
@@ -748,15 +675,12 @@ export function EmailSection() {
     emailSenderRuleRows,
     hasAutoReplyChanges,
     hasBlocklistChanges,
-    hasSignatureTemplateChanges,
     hasRoutingChanges,
     hasSenderRulesChanges,
     handleSaveAutoReply,
     initialEmailRoutingRows,
     initialEmailSenderRuleRows,
     initialEmailBlocklistRows,
-    signatureIsActive,
-    signatureTemplateHtml,
     savingAutoReply,
     savingEmailRouting,
     setResource,
@@ -793,12 +717,6 @@ export function EmailSection() {
         inheritsWorkspace={autoReplyInheritsWorkspace}
         onInheritsWorkspaceChange={setAutoReplyInheritsWorkspace}
         currentUserEmail={user?.primaryEmailAddress?.emailAddress || ""}
-        signatureIsActive={signatureIsActive}
-        onSignatureIsActiveChange={setSignatureIsActive}
-        signatureTemplateHtml={signatureTemplateHtml}
-        onSignatureTemplateHtmlChange={setSignatureTemplateHtml}
-        onSendSignatureTest={handleSendSignatureTest}
-        sendingSignatureTest={sendingSignatureTest}
         routingRows={emailRoutingRows}
         onUpdateRoutingRow={handleUpdateEmailRoutingRow}
         onAddRoutingCategory={handleAddEmailRoutingCategory}

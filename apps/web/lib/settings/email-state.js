@@ -20,8 +20,6 @@ export function initialEmailState(resources, requestedMailboxId) {
     autoReplyTemplateId: null,
     autoReplyTemplateName: "Default template",
     autoReplyTemplateHtml: DEFAULT_CONFIRMATION_TEMPLATE_HTML,
-    signatureIsActive: true,
-    signatureTemplateHtml: "",
     emailRoutingRows: normalizeRoutingRows([]),
     emailSenderRuleRows: normalizeSenderRuleRows([]),
     emailBlocklistRows: normalizeBlocklistRows([]),
@@ -48,11 +46,6 @@ export function initialEmailState(resources, requestedMailboxId) {
     });
   }
 
-  const signature = resourcePayload(resources, "/api/settings/email-signature")?.signature;
-  if (signature) {
-    state.signatureIsActive = signature.is_active !== false;
-    state.signatureTemplateHtml = String(signature.template_html || "");
-  }
   const routes = resourcePayload(resources, "/api/settings/email-routing")?.routes;
   if (Array.isArray(routes)) state.emailRoutingRows = normalizeRoutingRows(routes);
   const rules = resourcePayload(resources, "/api/settings/email-sender-rules")?.rules;

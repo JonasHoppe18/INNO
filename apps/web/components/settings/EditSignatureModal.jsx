@@ -388,6 +388,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   const [languageSignatures, setLanguageSignatures] = useState({});
   const [languageInput, setLanguageInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateIsActive, setTemplateIsActive] = useState(true);
   const [templateHtml, setTemplateHtml] = useState("");
@@ -553,6 +554,32 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     setLanguageSignatures((previous) => ({ ...previous, [code]: "" }));
     setLanguageInput("");
   }, [languageInput, languageSignatures]);
+
+  // Sends the signature being edited (not the saved one) to the workspace test address.
+  const handleSendTest = async () => {
+    if (sendingTest) return;
+    setSendingTest(true);
+    try {
+      const response = await fetch("/api/settings/email-signature/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sample_body_text: "Message body preview.",
+          closing_text: String(signature || ""),
+          is_active: Boolean(templateIsActive),
+          template_html: String(templateHtml || ""),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not send test email.");
+      toast.success(`Test email sent to ${payload?.sent_to || "recipient"}.`);
+    } catch (error) {
+      toast.error(error?.message || "Could not send test email.");
+    } finally {
+      setSendingTest(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!supabase || !member?.user_id || saving) return;
@@ -789,6 +816,15 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
           </div>
 
           <DialogFooter className="mt-3 border-t border-border pt-3">
+            <Button
+              type="button"
+              variant="ghost"
+              className="sm:mr-auto"
+              onClick={handleSendTest}
+              disabled={sendingTest || (!String(templateHtml || "").trim() && !String(signature || "").trim())}
+            >
+              {sendingTest ? "Sending…" : "Send test"}
+            </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>

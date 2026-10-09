@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SettingsWorkspace } from "@/components/settings/SettingsWorkspace";
 import {
   legacySettingsPath,
+  retiredSettingsPath,
   parseSettingsSlug,
   settingsPath,
   withSearchParams,
@@ -17,6 +18,8 @@ export default async function SettingsPage({ params, searchParams }) {
   if (!slug.length) {
     redirect(searchParams?.tab ? legacySettingsPath(searchParams) : settingsPath("general"));
   }
+  const retired = retiredSettingsPath(slug);
+  if (retired) redirect(withSearchParams(retired, searchParams));
   const route = parseSettingsSlug(slug);
   if (!route) redirect(settingsPath("general"));
   const canonical = settingsPath(route.section, route.emailSection);

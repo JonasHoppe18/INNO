@@ -16,7 +16,6 @@ describe("initialEmailState", () => {
       autoReplySubjectTemplate: DEFAULT_CONFIRMATION_SUBJECT, autoReplyBodyTextTemplate: DEFAULT_CONFIRMATION_BODY_TEXT,
       autoReplyBodyHtmlTemplate: "", autoReplyTemplateId: null, autoReplyTemplateName: "Default template",
       autoReplyTemplateHtml: DEFAULT_CONFIRMATION_TEMPLATE_HTML,
-      signatureIsActive: true, signatureTemplateHtml: "",
       emailRoutingRows: [], emailSenderRuleRows: [], emailBlocklistRows: [], workspaceInboxesForRules: [],
     });
   });
@@ -37,13 +36,11 @@ describe("initialEmailState", () => {
 
   it("normalizes rows and inboxes", () => {
     const state = initialEmailState({
-      "/api/settings/email-signature": ok({ signature: { is_active: false, template_html: "<p>x</p>" } }),
       "/api/settings/email-routing": ok({ routes: [{ id: "r1", category_key: "Billing", label: "Billing" }, { id: "r2", category_key: "support" }] }),
       "/api/settings/email-blocklist": ok({ blocks: [{ id: "b1", matcher_type: "domain", matcher_value: "@Spam.com" }] }),
       "/api/inboxes": ok({ inboxes: [{ id: "i1" }] }),
     }, "");
-    expect(state.signatureIsActive).toBe(false);
-    expect(state.signatureTemplateHtml).toBe("<p>x</p>");
+    expect(state).not.toHaveProperty("signatureIsActive");
     expect(state.emailRoutingRows.map((row) => row.category_key)).toEqual(["billing"]);
     expect(state.emailBlocklistRows[0]).toMatchObject({ matcher_type: "domain", matcher_value: "spam.com" });
     expect(state.workspaceInboxesForRules).toEqual([{ id: "i1" }]);
