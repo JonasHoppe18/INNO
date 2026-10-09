@@ -47,6 +47,20 @@ export function shouldSendCustomerConfirmation(input: {
 
 export const TICKET_REFERENCE_TOKEN = "{{ticket_reference}}";
 
+// Fills the reference where the message mentions it. With the reference off, the
+// lines that mention it are dropped so no half sentence is left behind.
+export function applyTicketReference(text: string, ticketReference: string | null): string {
+  const source = String(text || "");
+  if (!source.includes(TICKET_REFERENCE_TOKEN)) return source;
+  if (ticketReference) return source.replaceAll(TICKET_REFERENCE_TOKEN, ticketReference);
+  return source
+    .split("\n")
+    .filter((line) => !line.includes(TICKET_REFERENCE_TOKEN))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // Puts the message into the published layout. A design that places
 // {{ticket_reference}} itself gets it filled there (or emptied when off).
 export function mergeConfirmationLayout(input: {
@@ -70,6 +84,7 @@ export function addTicketReference(input: {
   ticketNumber: unknown;
   includeTicketNumber: boolean;
   placedInLayout?: boolean;
+  placedInMessage?: boolean;
 }): { subject: string; text: string; html: string; ticketReference: string | null } {
   const ticketReference = formatTicketReference(input.ticketNumber);
   if (!input.includeTicketNumber || !ticketReference) {
@@ -83,8 +98,8 @@ export function addTicketReference(input: {
   const referenceText = `Ticket reference: ${ticketReference}`;
   return {
     subject: `[${ticketReference}] ${input.subject}`,
-    text: [input.text, referenceText].filter(Boolean).join("\n\n"),
-    html: input.placedInLayout
+    text: input.placedInMessage ? input.text : [input.text, referenceText].filter(Boolean).join("\n\n"),
+    html: input.placedInLayout || input.placedInMessage
       ? input.html
       : `${input.html}<p style="margin-top:24px;color:#64748b;font-size:13px">${referenceText}</p>`,
     ticketReference,

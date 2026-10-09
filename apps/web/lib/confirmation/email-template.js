@@ -15,7 +15,7 @@ export const CONFIRMATION_DESIGN_VARIABLES = [
     sample: "T-50001",
     group: "Ticket",
     description:
-      "Place it in a text block outside the message, for example the footer. Without it, the reference is added below the message.",
+      "Use it in the message or any text block, for example the footer. Without it, the reference is added below the message. Lines with it are left out when the reference is turned off.",
   },
 ];
 export const CONFIRMATION_VARIABLES = [
@@ -33,6 +33,7 @@ export const CONFIRMATION_TOKEN_MAP = {
   "customer.full_name": "customer_name",
   "store.name": "team_name",
   "conversation.subject": "subject",
+  "ticket.reference": "ticket_reference",
 };
 export const CONFIRMATION_MESSAGE_BLOCK = {
   type: "confirmation-message",
@@ -45,7 +46,7 @@ export const CONFIRMATION_MESSAGE_BLOCK = {
       label: "Message",
       type: "textarea",
       default:
-        "Hi {{customer.first_name}},\n\nThanks for contacting us. We've received your message and our team will get back to you as soon as possible.\n\nBest,\n{{store.name}}",
+        "Hi {{customer.first_name}},\n\nThanks for contacting us. We've received your message and our team will get back to you as soon as possible.\n\nYour ticket number: {{ticket.reference}}\n\nYou can reply directly to this email if you would like to add more information.\n\nBest,\n{{store.name}}",
     },
     { key: "fontSize", label: "Text size", type: "number", default: 16 },
     { key: "color", label: "Text color", type: "color", default: "#172033" },

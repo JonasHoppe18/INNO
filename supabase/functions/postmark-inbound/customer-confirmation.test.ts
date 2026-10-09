@@ -1,5 +1,6 @@
 import {
   addTicketReference,
+  applyTicketReference,
   formatTicketReference,
   isAutomatedSender,
   mergeConfirmationLayout,
@@ -80,4 +81,26 @@ Deno.test("a placed reference is emptied when the reference is off", () => {
 Deno.test("layouts without a content slot get the content appended", () => {
   const merged = mergeConfirmationLayout({ templateHtml: "<header>Logo</header>", contentHtml: "x", ticketReference: "T-1" });
   assert(merged === "<header>Logo</header>\nx", `unexpected merge: ${merged}`);
+});
+
+Deno.test("the message can mention the ticket reference", () => {
+  const text = "Hi Anna,\n\nThanks.\n\nYour ticket number is {{ticket_reference}}.\n\nBest,\nAcme";
+  assert(applyTicketReference(text, "T-50001").includes("Your ticket number is T-50001."), "fills the reference");
+  const dropped = applyTicketReference(text, null);
+  assert(dropped === "Hi Anna,\n\nThanks.\n\nBest,\nAcme", `drops the line: ${JSON.stringify(dropped)}`);
+  assert(applyTicketReference("No mention", null) === "No mention", "untouched without token");
+});
+
+Deno.test("a message that mentions the reference gets no extra reference line", () => {
+  const rendered = addTicketReference({
+    subject: "Hi",
+    text: "Your ticket number is T-50001.",
+    html: "<p>Your ticket number is T-50001.</p>",
+    ticketNumber: 50001,
+    includeTicketNumber: true,
+    placedInMessage: true,
+  });
+  assert(rendered.subject === "[T-50001] Hi", "subject keeps the prefix");
+  assert(rendered.text === "Your ticket number is T-50001.", `text: ${rendered.text}`);
+  assert(!rendered.html.includes("Ticket reference"), "no footer line");
 });

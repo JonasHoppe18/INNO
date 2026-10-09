@@ -57,11 +57,6 @@ export function normalizeConfirmationContent(content) {
   const walk = (blocks) => {
     for (const block of blocks) {
       if (block.type === "custom") {
-        if (String(block.fieldValues.message || "").includes(TICKET_REFERENCE_MARKER)) {
-          throw new CsatTemplateValidationError(
-            "Place the ticket reference in a text block outside the confirmation message.",
-          );
-        }
         legacyTokens(block.fieldValues.message);
       } else {
         for (const value of Object.values(block))

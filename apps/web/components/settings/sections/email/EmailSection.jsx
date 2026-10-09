@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { EmailSettings } from "@/components/settings/sections/email/EmailSettings";
 import { useSettingsDirty } from "@/components/settings/SettingsRouteContext";
 import { useSettingsWorkspace } from "@/components/settings/SettingsWorkspaceProvider";
-import { initialEmailState } from "@/lib/settings/email-state";
+import { DEFAULT_CONFIRMATION_BODY_TEXT, initialEmailState } from "@/lib/settings/email-state";
 import {
   blocklistSnapshot,
   normalizeBlocklistRows,
@@ -66,7 +66,7 @@ function EmailSection({ mode }) {
     const template = mailbox?.template || configuration?.workspace_template || configuration?.template || {};
     const inherits = Boolean(normalizedMailboxId && mailbox?.inherits_workspace);
     const subject = String(setting?.subject_template || "We've received your message");
-    const bodyText = String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}");
+    const bodyText = String(setting?.body_text_template || DEFAULT_CONFIRMATION_BODY_TEXT);
     const bodyHtml = String(setting?.body_html_template || "");
     const templateName = String(template?.name || "Customer confirmation template");
     const templateHtml = String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>");

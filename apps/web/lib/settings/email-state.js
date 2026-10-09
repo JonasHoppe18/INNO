@@ -1,9 +1,9 @@
+import { CUSTOMER_CONFIRMATION_DEFAULT_TEXT } from "@/lib/server/customer-confirmation";
 import { resourcePayload } from "@/lib/settings/resource-map";
 import { normalizeBlocklistRows, normalizeRoutingRows, normalizeSenderRuleRows } from "@/lib/settings/email-rows";
 
 export const DEFAULT_CONFIRMATION_SUBJECT = "We've received your message";
-export const DEFAULT_CONFIRMATION_BODY_TEXT =
-  "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}";
+export const DEFAULT_CONFIRMATION_BODY_TEXT = CUSTOMER_CONFIRMATION_DEFAULT_TEXT;
 export const DEFAULT_CONFIRMATION_TEMPLATE_HTML =
   "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>";
 

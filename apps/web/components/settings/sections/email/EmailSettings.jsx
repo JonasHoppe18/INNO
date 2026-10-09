@@ -322,7 +322,7 @@ export function EmailSettings({
           </SettingsRow>
           <SettingsRow
             label="Include ticket reference"
-            description="Add the system-managed reference to the subject and email footer."
+            description="Show the ticket number in the subject and in the message. When off, lines that mention it are left out."
           >
             <SettingsSwitch
               aria-label="Include ticket reference"
