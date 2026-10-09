@@ -8,7 +8,7 @@ import { TabSkeleton } from "@/components/settings/TabSkeleton";
 import { SettingsRouteContext } from "@/components/settings/SettingsRouteContext";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
 import { AiInstructionsSection } from "@/components/settings/sections/AiInstructionsSection";
-import { EmailSection } from "@/components/settings/sections/email/EmailSection";
+import { ConfirmationEmailSection, InboxRulesSection } from "@/components/settings/sections/email/EmailSection";
 import { MembersSection } from "@/components/settings/sections/MembersSection";
 import { ProfileSection } from "@/components/settings/sections/ProfileSection";
 import { BillingSection } from "@/components/settings/sections/BillingSection";
@@ -18,7 +18,6 @@ import {
   MailboxesSection,
 } from "@/components/settings/sections/SimpleSections";
 import {
-  DEFAULT_EMAIL_SECTION,
   decideSettingsPopState,
   parseSettingsPathname,
   settingsPath,
@@ -31,7 +30,8 @@ const SECTION_COMPONENTS = {
   mailboxes: MailboxesSection,
   ai: AiInstructionsSection,
   automation: AutomationSection,
-  email: EmailSection,
+  "inbox-rules": InboxRulesSection,
+  "confirmation-email": ConfirmationEmailSection,
   "customer-satisfaction": CustomerSatisfactionSection,
   profile: ProfileSection,
   billing: BillingSection,
@@ -48,7 +48,7 @@ export function SettingsWorkspace() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const route = useMemo(
-    () => parseSettingsPathname(pathname) || { section: "general", emailSection: null },
+    () => parseSettingsPathname(pathname) || { section: "general" },
     [pathname]
   );
   const [dirty, setDirty] = useState(false);
@@ -71,7 +71,7 @@ export function SettingsWorkspace() {
   const activeUrlRef = useRef("");
   useLayoutEffect(() => {
     const currentUrl = `${window.location.pathname}${window.location.search}`;
-    if (route.section === active.section && route.emailSection === active.emailSection) {
+    if (route.section === active.section) {
       activeUrlRef.current = currentUrl;
       return;
     }
@@ -93,7 +93,7 @@ export function SettingsWorkspace() {
 
   // Client-side only: pushState keeps section switches instant (no server round trip).
   const navigate = useCallback(
-    (section, emailSection = null) => {
+    (section) => {
       const leavingSection = section !== active.section;
       if (leavingSection && dirtyRef.current) {
         if (!window.confirm("Discard your unsaved changes?")) return;
@@ -104,7 +104,7 @@ export function SettingsWorkspace() {
       window.history.pushState(
         null,
         "",
-        withSearchParams(settingsPath(section, emailSection), searchParams, ["tab", "section"])
+        withSearchParams(settingsPath(section), searchParams, ["tab", "section"])
       );
     },
     [active.section, searchParams]
@@ -113,11 +113,10 @@ export function SettingsWorkspace() {
   const routeValue = useMemo(
     () => ({
       section: active.section,
-      emailSection: active.emailSection || DEFAULT_EMAIL_SECTION,
       navigate,
       setDirty,
     }),
-    [active.section, active.emailSection, navigate]
+    [active.section, navigate]
   );
 
   return (

@@ -97,7 +97,7 @@ export function MailboxesSettingsTab() {
   return (
     <SettingsPage
       width="wide"
-      title="Channels"
+      title="Mailboxes"
       description="Manage where customer conversations enter Sona. Email is the first supported channel."
       actions={
         !loading && !error && mailboxes.length === 0 ? (
