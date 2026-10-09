@@ -8,6 +8,14 @@ import {
 } from "@/components/settings/sections/email/signature-builder";
 import { normalizeSenderRuleDestinationType, normalizeSenderRuleDestinationValue } from "@/lib/settings/email-rows";
 import { EMAIL_SECTIONS } from "@/lib/settings/navigation";
+import {
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSwitch,
+  SettingsTabs,
+} from "@/components/settings/ui/settings-layout";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StickySaveBar } from "@/components/ui/sticky-save-bar";
 import { uploadEmailSignatureImage } from "@/lib/email-signature-image";
 import { cn } from "@/lib/utils";
 import { PenLine, Trash2 } from "lucide-react";
@@ -359,55 +366,19 @@ export function EmailSettings({
   }, [signatureBuilderOpen, signatureTemplateHtml]);
 
   return (
-    <section className="w-full space-y-5">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-page-heading font-semibold tracking-tight text-foreground">Email</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure customer-facing messages, routing and sender controls.
-          </p>
-        </div>
-      </div>
+    <SettingsPage title="Email" description="Configure customer-facing messages, routing and sender controls.">
+      <SettingsTabs tabs={EMAIL_SECTIONS} value={activeSection} onChange={(key) => onSectionChange?.(key)} />
 
-      <div className="overflow-x-auto border-b border-border" aria-label="Email settings sections">
-        <div className="flex min-w-max gap-1">
-          {EMAIL_SECTIONS.map((section) => {
-            const active = activeSection === section.key;
-            return (
-              <button
-                key={section.key}
-                type="button"
-                onClick={() => onSectionChange?.(section.key)}
-                className={cn(
-                  "relative px-3 py-2.5 text-sm font-medium transition-colors duration-150 active:scale-[0.98]",
-                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {section.label}
-                {active ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" /> : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {confirmationMailboxes.length > 1 ? (
-          <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-start">
-            <div>
-              <h3 className="font-medium text-foreground">Configuration scope</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Set the workspace default or override it for one mailbox.
-              </p>
-            </div>
-            <div className="space-y-3">
+      <div className={cn(activeSection !== "auto-reply" && "hidden")}>
+        <SettingsGroup title="Customer confirmation">
+          {confirmationMailboxes.length > 1 ? (
+            <SettingsRow label="Configuration scope" description="Set the workspace default or override it for one mailbox.">
               <Select
                 value={selectedConfirmationMailboxId || "workspace"}
                 onValueChange={(value) => onConfirmationMailboxChange?.(value === "workspace" ? "" : value)}
                 disabled={saving}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-sm" aria-label="Configuration scope">
                   <SelectValue placeholder="Choose configuration" />
                 </SelectTrigger>
                 <SelectContent>
@@ -419,119 +390,51 @@ export function EmailSettings({
                   ))}
                 </SelectContent>
               </Select>
-              {selectedConfirmationMailboxId ? (
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-border"
-                    checked={inheritsWorkspace}
-                    onChange={(event) => onInheritsWorkspaceChange?.(event.target.checked)}
-                    disabled={saving}
-                  />
-                  <span>
-                    <span className="block text-sm font-medium text-foreground">Use workspace default</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      Remove this mailbox override and inherit future workspace changes.
-                    </span>
-                  </span>
-                </label>
-              ) : null}
-            </div>
-          </div>
-          </div>
-        ) : null}
-
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
-            <div>
-              <h3 className="font-medium text-foreground">Send confirmation email</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Send once when a customer creates a new support ticket. Follow-up messages never trigger it.
-              </p>
-            </div>
-            <div className="flex items-center justify-end">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={enabled}
-                onClick={() => handleToggleEnabled(!enabled)}
-                disabled={confirmationControlsDisabled}
-                className={cn(
-                  "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                  enabled ? "bg-success-foreground" : "bg-muted",
-                  confirmationControlsDisabled && "cursor-not-allowed opacity-70"
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                    enabled ? "translate-x-6" : "translate-x-1"
-                  )}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
-            <div>
-              <h3 className="font-medium text-foreground">Include ticket reference</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add the system-managed reference to the subject and email footer.
-              </p>
-            </div>
-            <div className="flex items-center justify-end">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={includeTicketNumber}
-                onClick={() => onIncludeTicketNumberChange?.(!includeTicketNumber)}
-                disabled={confirmationControlsDisabled}
-                className={cn(
-                  "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                  includeTicketNumber ? "bg-success-foreground" : "bg-muted",
-                  confirmationControlsDisabled && "cursor-not-allowed opacity-70"
-                )}
-              >
-                <span className={cn(
-                  "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                  includeTicketNumber ? "translate-x-6" : "translate-x-1"
-                )} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr]">
-            <div className="min-w-0">
-              <h3 className="font-medium text-foreground">Confirmation message</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                The ticket reference is inserted by Sona and cannot be removed from this text.
-              </p>
-            </div>
-            <div className="min-w-0 space-y-3">
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border border-border bg-card"
-                  onClick={() => setMessageModalOpen(true)}
-                  disabled={confirmationControlsDisabled}
-                >
-                  <PenLine className="mr-2 h-4 w-4" />
-                  Edit
-                </Button>
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/settings/confirmation/email${selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : ""}`}>Customize email design</Link>
-                </Button>
-              </div>
-              <div className="min-w-0 rounded-xl border border-border bg-card p-4">
-                <p className="text-xs font-medium tracking-wide text-muted-foreground">Preview</p>
-                <p className="mt-2 text-sm font-medium text-foreground">
-                  {previewSubject}
-                </p>
+            </SettingsRow>
+          ) : null}
+          {confirmationMailboxes.length > 1 && selectedConfirmationMailboxId ? (
+            <SettingsRow
+              label="Use workspace default"
+              description="Remove this mailbox override and inherit future workspace changes."
+            >
+              <SettingsSwitch
+                aria-label="Use workspace default"
+                checked={Boolean(inheritsWorkspace)}
+                onCheckedChange={(checked) => onInheritsWorkspaceChange?.(Boolean(checked))}
+                disabled={saving}
+              />
+            </SettingsRow>
+          ) : null}
+          <SettingsRow
+            label="Send confirmation email"
+            description="Send once when a customer creates a new support ticket. Follow-up messages never trigger it."
+          >
+            <SettingsSwitch
+              aria-label="Send confirmation email"
+              checked={Boolean(enabled)}
+              onCheckedChange={() => handleToggleEnabled(!enabled)}
+              disabled={confirmationControlsDisabled}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Include ticket reference"
+            description="Add the system-managed reference to the subject and email footer."
+          >
+            <SettingsSwitch
+              aria-label="Include ticket reference"
+              checked={Boolean(includeTicketNumber)}
+              onCheckedChange={() => onIncludeTicketNumberChange?.(!includeTicketNumber)}
+              disabled={confirmationControlsDisabled}
+            />
+          </SettingsRow>
+          <SettingsRow
+            stacked
+            label="Confirmation message"
+            description="The ticket reference is inserted by Sona and cannot be removed from this text."
+          >
+            <div className="w-full space-y-3">
+              <div className="min-w-0 rounded-lg border border-border/70 bg-card px-4 py-3.5">
+                <p className="text-sm font-medium text-foreground">{previewSubject}</p>
                 <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                   {previewLines.length ? (
                     previewLines.map((line, index) => (
@@ -544,56 +447,73 @@ export function EmailSettings({
                   )}
                 </div>
                 {includeTicketNumber ? (
-                  <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                  <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
                     Ticket reference: T-50001
                   </p>
                 ) : null}
-                <div className="mt-4 flex justify-end">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setTestConfirmationOpen(true)}>
-                    Send test email
-                  </Button>
-                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMessageModalOpen(true)}
+                  disabled={confirmationControlsDisabled}
+                >
+                  Edit message
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/settings/confirmation/email${selectedConfirmationMailboxId ? `?mailbox_id=${encodeURIComponent(selectedConfirmationMailboxId)}` : ""}`}>Customize email design</Link>
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setTestConfirmationOpen(true)}>
+                  Send test email
+                </Button>
               </div>
             </div>
-          </div>
-        </div>
+          </SettingsRow>
+        </SettingsGroup>
+      </div>
 
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "routing" && "hidden")}>
-          <div className="space-y-5">
+        <div className={cn(activeSection !== "routing" && "hidden")}>
+          <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="font-medium text-foreground">Email Routing</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h3 className="text-section-heading font-semibold text-foreground">Email Routing</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Automatically detect non-support emails and route them to the right team.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Emails that don&apos;t match an active category stay in your Sona inbox.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Support emails are always handled in Sona.</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Support emails are always handled in Sona.</p>
             </div>
             <div className="space-y-3">
               <div className="flex justify-end">
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   disabled={savingRouting}
                   onClick={() => setAddCategoryModalOpen(true)}
                 >
                   + Add email category
                 </Button>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-border">
+              <div className="overflow-x-auto">
                 <div>
-                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
                     <span>Category</span>
                     <span>Forward to</span>
                     <span>Mode</span>
                     <span className="text-right">Status</span>
                     <span />
                   </div>
+                  {!routingRows.length ? (
+                    <p className="py-3 text-sm text-muted-foreground">No email categories yet.</p>
+                  ) : null}
                   {routingRows.map((row) => (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
                     >
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-foreground">{row.label}</span>
@@ -608,7 +528,7 @@ export function EmailSettings({
                           forward_to_email: event.target.value,
                         })
                       }
-                      className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                      className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                       disabled={savingRouting}
                     />
                     <Select
@@ -621,7 +541,7 @@ export function EmailSettings({
                       }
                       disabled={savingRouting}
                     >
-                      <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                      <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                         <SelectValue placeholder="Mode" />
                       </SelectTrigger>
                       <SelectContent>
@@ -630,30 +550,11 @@ export function EmailSettings({
                       </SelectContent>
                     </Select>
                     <div className="flex justify-end">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(row.is_active)}
-                        onClick={() =>
+                      <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
                           onUpdateRoutingRow?.({
                             ...row,
                             is_active: !Boolean(row.is_active),
-                          })
-                        }
-                        disabled={savingRouting}
-                        className={cn(
-                          "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                          row.is_active ? "bg-success-foreground" : "bg-muted",
-                          savingRouting && "cursor-not-allowed opacity-70"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                            row.is_active ? "translate-x-6" : "translate-x-1"
-                          )}
-                        />
-                      </button>
+                          })} disabled={savingRouting} />
                     </div>
                     <Button
                       type="button"
@@ -677,14 +578,14 @@ export function EmailSettings({
           </div>
         </div>
 
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "sender-rules" && "hidden")}>
-          <div className="space-y-5">
+        <div className={cn(activeSection !== "sender-rules" && "hidden")}>
+          <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="font-medium text-foreground">Sender Rules</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h3 className="text-section-heading font-semibold text-foreground">Sender Rules</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Route new inbound emails by exact sender email or sender domain.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Exact email rules take precedence over domain rules. Only new incoming emails are affected.
               </p>
             </div>
@@ -693,15 +594,16 @@ export function EmailSettings({
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   disabled={savingRouting}
                   onClick={() => setAddSenderRuleModalOpen(true)}
                 >
                   + Add sender rule
                 </Button>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-border">
+              <div className="overflow-x-auto">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Destination</span>
@@ -734,7 +636,7 @@ export function EmailSettings({
                       return (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
                     >
                       <Select
                         value={row.matcher_type || "email"}
@@ -746,7 +648,7 @@ export function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                        <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -764,7 +666,7 @@ export function EmailSettings({
                             matcher_value: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <Select
@@ -787,7 +689,7 @@ export function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                        <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Destination" />
                         </SelectTrigger>
                         <SelectContent>
@@ -799,30 +701,11 @@ export function EmailSettings({
                         </SelectContent>
                       </Select>
                       <div className="flex justify-end">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={Boolean(row.is_active)}
-                          onClick={() =>
+                        <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
                             onUpdateSenderRuleRow?.({
                               ...row,
                               is_active: !Boolean(row.is_active),
-                            })
-                          }
-                          disabled={savingRouting}
-                          className={cn(
-                            "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                            row.is_active ? "bg-success-foreground" : "bg-muted",
-                            savingRouting && "cursor-not-allowed opacity-70"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                              row.is_active ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
+                            })} disabled={savingRouting} />
                       </div>
                       <Button
                         type="button"
@@ -840,7 +723,7 @@ export function EmailSettings({
                     })()
                   ))}
                   {!senderRuleRows.length ? (
-                    <p className="px-4 py-3 text-sm text-muted-foreground">
+                    <p className="py-3 text-sm text-muted-foreground">
                       No sender rules yet.
                     </p>
                   ) : null}
@@ -853,14 +736,14 @@ export function EmailSettings({
           </div>
         </div>
 
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "blocklist" && "hidden")}>
-          <div className="space-y-5">
+        <div className={cn(activeSection !== "blocklist" && "hidden")}>
+          <div className="space-y-3">
             <div className="max-w-3xl">
-              <h3 className="font-medium text-foreground">Blocked Senders</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h3 className="text-section-heading font-semibold text-foreground">Blocked Senders</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Soft-block future inbound emails by exact sender email or domain.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Blocked emails are stored for audit but hidden from the normal inbox.
               </p>
             </div>
@@ -869,15 +752,16 @@ export function EmailSettings({
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   disabled={savingRouting}
                   onClick={() => setAddBlocklistModalOpen(true)}
                 >
                   + Add blocked sender
                 </Button>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-border">
+              <div className="overflow-x-auto">
                 <div>
-                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 pb-2 text-xs text-muted-foreground">
                     <span>Type</span>
                     <span>Sender match</span>
                     <span>Note</span>
@@ -887,7 +771,7 @@ export function EmailSettings({
                   {blocklistRows.map((row) => (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0"
                     >
                       <Select
                         value={row.matcher_type || "email"}
@@ -899,7 +783,7 @@ export function EmailSettings({
                         }
                         disabled={savingRouting}
                       >
-                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
+                        <SelectTrigger className="h-8 border-transparent bg-transparent text-sm hover:border-input focus:border-input focus:ring-2 focus:ring-ring">
                           <SelectValue placeholder="Type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -917,7 +801,7 @@ export function EmailSettings({
                             matcher_value: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <Input
@@ -930,34 +814,15 @@ export function EmailSettings({
                             note: event.target.value,
                           })
                         }
-                        className="h-9 w-full border-transparent bg-transparent text-input md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
+                        className="h-8 w-full border-transparent bg-transparent text-input text-foreground md:text-sm hover:border-input focus:border-input focus-visible:ring-2 focus-visible:ring-ring"
                         disabled={savingRouting}
                       />
                       <div className="flex justify-end">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={Boolean(row.is_active)}
-                          onClick={() =>
+                        <SettingsSwitch checked={Boolean(row.is_active)} onCheckedChange={() =>
                             onUpdateBlocklistRow?.({
                               ...row,
                               is_active: !Boolean(row.is_active),
-                            })
-                          }
-                          disabled={savingRouting}
-                          className={cn(
-                            "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-                            row.is_active ? "bg-success-foreground" : "bg-muted",
-                            savingRouting && "cursor-not-allowed opacity-70"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-200",
-                              row.is_active ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
+                            })} disabled={savingRouting} />
                       </div>
                       <Button
                         type="button"
@@ -973,7 +838,7 @@ export function EmailSettings({
                     </div>
                   ))}
                   {!blocklistRows.length ? (
-                    <p className="px-4 py-3 text-sm text-muted-foreground">
+                    <p className="py-3 text-sm text-muted-foreground">
                       No blocked senders yet.
                     </p>
                   ) : null}
@@ -986,58 +851,51 @@ export function EmailSettings({
           </div>
         </div>
 
-        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "signatures" && "hidden")}>
-          <div className="space-y-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="max-w-2xl">
-                <h3 className="font-medium text-foreground">Outbound signature</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add a consistent workspace signature below outgoing replies.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={Boolean(signatureIsActive)}
-                onClick={() => onSignatureIsActiveChange?.(!signatureIsActive)}
+        <div className={cn(activeSection !== "signatures" && "hidden")}>
+          <SettingsGroup title="Outbound signature">
+            <SettingsRow label="Add signature" description="Add a consistent workspace signature below outgoing replies.">
+              <SettingsSwitch
+                aria-label="Add signature"
+                checked={Boolean(signatureIsActive)}
+                onCheckedChange={() => onSignatureIsActiveChange?.(!signatureIsActive)}
                 disabled={saving}
-                className={cn(
-                  "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-150",
-                  signatureIsActive ? "bg-primary" : "bg-muted-foreground/25",
-                  saving && "cursor-not-allowed opacity-60"
-                )}
-              >
-                <span className={cn("inline-block h-5 w-5 rounded-full bg-card shadow-sm transition-transform duration-150", signatureIsActive ? "translate-x-6" : "translate-x-1")} />
-              </button>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-              <div className="rounded-xl border border-border bg-muted/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current signature</p>
-                <p className="mt-2 text-sm text-foreground">{signatureSummary}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setSignatureBuilderOpen(true)}>
-                    <PenLine className="mr-1.5 h-3.5 w-3.5" />
-                    Edit signature
+              />
+            </SettingsRow>
+            <SettingsRow label="Current signature" description={signatureSummary}>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSignatureBuilderOpen(true)}>
+                  Edit signature
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSendSignatureTest}
+                  disabled={sendingSignatureTest || !String(signatureTemplateHtml || "").trim()}
+                >
+                  {sendingSignatureTest ? "Sending…" : "Send test"}
+                </Button>
+                {String(signatureTemplateHtml || "").trim() ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-danger-foreground"
+                    onClick={handleClearSignatureTemplate}
+                  >
+                    Clear
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={onSendSignatureTest} disabled={sendingSignatureTest || !String(signatureTemplateHtml || "").trim()}>
-                    {sendingSignatureTest ? "Sending…" : "Send test"}
-                  </Button>
-                  {String(signatureTemplateHtml || "").trim() ? (
-                    <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-danger-foreground" onClick={handleClearSignatureTemplate}>
-                      Clear
-                    </Button>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
-              <div className="overflow-hidden rounded-xl border border-border bg-background">
-                <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">Preview</div>
-                <div className="min-h-28 p-4 text-sm text-foreground" dangerouslySetInnerHTML={{ __html: signaturePreviewHtml }} />
-              </div>
-            </div>
-          </div>
+            </SettingsRow>
+            <SettingsRow stacked label="Preview">
+              <div
+                className="min-h-24 w-full rounded-lg border border-border/70 bg-card p-4 text-sm text-foreground"
+                dangerouslySetInnerHTML={{ __html: signaturePreviewHtml }}
+              />
+            </SettingsRow>
+          </SettingsGroup>
         </div>
-      </div>
 
       <Dialog open={signatureBuilderOpen} onOpenChange={setSignatureBuilderOpen}>
         <DialogContent className="max-w-3xl">
@@ -1389,12 +1247,12 @@ export function EmailSettings({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <StickySaveBar
-        isVisible={canSave}
-        isSaving={saving || savingRouting}
+      <SettingsSaveBar
+        visible={canSave}
+        saving={saving || savingRouting}
         onSave={onSaveChanges}
         onDiscard={onDiscardChanges}
       />
-    </section>
+    </SettingsPage>
   );
 }

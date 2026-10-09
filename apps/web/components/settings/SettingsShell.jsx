@@ -7,7 +7,6 @@ import {
   Inbox,
   Mail,
   Star,
-  Tag,
   User,
   Users2,
   Zap,
@@ -19,7 +18,6 @@ const SETTINGS_NAV_ICONS = {
   general: Building2,
   members: Users2,
   mailboxes: Inbox,
-  tags: Tag,
   ai: Bot,
   automation: Zap,
   email: Mail,
@@ -54,7 +52,7 @@ export function SettingsShell({ activeSection, onSelectSection, children }) {
           {SETTINGS_NAV.map((section) => (
             <div key={section.label}>
               {section.label ? (
-                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
                   {section.label}
                 </p>
               ) : null}
@@ -91,7 +89,7 @@ export function SettingsShell({ activeSection, onSelectSection, children }) {
         </nav>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-conversation">
         <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
           <div className="min-w-0">
             {children}

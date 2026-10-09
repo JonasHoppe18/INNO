@@ -9,9 +9,7 @@ export default async function TagsPage() {
 
   return (
     <DashboardPageShell>
-      <div className="p-6 max-w-3xl mx-auto">
-        <TagsSettings />
-      </div>
+      <TagsSettings />
     </DashboardPageShell>
   );
 }
