@@ -8,12 +8,16 @@ import {
   countConfirmationMessageBlocks,
 } from "@/lib/confirmation/email-template";
 import { renderCustomerConfirmation } from "./customer-confirmation";
+import { htmlToPlainText } from "@/lib/confirmation/plain-text";
 
-// The ticket reference is the one variable a design may place outside the message.
-const TICKET_REFERENCE_PATTERN = /{{\s*ticket\.reference\s*}}/gi;
-const withoutTicketReference = (value) => String(value || "").replace(TICKET_REFERENCE_PATTERN, "");
-// Plain marker that survives the shared renderer, which only knows CSAT variables.
-const TICKET_REFERENCE_MARKER = "SONATICKETREFERENCEMARKER";
+// Variables become plain markers while the shared renderer runs, because it only
+// knows CSAT variables. The ticket reference may sit anywhere in a design; the
+// other variables only in text and headlines.
+const VARIABLE_PATTERN = /{{\s*([a-z0-9_.]+)\s*}}/gi;
+const MARKER = (key) => `SONAVAR${key}SONAEND`;
+const MARKER_PATTERN = /SONAVAR([a-z_]+)SONAEND/g;
+const TEXT_BLOCK_TYPES = new Set(["title", "paragraph"]);
+export const FULL_DESIGN_MARKER = "<!--sona:full-design-->";
 const mapStrings = (node, fn) => {
   if (typeof node === "string") return fn(node);
   if (Array.isArray(node)) return node.map((item) => mapStrings(item, fn));
@@ -22,10 +26,19 @@ const mapStrings = (node, fn) => {
   }
   return node;
 };
-const markTicketReference = (node) =>
-  mapStrings(node, (value) => value.replace(TICKET_REFERENCE_PATTERN, TICKET_REFERENCE_MARKER));
-const unmarkTicketReference = (node) =>
-  mapStrings(node, (value) => value.replaceAll(TICKET_REFERENCE_MARKER, "{{ticket.reference}}"));
+const markVariables = (node) =>
+  mapStrings(node, (value) =>
+    value.replace(VARIABLE_PATTERN, (match, path) => {
+      const key = CONFIRMATION_TOKEN_MAP[String(path).toLowerCase()];
+      return key ? MARKER(key) : match;
+    }),
+  );
+const DESIGNER_PATH = Object.fromEntries(Object.entries(CONFIRMATION_TOKEN_MAP).map(([path, key]) => [key, path]));
+const unmarkToDesigner = (node) =>
+  mapStrings(node, (value) => value.replace(MARKER_PATTERN, (_match, key) => `{{${DESIGNER_PATH[key]}}}`));
+const unmarkToSender = (value) => String(value || "").replace(MARKER_PATTERN, (_match, key) => `{{${key}}}`);
+const hasNonTicketMarker = (value) =>
+  [...String(value || "").matchAll(MARKER_PATTERN)].some(([, key]) => key !== "ticket_reference");
 
 function legacyTokens(value) {
   return String(value || "").replace(
@@ -47,29 +60,35 @@ function legacyTokens(value) {
 export function normalizeConfirmationContent(content) {
   if (JSON.stringify(content || {}).length > 250000)
     throw new CsatTemplateValidationError("Email design is too large.");
-  const normalized = normalizeCsatTemplateContent(markTicketReference(content), {
+  const normalized = normalizeCsatTemplateContent(markVariables(content), {
     purpose: "confirmation",
   });
-  if (countConfirmationMessageBlocks(normalized) !== 1)
+  if (countConfirmationMessageBlocks(normalized) > 1)
     throw new CsatTemplateValidationError(
-      "Keep exactly one confirmation message block.",
+      "Keep at most one confirmation message block.",
     );
   const walk = (blocks) => {
     for (const block of blocks) {
       if (block.type === "custom") {
-        legacyTokens(block.fieldValues.message);
+        legacyTokens(unmarkToSender(block.fieldValues.message));
       } else {
-        for (const value of Object.values(block))
-          if (typeof value === "string" && /{{|}}/.test(withoutTicketReference(value)))
+        for (const value of Object.values(block)) {
+          if (typeof value !== "string") continue;
+          if (/{{|}}/.test(value))
             throw new CsatTemplateValidationError(
-              "Personalization variables belong in the confirmation message block.",
+              "This variable can't be used in a confirmation email.",
             );
+          if (!TEXT_BLOCK_TYPES.has(block.type) && hasNonTicketMarker(value))
+            throw new CsatTemplateValidationError(
+              "Personalization variables can only be used in text and headline blocks.",
+            );
+        }
       }
       (block.children || []).forEach(walk);
     }
   };
   walk(normalized.blocks);
-  return unmarkTicketReference(normalized);
+  return unmarkToDesigner(normalized);
 }
 export async function compileConfirmationEmail({
   content,
@@ -83,7 +102,7 @@ export async function compileConfirmationEmail({
     throw new CsatTemplateValidationError(
       "Preview text cannot contain personalization variables.",
     );
-  let message = "";
+  let message = null;
   const find = (blocks) =>
     blocks.forEach((block) => {
       if (block.customType === "confirmation-message")
@@ -92,12 +111,23 @@ export async function compileConfirmationEmail({
     });
   find(normalized.blocks);
   const rendered = await renderCsatEmail({
-    content: markTicketReference(normalized),
+    content: markVariables(normalized),
     subject: "Confirmation",
     previewText,
     purpose: "confirmation",
   });
-  if ((rendered.html.match(/{{content}}/g) || []).length !== 1)
+  const html = unmarkToSender(rendered.html);
+  if (message === null) {
+    // A full design: the whole email carries the variables, and the sender fills them.
+    const fullHtml = `${FULL_DESIGN_MARKER}${html}`;
+    return {
+      content: normalized,
+      subject: legacyTokens(subject),
+      text: htmlToPlainText(fullHtml),
+      html: fullHtml,
+    };
+  }
+  if ((html.match(/{{content}}/g) || []).length !== 1)
     throw new CsatTemplateValidationError(
       "Confirmation message is missing from the layout.",
     );
@@ -105,7 +135,7 @@ export async function compileConfirmationEmail({
     content: normalized,
     subject: legacyTokens(subject),
     text: legacyTokens(message),
-    html: rendered.html.replaceAll(TICKET_REFERENCE_MARKER, "{{ticket_reference}}"),
+    html,
   };
 }
 export async function previewConfirmationEmail(
