@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CsatThankYouCard } from "@/components/csat/CsatThankYouCard";
 
 const SCORES = [1, 2, 3, 4, 5];
 
@@ -40,17 +41,13 @@ export default function CsatResponseClient({ token, initialScore }) {
   if (result?.ok) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f8f8fb] px-4 py-10 sm:px-6 sm:py-16">
-        <section className="w-full max-w-xl rounded-[28px] border border-[#e7e7ef] bg-white p-7 text-center shadow-[0_18px_50px_rgba(20,20,30,0.08)] sm:p-12">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-50 text-xl text-violet-600">✓</div>
-          <p className="mt-6 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{result.workspaceName || "Sona"}</p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{result.group?.heading}</h1>
-          <p className="mx-auto mt-4 max-w-md whitespace-pre-line text-sm leading-6 text-slate-600">{result.group?.body}</p>
-          {result.group?.button_text && result.group?.button_url ? (
-            <a href={result.group.button_url} className="mt-7 inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700">
-              {result.group.button_text}
-            </a>
-          ) : null}
-        </section>
+        <CsatThankYouCard
+          workspaceName={result.workspaceName}
+          heading={result.group?.heading}
+          body={result.group?.body}
+          buttonText={result.group?.button_text}
+          buttonUrl={result.group?.button_url}
+        />
       </main>
     );
   }

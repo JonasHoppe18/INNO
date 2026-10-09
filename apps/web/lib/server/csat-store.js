@@ -99,14 +99,14 @@ export async function saveCsatDraft(
   return { ...data, editor_json: normalizedContent };
 }
 
-export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId = null } = {}) {
-  const draft = await loadCsatDraft(serviceClient, workspaceId);
-  const rendered = await renderCsatEmail({
-    content: draft.editor_json,
-    subject: draft.subject,
-    previewText: draft.preview_text,
-    linkMode: "markers",
-  });
+const VERSION_COLUMNS =
+  "id, workspace_id, template_id, version, name, subject, preview_text, editor_json, rendered_html, rendered_text, published_at";
+const DRAFT_COLUMNS =
+  "id, workspace_id, name, subject, preview_text, editor_json, rendered_html, rendered_text, status, version, published_version, updated_at";
+
+// Archives the live version, inserts the new one and runs updateDraft; any
+// failure restores the previous live version.
+async function publishCsatVersion(serviceClient, workspaceId, { templateId, minVersion, fields, clerkUserId }, updateDraft) {
   const { data: latestVersion, error: latestVersionError } = await serviceClient
     .from("csat_email_template_versions")
     .select("version")
@@ -115,7 +115,7 @@ export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId
     .limit(1)
     .maybeSingle();
   if (latestVersionError) throw new Error(latestVersionError.message);
-  const nextVersion = Math.max(Number(latestVersion?.version || 0), Number(draft.version || 0)) + 1;
+  const nextVersion = Math.max(Number(latestVersion?.version || 0), Number(minVersion || 0)) + 1;
 
   const { data: previousPublished, error: previousPublishedError } = await serviceClient
     .from("csat_email_template_versions")
@@ -136,41 +136,21 @@ export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId
     const { data: version, error: versionError } = await serviceClient
       .from("csat_email_template_versions")
       .insert({
-        template_id: draft.id,
+        template_id: templateId,
         workspace_id: workspaceId,
         version: nextVersion,
-        name: draft.name,
-        subject: draft.subject,
-        preview_text: draft.preview_text,
-        editor_json: draft.editor_json,
-        rendered_html: rendered.html,
-        rendered_text: rendered.text,
+        ...fields,
         status: "published",
         published_by_clerk_user_id: clerkUserId,
       })
-      .select("id, workspace_id, template_id, version, name, subject, preview_text, editor_json, rendered_html, rendered_text, published_at")
+      .select(VERSION_COLUMNS)
       .single();
     if (versionError) throw new Error(versionError.message);
     insertedVersionId = version.id;
 
-    const { data: updatedDraft, error: draftError } = await serviceClient
-      .from("csat_email_templates")
-      .update({
-        status: "published",
-        version: nextVersion,
-        published_version: nextVersion,
-        rendered_html: rendered.html,
-        rendered_text: rendered.text,
-        updated_by_clerk_user_id: clerkUserId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("workspace_id", workspaceId)
-      .eq("id", draft.id)
-      .select("id, workspace_id, name, subject, preview_text, editor_json, rendered_html, rendered_text, status, version, published_version, updated_at")
-      .single();
-    if (draftError) throw new Error(draftError.message);
+    const draft = await updateDraft(nextVersion);
     return {
-      draft: { ...updatedDraft, editor_json: normalizeCsatTemplateContent(updatedDraft.editor_json) },
+      draft: { ...draft, editor_json: normalizeCsatTemplateContent(draft.editor_json) },
       published: { ...version, editor_json: normalizeCsatTemplateContent(version.editor_json) },
     };
   } catch (error) {
@@ -195,6 +175,105 @@ export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId
     if (rollbackErrors.length) console.error("[csat-publish] Rollback failed", rollbackErrors);
     throw error;
   }
+}
+
+async function updateCsatDraftRow(serviceClient, workspaceId, draftId, values) {
+  const { data, error } = await serviceClient
+    .from("csat_email_templates")
+    .update({ ...values, updated_at: new Date().toISOString() })
+    .eq("workspace_id", workspaceId)
+    .eq("id", draftId)
+    .select(DRAFT_COLUMNS)
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function publishCsatDraft(serviceClient, workspaceId, { clerkUserId = null } = {}) {
+  const draft = await loadCsatDraft(serviceClient, workspaceId);
+  const rendered = await renderCsatEmail({
+    content: draft.editor_json,
+    subject: draft.subject,
+    previewText: draft.preview_text,
+    linkMode: "markers",
+  });
+  return publishCsatVersion(
+    serviceClient,
+    workspaceId,
+    {
+      templateId: draft.id,
+      minVersion: draft.version,
+      clerkUserId,
+      fields: {
+        name: draft.name,
+        subject: draft.subject,
+        preview_text: draft.preview_text,
+        editor_json: draft.editor_json,
+        rendered_html: rendered.html,
+        rendered_text: rendered.text,
+      },
+    },
+    (nextVersion) =>
+      updateCsatDraftRow(serviceClient, workspaceId, draft.id, {
+        status: "published",
+        version: nextVersion,
+        published_version: nextVersion,
+        rendered_html: rendered.html,
+        rendered_text: rendered.text,
+        updated_by_clerk_user_id: clerkUserId,
+      }),
+  );
+}
+
+// The subject goes live at once, like the confirmation subject: the live design
+// is republished with the new subject, and other draft edits stay unpublished.
+export async function updateCsatSubject(serviceClient, workspaceId, { subject, clerkUserId = null } = {}) {
+  const nextSubject = String(subject ?? "").trim().slice(0, 300);
+  if (!nextSubject) throw new CsatTemplateValidationError("Email subject is required.");
+  const draft = await loadCsatDraft(serviceClient, workspaceId);
+  const published = await loadPublishedCsatTemplate(serviceClient, workspaceId);
+  if (!published) {
+    const saved = await saveCsatDraft(serviceClient, workspaceId, {
+      name: draft.name,
+      subject: nextSubject,
+      previewText: draft.preview_text,
+      content: draft.editor_json,
+      clerkUserId,
+    });
+    return { draft: saved, published: null };
+  }
+  const rendered = await renderCsatEmail({
+    content: published.editor_json,
+    subject: nextSubject,
+    previewText: published.preview_text,
+    linkMode: "markers",
+  });
+  const draftWasLive = draft.status === "published";
+  return publishCsatVersion(
+    serviceClient,
+    workspaceId,
+    {
+      templateId: draft.id || published.template_id,
+      minVersion: draft.version,
+      clerkUserId,
+      fields: {
+        name: published.name,
+        subject: nextSubject,
+        preview_text: published.preview_text,
+        editor_json: published.editor_json,
+        rendered_html: rendered.html,
+        rendered_text: rendered.text,
+      },
+    },
+    (nextVersion) =>
+      updateCsatDraftRow(serviceClient, workspaceId, draft.id || published.template_id, {
+        subject: nextSubject,
+        version: nextVersion,
+        published_version: nextVersion,
+        ...(draftWasLive ? { status: "published", rendered_html: rendered.html, rendered_text: rendered.text } : {}),
+        updated_by_clerk_user_id: clerkUserId,
+      }),
+  );
 }
 
 export async function loadThankYouMessages(serviceClient, workspaceId) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadCsatDraft, loadPublishedCsatTemplate, saveCsatDraft } from "@/lib/server/csat-store";
+import { loadCsatDraft, loadPublishedCsatTemplate, saveCsatDraft, updateCsatSubject } from "@/lib/server/csat-store";
 import { requireCsatWorkspace } from "@/lib/server/csat-route";
 
 export async function GET() {
@@ -21,6 +21,13 @@ export async function PATCH(request) {
     const body = await request.json();
     const context = await requireCsatWorkspace();
     if (context.response) return context.response;
+    if (body?.subject_only) {
+      const result = await updateCsatSubject(context.serviceClient, context.workspaceId, {
+        subject: body?.subject,
+        clerkUserId: context.clerkUserId,
+      });
+      return NextResponse.json(result, { status: 200 });
+    }
     const draft = await saveCsatDraft(context.serviceClient, context.workspaceId, {
       name: body?.name,
       subject: body?.subject,
