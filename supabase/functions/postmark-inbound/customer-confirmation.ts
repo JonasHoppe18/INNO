@@ -46,6 +46,18 @@ export function shouldSendCustomerConfirmation(input: {
 }
 
 export const TICKET_REFERENCE_TOKEN = "{{ticket_reference}}";
+// Compiled designs built from ordinary text blocks start with this marker. They
+// carry the variables across the whole email instead of in one {{content}} slot.
+export const FULL_DESIGN_MARKER = "<!--sona:full-design-->";
+const TOKEN_PATTERN = /{{\s*([a-z0-9_]+)\s*}}/gi;
+
+const escapeAttributeSafe = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 // Fills the reference where the message mentions it. With the reference off, the
 // lines that mention it are dropped so no half sentence is left behind.
@@ -121,6 +133,33 @@ export function applySubjectReference(subject: string, ticketReference: string |
 // Builds subject, text and merged HTML from token-filled templates. A design that
 // uses {{ticket_reference}} decides where the reference appears; older saved
 // designs without it keep the include switch (subject prefix + footer line).
+// A full design: subject and text arrive with tokens already filled; the HTML
+// gets every token filled here, escaped, so customer input can't add markup.
+function composeFullDesign(input: {
+  subjectTemplate: string;
+  bodyText: string;
+  templateHtml: string;
+  ticketNumber: unknown;
+  tokens: Record<string, string>;
+}): { subject: string; text: string; html: string; ticketReference: string | null } {
+  const reference = formatTicketReference(input.ticketNumber);
+  const usesReference = [input.subjectTemplate, input.bodyText, input.templateHtml].some((value) =>
+    String(value || "").includes(TICKET_REFERENCE_TOKEN)
+  );
+  const values: Record<string, string> = { ...input.tokens, ticket_reference: reference || "" };
+  const fill = (template: string, escape: boolean) =>
+    String(template || "").replace(TOKEN_PATTERN, (_match, key: string) => {
+      const value = String(values[key.toLowerCase()] ?? "");
+      return escape ? escapeAttributeSafe(value) : value;
+    });
+  return {
+    subject: fill(applySubjectReference(input.subjectTemplate, reference), false).replace(/\s{2,}/g, " ").trim(),
+    text: fill(applyTicketReference(input.bodyText, reference), false).replace(/\n{3,}/g, "\n\n").trim(),
+    html: fill(input.templateHtml.slice(FULL_DESIGN_MARKER.length), true),
+    ticketReference: usesReference ? reference : null,
+  };
+}
+
 export function composeConfirmation(input: {
   subjectTemplate: string;
   bodyText: string;
@@ -128,7 +167,11 @@ export function composeConfirmation(input: {
   templateHtml: string;
   ticketNumber: unknown;
   includeTicketNumber: boolean;
+  tokens?: Record<string, string>;
 }): { subject: string; text: string; html: string; ticketReference: string | null } {
+  if (String(input.templateHtml || "").startsWith(FULL_DESIGN_MARKER)) {
+    return composeFullDesign({ ...input, tokens: input.tokens || {} });
+  }
   const reference = formatTicketReference(input.ticketNumber);
   const usesVariable = [input.subjectTemplate, input.bodyText, input.bodyHtml, input.templateHtml].some(
     (value) => String(value || "").includes(TICKET_REFERENCE_TOKEN),
