@@ -17,7 +17,7 @@ export const RADAR_RULES = {
   risingRatio: 2,
   risingMinRecent: 12,
   // A trend must hold this many consecutive weeks. One rising week after a quiet
-  // spell is usually a return to normal (backtest: A-Spire, 2026-08-15).
+  // spell is usually a return to normal (see the backtest in docs/product-radar.md).
   risingConfirmWeeks: 2,
   recentIssues: 5,
 };
