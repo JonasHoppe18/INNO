@@ -312,6 +312,7 @@ export interface CaseState {
   pendingReadOnlyAnswers?: Array<{
     id: string; request: NonNullable<import("./turn-ir").TurnIR["answerRequests"]>[number];
     subjectRequirement: "missing" | "verification"; verifiedProductId?: string;
+    unresolvedFacets?: import("./answer-facets").AnswerFacet[];
   }>;
   requestedChange?: { sourceText: string; description?: string; orderReference: string | null };
   pendingAction?: { action: ProposedAction["action"]; sourceText: string; orderReference: string | null };

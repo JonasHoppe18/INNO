@@ -35,3 +35,15 @@ Equivalent customer-grounded subjects now share a Unicode-normalized comparison 
 Explicit resolution can name one existing `targetRequestId`. Only a single matching pending obligation is removed. Missing or unknown targets preserve all work when multiple obligations exist; the existing single-question explicit-resolution behavior remains. Acknowledgement does not imply resolution.
 
 Updated validation: 39 focused controls pass, including #043 and R1 038–041; 1,233 scoped deterministic Greenfield/Knowledge/Action checks pass, with eight opt-in skips and the same excluded unconditional live evaluator. Typecheck passes. No new model calls were made for this review repair.
+
+## Partial recovery durability
+
+Independently normalized read-only care requests from `TurnIRReadOnlyRecoveryError` now enter the same pending lifecycle. The full TurnIR remains unavailable. Recovery cannot supply resolution, confirmations, action eligibility or proposals.
+
+Optional qualifier failures persist as `unresolvedFacets` on the pending request. Carried requests reapply that metadata to the existing precise-answer contract. Unknown specificity cannot close on generic supported coverage. A recovered core with fully grounded qualifiers can close after current product verification and supported rendered coverage. Explicit scoped resolution remains available for either kind.
+
+A resolution turn removes only its selected pending ID, then registers any separate current care question. Repeated registration compares the exact customer quote, normalized subject, facets, qualifiers and unresolved annotations, so canonical catalog casing does not duplicate an identical request. Different quotes or qualifiers stay separate rather than being merged by assumed semantic equivalence.
+
+Validation on the PR123 merge base reproduces the exact three Halo/Nest customer messages with a controlled malformed qualifier. The historical raw interpreter payload is absent from the sanitized DEV trace; this test does not claim to reconstruct that annotation. Before: Nest is never pending and resolving Halo leaves no work. After: recovered Nest remains pending when Halo closes, alongside the separately registered current Nest restatement. No evidence is available in that control, so neither Nest entry is marked complete.
+
+Checks: 21 added recovery controls; 72 focused tests including #043 and R1 038–041; 1,254 scoped deterministic Greenfield/Knowledge/Action checks pass, with eight opt-in skips and the same excluded unconditional live evaluator. Web typecheck passes. Local before/after responses, coverage and lifecycle traces are in `.artifacts/r3-partial-recovery-durability-1010/`. A deployed read-only smoke must follow an approved merge. No deployment or merge is part of this patch.

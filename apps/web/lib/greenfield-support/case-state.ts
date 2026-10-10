@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { TurnIRSchema, type TurnIR } from "./turn-ir";
-import { compilePreciseAnswerRequests } from "./answer-facets";
+import { TurnIRSchema, type TurnIR, type TurnIRReadOnlyRecoveryError } from "./turn-ir";
+import { ANSWER_FACETS, compilePreciseAnswerRequests } from "./answer-facets";
 import type { ResponseValidationResult } from "./response-contract";
 import type { CaseState, ConversationContext, TenantContext, RemedyAuthorization } from "./types";
 
@@ -15,6 +15,7 @@ const CaseStateSchema = z.object({
     id: z.string().min(1).max(200),
     request: TurnIRSchema.shape.answerRequests.unwrap().element.extend({ kind: z.enum(["product_care", "product_property"]), sourceText: z.string().min(1).max(1000) }),
     subjectRequirement: z.enum(["missing", "verification"]), verifiedProductId: z.string().min(1).optional(),
+    unresolvedFacets: z.array(z.enum(ANSWER_FACETS)).max(13).optional(),
   })).max(8).optional(),
   pendingAction: z.object({ action, sourceText: z.string().min(1).max(1000), orderReference: z.string().nullable() }).optional(),
   requestedChange: z.object({ sourceText: z.string().min(1).max(1000), description: z.string().max(500).optional(), orderReference: z.string().nullable() }).optional(),
@@ -54,7 +55,7 @@ export function prepareCaseContext(previous: ConversationContext | undefined, te
     ...(known?.orderCandidates ? { orderCandidates: known.orderCandidates } : {}),
     caseState: {
       ...(keep && state ? { ...state, pendingReadOnlyAnswers: tenant.caseId
-        ? state.pendingReadOnlyAnswers?.map(value => ({ ...value, request: { ...value.request,
+        ? state.pendingReadOnlyAnswers?.map(value => ({ ...value, unresolvedFacets: value.unresolvedFacets ? [...value.unresolvedFacets] : undefined, request: { ...value.request,
           facets: value.request.facets ? [...value.request.facets] : value.request.facets,
           qualifiers: value.request.qualifiers?.map(qualifier => ({ ...qualifier })),
         } })) ?? [] : [] } : {}),
@@ -199,27 +200,38 @@ export function deduplicateReadOnlySubjects(subjects: string[]): string[] {
 
 export interface ReadOnlyAnswerBinding { id: string; requestIndex: number }
 
+function careRequestKey(request: NonNullable<TurnIR["answerRequests"]>[number], unresolvedFacets: typeof ANSWER_FACETS[number][] | undefined) {
+  return JSON.stringify({ kind: request.kind, sourceText: request.sourceText,
+    subject: request.subject ? normalizeReadOnlySubject(request.subject) : null, propertyKey: request.propertyKey ?? null,
+    facets: [...new Set(request.facets ?? [])].sort(),
+    qualifiers: (request.qualifiers ?? []).map(value => [value.facet, value.value]).sort(),
+    unresolvedFacets: [...new Set(unresolvedFacets ?? [])].sort() });
+}
+
 /** Carries customer intent only; no source values or operational facts persist here. */
 export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR | null, message: string,
-  groundedSubjects: string[]): { ir: TurnIR | null; bindings: ReadOnlyAnswerBinding[]; carried: string[]; closed: string[] } {
+  groundedSubjects: string[], recovery?: TurnIRReadOnlyRecoveryError | null): { ir: TurnIR | null; bindings: ReadOnlyAnswerBinding[]; carried: string[]; closed: string[] } {
   const state = context.caseState!;
   let pending = state.pendingReadOnlyAnswers ?? [];
+  let closed: string[] = [];
   if (ir?.readOnlyFollowup?.kind === "resolve") {
     const target = ir.readOnlyFollowup.targetRequestId;
     const selected = target ? pending.filter(value => value.id === target) : pending.length === 1 ? pending : [];
-    const closed = selected.length === 1 ? [selected[0].id] : [];
-    state.pendingReadOnlyAnswers = pending.filter(value => !closed.includes(value.id));
-    return { ir, bindings: [], carried: [], closed };
+    closed = selected.length === 1 ? [selected[0].id] : [];
+    pending = pending.filter(value => !closed.includes(value.id));
   }
-  if (!ir) return { ir, bindings: [], carried: [], closed: [] };
-  const followup = ir.readOnlyFollowup;
+  // Recovery may register independently normalized read-only cores, but never
+  // supplies follow-up resolution or operational authority from the failed turn.
+  const registrationIR = ir ?? recovery?.readOnlyIR;
+  if (!registrationIR) return { ir, bindings: [], carried: [], closed };
+  const followup = ir?.readOnlyFollowup;
   const subjects = deduplicateReadOnlySubjects(groundedSubjects);
   const subject = followup?.kind === "provide_subject" && followup.subject && subjects.length === 1
     && normalizeReadOnlySubject(subjects[0]) === normalizeReadOnlySubject(followup.subject) ? subjects[0] : null;
-  const carried = subject && !ir.actions.length && !ir.orderContext && !ir.policyIntents?.length
+  const carried = subject && ir && !ir.actions.length && !ir.orderContext && !ir.policyIntents?.length
     ? pending.filter(value => !value.request.subject || normalizeReadOnlySubject(value.request.subject) === normalizeReadOnlySubject(subject)) : [];
   // Subject identification is not a model-selected material question.
-  const requests = carried.length ? carried.map(value => ({ ...value.request, subject })) : ir.answerRequests ?? [];
+  const requests = carried.length ? carried.map(value => ({ ...value.request, subject })) : registrationIR.answerRequests ?? [];
   const bindings: ReadOnlyAnswerBinding[] = carried.map((value, requestIndex) => ({ id: value.id, requestIndex }));
   if (!carried.length) for (const [requestIndex, request] of requests.entries()) {
     if (!["product_care", "product_property"].includes(request.kind) || !message.includes(request.sourceText)
@@ -229,15 +241,18 @@ export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR 
       ...(request.propertyKey === "composition" || request.propertyKey === "dimensions" ? { propertyKey: "general" as const } : {}),
       qualifiers: request.qualifiers?.filter(qualifier => careFacets.includes(qualifier.facet)), sourceText: request.sourceText.slice(0, 1000),
       subject: request.subject && subjects.some(subject => normalizeReadOnlySubject(subject) === normalizeReadOnlySubject(request.subject!)) ? request.subject : null };
-    const existing = pending.find(value => JSON.stringify(value.request) === JSON.stringify(storedRequest));
+    const unresolvedFacets = recovery?.unresolvedFacets.find(value => value.requestIndex === requestIndex)?.facets.filter(facet => careFacets.includes(facet));
+    const key = careRequestKey(storedRequest, unresolvedFacets);
+    const existing = pending.find(value => careRequestKey(value.request, value.unresolvedFacets) === key);
     const entry = existing ?? { id: `${state.scope.caseId}:read-only:${context.turn}:${requestIndex}`,
       request: storedRequest,
+      ...(unresolvedFacets?.length ? { unresolvedFacets: [...unresolvedFacets] } : {}),
       subjectRequirement: storedRequest.subject ? "verification" as const : "missing" as const };
     if (!existing && pending.length < 8) pending = [...pending, entry];
     if (pending.includes(entry)) bindings.push({ id: entry.id, requestIndex });
   }
   state.pendingReadOnlyAnswers = pending;
-  return { ir: { ...ir, answerRequests: requests }, bindings, carried: carried.map(value => value.id), closed: [] };
+  return { ir: { ...registrationIR, answerRequests: requests }, bindings, carried: carried.map(value => value.id), closed };
 }
 
 export function bindReadOnlyAnswer(context: ConversationContext, binding: ReadOnlyAnswerBinding,
@@ -255,7 +270,7 @@ export function completeReadOnlyAnswers(context: ConversationContext, bindings: 
   const closed: string[] = [];
   for (const binding of bindings) {
     const entry = context.caseState?.pendingReadOnlyAnswers?.find(value => value.id === binding.id);
-    if (!entry?.verifiedProductId) continue;
+    if (!entry?.verifiedProductId || entry.unresolvedFacets?.length) continue;
     const requested = compilePreciseAnswerRequests([entry.request]);
     if (requested.length && requested.every(request => validation.coverage?.obligations.some(obligation =>
       obligation.id === `answer.${binding.requestIndex}.${request.facet}` && obligation.status === "supported"

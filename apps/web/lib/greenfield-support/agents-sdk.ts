@@ -392,8 +392,8 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     ...(readOnlyIR?.answerRequests ?? []).flatMap(request => request.subject ? [request.subject] : []),
     ...(turnIR?.readOnlyFollowup?.subject ? [turnIR.readOnlyFollowup.subject] : []),
   ]).filter(subject => groundedAnswerSubject({ customerMessage: options.message } as ResponseValidationContext, subject));
-  const readOnlyAnswers = prepareReadOnlyAnswers(conversationContext, turnIR, options.message, namedSubjects);
-  if (turnIR) readOnlyIR = readOnlyAnswers.ir ?? undefined;
+  const readOnlyAnswers = prepareReadOnlyAnswers(conversationContext, turnIR, options.message, namedSubjects, readOnlyRecovery);
+  readOnlyIR = readOnlyAnswers.ir ?? undefined;
   if (readOnlyAnswers.bindings.length || readOnlyAnswers.closed.length) pushEvent(trace, "case_state", {
     diagnostic: "read_only_answer_lifecycle", carried: readOnlyAnswers.carried, closed: readOnlyAnswers.closed,
     pending: conversationContext.caseState?.pendingReadOnlyAnswers?.map(value => ({ id: value.id, subjectRequirement: value.subjectRequirement, facets: value.request.facets })),
@@ -404,7 +404,16 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
     if (namedSubjects.length === 1) customerProvidedContext.product = namedSubjects[0];
   }
   conversationContext.customerProvided = customerProvidedContext;
-  let preciseRequests = resolvePreciseAnswerSubjects(compilePreciseAnswerRequests(readOnlyIR?.answerRequests ?? []), { customerMessage: options.message, customerProvidedContext }).map(request => ({ ...request, ...(readOnlyRecovery?.unresolvedFacets.some(entry => entry.requestIndex === request.requestIndex && entry.facets.some(facet => facet === request.facet || request.facet === "qualified_next_step" && request.requiredFor.includes(facet))) ? { unresolvedSpecificity: true } : {}) }));
+  const unresolvedReadOnlyFacets = readOnlyAnswers.bindings.flatMap(binding => {
+    const pending = conversationContext.caseState?.pendingReadOnlyAnswers?.find(value => value.id === binding.id);
+    return pending?.unresolvedFacets?.length ? [{ requestIndex: binding.requestIndex, facets: pending.unresolvedFacets }] : [];
+  });
+  const unresolvedFacets = [...(readOnlyRecovery?.unresolvedFacets ?? []), ...unresolvedReadOnlyFacets];
+  let preciseRequests = resolvePreciseAnswerSubjects(compilePreciseAnswerRequests(readOnlyIR?.answerRequests ?? []), {
+    customerMessage: options.message, customerProvidedContext,
+  }).map(request => ({ ...request, ...(unresolvedFacets.some(entry => entry.requestIndex === request.requestIndex
+    && entry.facets.some(facet => facet === request.facet
+      || request.facet === "qualified_next_step" && request.requiredFor.includes(facet))) ? { unresolvedSpecificity: true } : {}) }));
   const preciseReadResults: Record<string, string[]> = {};
   // Identity reads precede facet reads so one subject cannot consume another's lookup.
   const preciseReadBudgets = new Map(preciseRequests.map(request => [request.subject, 6]));
