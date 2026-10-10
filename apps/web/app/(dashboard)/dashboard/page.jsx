@@ -12,6 +12,8 @@ import {
 import { DashboardPeriodPicker } from "@/components/dashboard/DashboardPeriodPicker";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import { ProductAlertsCard } from "@/components/dashboard/ProductAlertsCard";
+import { TicketFlowCard } from "@/components/dashboard/TicketFlowCard";
+import { UpNextCard } from "@/components/dashboard/UpNextCard";
 import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
 import { loadProductRadar } from "@/lib/server/product-radar-data";
+import { loadDashboardQueue } from "@/lib/server/dashboard-queue-data";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -419,6 +422,7 @@ export default async function Page({ searchParams }) {
   let returnTrackingRows = [];
   let recentActivity = [];
   let productAlerts = [];
+  let ticketQueue = null;
   let supportAnalytics = {
     createdTickets: 0,
     unsolvedTickets: 0,
@@ -439,6 +443,7 @@ export default async function Page({ searchParams }) {
         activityResult,
         supportAnalyticsResult,
         productRadarResult,
+        ticketQueueResult,
       ] = await Promise.all([
         listReturnTrackingShipments(serviceClient, scope).catch(() => []),
         resolveShopId(serviceClient, scope).then((shopId) =>
@@ -449,6 +454,10 @@ export default async function Page({ searchParams }) {
           console.error("Product radar lookup failed:", error);
           return null;
         }),
+        loadDashboardQueue(serviceClient, scope).catch((error) => {
+          console.error("Dashboard queue lookup failed:", error);
+          return null;
+        }),
       ]);
 
       returnTrackingRows = Array.isArray(returnTrackingResult)
@@ -457,6 +466,7 @@ export default async function Page({ searchParams }) {
       recentActivity = activityResult;
       supportAnalytics = supportAnalyticsResult;
       productAlerts = productRadarResult?.alerts ?? [];
+      ticketQueue = ticketQueueResult;
     } catch (error) {
       console.error("Dashboard data lookup failed:", error);
     }
@@ -479,9 +489,13 @@ export default async function Page({ searchParams }) {
           </div>
         </header>
 
-        <PerformanceStrip analytics={supportAnalytics} periodLabel={dashboardPeriod.label} />
+        {ticketQueue ? <TicketFlowCard queue={ticketQueue} /> : null}
 
         <ProductAlertsCard alerts={productAlerts} />
+
+        {ticketQueue ? <UpNextCard items={ticketQueue.upNext} /> : null}
+
+        <PerformanceStrip analytics={supportAnalytics} periodLabel={dashboardPeriod.label} />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <Card className="flex min-h-[360px] flex-col rounded-2xl border-border/70 shadow-sm">
