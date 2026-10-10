@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
@@ -33,8 +32,8 @@ const SCENARIOS = {
       { id: "1049", subject: "Refund for returned throw", customer: "Demo customer C", waited: "1h", state: "approval" },
     ],
     alerts: [
-      { icon: RadarIcon, title: "Demo Table Lamp: rising", detail: "19 tickets in the last 4 weeks (usually 8)", action: "View product" },
-      { icon: Clock, title: "1 customer has waited over 24 hours", detail: "Where is my order #1065?", action: "Open ticket" },
+      { kind: "product", icon: RadarIcon, title: "Demo Table Lamp: rising", detail: "19 tickets in the last 4 weeks (usually 8)", action: "View product" },
+      { kind: "waiting", icon: Clock, title: "1 customer has waited over 24 hours", detail: "Where is my order #1065?", action: "Open ticket" },
     ],
     health: [],
   },
@@ -54,8 +53,8 @@ const SCENARIOS = {
       { id: "1049", subject: "Refund for returned throw", customer: "Demo customer C", waited: "5h", state: "approval" },
     ],
     alerts: [
-      { icon: Mail, title: "Mailbox disconnected", detail: "No new mail since 07:12. Replies can't be sent.", action: "Reconnect", severity: "danger" },
-      { icon: Clock, title: "3 customers have waited over 24 hours", detail: "Oldest: Can I change the delivery address?", action: "Open queue" },
+      { kind: "system", icon: Mail, title: "Mailbox disconnected", detail: "No new mail since 07:12. Replies can't be sent.", action: "Reconnect", severity: "danger" },
+      { kind: "waiting", icon: Clock, title: "3 customers have waited over 24 hours", detail: "Oldest: Can I change the delivery address?", action: "Open queue" },
     ],
     health: ["mailbox"],
   },
@@ -255,43 +254,102 @@ function ThisWeek() {
   );
 }
 
+// Variant B: one fact in one place. System status lives in the header and
+// only turns into a banner when something is broken; waiting-time alerts are
+// already covered by the flow and Up next, so only product alerts get a banner.
+function StatusPill({ broken }) {
+  const healthy = broken.length === 0;
+  return (
+    <span className={cn("flex items-center gap-1.5 text-xs", healthy ? "text-muted-foreground" : "font-medium text-danger-foreground")}>
+      <span className={cn("size-1.5 rounded-full", healthy ? "bg-success-foreground" : "bg-danger-foreground")} aria-hidden="true" />
+      {healthy ? "All systems running" : "Mailbox disconnected"}
+    </span>
+  );
+}
+
+function Banner({ alert }) {
+  const Icon = alert.icon;
+  const danger = alert.kind === "system";
+  return (
+    <div role={danger ? "alert" : undefined} className={cn("flex items-center gap-3 rounded-xl border px-4 py-3", danger ? "border-danger-border bg-danger" : "border-border/70 bg-card")}>
+      <Icon className={cn("size-4 shrink-0", danger ? "text-danger-foreground" : "text-warning-foreground")} aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-sm">
+        <span className={cn("font-medium", danger && "text-danger-foreground")}>{alert.title}</span>
+        <span className="text-muted-foreground"> · {alert.detail}</span>
+      </p>
+      <Button variant={danger ? "default" : "ghost"} size="sm" className="shrink-0">{alert.action}</Button>
+    </div>
+  );
+}
+
+function VariantA({ scenario }) {
+  return (
+    <>
+      <header className="flex items-end justify-between gap-4">
+        <h1 className="text-page-heading font-semibold tracking-tight">Dashboard</h1>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-success-foreground" aria-hidden="true" />
+          Live
+        </span>
+      </header>
+      <FlowStrip flow={scenario.flow} />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex flex-col gap-5">
+          <NeedsAction alerts={scenario.alerts} />
+          <UpNext items={scenario.upNext} />
+        </div>
+        <SystemStatus broken={scenario.health} />
+      </div>
+      <ThisWeek />
+    </>
+  );
+}
+
+function VariantB({ scenario }) {
+  const banners = scenario.alerts
+    .filter((alert) => alert.kind === "system" || alert.kind === "product")
+    .sort((a, b) => (a.kind === "system" ? -1 : 0) - (b.kind === "system" ? -1 : 0));
+  return (
+    <>
+      <header className="flex items-end justify-between gap-4">
+        <h1 className="text-page-heading font-semibold tracking-tight">Dashboard</h1>
+        <StatusPill broken={scenario.health} />
+      </header>
+      {banners.length ? <div className="flex flex-col gap-2">{banners.map((alert) => <Banner key={alert.title} alert={alert} />)}</div> : null}
+      <FlowStrip flow={scenario.flow} />
+      <UpNext items={scenario.upNext} />
+      <ThisWeek />
+    </>
+  );
+}
+
+const VARIANTS = { a: "A · Original", b: "B · Calm" };
+
 export function DashboardMockup() {
   const [scenarioKey, setScenarioKey] = useState("busy");
+  const [variant, setVariant] = useState("b");
   const scenario = SCENARIOS[scenarioKey];
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2">
-        <span className="text-xs text-muted-foreground">Preview scenario</span>
-        {Object.entries(SCENARIOS).map(([key, value]) => (
-          <Button key={key} size="sm" variant={key === scenarioKey ? "default" : "outline"} onClick={() => setScenarioKey(key)}>{value.label}</Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-dashed px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Variant</span>
+          {Object.entries(VARIANTS).map(([key, label]) => (
+            <Button key={key} size="sm" variant={key === variant ? "default" : "outline"} onClick={() => setVariant(key)}>{label}</Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Scenario</span>
+          {Object.entries(SCENARIOS).map(([key, value]) => (
+            <Button key={key} size="sm" variant={key === scenarioKey ? "default" : "outline"} onClick={() => setScenarioKey(key)}>{value.label}</Button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-col gap-6 rounded-xl bg-muted/30 p-4 sm:p-6">
-        <header className="flex items-end justify-between gap-4">
-          <h1 className="text-page-heading font-semibold tracking-tight">Dashboard</h1>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-success-foreground" aria-hidden="true" />
-            Live
-          </span>
-        </header>
-
-        <FlowStrip flow={scenario.flow} />
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex flex-col gap-5">
-            <NeedsAction alerts={scenario.alerts} />
-            <UpNext items={scenario.upNext} />
-          </div>
-          <SystemStatus broken={scenario.health} />
-        </div>
-
-        <ThisWeek />
+        {variant === "a" ? <VariantA scenario={scenario} /> : <VariantB scenario={scenario} />}
       </div>
-      {scenario.alerts.length === 0 ? (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><AlertTriangle className="size-3.5" aria-hidden="true" />&quot;Needs action&quot; is hidden because nothing is out of the ordinary.</p>
-      ) : null}
     </div>
   );
 }
