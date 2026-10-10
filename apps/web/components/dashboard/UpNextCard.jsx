@@ -4,18 +4,19 @@ import { CheckCircle2Icon, ChevronRightIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatWait } from "@/lib/dashboard-queue-copy";
+import { customerLabel, formatWait } from "@/lib/dashboard-queue-copy";
 
-const STAGE = {
-  needsReply: { variant: "info", label: "Needs reply", action: "Open" },
-  replyReady: { variant: "ai", label: "Reply ready", action: "Review reply" },
-  approval: { variant: "warning", label: "Awaiting approval", action: "Review action" },
+// "Needs reply" is the normal case, so only the stages that ask for something
+// different (review a reply, approve an action) get a badge.
+const STAGE_BADGE = {
+  replyReady: { variant: "ai", label: "Reply ready" },
+  approval: { variant: "warning", label: "Awaiting approval" },
 };
 
 export function UpNextCard({ items = [] }) {
   return (
     <Card className="rounded-xl shadow-sm">
-      <CardHeader className="flex-row items-center justify-between gap-3 pb-3">
+      <CardHeader className="flex-row items-center justify-between gap-3 pb-2">
         <div>
           <CardTitle className="text-section-heading">Up next</CardTitle>
           <CardDescription className="mt-1">The customers who have waited longest.</CardDescription>
@@ -24,30 +25,33 @@ export function UpNextCard({ items = [] }) {
           <Link href="/inbox">Open inbox<ChevronRightIcon data-icon="inline-end" /></Link>
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 pb-3">
         {items.length ? (
-          <ol className="flex flex-col divide-y divide-border/70">
+          <ol className="flex flex-col">
             {items.map((item) => {
-              const stage = STAGE[item.stage] || STAGE.needsReply;
-              const meta = [item.ticketNumber ? `#${item.ticketNumber}` : null, item.customer, `waited ${formatWait(item.waitedHours)}`]
-                .filter(Boolean)
-                .join(" · ");
+              const badge = STAGE_BADGE[item.stage];
+              const who = customerLabel(item.customerName ?? item.customer, item.customerEmail);
+              const meta = [item.ticketNumber ? `#${item.ticketNumber}` : null, who].filter(Boolean).join(" · ");
               return (
-                <li key={item.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{item.subject || "No subject"}</p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{meta}</p>
-                  </div>
-                  <Badge variant={stage.variant} className="hidden shrink-0 sm:inline-flex">{stage.label}</Badge>
-                  <Button variant="outline" size="sm" className="shrink-0" asChild>
-                    <Link href={item.url}>{stage.action}</Link>
-                  </Button>
+                <li key={item.id}>
+                  <Link
+                    href={item.url}
+                    className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{item.subject || "No subject"}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{meta}</p>
+                    </div>
+                    {badge ? <Badge variant={badge.variant} className="hidden shrink-0 sm:inline-flex">{badge.label}</Badge> : null}
+                    <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">waited {formatWait(item.waitedHours)}</span>
+                    <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" aria-hidden="true" />
+                  </Link>
                 </li>
               );
             })}
           </ol>
         ) : (
-          <div className="flex items-center gap-3 rounded-lg bg-success/60 px-4 py-4">
+          <div className="mx-3 flex items-center gap-3 rounded-lg bg-success/60 px-4 py-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success-foreground" aria-hidden="true" />
             <div>
               <p className="text-sm font-medium">You&apos;re all caught up</p>
