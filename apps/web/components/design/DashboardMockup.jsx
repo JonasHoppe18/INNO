@@ -81,16 +81,29 @@ const HEALTH_CHECKS = [
 ];
 
 const WEEK = [
-  { label: "Resolved", value: "38", change: "+12%", good: true, detail: "vs last week" },
-  { label: "First human reply", value: "1h 40m", change: "−18%", good: true, detail: "Median, confirmations excluded" },
-  { label: "CSAT", value: "4.6", change: "+0.2", good: true, detail: "12 responses" },
-  { label: "Sona drafted", value: "82%", change: "+5 pts", good: true, detail: "61% sent without edits" },
+  { label: "Resolved", value: "38", change: "+12%", good: true, detail: "vs last week", series: [24, 29, 27, 31, 30, 34, 34, 38] },
+  { label: "First human reply", value: "1h 40m", change: "−18%", good: true, detail: "Median, confirmations excluded", series: [190, 175, 160, 168, 140, 132, 122, 100] },
+  { label: "CSAT", value: "4.6", change: "+0.2", good: true, detail: "12 responses", series: [4.2, 4.4, 4.3, 4.4, 4.5, 4.3, 4.4, 4.6] },
+  { label: "Sona drafted", value: "82%", change: "+5 pts", good: true, detail: "61% sent without edits", series: [58, 63, 66, 70, 72, 75, 77, 82] },
 ];
 
 function FlowStrip({ flow }) {
+  const total = FLOW_STEPS.reduce((sum, step) => sum + flow[step.key][0], 0);
   return (
     <Card className="overflow-hidden rounded-xl shadow-sm">
-      <CardContent className="grid p-0 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="flex flex-col gap-3 px-5 pb-4 pt-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-sm font-medium">Open tickets</p>
+          <p className="text-xs text-muted-foreground"><span className="font-semibold tabular-nums text-foreground">{total}</span> in progress</p>
+        </div>
+        <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          {FLOW_STEPS.map((step) => {
+            const count = flow[step.key][0];
+            return count ? <span key={step.key} className={cn("h-full transition-[flex-grow] duration-300", step.bar)} style={{ flexGrow: count }} /> : null;
+          })}
+        </div>
+      </div>
+      <div className="grid border-t border-border/70 sm:grid-cols-2 xl:grid-cols-4">
         {FLOW_STEPS.map((step, index) => {
           const [count, detail] = flow[step.key];
           const idle = count === 0;
@@ -99,23 +112,23 @@ function FlowStrip({ flow }) {
               key={step.key}
               type="button"
               className={cn(
-                "group relative flex flex-col gap-1 border-border/70 p-5 text-left transition-colors duration-150 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                "group flex flex-col gap-1 border-border/70 px-5 py-4 text-left transition-colors duration-150 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 index > 0 && "sm:border-l",
                 index > 1 && "border-t xl:border-t-0",
               )}
             >
-              <span className={cn("absolute inset-x-0 top-0 h-1", idle ? "bg-muted" : step.bar)} aria-hidden="true" />
-              <span className="flex items-center justify-between text-sm font-medium">
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className={cn("size-2 rounded-full", idle ? "bg-muted-foreground/25" : step.bar)} aria-hidden="true" />
                 {step.label}
-                <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                <ChevronRight className="ml-auto size-3.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden="true" />
               </span>
-              <span className={cn("mt-2 text-3xl font-semibold tracking-tight tabular-nums", idle && "text-muted-foreground/60")}>{count}</span>
+              <span className={cn("mt-1 text-2xl font-semibold tracking-tight tabular-nums", idle && "text-muted-foreground/50")}>{count}</span>
               <span className="text-xs text-muted-foreground">{detail}</span>
               <span className="sr-only">{step.hint}</span>
             </button>
           );
         })}
-      </CardContent>
+      </div>
     </Card>
   );
 }
@@ -224,6 +237,28 @@ function SystemStatus({ broken }) {
   );
 }
 
+function Sparkline({ series, id }) {
+  const width = 160;
+  const height = 36;
+  const min = Math.min(...series);
+  const max = Math.max(...series);
+  const range = max - min || 1;
+  const points = series.map((value, index) => [(index / (series.length - 1)) * width, height - 3 - ((value - min) / range) * (height - 6)]);
+  const line = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-9 w-full text-primary" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${height} ${line} ${width},${height}`} fill={`url(#${id})`} />
+      <polyline points={line} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 function ThisWeek() {
   return (
     <section aria-labelledby="this-week" className="flex flex-col gap-3">
@@ -231,25 +266,24 @@ function ThisWeek() {
         <h2 id="this-week" className="text-section-heading font-semibold">This week</h2>
         <Button variant="ghost" size="sm">Analytics<ChevronRight data-icon="inline-end" /></Button>
       </div>
-      <Card className="overflow-hidden rounded-xl border-border/60 bg-border/60 shadow-sm">
-        <CardContent className="grid gap-px p-0 sm:grid-cols-2 xl:grid-cols-4">
-          {WEEK.map((metric) => {
-            const Arrow = metric.change.startsWith("−") ? ArrowDownRight : ArrowUpRight;
-            return (
-              <div key={metric.label} className="bg-card p-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {WEEK.map((metric, index) => {
+          const Arrow = metric.change.startsWith("−") ? ArrowDownRight : ArrowUpRight;
+          return (
+            <Card key={metric.label} className="flex flex-col gap-1 overflow-hidden rounded-xl p-4 pb-0 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">{metric.label}</p>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <p className="text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
-                  <span className={cn("flex items-center text-xs font-medium", metric.good ? "text-success-foreground" : "text-danger-foreground")}>
-                    <Arrow className="size-3.5" aria-hidden="true" />{metric.change}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
+                <span className={cn("flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums", metric.good ? "bg-success text-success-foreground" : "bg-danger text-danger-foreground")}>
+                  <Arrow className="size-3" aria-hidden="true" />{metric.change}
+                </span>
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
+              <p className="text-xs text-muted-foreground">{metric.detail}</p>
+              <div className="-mx-4 mt-2"><Sparkline series={metric.series} id={`week-spark-${index}`} /></div>
+            </Card>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -327,7 +361,7 @@ const VARIANTS = { a: "A · Original", b: "B · Calm" };
 
 export function DashboardMockup() {
   const [scenarioKey, setScenarioKey] = useState("busy");
-  const [variant, setVariant] = useState("b");
+  const [variant, setVariant] = useState("a");
   const scenario = SCENARIOS[scenarioKey];
 
   return (
