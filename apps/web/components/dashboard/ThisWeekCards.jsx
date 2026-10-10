@@ -6,8 +6,8 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { weekCards } from "@/lib/dashboard-week-copy";
 
-// Weeks without data are skipped. Where lower is better the line is flipped,
-// so improvement always points up.
+// Weeks without data are skipped, and a flat series draws nothing. Where lower
+// is better the line is flipped, so improvement always points up.
 function Sparkline({ series = [], invert = false, id }) {
   const width = 160;
   const height = 36;
@@ -15,7 +15,9 @@ function Sparkline({ series = [], invert = false, id }) {
   if (known.length < 2) return <div className="h-9" aria-hidden="true" />;
   const values = known.map(([, value]) => value);
   const min = Math.min(...values);
-  const range = Math.max(...values) - min || 1;
+  // A line with no movement reads as a border, so leave the space empty.
+  if (Math.max(...values) === min) return <div className="h-9" aria-hidden="true" />;
+  const range = Math.max(...values) - min;
   const points = known.map(([index, value]) => {
     const share = (value - min) / range;
     return [(index / (series.length - 1)) * width, height - 3 - (invert ? 1 - share : share) * (height - 6)];

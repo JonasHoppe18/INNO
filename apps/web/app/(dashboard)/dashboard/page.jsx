@@ -10,6 +10,7 @@ import { ThisWeekCards } from "@/components/dashboard/ThisWeekCards";
 import { TicketFlowCard } from "@/components/dashboard/TicketFlowCard";
 import { UpNextCard } from "@/components/dashboard/UpNextCard";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { openReturnShipments } from "@/lib/dashboard-returns";
 import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
 import { loadProductRadar } from "@/lib/server/product-radar-data";
 import { loadDashboardQueue } from "@/lib/server/dashboard-queue-data";
@@ -65,7 +66,7 @@ export default async function Page() {
     }
   }
 
-  const returnRows = Array.isArray(data.returns) ? data.returns : [];
+  const returnRows = openReturnShipments(data.returns);
 
   return (
     <div className="@container/main flex flex-1 flex-col bg-muted/30">
