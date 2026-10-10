@@ -4,7 +4,7 @@ export type InboxClassification = {
   bucket: "ticket" | "notification";
   reason: string;
   score: number;
-  noise_type?: "carrier_notification" | "system_notification" | null;
+  noise_type?: "carrier_notification" | "system_notification" | "cold_outreach" | null;
 };
 
 // ─── Carrier & service domains that are NEVER customer emails ─────────────────
@@ -105,6 +105,9 @@ const NOTIFICATION_PATTERNS = [
   /\bverification\s+code\b/i,
   /\b(?:one[- ]?time|sign[- ]?in|launch|auth(?:entication)?)\s+(?:code|password|link)\b/i,
   /\bmagic\s+link\b/i,
+  /\bsecure\s+(?:sign[- ]?in\s+)?link\b/i,
+  /\blink\s+(?:will\s+)?expires?\b/i,
+  /\bif\s+you\s+did(?:n'?t|\s+not)\s+request\b/i,
   /\b(?:code|pin)\s+is:?\s*\d{4,8}\b/i,
   /\bentering\s+the\s+code\b/i,
   /\benter\s+the\s+code\b/i,
@@ -125,6 +128,24 @@ const NOTIFICATION_PATTERNS = [
   /\bauthenticity\s+guidelines?\b/i,
   /\bblue\s+check\s+mark\b/i,
   /\bcompleted\s+(?:your|the)\s+(?:account|profile|page)\s+(?:review|verification)\b/i,
+];
+
+// Sellers of event attendee and contact lists write like people ("Could you
+// let me know?"), so the human-intent score cannot catch them. Two or more of
+// these phrases, with no order of the customer's own, mark the mail as outreach.
+const COLD_OUTREACH_PATTERNS = [
+  /\battendees?\s+(?:email|contact|mailing)?\s*(?:list|database|data)\b/i,
+  /\b(?:email|contact|mailing)\s+(?:list|database)\s+of\s+(?:attendees|visitors|exhibitors|participants|decision[- ]makers)\b/i,
+  /\b(?:pre[- ]?registered|verified|opt[- ]?in)\s+(?:attendees?|contacts?|leads?)\b/i,
+  /\b(?:counts?|numbers?)\s+(?:and|&)\s+(?:cost|pricing|price|rate)s?\b/i,
+  /\b(?:acquir|purchas|obtain)(?:e|ing)\s+(?:the|our|this)\s+(?:attendee|contact|email|mailing|data)\b/i,
+  /\binterested\s+in\s+(?:acquiring|purchasing|obtaining)\b/i,
+];
+const COLD_OUTREACH_MIN_HITS = 2;
+
+const OWN_ORDER_PATTERNS = [
+  /\b(?:my|our|min|vores)\s+(?:order|ordre|package|pakke|purchase|køb)\b/i,
+  /#\s?\d{3,}/,
 ];
 
 const HUMAN_SUPPORT_PATTERNS = [
@@ -212,6 +233,16 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
       reason: "carrier_notification_domain",
       score: 10,
       noise_type: "carrier_notification",
+    };
+  }
+
+  const outreachHits = countMatches(COLD_OUTREACH_PATTERNS, combined);
+  if (outreachHits >= COLD_OUTREACH_MIN_HITS && countMatches(OWN_ORDER_PATTERNS, combined) === 0) {
+    return {
+      bucket: "notification",
+      reason: `cold_outreach:${outreachHits}`,
+      score: 4 + outreachHits,
+      noise_type: "cold_outreach",
     };
   }
 

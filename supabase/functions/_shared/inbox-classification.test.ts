@@ -133,3 +133,59 @@ Deno.test("genuine customer question from personal email stays a ticket", () => 
   });
   assertEquals(out.bucket, "ticket");
 });
+
+Deno.test("classifyInboxBucket treats a long no-reply magic-link email as a notification", () => {
+  const filler = "Claude helps you write, analyze and build with confidence. ".repeat(25);
+  const result = classifyInboxBucket({
+    from: "Claude Team <no-reply-abc123@mail.example-ai.com>",
+    subject: "Your secure link to the Console is here | 2026-10-07 09:46:13",
+    body:
+      `Click the secure link below to sign in to your account. This link expires in 10 minutes.\n\n` +
+      `If you didn't request this email, you can safely ignore it. Questions? Visit our help centre.\n\n${filler}`,
+  });
+  assertEquals(result.bucket, "notification");
+  assertEquals(result.noise_type, "system_notification");
+});
+
+Deno.test("classifyInboxBucket routes attendee-list sales outreach away from the support queue", () => {
+  const cases = [
+    {
+      subject: "Hospitality Tech Expo 2026 Attendee Email List",
+      body:
+        "Hi,\n\nWould you be interested in acquiring the attendee email list of Hospitality Tech Expo 2026? " +
+        "We have 12,400 verified attendees including decision makers. Let me know and I can send counts and pricing.\n\nBest, Susan",
+    },
+    {
+      subject: "RE: Restaurant Finance & Development Conference 2026",
+      body:
+        "Hi, just following up. Could you let me know if you are interested in purchasing the pre-registered attendee list? " +
+        "Happy to share the numbers and cost details.",
+    },
+  ];
+  for (const { subject, body } of cases) {
+    const result = classifyInboxBucket({ from: "Susan D <susan.d@events-leads.example>", subject, body });
+    assertEquals(result.bucket, "notification", subject);
+    assertEquals(result.noise_type, "cold_outreach", subject);
+  }
+});
+
+Deno.test("classifyInboxBucket keeps real customers who mention lists or unrequested emails", () => {
+  const cases = [
+    {
+      subject: "Discount code",
+      body: "I signed up for your email list but never got my discount code. Can you help?",
+    },
+    {
+      subject: "Order I didn't make",
+      body: "I got a confirmation for order #1065 but I didn't request this. If you did not request it either, please cancel it?",
+    },
+    {
+      subject: "Attendee list for our event",
+      body: "We bought 40 lanyards for our conference attendee list badges. My order #2231 arrived damaged, can you send new ones?",
+    },
+  ];
+  for (const { subject, body } of cases) {
+    const result = classifyInboxBucket({ from: "Mette Larsen <mette.larsen@gmail.com>", subject, body });
+    assertEquals(result.bucket, "ticket", subject);
+  }
+});
