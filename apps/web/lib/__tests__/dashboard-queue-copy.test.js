@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { describeActionTypes, flowDetail, formatWait } from "../dashboard-queue-copy.js";
+import { customerLabel, describeActionTypes, flowDetail, formatWait } from "../dashboard-queue-copy.js";
+
+describe("customerLabel", () => {
+  it("prefers a name and shortens machine-made addresses", () => {
+    expect(customerLabel("Mikkel Holm", "mikkel@example.com")).toBe("Mikkel Holm");
+    expect(customerLabel(null, "susan.d@b2bevents.com")).toBe("susan.d@b2bevents.com");
+    expect(customerLabel(null, "no-reply-x-_JvUqB8-itD4sWah6KOg@mail.example.com")).toBe("no-reply-x-_JvUqB8-i…@mail.example.com");
+    expect(customerLabel("anna@example.com", null)).toBe("anna@example.com");
+    expect(customerLabel("", "")).toBeNull();
+  });
+});
 
 describe("formatWait", () => {
   it("uses hours for two days, then days", () => {

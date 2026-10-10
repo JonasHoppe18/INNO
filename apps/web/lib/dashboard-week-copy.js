@@ -26,6 +26,19 @@ function pointChange(value, previous, unit = "") {
   return { label: `${diff > 0 ? "+" : "−"}${Math.abs(diff)}${unit}`, good: diff > 0 };
 }
 
+// A new workspace has nothing to compare yet. Four cards of "—" read as
+// broken, so the section shows one line until any week has real activity.
+export function hasWeekData(stats) {
+  if (!stats) return false;
+  const any = (series, test) => (series || []).some(test);
+  return (
+    any(stats.resolved?.series, (value) => value > 0) ||
+    any(stats.firstHumanReplyMinutes?.series, (value) => value != null) ||
+    any(stats.csat?.series, (value) => value != null) ||
+    any(stats.sonaDraftedPct?.series, (value) => value > 0)
+  );
+}
+
 export function weekCards(stats) {
   if (!stats) return [];
   const { resolved, firstHumanReplyMinutes: reply, csat, sonaDraftedPct: drafted } = stats;

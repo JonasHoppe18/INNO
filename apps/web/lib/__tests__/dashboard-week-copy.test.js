@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { formatMinutes, weekCards } from "../dashboard-week-copy.js";
+import { formatMinutes, hasWeekData, weekCards } from "../dashboard-week-copy.js";
+
+describe("hasWeekData", () => {
+  const quiet = {
+    resolved: { series: [0, 0, 0] },
+    firstHumanReplyMinutes: { series: [null, null, null] },
+    csat: { series: [null, null, null] },
+    sonaDraftedPct: { series: [null, 0, 0] },
+  };
+
+  it("is false for a workspace with tickets but no activity yet", () => {
+    expect(hasWeekData(quiet)).toBe(false);
+    expect(hasWeekData(null)).toBe(false);
+  });
+
+  it("is true as soon as any week has activity", () => {
+    expect(hasWeekData({ ...quiet, resolved: { series: [0, 1, 0] } })).toBe(true);
+    expect(hasWeekData({ ...quiet, firstHumanReplyMinutes: { series: [null, 45, null] } })).toBe(true);
+  });
+});
 
 const series = (value, previous) => ({ value, previous, series: [previous, value] });
 

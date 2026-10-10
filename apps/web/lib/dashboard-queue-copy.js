@@ -10,6 +10,20 @@ const ACTION_NOUNS = {
   process_return: ["return", "returns"],
 };
 
+const MAX_LOCAL_PART = 20;
+
+// A person's name when we have one. Otherwise the email, with long
+// machine-made local parts shortened so the row stays readable.
+export function customerLabel(name, email) {
+  const cleanName = String(name || "").trim();
+  if (cleanName && !cleanName.includes("@")) return cleanName;
+  const address = String(email || cleanName || "").trim();
+  if (!address) return null;
+  const [local, domain] = address.split("@");
+  if (!domain || local.length <= MAX_LOCAL_PART) return address;
+  return `${local.slice(0, MAX_LOCAL_PART)}…@${domain}`;
+}
+
 export function formatWait(hours) {
   if (hours == null) return null;
   if (hours < 1) return "under 1h";

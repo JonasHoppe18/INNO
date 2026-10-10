@@ -10,6 +10,7 @@ import { ThisWeekCards } from "@/components/dashboard/ThisWeekCards";
 import { TicketFlowCard } from "@/components/dashboard/TicketFlowCard";
 import { UpNextCard } from "@/components/dashboard/UpNextCard";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { openReturnShipments } from "@/lib/dashboard-returns";
 import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
 import { loadProductRadar } from "@/lib/server/product-radar-data";
 import { loadDashboardQueue } from "@/lib/server/dashboard-queue-data";
@@ -65,11 +66,11 @@ export default async function Page() {
     }
   }
 
-  const returnRows = Array.isArray(data.returns) ? data.returns : [];
+  const returnRows = openReturnShipments(data.returns);
 
   return (
     <div className="@container/main flex flex-1 flex-col bg-muted/30">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-6 lg:px-7 lg:py-8">
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-4 py-6 lg:px-7 lg:py-8">
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-page-heading font-semibold tracking-tight">Dashboard</h1>
           <NotificationBell />
