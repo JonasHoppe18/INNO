@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TurnIRSchema, type TurnIR, type TurnIRReadOnlyRecoveryError } from "./turn-ir";
-import { ANSWER_FACETS, compilePreciseAnswerRequests } from "./answer-facets";
+import { ANSWER_FACETS, compilePreciseAnswerRequests, qualifierLabel } from "./answer-facets";
 import type { ResponseValidationResult } from "./response-contract";
 import type { CaseState, ConversationContext, TenantContext, RemedyAuthorization } from "./types";
 
@@ -208,6 +208,42 @@ function careRequestKey(request: NonNullable<TurnIR["answerRequests"]>[number], 
     unresolvedFacets: [...new Set(unresolvedFacets ?? [])].sort() });
 }
 
+const careFacets = ["cleaning_method", "prohibited_method", "cleaning_alternative"] as const;
+
+/** References are derived from scoped verified names and the original customer quote. */
+function resolutionMatchesProduct(entry: NonNullable<CaseState["pendingReadOnlyAnswers"]>[number], quote: string,
+  pending: NonNullable<CaseState["pendingReadOnlyAnswers"]>): boolean {
+  if (!entry.verifiedProductId || !entry.request.subject) return false;
+  const tokens = (value: string) => normalizeReadOnlySubject(value).split(" ").filter(Boolean);
+  const aliases = (value: typeof entry) => {
+    const title = tokens(value.request.subject ?? "");
+    const original = tokens(value.request.sourceText);
+    return [title, title.filter(token => original.includes(token))].filter(alias => alias.length);
+  };
+  const supplied = tokens(quote);
+  const others = pending.filter(value => value.id !== entry.id && value.verifiedProductId !== entry.verifiedProductId);
+  const subjectGrounded = aliases(entry).some(alias => {
+    for (let length = 1; length <= alias.length; length++) {
+      const prefix = alias.slice(0, length);
+      if (others.some(other => aliases(other).some(words => prefix.every((word, index) => words[index] === word)))) continue;
+      return supplied.some((_, index) => prefix.every((word, offset) => supplied[index + offset] === word));
+    }
+    return false;
+  });
+  return subjectGrounded;
+}
+
+function resolutionMatchesCare(entry: NonNullable<CaseState["pendingReadOnlyAnswers"]>[number], quote: string): boolean {
+  const explicit = (entry.request.qualifiers ?? []).filter(value => (careFacets as readonly string[]).includes(value.facet));
+  const required = explicit.length ? explicit : compilePreciseAnswerRequests([entry.request])
+    .filter(value => (careFacets as readonly string[]).includes(value.facet))
+    .flatMap(value => value.qualifiers.map(qualifier => ({ facet: value.facet, value: qualifier })));
+  const requested = compilePreciseAnswerRequests([{ facets: [...careFacets], sourceText: normalizeReadOnlySubject(quote) }]);
+  // Reuse the existing method semantics, never a new resolution phrase classifier.
+  const labels = new Set(requested.flatMap(value => value.qualifiers.map(qualifier => normalizeReadOnlySubject(qualifierLabel(qualifier, value.facet)))));
+  return required.length > 0 && required.every(value => labels.has(normalizeReadOnlySubject(qualifierLabel(value.value, value.facet))));
+}
+
 /** Carries customer intent only; no source values or operational facts persist here. */
 export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR | null, message: string,
   groundedSubjects: string[], recovery?: TurnIRReadOnlyRecoveryError | null): { ir: TurnIR | null; bindings: ReadOnlyAnswerBinding[]; carried: string[]; closed: string[] } {
@@ -216,8 +252,13 @@ export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR 
   let closed: string[] = [];
   if (ir?.readOnlyFollowup?.kind === "resolve") {
     const target = ir.readOnlyFollowup.targetRequestId;
-    const selected = target ? pending.filter(value => value.id === target) : pending.length === 1 ? pending : [];
-    closed = selected.length === 1 ? [selected[0].id] : [];
+    const quote = ir.readOnlyFollowup.sourceText;
+    const referenced = ir.readOnlyFollowup.subject === null && message.includes(quote)
+      ? pending.filter(value => resolutionMatchesProduct(value, quote, pending)) : [];
+    const productIds = new Set(referenced.map(value => value.verifiedProductId));
+    const matching = productIds.size === 1 ? referenced.filter(value => resolutionMatchesCare(value, quote)) : [];
+    const selected = matching.length === 1 && (target ? matching[0].id === target : pending.length === 1) ? matching : [];
+    closed = selected.map(value => value.id);
     pending = pending.filter(value => !closed.includes(value.id));
   }
   // Recovery may register independently normalized read-only cores, but never

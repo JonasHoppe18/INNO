@@ -55,3 +55,15 @@ A valid repeat of the exact quoted care request can reconcile a recovered obliga
 Reconciliation requires one unambiguous recovered candidate and a successful full TurnIR. Changed wording, different qualifiers, conflicting/ambiguous identities, missing qualifiers and failed full interpretation do not establish equivalence. Reconciled work still stays pending without supported, satisfied, rendered coverage.
 
 Fourteen added positive/negative controls verify reconciliation, immediate and delayed closure, no evidence/unrendered coverage, preserved restrictions, conflicting identity, ambiguous candidates and qualifier ownership across multiple requests. The original Halo/Nest sequence, #043, R1 038–041 and action-failure controls remain unchanged.
+
+## Resolution contract and target grounding
+
+Follow-ups use a discriminated schema. `resolve` and `new_request` require a null subject; only `provide_subject` can carry a subject, grounded in its current identifying quote. A non-null target ID is permitted only for `resolve`. The interpreter quotes the resolution clause alone, excluding questions that still need help. Null literals also preserve compatibility with the installed SDK schema converter.
+
+An existing target ID cannot close work on its own. CaseState independently requires a current quoted reference to one verified product and the pending care method or qualifiers. Product references use Unicode-normalized verified names and original customer-grounded name tokens, with distinguishing prefixes derived from the scoped pending set. Method labels reuse the existing facet/qualifier semantics. Multiple product references, competing matching requests, missing identity, unknown methods or a mismatched target retain pending work.
+
+Generic unscoped abandonment no longer closes even a single unverified request. Positive resolution fixtures now bind verified IDs and quote the specific product/care scope; the old unverified generic scenario explicitly asserts preservation. Sealed scenarios, merchant fixtures and oracles are untouched.
+
+Validation: 36 new controls; 122 focused tests including Halo/Nest, #043 and R1 038–041 pass. Scoped Greenfield/Knowledge/Action regression: 1,304 pass, eight opt-in skips, with the same excluded unconditional live evaluator. Web typecheck passes. Two real interpreter calls on the frozen diagnosed CaseState pass both normalization boundaries and close only Halo; cached final-code replay also rejects the wrong existing Nest target. The combined follow-up retains the original Nest request and separately registers its current restatement. No Writer or retrieval pass was run with a real model.
+
+This patch does not resolve care evidence limitations, merge different restatements or implement another continuity feature. No DEV/PROD deployment, provider mutation or outbound send. Private diagnostic outputs remain local in `.artifacts/r3-final-contract-1010/`.

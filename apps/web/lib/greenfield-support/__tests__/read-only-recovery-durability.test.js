@@ -55,10 +55,12 @@ describe("partial read-only recovery durability", () => {
  });
  it("registers a separate new request on a resolution turn", () => {
   const c = prepareCaseContext(undefined, { workspaceId: "w", shopId: "s", caseId: "c" });
-  const old = prepareReadOnlyAnswers(c, haloIR, halo, ["Halo ceramic vase"]).bindings[0].id;
-  const ir = normalizeTurnIR({ actions: [], readOnlyFollowup: { kind: "resolve", sourceText: "Never mind Halo.", subject: null, targetRequestId: old },
-   answerRequests: [request(nest, "Nest felt basket", "washing machine")] }, `Never mind Halo. ${nest}`);
-  const prepared = prepareReadOnlyAnswers(c, ir, `Never mind Halo. ${nest}`, ["Nest felt basket"]);
+  const registration = prepareReadOnlyAnswers(c, haloIR, halo, ["Halo ceramic vase"]);
+  bindReadOnlyAnswer(c, registration.bindings[0], { id: "halo", title: "Halo Ceramic Vase" });
+  const old = registration.bindings[0].id;
+  const ir = normalizeTurnIR({ actions: [], readOnlyFollowup: { kind: "resolve", sourceText: "Never mind the Halo dishwasher question.", subject: null, targetRequestId: old },
+   answerRequests: [request(nest, "Nest felt basket", "washing machine")] }, `Never mind the Halo dishwasher question. ${nest}`);
+  const prepared = prepareReadOnlyAnswers(c, ir, `Never mind the Halo dishwasher question. ${nest}`, ["Nest felt basket"]);
   expect(prepared.closed).toEqual([old]); expect(c.caseState.pendingReadOnlyAnswers).toHaveLength(1);
   expect(c.caseState.pendingReadOnlyAnswers[0].request.subject).toBe("Nest felt basket");
  });
@@ -119,7 +121,7 @@ describe("recovered care safety and lifecycle controls", () => {
  it("can explicitly abandon the recovered target without closing another question", () => {
   const { c, prepared } = registeredRecovery(); c.turn++;
   prepareReadOnlyAnswers(c, haloIR, halo, ["Halo ceramic vase"]);
-  const message = "Never mind Nest.";
+  const message = "Never mind the Nest washing machine question.";
   const result = prepareReadOnlyAnswers(c, normalizeTurnIR({ actions: [], readOnlyFollowup: {
    kind: "resolve", subject: null, sourceText: message, targetRequestId: prepared.bindings[0].id } }, message), message, []);
   expect(result.closed).toEqual([prepared.bindings[0].id]);

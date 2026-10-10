@@ -90,11 +90,11 @@ describe("care continuity negative controls", () => {
   expect(r.conversationContext.caseState.pendingReadOnlyAnswers[0].verifiedProductId).toBeUndefined();
   expect(r.response).not.toContain("Do not machine wash");
  });
- it("withdraws read-only work only for an explicit customer resolution", async () => {
+ it("preserves unverified work when a resolution cannot independently establish product and care scope", async () => {
   const s = await session(); await s.turn(question, initialIR);
   const message = "Never mind, I no longer need the washing advice.";
   const r = await s.turn(message, { actions: [], readOnlyFollowup: { kind: "resolve", subject: null, sourceText: message } });
-  expect(r.conversationContext.caseState.pendingReadOnlyAnswers).toEqual([]);
+  expect(r.conversationContext.caseState.pendingReadOnlyAnswers).toHaveLength(1);
  });
  it("an interpreter failure cannot lose pending work or authorize an action", async () => {
   const s = await session(); await s.turn(question, initialIR);
@@ -220,11 +220,12 @@ describe("PR123 scoped read-only resolution", () => {
    { kind: "product_care", sourceText: "Can I machine wash Haven?", subject: "Haven", facets: ["prohibited_method"] },
    { kind: "product_care", sourceText: "Can I machine wash Halo?", subject: "Halo", facets: ["prohibited_method"] },
   ] };
-  prepareReadOnlyAnswers(c, ir, message, ["Haven", "Halo"]); return c;
+  const registered = prepareReadOnlyAnswers(c, ir, message, ["Haven", "Halo"]);
+  registered.bindings.forEach((binding, i) => bindReadOnlyAnswer(c, binding, { id: ["haven", "halo"][i], title: ["Haven", "Halo"][i] })); return c;
  }
  it("resolves only the selected pending request", () => {
   const c = twoPending(); const [first, second] = c.caseState.pendingReadOnlyAnswers;
-  const message = "Never mind the Haven washing question.";
+  const message = "Never mind the Haven machine wash question.";
   const ir = normalizeTurnIR({ actions: [], readOnlyFollowup: { kind: "resolve", sourceText: message, subject: null, targetRequestId: first.id } }, message);
   const result = prepareReadOnlyAnswers(c, ir, message, []);
   expect(result.closed).toEqual([first.id]); expect(c.caseState.pendingReadOnlyAnswers.map(r => r.id)).toEqual([second.id]);
@@ -241,9 +242,9 @@ describe("PR123 scoped read-only resolution", () => {
   completeReadOnlyAnswers(c, [], { approvedSegments: [{ type: "acknowledgement", kind: "thanks" }], coverage: { obligations: [] } });
   expect(c.caseState.pendingReadOnlyAnswers).toEqual(original);
  });
- it("a single pending question keeps the existing explicit-resolution behavior", () => {
+ it("a single verified pending question can be explicitly resolved with grounded scope", () => {
   const c = twoPending(); c.caseState.pendingReadOnlyAnswers = c.caseState.pendingReadOnlyAnswers.slice(0, 1);
-  const id = c.caseState.pendingReadOnlyAnswers[0].id; const message = "Never mind.";
+  const id = c.caseState.pendingReadOnlyAnswers[0].id; const message = "Never mind the Haven machine wash question.";
   expect(prepareReadOnlyAnswers(c, { actions: [], readOnlyFollowup: { kind: "resolve", sourceText: message, subject: null } }, message, []).closed).toEqual([id]);
  });
 });
@@ -261,8 +262,9 @@ it("an explicit request ID distinguishes two care questions about the same produ
   { kind: "product_care", sourceText: "Can I machine wash Haven?", subject: "Haven", facets: ["cleaning_method"], qualifiers: [{ facet: "cleaning_method", value: "machine wash" }] },
   { kind: "product_care", sourceText: "Can I use bleach on Haven?", subject: "Haven", facets: ["prohibited_method"], qualifiers: [{ facet: "prohibited_method", value: "bleach" }] },
  ];
- prepareReadOnlyAnswers(c, { actions: [], answerRequests: requests }, message, ["Haven"]);
- const [machine, bleach] = c.caseState.pendingReadOnlyAnswers; const resolution = "Never mind the machine-wash question.";
+ const registered = prepareReadOnlyAnswers(c, { actions: [], answerRequests: requests }, message, ["Haven"]);
+ registered.bindings.forEach(binding => bindReadOnlyAnswer(c, binding, { id: "haven", title: "Haven" }));
+ const [machine, bleach] = c.caseState.pendingReadOnlyAnswers; const resolution = "Never mind the Haven machine-wash question.";
  const ir = normalizeTurnIR({ actions: [], readOnlyFollowup: { kind: "resolve", sourceText: resolution, subject: null, targetRequestId: machine.id } }, resolution);
  expect(prepareReadOnlyAnswers(c, ir, resolution, []).closed).toEqual([machine.id]);
  expect(c.caseState.pendingReadOnlyAnswers.map(r => r.id)).toEqual([bleach.id]);
