@@ -9,7 +9,7 @@ const THREAD_COLUMNS =
 const MESSAGE_COLUMNS = "thread_id, from_me, is_draft, provider_message_id, received_at, sent_at, created_at, ai_draft_text";
 const APPROVAL_STATUSES = ["pending", "awaiting_approval", "requires_approval"];
 
-async function fetchAllPages(buildQuery) {
+export async function fetchAllPages(buildQuery) {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
@@ -58,6 +58,32 @@ async function fetchLoggedConfirmationIds(serviceClient, workspaceId, threadIds,
   return ids;
 }
 
+export function fetchThreadMessages(serviceClient, scope, threadIds) {
+  return fetchByThreadIds(threadIds, (ids) =>
+    applyScope(
+      serviceClient.from("mail_messages").select(MESSAGE_COLUMNS).in("thread_id", ids).order("id", { ascending: true }),
+      scope,
+    ));
+}
+
+// Provider ids of confirmation emails in these threads: their sent event, or
+// for older senders their delivery log. Without a workspace there is nothing to
+// match, and missing tables must not break the dashboard.
+export async function loadConfirmationMessageIds(serviceClient, scope, threadIds, since) {
+  if (!scope?.workspaceId || !threadIds.length) return [];
+  const [events, logged] = await Promise.all([
+    fetchByThreadIds(threadIds, (ids) =>
+      serviceClient
+        .from("mail_auto_reply_events")
+        .select("sent_message_id")
+        .eq("workspace_id", scope.workspaceId)
+        .in("thread_id", ids)
+        .order("sent_message_id", { ascending: true })).catch(() => []),
+    fetchLoggedConfirmationIds(serviceClient, scope.workspaceId, threadIds, since).catch(() => []),
+  ]);
+  return [...events.map((row) => row.sent_message_id), ...logged];
+}
+
 export async function loadDashboardQueue(serviceClient, scope, { now = new Date() } = {}) {
   const threads = await fetchAllPages(() =>
     applyScope(
@@ -73,12 +99,8 @@ export async function loadDashboardQueue(serviceClient, scope, { now = new Date(
 
   const oldestThread = threads.reduce((min, thread) => (thread.created_at && thread.created_at < min ? thread.created_at : min), new Date(now).toISOString());
 
-  const [messages, actions, autoReplies, loggedConfirmationIds] = await Promise.all([
-    fetchByThreadIds(threadIds, (ids) =>
-      applyScope(
-        serviceClient.from("mail_messages").select(MESSAGE_COLUMNS).in("thread_id", ids).order("id", { ascending: true }),
-        scope,
-      )),
+  const [messages, actions, confirmationIds] = await Promise.all([
+    fetchThreadMessages(serviceClient, scope, threadIds),
     fetchByThreadIds(threadIds, (ids) =>
       applyScope(
         serviceClient
@@ -89,28 +111,14 @@ export async function loadDashboardQueue(serviceClient, scope, { now = new Date(
           .order("id", { ascending: true }),
         scope,
       )),
-    // Confirmation emails are identified by their sent event. Without a
-    // workspace there is nothing to match, and a missing event table must not
-    // break the dashboard.
-    scope?.workspaceId
-      ? fetchByThreadIds(threadIds, (ids) =>
-        serviceClient
-          .from("mail_auto_reply_events")
-          .select("sent_message_id")
-          .eq("workspace_id", scope.workspaceId)
-          .in("thread_id", ids)
-          .order("sent_message_id", { ascending: true })).catch(() => [])
-      : Promise.resolve([]),
-    scope?.workspaceId
-      ? fetchLoggedConfirmationIds(serviceClient, scope.workspaceId, threadIds, oldestThread).catch(() => [])
-      : Promise.resolve([]),
+    loadConfirmationMessageIds(serviceClient, scope, threadIds, oldestThread),
   ]);
 
   return buildDashboardQueue({
     threads,
     messages,
     actions,
-    autoReplyMessageIds: [...autoReplies.map((row) => row.sent_message_id), ...loggedConfirmationIds],
+    autoReplyMessageIds: confirmationIds,
     now,
   });
 }
