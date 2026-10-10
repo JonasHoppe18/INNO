@@ -82,7 +82,7 @@ const HEALTH_CHECKS = [
 
 const WEEK = [
   { label: "Resolved", value: "38", change: "+12%", good: true, detail: "vs last week", series: [24, 29, 27, 31, 30, 34, 34, 38] },
-  { label: "First human reply", value: "1h 40m", change: "−18%", good: true, detail: "Median, confirmations excluded", series: [190, 175, 160, 168, 140, 132, 122, 100] },
+  { label: "First human reply", value: "1h 40m", change: "−18%", good: true, lowerIsBetter: true, detail: "Median, confirmations excluded", series: [190, 175, 160, 168, 140, 132, 122, 100] },
   { label: "CSAT", value: "4.6", change: "+0.2", good: true, detail: "12 responses", series: [4.2, 4.4, 4.3, 4.4, 4.5, 4.3, 4.4, 4.6] },
   { label: "Sona drafted", value: "82%", change: "+5 pts", good: true, detail: "61% sent without edits", series: [58, 63, 66, 70, 72, 75, 77, 82] },
 ];
@@ -180,7 +180,7 @@ function NeedsAction({ alerts }) {
     <Card className="rounded-xl shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-section-heading">Needs action</CardTitle>
-        <CardDescription className="mt-1">Things that are out of the ordinary.</CardDescription>
+        <CardDescription className="mt-1">Products getting more tickets than usual.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {alerts.map((alert) => {
@@ -202,32 +202,52 @@ function NeedsAction({ alerts }) {
   );
 }
 
+// Healthy: one quiet line. Broken: the card itself becomes the alert, so the
+// failure is not repeated under Needs action.
 function SystemStatus({ broken }) {
   const healthy = broken.length === 0;
+  const isBroken = (key) => broken.includes(key) || (!healthy && (key === "sending" || key === "drafting"));
+
+  if (healthy) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/70 bg-card px-4 py-2.5 shadow-sm">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <CheckCircle2 className="size-4 text-success-foreground" aria-hidden="true" />
+          Everything is running
+        </span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {HEALTH_CHECKS.map((check) => (
+            <span key={check.key} className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-success-foreground" aria-hidden="true" />
+              {check.label}
+            </span>
+          ))}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">Checked 2 minutes ago</span>
+      </div>
+    );
+  }
+
   return (
-    <Card className="self-start rounded-xl shadow-sm">
+    <Card role="alert" className="rounded-xl border-danger-border shadow-sm">
       <CardContent className="flex flex-col gap-4 p-5">
         <div className="flex items-center gap-3">
-          {healthy
-            ? <CheckCircle2 className="size-8 text-success-foreground" aria-hidden="true" />
-            : <CircleAlert className="size-8 text-danger-foreground" aria-hidden="true" />}
-          <div>
-            <p className="text-sm font-semibold">{healthy ? "Everything is running" : "Something needs fixing"}</p>
-            <p className="text-xs text-muted-foreground">Checked 2 minutes ago</p>
+          <CircleAlert className="size-5 shrink-0 text-danger-foreground" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-danger-foreground">Mailbox disconnected</p>
+            <p className="text-xs text-muted-foreground">No new mail since 07:12, and replies can&apos;t be sent until it&apos;s reconnected.</p>
           </div>
+          <Button size="sm" className="shrink-0">Reconnect</Button>
         </div>
-        <ul className="flex flex-col gap-2.5">
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {HEALTH_CHECKS.map((check) => {
-            const isBroken = broken.includes(check.key) || (!healthy && (check.key === "sending" || check.key === "drafting"));
             const Icon = check.icon;
+            const down = isBroken(check.key);
             return (
-              <li key={check.key} className="flex items-center gap-2.5 text-sm">
+              <li key={check.key} className={cn("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm", down ? "bg-danger" : "bg-muted/40")}>
                 <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="flex-1">{check.label}</span>
-                <span className={cn("flex items-center gap-1.5 text-xs", isBroken ? "text-danger-foreground" : "text-muted-foreground")}>
-                  <span className={cn("size-1.5 rounded-full", isBroken ? "bg-danger-foreground" : "bg-success-foreground")} aria-hidden="true" />
-                  {isBroken ? check.broken : check.ok}
-                </span>
+                <span className={cn("text-xs", down ? "text-danger-foreground" : "text-muted-foreground")}>{down ? check.broken : check.ok}</span>
               </li>
             );
           })}
@@ -237,13 +257,18 @@ function SystemStatus({ broken }) {
   );
 }
 
-function Sparkline({ series, id }) {
+// For metrics where lower is better the line is flipped, so improvement
+// always points up.
+function Sparkline({ series, id, invert = false }) {
   const width = 160;
   const height = 36;
   const min = Math.min(...series);
   const max = Math.max(...series);
   const range = max - min || 1;
-  const points = series.map((value, index) => [(index / (series.length - 1)) * width, height - 3 - ((value - min) / range) * (height - 6)]);
+  const points = series.map((value, index) => {
+    const share = (value - min) / range;
+    return [(index / (series.length - 1)) * width, height - 3 - (invert ? 1 - share : share) * (height - 6)];
+  });
   const line = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-9 w-full text-primary" aria-hidden="true">
@@ -279,7 +304,7 @@ function ThisWeek() {
               </div>
               <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
               <p className="text-xs text-muted-foreground">{metric.detail}</p>
-              <div className="-mx-4 mt-2"><Sparkline series={metric.series} id={`week-spark-${index}`} /></div>
+              <div className="-mx-4 mt-2"><Sparkline series={metric.series} invert={metric.lowerIsBetter} id={`week-spark-${index}`} /></div>
             </Card>
           );
         })}
@@ -317,6 +342,9 @@ function Banner({ alert }) {
 }
 
 function VariantA({ scenario }) {
+  // Only product alerts: waiting time is in the flow and Up next, system
+  // failures are in the status card.
+  const productAlerts = scenario.alerts.filter((alert) => alert.kind === "product");
   return (
     <>
       <header className="flex items-end justify-between gap-4">
@@ -326,14 +354,10 @@ function VariantA({ scenario }) {
           Live
         </span>
       </header>
+      <SystemStatus broken={scenario.health} />
       <FlowStrip flow={scenario.flow} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex flex-col gap-5">
-          <NeedsAction alerts={scenario.alerts} />
-          <UpNext items={scenario.upNext} />
-        </div>
-        <SystemStatus broken={scenario.health} />
-      </div>
+      <NeedsAction alerts={productAlerts} />
+      <UpNext items={scenario.upNext} />
       <ThisWeek />
     </>
   );
