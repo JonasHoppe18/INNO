@@ -11,6 +11,7 @@ import {
 
 import { DashboardPeriodPicker } from "@/components/dashboard/DashboardPeriodPicker";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
+import { ProductAlertsCard } from "@/components/dashboard/ProductAlertsCard";
 import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
+import { loadProductRadar } from "@/lib/server/product-radar-data";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -416,6 +418,7 @@ export default async function Page({ searchParams }) {
 
   let returnTrackingRows = [];
   let recentActivity = [];
+  let productAlerts = [];
   let supportAnalytics = {
     createdTickets: 0,
     unsolvedTickets: 0,
@@ -435,12 +438,17 @@ export default async function Page({ searchParams }) {
         returnTrackingResult,
         activityResult,
         supportAnalyticsResult,
+        productRadarResult,
       ] = await Promise.all([
         listReturnTrackingShipments(serviceClient, scope).catch(() => []),
         resolveShopId(serviceClient, scope).then((shopId) =>
           loadRecentActivity(serviceClient, scope, shopId, dashboardPeriod)
         ),
         loadDashboardSupportAnalytics(serviceClient, scope, dashboardPeriod),
+        loadProductRadar(serviceClient, scope).catch((error) => {
+          console.error("Product radar lookup failed:", error);
+          return null;
+        }),
       ]);
 
       returnTrackingRows = Array.isArray(returnTrackingResult)
@@ -448,6 +456,7 @@ export default async function Page({ searchParams }) {
         : [];
       recentActivity = activityResult;
       supportAnalytics = supportAnalyticsResult;
+      productAlerts = productRadarResult?.alerts ?? [];
     } catch (error) {
       console.error("Dashboard data lookup failed:", error);
     }
@@ -471,6 +480,8 @@ export default async function Page({ searchParams }) {
         </header>
 
         <PerformanceStrip analytics={supportAnalytics} periodLabel={dashboardPeriod.label} />
+
+        <ProductAlertsCard alerts={productAlerts} />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <Card className="flex min-h-[360px] flex-col rounded-2xl border-border/70 shadow-sm">

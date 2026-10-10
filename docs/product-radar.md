@@ -14,9 +14,10 @@ about a product defect from Sona before it shows up in reviews or returns.
 | Dashboard, **Product alerts** card | Rendered only when a product has a spike or a rising trend. Links to the Products tab |
 | Weekly owner email | Phase 2, after the alert rules have been trusted in production for a while |
 
-The Products tab absorbs the two product cards that live in *Business impact*
-today ("Products driving support", "Products with refunded value"), so product
-data has one home. Overview keeps "Customer friction".
+The Products tab replaces "Products driving support" in *Business impact*.
+"Products with refunded value" stays in Business impact, because it follows
+the period picker and the radar does not. Overview keeps "Customer friction".
+The period picker and Export are hidden on the Products tab.
 
 UI copy is English only. Do not name the commerce platform in the UI
 (use "store" or "connected store").
@@ -77,9 +78,9 @@ anchors × 10 products.
 - No spikes in the period.
 
 The July A-Live peak (14 threads in the week of 2026-07-13) seen in the
-first counts disappears once only support threads are counted. Those were
-notifications and partnership mails, so today's unfiltered product counts
-can mislead.
+first, unfiltered SQL counts disappears once only support threads are
+counted. Those were notifications and partnership mails. The existing
+analytics cards already filter to support, so they were not affected.
 
 ## Slices
 
@@ -95,11 +96,10 @@ No new tables and no new LLM calls.
   `resolveAuthScope` and `applyScope`, like the overview route. Reads 13 weeks
   of threads (see Alert rules).
 - **Products tab**: a list of products sorted by status, then by volume.
-  Each row shows name, tickets in the last 7 days, a 12-week sparkline,
-  status, and the share of tickets with a refund. Clicking a row opens a
-  detail view with the weekly chart, the latest `issue_summary` lines as a
-  plain list ("What customers write"), and the tickets themselves, reusing the
-  existing drilldown table.
+  Each row shows name, tickets in the last 7 days, the usual week, a 12-week
+  sparkline and status. Clicking a row opens a detail view with the weekly
+  chart and one list of the product's tickets ("What customers write"): date,
+  ticket link, `issue_summary` and status, newest first, up to 50.
 - **Dashboard card**: up to 3 products with status `spike` or `rising`, e.g.
   "A-Rise: rising — 19 tickets in 4 weeks (usually 8)". No card when there
   are none. It reads the same lib function, not the API route.

@@ -23,6 +23,7 @@ import { toast } from "sonner";
 
 import { AnalyticsChartCard, AnalyticsSkeleton, FocusSignals, MetricCell, MetricStrip } from "@/components/analytics/AnalyticsPrimitives";
 import { CommerceRateChart, SonaRateChart, SupportFlowChart } from "@/components/analytics/AnalyticsTrendCharts";
+import ProductRadarReport from "@/components/analytics/ProductRadarReport";
 import { exportAnalyticsToExcel } from "@/utils/export-analytics";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -46,12 +47,14 @@ const REPORTS = [
   { id: "overview", label: "Overview" },
   { id: "support", label: "Support" },
   { id: "business", label: "Business impact" },
+  { id: "products", label: "Products" },
   { id: "sona", label: "Sona impact" },
 ];
 const REPORT_IDS = new Set([...REPORTS.map((report) => report.id), "tickets"]);
 const REPORT_COPY = {
   support: ["Service operations", "Support performance", "See whether the team is keeping pace, where response time slips and whether issues stay solved."],
   business: ["Business impact", "Where support meets the business", "Connect customer contact to orders, returns, refunded value, products and recurring friction."],
+  products: ["Product radar", "Which products drive customer contact", "Support tickets per product over the last 12 weeks. Alerts flag sudden spikes and sustained rises. The period picker does not apply here."],
   sona: ["Sona impact", "Measured assistance and quality", "See how much work Sona assists, how strong the output is and which workflows are ready for more automation."],
 };
 
@@ -115,6 +118,7 @@ function EmptyState({ icon: Icon = ListFilter, title, description }) {
 }
 
 function AnalyticsHeader({ period, range, report, refreshing, onPeriod, onRange, onReport, onExport, exportDisabled }) {
+  const periodless = report === "products";
   const startRef = useRef(null);
   const endRef = useRef(null);
   const openPicker = (input) => typeof input?.showPicker === "function" ? input.showPicker() : input?.focus();
@@ -126,7 +130,7 @@ function AnalyticsHeader({ period, range, report, refreshing, onPeriod, onRange,
           <h1 className="text-page-heading font-semibold tracking-tight">Analytics</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">Support performance, business impact and Sona value.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn("flex flex-wrap items-center gap-2", periodless && "hidden")}>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" aria-busy={refreshing}>
@@ -342,13 +346,9 @@ function BusinessReport({ data, onDrilldown }) {
         {(commerce.trendSeries || []).some((row) => row.ticketsPer100Orders != null) ? <CommerceRateChart data={commerce.trendSeries} /> : <EmptyState title="No order-linked trend yet" description="Connect tickets to Shopify orders to see support demand per 100 orders." />}
       </AnalyticsChartCard>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-3">
         <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Contact reasons</CardTitle><CardDescription>What customers most often need help with.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.requestTypes || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No contact reasons yet" emptyDescription="Classify or tag tickets to identify recurring support demand." /></CardContent></Card>
         <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Return reasons</CardTitle><CardDescription>{commerce.returnReasonsSource === "shopify" ? "Reasons recorded on Shopify returns." : "Operational reasons recorded on return cases."}</CardDescription></CardHeader><CardContent><HorizontalBars items={commerce.returnReasons || []} emptyTitle="No return reasons yet" emptyDescription={commerce.returnReasonsSource === null ? "Reasons appear after Shopify returns are synced or a Sona return case is created." : "No return reason was recorded for the selected period."} /></CardContent></Card>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Products driving support</CardTitle><CardDescription>Products associated with the highest ticket volume.</CardDescription></CardHeader><CardContent><HorizontalBars items={(topics.products || []).slice(0, 8)} onSelect={onDrilldown} emptyTitle="No product links yet" emptyDescription="Detected products appear after tickets are classified." /></CardContent></Card>
         <Card className="rounded-xl shadow-sm"><CardHeader><CardTitle className="text-section-heading">Products with refunded value</CardTitle><CardDescription>Values remain separated by currency.</CardDescription></CardHeader><CardContent>{(commerce.refundProducts || []).length ? <div className="flex flex-col gap-1">{commerce.refundProducts.map((row) => <div key={`${row.productId}-${row.currency}`} className="flex items-center justify-between gap-4 rounded-lg px-3 py-3 odd:bg-muted/35"><div className="min-w-0"><p className="truncate text-sm font-medium">{row.productName || `Product #${row.productId}`}</p><p className="mt-0.5 text-xs text-muted-foreground">{formatNumber(row.quantity)} units</p></div><p className="shrink-0 text-sm font-semibold tabular-nums">{row.currency ? formatMoney(row.amount, row.currency) : formatNumber(row.amount)}</p></div>)}</div> : <EmptyState icon={PackageSearch} title="No refunded products yet" description="Product-level value appears after Shopify refund line items are received." />}</CardContent></Card>
       </div>
     </div>
@@ -524,8 +524,9 @@ export default function AnalyticsDashboardClient() {
     window.history[method === "replace" ? "replaceState" : "pushState"](null, "", `${pathname}${query ? `?${query}` : ""}`);
   }, [pathname, searchParams]);
 
+  const needsOverview = report !== "products";
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !needsOverview) return;
     const controller = new AbortController();
     const params = new URLSearchParams();
     if (range.start && range.end) { params.set("start", range.start); params.set("end", range.end); }
@@ -550,7 +551,7 @@ export default function AnalyticsDashboardClient() {
       })
       .finally(() => { if (!controller.signal.aborted) setRefreshing(false); });
     return () => controller.abort();
-  }, [period, range.start, range.end, ready, getCached, readJson, setData]);
+  }, [period, range.start, range.end, ready, needsOverview, getCached, readJson, setData]);
 
   const onPeriod = (value) => navigate((params) => { params.set("period", value); params.delete("start"); params.delete("end"); }, "replace");
   const onRange = (nextRange) => navigate((params) => {
@@ -558,7 +559,10 @@ export default function AnalyticsDashboardClient() {
     if (nextRange.end) params.set("end", nextRange.end); else params.delete("end");
     if (nextRange.start && nextRange.end) params.delete("period");
   }, "replace");
-  const onReport = (nextReport) => navigate((params) => { params.set("report", nextReport); params.delete("metric"); params.delete("from"); });
+  const onReport = (nextReport) => navigate((params) => { params.set("report", nextReport); params.delete("metric"); params.delete("from"); params.delete("product"); });
+  const productParam = searchParams.get("product") || null;
+  const onSelectProduct = (productId) => navigate((params) => { params.set("report", "products"); params.set("product", productId); });
+  const onProductsBack = () => navigate((params) => { params.set("report", "products"); params.delete("product"); });
   const onDrilldown = (key, title) => {
     if (!key) return;
     sessionStorage.setItem(`analytics-scroll-${visibleReport}`, String(window.scrollY));
@@ -577,10 +581,16 @@ export default function AnalyticsDashboardClient() {
   const title = searchParams.get("label") || labelForMetric(data, metricKey);
 
   return (
-    <AnalyticsShell period={period} range={range} report={visibleReport} refreshing={refreshing && Boolean(data)} onPeriod={onPeriod} onRange={onRange} onReport={onReport} onExport={onExport} exportDisabled={!data || refreshing}>
-      {initialError && !data ? <Card className="rounded-xl border-destructive/40"><CardContent className="flex items-center gap-3 p-5 text-sm text-destructive"><AlertTriangle className="size-4" />{initialError}</CardContent></Card> : null}
-      {!data && refreshing ? <AnalyticsSkeleton /> : null}
-      {data ? (
+    <AnalyticsShell period={period} range={range} report={visibleReport} refreshing={needsOverview && refreshing && Boolean(data)} onPeriod={onPeriod} onRange={onRange} onReport={onReport} onExport={onExport} exportDisabled={!data || refreshing}>
+      {report === "products" ? (
+        <>
+          {productParam ? null : <ReportIntro report="products" />}
+          <ProductRadarReport productId={productParam} onSelectProduct={onSelectProduct} onBack={onProductsBack} />
+        </>
+      ) : null}
+      {needsOverview && initialError && !data ? <Card className="rounded-xl border-destructive/40"><CardContent className="flex items-center gap-3 p-5 text-sm text-destructive"><AlertTriangle className="size-4" />{initialError}</CardContent></Card> : null}
+      {needsOverview && !data && refreshing ? <AnalyticsSkeleton /> : null}
+      {needsOverview && data ? (
         <div className={cn("transition-opacity duration-150", refreshing && "opacity-70")} aria-busy={refreshing}>
           {report !== "overview" && report !== "tickets" ? <div className="mb-6"><ReportIntro report={report} /></div> : null}
           {report === "overview" ? <OverviewReport data={data} onDrilldown={onDrilldown} /> : null}
