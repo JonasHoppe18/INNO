@@ -491,7 +491,7 @@ function labelForMetric(data, metricKey) {
 function AnalyticsShell({ children, ...headerProps }) {
   return (
     <TooltipProvider delayDuration={350} skipDelayDuration={0}>
-      <div className="@container/main flex min-h-full flex-1 flex-col bg-muted/25">
+      <div className="@container/main flex min-h-full flex-1 flex-col bg-conversation">
         <AnalyticsHeader {...headerProps} />
         <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-5 p-4 md:p-6 lg:p-7">{children}</main>
       </div>
