@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
+import { DashboardMockup } from "@/components/design/DashboardMockup";
 
 const tickets = [
   { id: "demo-a", ticket_number: "1042", subject: "Where is my order?", is_local: true, has_ai_draft: true },
@@ -50,11 +51,15 @@ function DesignLabContent() {
         <p className="text-sm">UI text · 13 px</p>
         <p className="text-xs text-muted-foreground">Metadata · 12 px</p>
       </section>
-      <Tabs defaultValue="components">
+      <Tabs defaultValue="dashboard">
         <TabsList aria-label="Design examples">
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="components">Components</TabsTrigger>
           <TabsTrigger value="inbox">Inbox patterns</TabsTrigger>
         </TabsList>
+        <TabsContent value="dashboard" className="mt-6">
+          <DashboardMockup />
+        </TabsContent>
         <TabsContent value="components" className="mt-6">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
