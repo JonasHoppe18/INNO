@@ -54,22 +54,32 @@ period picker.
 - **baseline** = weekly mean over the 8 full weeks before that.
 - **Spike**: `current >= 5` and `current >= 3 × max(baseline, 1)`.
 - **Rising**: mean of the last 4 weeks `>= 2 ×` the mean of the 8 weeks
-  before them, and the last 4 weeks total `>= 12`. A product that is
-  already a spike is not also reported as rising.
+  before them, and the last 4 weeks total `>= 12`, and the same was true one
+  week earlier. A product that is already a spike is not also reported as
+  rising.
 
-All thresholds are named constants in one module.
+All thresholds are named constants in `RADAR_RULES`. The series needs 13
+weeks of history: 12 are shown, and the extra week confirms a trend.
 
-Check against the prod numbers above:
+### Backtest (prod, AceZone, support threads only, to 2026-10-10)
 
-| Product | Last 4 weeks | Previous 8 weeks, mean | Result |
-| --- | --- | --- | --- |
-| A-Rise | 4, 5, 7, 5 (21) | 2.25 | Rising (2.3×) ✔ |
-| A-Blaze | 6, 6, 4, 3 (19) | 3.4 | Nothing (1.4×) ✔ |
-| A-Spire Wireless | 25, 28, 17, 16 | about 20 | Nothing ✔ |
+`apps/web/scripts/product-radar-backtest.mjs` replays the rules once per
+week over weekly counts per product. The counts come from a read-only query
+and stay outside the repo. Data starts about 24 weeks back, which gives 12
+anchors × 10 products.
 
-A-Live had 14 threads in the week of 2026-07-13, against 1-3 in the weeks
-after. That should be a spike, but its baseline lies before the 90-day
-window, so the backtest must read 180 days.
+- A-Rise: rising from 2026-10-03. The last 4 weeks are 4, 5, 6, 4 (19
+  tickets) against a prior mean of 1.9 a week. A real, sustained climb.
+- A-Spire: rising on 2026-08-15 only, before the two-week confirmation was
+  added. The series shows a quiet spell (0, 0, 2, 1) followed by normal
+  weeks, so it was a false positive. The confirmation removes it.
+- A-Spire Wireless swings between 10 and 25 a week and raises nothing.
+- No spikes in the period.
+
+The July A-Live peak (14 threads in the week of 2026-07-13) seen in the
+first counts disappears once only support threads are counted. Those were
+notifications and partnership mails, so today's unfiltered product counts
+can mislead.
 
 ## Slices
 
@@ -82,8 +92,8 @@ No new tables and no new LLM calls.
   `issue_summary`) and the product map. Output is per-product weekly series,
   current, baseline and status (`spike`, `rising`, `steady`).
 - `GET /api/analytics/products`: workspace-scoped through
-  `resolveAuthScope` and `applyScope`, like the overview route. Reads 20 weeks
-  of threads (12 shown, 8 more for the baseline).
+  `resolveAuthScope` and `applyScope`, like the overview route. Reads 13 weeks
+  of threads (see Alert rules).
 - **Products tab**: a list of products sorted by status, then by volume.
   Each row shows name, tickets in the last 7 days, a 12-week sparkline,
   status, and the share of tickets with a refund. Clicking a row opens a
@@ -91,15 +101,13 @@ No new tables and no new LLM calls.
   plain list ("What customers write"), and the tickets themselves, reusing the
   existing drilldown table.
 - **Dashboard card**: up to 3 products with status `spike` or `rising`, e.g.
-  "A-Rise: rising — 21 tickets in 4 weeks (usually 9)". No card when there
+  "A-Rise: rising — 19 tickets in 4 weeks (usually 8)". No card when there
   are none. It reads the same lib function, not the API route.
 - Follow `.agents/design.md` and the existing Analytics primitives.
 
-Evidence: unit tests on the rule functions using the table above as
-fixtures, then a backtest script that replays prod counts week by week for
-the last 180 days and lists every alert it would have raised. The backtest
-must flag A-Live in July and A-Rise in October, and the false positives get
-reviewed by hand before the thresholds are locked.
+Evidence: unit tests on the rule functions with the backtest series as
+fixtures (`lib/server/__tests__/product-radar.test.js`), the backtest above,
+and the Products tab and card checked on dev.
 
 ### Slice 2: Issue clusters (the "why")
 
