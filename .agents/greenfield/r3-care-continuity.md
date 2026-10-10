@@ -47,3 +47,11 @@ A resolution turn removes only its selected pending ID, then registers any separ
 Validation on the PR123 merge base reproduces the exact three Halo/Nest customer messages with a controlled malformed qualifier. The historical raw interpreter payload is absent from the sanitized DEV trace; this test does not claim to reconstruct that annotation. Before: Nest is never pending and resolving Halo leaves no work. After: recovered Nest remains pending when Halo closes, alongside the separately registered current Nest restatement. No evidence is available in that control, so neither Nest entry is marked complete.
 
 Checks: 21 added recovery controls; 72 focused tests including #043 and R1 038–041; 1,254 scoped deterministic Greenfield/Knowledge/Action checks pass, with eight opt-in skips and the same excluded unconditional live evaluator. Web typecheck passes. Local before/after responses, coverage and lifecycle traces are in `.artifacts/r3-partial-recovery-durability-1010/`. A deployed read-only smoke must follow an approved merge. No deployment or merge is part of this patch.
+
+## PR125 qualifier reconciliation
+
+A valid repeat of the exact quoted care request can reconcile a recovered obligation after verifying the same product ID. The atomic care facets must match, every known qualifier must survive, and each unresolved facet must have a valid qualifier explicitly grounded in that current request. The original pending ID is retained. No evidence or operational facts persist.
+
+Reconciliation requires one unambiguous recovered candidate and a successful full TurnIR. Changed wording, different qualifiers, conflicting/ambiguous identities, missing qualifiers and failed full interpretation do not establish equivalence. Reconciled work still stays pending without supported, satisfied, rendered coverage.
+
+Fourteen added positive/negative controls verify reconciliation, immediate and delayed closure, no evidence/unrendered coverage, preserved restrictions, conflicting identity, ambiguous candidates and qualifier ownership across multiple requests. The original Halo/Nest sequence, #043, R1 038–041 and action-failure controls remain unchanged.

@@ -598,7 +598,8 @@ export async function runGreenfieldAgentWithAgentsSdk(options: GreenfieldAgentsS
   for (const binding of readOnlyAnswers.bindings) {
     const request = preciseRequests.find(value => value.requestIndex === binding.requestIndex);
     const product = request ? verifiedAnswerSubject(preciseContext(), request) : null;
-    if (bindReadOnlyAnswer(conversationContext, binding, product)) pushEvent(trace, "case_state", {
+    if (bindReadOnlyAnswer(conversationContext, binding, product, turnIR
+      ? { request: turnIR.answerRequests?.[binding.requestIndex], message: options.message } : undefined)) pushEvent(trace, "case_state", {
       diagnostic: "read_only_subject_bound", obligation_id: binding.id, verified_product_id: product!.id,
     }, now());
   }

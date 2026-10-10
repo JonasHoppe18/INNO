@@ -256,11 +256,35 @@ export function prepareReadOnlyAnswers(context: ConversationContext, ir: TurnIR 
 }
 
 export function bindReadOnlyAnswer(context: ConversationContext, binding: ReadOnlyAnswerBinding,
-  product: { id: string; title: string } | null): boolean {
+  product: { id: string; title: string } | null,
+  current?: { request?: NonNullable<TurnIR["answerRequests"]>[number]; message: string }): boolean {
   const entry = context.caseState?.pendingReadOnlyAnswers?.find(value => value.id === binding.id);
   if (!entry || !product || entry.verifiedProductId && entry.verifiedProductId !== product.id) return false;
   entry.request = { ...entry.request, subject: product.title };
   entry.subjectRequirement = "verification"; entry.verifiedProductId = product.id;
+  // Only a successful current TurnIR can repair annotations. Identity is checked
+  // here, after the current verified read, rather than from a semantic title.
+  const request = current?.request;
+  if (request && current.message.includes(request.sourceText) && request.sourceText === entry.request.sourceText
+    && !entry.unresolvedFacets?.length) {
+    const facets = [...new Set(entry.request.facets ?? [])].sort();
+    const qualifiers = entry.request.qualifiers ?? [];
+    const candidates = (context.caseState?.pendingReadOnlyAnswers ?? []).filter(prior => prior.id !== entry.id
+      && prior.verifiedProductId === product.id && prior.unresolvedFacets?.length
+      && prior.request.sourceText === request.sourceText
+      && JSON.stringify([...new Set(prior.request.facets ?? [])].sort()) === JSON.stringify(facets)
+      && (prior.request.qualifiers ?? []).every(known => qualifiers.some(value => value.facet === known.facet && value.value === known.value))
+      && prior.unresolvedFacets.every(facet => qualifiers.some(value => value.facet === facet
+        && request.qualifiers?.some(valid => valid.facet === facet && valid.value === value.value)
+        && request.sourceText.includes(value.value))));
+    if (candidates.length === 1) {
+      const prior = candidates[0];
+      prior.request = { ...entry.request };
+      delete prior.unresolvedFacets;
+      context.caseState!.pendingReadOnlyAnswers = context.caseState!.pendingReadOnlyAnswers!.filter(value => value !== entry);
+      binding.id = prior.id;
+    }
+  }
   return true;
 }
 
